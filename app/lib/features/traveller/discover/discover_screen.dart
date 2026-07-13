@@ -43,7 +43,7 @@ class DiscoverScreen extends ConsumerWidget {
         ),
 
         // pins
-        ...data.places.map((p) {
+        ...ref.watch(placesProvider).map((p) {
           final emphasized = p.bestTimes.contains(time);
           return Align(
             alignment: FractionalOffset(p.x / 100, p.y / 100),

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../core/widgets/pill.dart';
@@ -366,10 +367,7 @@ class _CheckInButton extends ConsumerWidget {
       scale: 0.98,
       onTap: didCheckIn
           ? null
-          : () => ref.read(checkInsProvider.notifier).state = {
-                ...ref.read(checkInsProvider),
-                place.id,
-              },
+          : () => ref.read(checkInsProvider.notifier).checkIn(place.id),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -454,7 +452,19 @@ class _DealCard extends ConsumerWidget {
                     foregroundColor: SpottoColors.ink,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   ),
-                  onPressed: () => ref.read(claimsProvider.notifier).claim(place.id),
+                  onPressed: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      await ref.read(claimsProvider.notifier).claim(
+                            place.id,
+                            offerLabel: place.deal.label ?? '',
+                            offerValue: place.deal.tag ?? '',
+                          );
+                    } catch (e) {
+                      messenger.showSnackBar(
+                          SnackBar(content: Text(ApiClient.errorMessage(e))));
+                    }
+                  },
                   child: const Text('Claim'),
                 ),
               ],

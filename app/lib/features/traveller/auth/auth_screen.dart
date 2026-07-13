@@ -1,5 +1,5 @@
-// Mock consumer auth — login / register / OTP flows from Auth.jsx, simplified:
-// any input signs you in (prototype behaviour).
+// Consumer auth — login / register against the Spotto API.
+// Demo account: lena@spotto.dev / spotto123 (created by the server seed).
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,7 +9,7 @@ import '../../../core/theme/palette.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../data/repositories/repositories.dart';
 
-enum _Mode { login, register, phone, otp }
+enum _Mode { login, register }
 
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
@@ -20,9 +20,38 @@ class AuthScreen extends ConsumerStatefulWidget {
 
 class _AuthScreenState extends ConsumerState<AuthScreen> {
   _Mode mode = _Mode.login;
+  final _name = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _busy = false;
+  String? _error;
 
-  void _finish() {
-    ref.read(authProvider.notifier).signIn();
+  @override
+  void dispose() {
+    _name.dispose();
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final auth = ref.read(authProvider.notifier);
+    final err = mode == _Mode.login
+        ? await auth.login(_email.text.trim(), _password.text)
+        : await auth.register(_name.text.trim(), _email.text.trim(), _password.text);
+    if (!mounted) return;
+    if (err != null) {
+      setState(() {
+        _busy = false;
+        _error = err;
+      });
+      return;
+    }
     final hasPrefs = ref.read(prefsProvider) != null;
     context.go(hasPrefs ? '/t' : '/t/onboarding');
   }
@@ -30,6 +59,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final isLogin = mode == _Mode.login;
     return Scaffold(
       body: Column(
         children: [
@@ -60,143 +90,69 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
-              child: switch (mode) {
-                _Mode.login => _LoginForm(
-                    onSubmit: _finish,
-                    onRegister: () => setState(() => mode = _Mode.register),
-                    onPhone: () => setState(() => mode = _Mode.phone),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(isLogin ? 'Welcome back' : 'Create your account',
+                      style: text.headlineSmall),
+                  const SizedBox(height: 16),
+                  if (!isLogin) ...[
+                    TextField(
+                        controller: _name,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: const InputDecoration(hintText: 'Name')),
+                    const SizedBox(height: 12),
+                  ],
+                  TextField(
+                      controller: _email,
+                      keyboardType: TextInputType.emailAddress,
+                      autocorrect: false,
+                      decoration: const InputDecoration(hintText: 'Email')),
+                  const SizedBox(height: 12),
+                  TextField(
+                      controller: _password,
+                      obscureText: true,
+                      onSubmitted: (_) => _submit(),
+                      decoration: const InputDecoration(hintText: 'Password')),
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(_error!,
+                        style: text.bodyMedium
+                            ?.copyWith(color: const Color(0xFFB3261E))),
+                  ],
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: _busy ? null : _submit,
+                    child: _busy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : Text(isLogin ? 'Sign in' : 'Create account'),
                   ),
-                _Mode.register => _RegisterForm(
-                    onSubmit: _finish,
-                    onBack: () => setState(() => mode = _Mode.login),
+                  const SizedBox(height: 20),
+                  Center(
+                    child: TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => setState(() {
+                                mode = isLogin ? _Mode.register : _Mode.login;
+                                _error = null;
+                              }),
+                      child: Text(
+                          isLogin
+                              ? 'New here? Create an account'
+                              : 'Have an account? Sign in',
+                          style: text.labelLarge
+                              ?.copyWith(color: SpottoColors.accent)),
+                    ),
                   ),
-                _Mode.phone => _PhoneForm(
-                    onSubmit: () => setState(() => mode = _Mode.otp),
-                    onBack: () => setState(() => mode = _Mode.login),
-                  ),
-                _Mode.otp => _OtpForm(onSubmit: _finish),
-              },
+                ],
+              ),
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _LoginForm extends StatelessWidget {
-  final VoidCallback onSubmit;
-  final VoidCallback onRegister;
-  final VoidCallback onPhone;
-  const _LoginForm({required this.onSubmit, required this.onRegister, required this.onPhone});
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('Welcome back', style: text.headlineSmall),
-        const SizedBox(height: 16),
-        const TextField(decoration: InputDecoration(hintText: 'Email')),
-        const SizedBox(height: 12),
-        const TextField(obscureText: true, decoration: InputDecoration(hintText: 'Password')),
-        const SizedBox(height: 20),
-        FilledButton(onPressed: onSubmit, child: const Text('Sign in')),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: onPhone,
-          icon: const Icon(Icons.phone_iphone),
-          label: const Text('Continue with phone'),
-        ),
-        const SizedBox(height: 20),
-        Center(
-          child: TextButton(
-            onPressed: onRegister,
-            child: Text('New here? Create an account',
-                style: text.labelLarge?.copyWith(color: SpottoColors.accent)),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _RegisterForm extends StatelessWidget {
-  final VoidCallback onSubmit;
-  final VoidCallback onBack;
-  const _RegisterForm({required this.onSubmit, required this.onBack});
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('Create your account', style: text.headlineSmall),
-        const SizedBox(height: 16),
-        const TextField(decoration: InputDecoration(hintText: 'Name')),
-        const SizedBox(height: 12),
-        const TextField(decoration: InputDecoration(hintText: 'Email')),
-        const SizedBox(height: 12),
-        const TextField(obscureText: true, decoration: InputDecoration(hintText: 'Password')),
-        const SizedBox(height: 20),
-        FilledButton(onPressed: onSubmit, child: const Text('Create account')),
-        TextButton(onPressed: onBack, child: const Text('Back to sign in')),
-      ],
-    );
-  }
-}
-
-class _PhoneForm extends StatelessWidget {
-  final VoidCallback onSubmit;
-  final VoidCallback onBack;
-  const _PhoneForm({required this.onSubmit, required this.onBack});
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('Sign in with phone', style: text.headlineSmall),
-        const SizedBox(height: 16),
-        const TextField(
-          keyboardType: TextInputType.phone,
-          decoration: InputDecoration(hintText: '+94 7X XXX XXXX'),
-        ),
-        const SizedBox(height: 20),
-        FilledButton(onPressed: onSubmit, child: const Text('Send code')),
-        TextButton(onPressed: onBack, child: const Text('Back to sign in')),
-      ],
-    );
-  }
-}
-
-class _OtpForm extends StatelessWidget {
-  final VoidCallback onSubmit;
-  const _OtpForm({required this.onSubmit});
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('Enter the code', style: text.headlineSmall),
-        const SizedBox(height: 8),
-        Text('We sent a 4-digit code to your phone (any code works in this demo).',
-            style: text.bodyMedium),
-        const SizedBox(height: 16),
-        const TextField(
-          keyboardType: TextInputType.number,
-          maxLength: 4,
-          textAlign: TextAlign.center,
-          decoration: InputDecoration(hintText: '••••', counterText: ''),
-        ),
-        const SizedBox(height: 20),
-        FilledButton(onPressed: onSubmit, child: const Text('Verify')),
-      ],
     );
   }
 }

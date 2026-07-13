@@ -6,12 +6,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 abstract final class StoreKeys {
   static const auth = 'spotto_auth';
+  static const token = 'spotto_token'; // API JWT
   static const prefs = 'spotto_prefs';
   static const group = 'spotto_group';
   static const trip = 'spotto_trip';
-  static const vendorAuth = 'spotto_vendor_auth';
   static const claims = 'spotto_claims'; // placeId -> claimed deal code
-  static const role = 'spotto_role'; // last-used role: traveller | vendor
+  static const places = 'spotto_places'; // last good /places response
 }
 
 class LocalStore {
@@ -37,6 +37,19 @@ class LocalStore {
   }
 
   Future<void> setJson(String key, Map<String, dynamic> value) =>
+      _prefs.setString(key, jsonEncode(value));
+
+  List<dynamic>? getJsonList(String key) {
+    final raw = _prefs.getString(key);
+    if (raw == null) return null;
+    try {
+      return jsonDecode(raw) as List<dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setJsonList(String key, List<dynamic> value) =>
       _prefs.setString(key, jsonEncode(value));
 
   Future<void> remove(String key) => _prefs.remove(key);

@@ -1,5 +1,5 @@
 name: spotto
-description: "Spotto — your Weligama travel companion. Traveller + vendor apps."
+description: "Spotto — your Weligama travel companion."
 publish_to: "none"
 version: 0.1.0+1
 
@@ -14,6 +14,7 @@ dependencies:
   google_fonts: ^6.2.1
   flutter_svg: ^2.0.17
   shared_preferences: ^2.5.2
+  dio: ^5.7.0
   url_launcher: ^6.3.1
   intl: ^0.20.2
 

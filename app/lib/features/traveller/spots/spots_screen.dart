@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../core/widgets/spotto_card.dart';
-import '../../../data/mock/places.dart' as data;
+import '../../../data/repositories/repositories.dart';
 import '../place_detail/business_drawer.dart';
 
 class SpotsScreen extends ConsumerWidget {
@@ -15,15 +15,16 @@ class SpotsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
+    final places = ref.watch(placesProvider);
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
         children: [
           Text('Spots in Weligama', style: text.headlineSmall),
           const SizedBox(height: 4),
-          Text('${data.places.length} curated places nearby', style: text.bodyMedium),
+          Text('${places.length} curated places nearby', style: text.bodyMedium),
           const SizedBox(height: 16),
-          for (final p in data.places) ...[
+          for (final p in places) ...[
             SpottoCard(
               padding: EdgeInsets.zero,
               onTap: () => showBusinessDrawer(context, p),

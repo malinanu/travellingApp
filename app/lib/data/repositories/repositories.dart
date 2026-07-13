@@ -1,53 +1,97 @@
-// State layer: Riverpod notifiers that load seed data, overlay persisted
-// state from LocalStore, and write back on mutation. Mirrors the prototype's
-// useState + localStorage pairs.
+// State layer: Riverpod notifiers backed by the Spotto Go API, with the last
+// good server response cached in LocalStore as an offline snapshot. Mutation
+// method signatures are unchanged from the mock era so screens barely change.
+
+import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/api/api_client.dart';
 import '../../core/storage/local_store.dart';
 import '../mock/places.dart' as seed;
 import '../mock/trip_catalog.dart';
-import '../mock/vendor_seed.dart';
 import '../models/models.dart';
 
 /// Overridden in main() with the initialized instance.
 final localStoreProvider = Provider<LocalStore>((ref) => throw UnimplementedError());
 
-// ── role ──────────────────────────────────────────────────────────
+final apiProvider = Provider<ApiClient>((ref) {
+  final client = ApiClient(ref.watch(localStoreProvider));
+  client.onUnauthorized = () => ref.read(authProvider.notifier).signOut();
+  return client;
+});
 
-class RoleNotifier extends Notifier<String?> {
-  @override
-  String? build() => ref.read(localStoreProvider).getString(StoreKeys.role);
-
-  void set(String role) {
-    state = role;
-    ref.read(localStoreProvider).setString(StoreKeys.role, role);
-  }
-}
-
-final roleProvider = NotifierProvider<RoleNotifier, String?>(RoleNotifier.new);
-
-// ── traveller auth + prefs ────────────────────────────────────────
+// ── auth ──────────────────────────────────────────────────────────
 
 class AuthNotifier extends Notifier<bool> {
   @override
-  bool build() => ref.read(localStoreProvider).getBool(StoreKeys.auth);
+  bool build() {
+    final token = ref.read(localStoreProvider).getString(StoreKeys.token);
+    return token != null && token.isNotEmpty;
+  }
 
-  void signIn() {
+  /// Returns null on success, or a user-facing error message.
+  Future<String?> login(String email, String password) async {
+    try {
+      final res = await ref.read(apiProvider).dio.post('/auth/login',
+          data: {'email': email, 'password': password});
+      await _adoptSession(res.data as Map<String, dynamic>);
+      return null;
+    } catch (e) {
+      return ApiClient.errorMessage(e);
+    }
+  }
+
+  Future<String?> register(String name, String email, String password) async {
+    try {
+      final res = await ref.read(apiProvider).dio.post('/auth/register',
+          data: {'name': name, 'email': email, 'password': password});
+      await _adoptSession(res.data as Map<String, dynamic>);
+      return null;
+    } catch (e) {
+      return ApiClient.errorMessage(e);
+    }
+  }
+
+  Future<void> _adoptSession(Map<String, dynamic> data) async {
+    final store = ref.read(localStoreProvider);
+    await store.setString(StoreKeys.token, data['token'] as String);
+    await store.setBool(StoreKeys.auth, true);
+
+    // Adopt server-side prefs so a returning user skips onboarding.
+    final user = data['user'] as Map<String, dynamic>? ?? const {};
+    final style = user['travelStyle'] as String? ?? '';
+    if (style.isNotEmpty) {
+      ref.read(prefsProvider.notifier).saveLocal(UserPrefs(
+            style: style,
+            interests: [for (final i in (user['interests'] as List? ?? const [])) i as String],
+          ));
+    }
     state = true;
-    ref.read(localStoreProvider).setBool(StoreKeys.auth, true);
+    ref.invalidate(claimsProvider);
+    ref.invalidate(tripProvider);
+    ref.invalidate(groupProvider);
   }
 
   void signOut() {
     state = false;
     final store = ref.read(localStoreProvider);
+    store.remove(StoreKeys.token);
     store.setBool(StoreKeys.auth, false);
     store.remove(StoreKeys.prefs);
+    store.remove(StoreKeys.claims);
+    store.remove(StoreKeys.trip);
+    store.remove(StoreKeys.group);
     ref.invalidate(prefsProvider);
+    ref.invalidate(claimsProvider);
+    ref.invalidate(tripProvider);
+    ref.invalidate(groupProvider);
   }
 }
 
 final authProvider = NotifierProvider<AuthNotifier, bool>(AuthNotifier.new);
+
+// ── prefs (travel style + interests) ──────────────────────────────
 
 class PrefsNotifier extends Notifier<UserPrefs?> {
   @override
@@ -56,26 +100,82 @@ class PrefsNotifier extends Notifier<UserPrefs?> {
     return json == null ? null : UserPrefs.fromJson(json);
   }
 
-  void save(UserPrefs prefs) {
+  void saveLocal(UserPrefs prefs) {
     state = prefs;
     ref.read(localStoreProvider).setJson(StoreKeys.prefs, prefs.toJson());
+  }
+
+  /// Persists locally and pushes to the server (fire-and-forget).
+  void save(UserPrefs prefs) {
+    saveLocal(prefs);
+    ref
+        .read(apiProvider)
+        .dio
+        .put('/me', data: {'travelStyle': prefs.style, 'interests': prefs.interests})
+        .ignore();
   }
 }
 
 final prefsProvider = NotifierProvider<PrefsNotifier, UserPrefs?>(PrefsNotifier.new);
+
+// ── places (server-owned, seed as offline fallback) ───────────────
+
+class PlacesNotifier extends Notifier<List<Place>> {
+  @override
+  List<Place> build() {
+    Future.microtask(_refresh);
+    final cached = ref.read(localStoreProvider).getJsonList(StoreKeys.places);
+    if (cached != null && cached.isNotEmpty) {
+      try {
+        return [for (final p in cached) Place.fromJson((p as Map).cast<String, dynamic>())];
+      } catch (_) {}
+    }
+    return seed.places;
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final res = await ref.read(apiProvider).dio.get('/places');
+      final list = res.data as List;
+      if (list.isEmpty) return;
+      state = [for (final p in list) Place.fromJson((p as Map).cast<String, dynamic>())];
+      await ref.read(localStoreProvider).setJsonList(StoreKeys.places, list);
+    } catch (_) {
+      // Offline — keep the cached/seed state.
+    }
+  }
+}
+
+final placesProvider = NotifierProvider<PlacesNotifier, List<Place>>(PlacesNotifier.new);
 
 // ── group ─────────────────────────────────────────────────────────
 
 class GroupNotifier extends Notifier<Group> {
   @override
   Group build() {
+    Future.microtask(_pull);
     final json = ref.read(localStoreProvider).getJson(StoreKeys.group);
     return json == null ? seed.groupSeed : Group.fromJson(json);
+  }
+
+  Future<void> _pull() async {
+    if (!ref.read(authProvider)) return;
+    try {
+      final res = await ref.read(apiProvider).dio.get('/me/group');
+      final data = res.data;
+      if (data is Map<String, dynamic> && data['code'] != null) {
+        state = Group.fromJson(data);
+        await ref.read(localStoreProvider).setJson(StoreKeys.group, state.toJson());
+      }
+    } catch (_) {}
   }
 
   void _persist(Group g) {
     state = g;
     ref.read(localStoreProvider).setJson(StoreKeys.group, g.toJson());
+    if (ref.read(authProvider)) {
+      ref.read(apiProvider).dio.put('/me/group', data: g.toJson()).ignore();
+    }
   }
 
   void addMember(String id) {
@@ -92,18 +192,48 @@ class GroupNotifier extends Notifier<Group> {
 
 final groupProvider = NotifierProvider<GroupNotifier, Group>(GroupNotifier.new);
 
-// ── trip ──────────────────────────────────────────────────────────
+// ── trip (whole-document sync, debounced PUT) ─────────────────────
 
 class TripNotifier extends Notifier<Trip> {
+  Timer? _pushTimer;
+
   @override
   Trip build() {
+    ref.onDispose(() => _pushTimer?.cancel());
     final json = ref.read(localStoreProvider).getJson(StoreKeys.trip);
-    return json == null ? tripSeed : Trip.fromJson(json);
+    final hasLocal = json != null;
+    Future.microtask(() => _pull(adopt: !hasLocal));
+    return hasLocal ? Trip.fromJson(json) : tripSeed;
+  }
+
+  Future<void> _pull({required bool adopt}) async {
+    if (!ref.read(authProvider)) return;
+    try {
+      final res = await ref.read(apiProvider).dio.get('/me/trip');
+      final data = res.data;
+      if (data is Map<String, dynamic> && data['days'] != null) {
+        if (adopt) {
+          state = Trip.fromJson(data);
+          await ref.read(localStoreProvider).setJson(StoreKeys.trip, state.toJson());
+        }
+      } else if (!adopt) {
+        _schedulePush(); // server empty, local exists — push ours up
+      }
+    } catch (_) {}
+  }
+
+  void _schedulePush() {
+    if (!ref.read(authProvider)) return;
+    _pushTimer?.cancel();
+    _pushTimer = Timer(const Duration(milliseconds: 800), () {
+      ref.read(apiProvider).dio.put('/me/trip', data: state.toJson()).ignore();
+    });
   }
 
   void update(Trip trip) {
     state = trip;
     ref.read(localStoreProvider).setJson(StoreKeys.trip, trip.toJson());
+    _schedulePush();
   }
 
   void addStop(int dayIndex, TripStop stop) {
@@ -184,28 +314,48 @@ class TripNotifier extends Notifier<Trip> {
 
 final tripProvider = NotifierProvider<TripNotifier, Trip>(TripNotifier.new);
 
-// ── deal claims (cross-app: traveller claims, vendor validates) ───
+// ── deal claims (server-issued single-use SPOTTO codes) ───────────
 
 class ClaimsNotifier extends Notifier<Map<String, String>> {
   @override
   Map<String, String> build() {
+    Future.microtask(_pull);
     final json = ref.read(localStoreProvider).getJson(StoreKeys.claims);
     return json?.map((k, v) => MapEntry(k, v as String)) ?? {};
   }
 
-  /// Claim a place's deal → `SPOTTO-` + first 4 of id, uppercased. Persisted.
-  String claim(String placeId) {
+  Future<void> _pull() async {
+    if (!ref.read(authProvider)) return;
+    try {
+      final res = await ref.read(apiProvider).dio.get('/me/claims');
+      final map = <String, String>{
+        for (final c in (res.data as List))
+          (c as Map)['placeId'] as String: c['code'] as String,
+      };
+      if (map.isNotEmpty) {
+        state = {...map, ...state};
+        await ref.read(localStoreProvider).setJson(StoreKeys.claims, state);
+      }
+    } catch (_) {}
+  }
+
+  /// Claims a place's deal on the server → unique single-use code.
+  /// Throws on network failure (callers show an error state).
+  Future<String> claim(String placeId, {String offerLabel = '', String offerValue = ''}) async {
     final existing = state[placeId];
     if (existing != null) return existing;
-    final code = 'SPOTTO-${placeId.substring(0, placeId.length < 4 ? placeId.length : 4).toUpperCase()}';
+    final res = await ref.read(apiProvider).dio.post('/claims', data: {
+      'placeId': placeId,
+      'offerLabel': offerLabel,
+      'offerValue': offerValue,
+    });
+    final code = (res.data as Map)['code'] as String;
     state = {...state, placeId: code};
     ref.read(localStoreProvider).setJson(StoreKeys.claims, state);
     return code;
   }
 
   String? codeFor(String placeId) => state[placeId];
-
-  bool isClaimedCode(String code) => state.containsValue(code.toUpperCase());
 }
 
 final claimsProvider = NotifierProvider<ClaimsNotifier, Map<String, String>>(ClaimsNotifier.new);
@@ -218,7 +368,8 @@ final weatherProvider = StateProvider<String>((ref) => 'sunny');
 /// Active time-of-day filter: morning | afternoon | evening.
 final timeFilterProvider = StateProvider<String>((ref) => 'afternoon');
 
-/// Vibe votes per place (seeded, session-only like the prototype).
+/// Vibe votes per place. Seeded locally; votes post to the server
+/// fire-and-forget with optimistic local counts.
 class VibeVotesNotifier extends Notifier<Map<String, Map<String, int>>> {
   @override
   Map<String, Map<String, int>> build() =>
@@ -228,182 +379,30 @@ class VibeVotesNotifier extends Notifier<Map<String, Map<String, int>>> {
     final place = Map<String, int>.from(state[placeId] ?? {});
     place[vibeId] = (place[vibeId] ?? 0) + 1;
     state = {...state, placeId: place};
+    if (ref.read(authProvider)) {
+      ref.read(apiProvider).dio.post('/places/$placeId/vibes/$vibeId').ignore();
+    }
   }
 }
 
 final vibeVotesProvider =
     NotifierProvider<VibeVotesNotifier, Map<String, Map<String, int>>>(VibeVotesNotifier.new);
 
-/// Artisan check-ins for the daily quest (session-only).
-final checkInsProvider = StateProvider<Set<String>>((ref) => {});
+/// Artisan check-ins for the daily quest (optimistic, posted to the server).
+class CheckInsNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() => {};
+
+  void checkIn(String placeId) {
+    if (state.contains(placeId)) return;
+    state = {...state, placeId};
+    if (ref.read(authProvider)) {
+      ref.read(apiProvider).dio.post('/checkins', data: {'placeId': placeId}).ignore();
+    }
+  }
+}
+
+final checkInsProvider = NotifierProvider<CheckInsNotifier, Set<String>>(CheckInsNotifier.new);
 
 /// Group mode: show group members on the Discover map (session-only).
 final groupModeProvider = StateProvider<bool>((ref) => false);
-
-// ── vendor ────────────────────────────────────────────────────────
-
-class VendorAuthNotifier extends Notifier<VendorBusiness?> {
-  @override
-  VendorBusiness? build() {
-    final json = ref.read(localStoreProvider).getJson(StoreKeys.vendorAuth);
-    return json == null ? null : VendorBusiness.fromJson(json);
-  }
-
-  void signIn([VendorBusiness? business]) {
-    final b = business ?? vendorSeed;
-    state = b;
-    ref.read(localStoreProvider).setJson(StoreKeys.vendorAuth, b.toJson());
-  }
-
-  void updateBusiness(VendorBusiness b) {
-    state = b;
-    ref.read(localStoreProvider).setJson(StoreKeys.vendorAuth, b.toJson());
-  }
-
-  void signOut() {
-    state = null;
-    ref.read(localStoreProvider).remove(StoreKeys.vendorAuth);
-  }
-}
-
-final vendorAuthProvider =
-    NotifierProvider<VendorAuthNotifier, VendorBusiness?>(VendorAuthNotifier.new);
-
-class OffersNotifier extends Notifier<List<Offer>> {
-  @override
-  List<Offer> build() => offersSeed;
-
-  void add(Offer offer) => state = [offer, ...state];
-  void setStatus(String id, String status) =>
-      state = [for (final o in state) o.id == id ? o.copyWith(status: status) : o];
-  void replace(Offer offer) => state = [for (final o in state) o.id == offer.id ? offer : o];
-  void remove(String id) => state = state.where((o) => o.id != id).toList();
-}
-
-final offersProvider = NotifierProvider<OffersNotifier, List<Offer>>(OffersNotifier.new);
-
-/// Vendor's menu (session-only, like the prototype's useState).
-class VendorMenuNotifier extends Notifier<List<MenuSection>> {
-  @override
-  List<MenuSection> build() => vendorMenuSeed;
-
-  void upsertItem(String sectionId, MenuItem item) {
-    state = [
-      for (final s in state)
-        s.id != sectionId
-            ? MenuSection(id: s.id, name: s.name, items: s.items.where((i) => i.id != item.id).toList())
-            : MenuSection(
-                id: s.id,
-                name: s.name,
-                items: s.items.any((i) => i.id == item.id)
-                    ? [for (final i in s.items) i.id == item.id ? item : i]
-                    : [...s.items, item],
-              )
-    ];
-  }
-
-  void removeItem(String itemId) {
-    state = [
-      for (final s in state)
-        MenuSection(id: s.id, name: s.name, items: s.items.where((i) => i.id != itemId).toList())
-    ];
-  }
-}
-
-final vendorMenuProvider =
-    NotifierProvider<VendorMenuNotifier, List<MenuSection>>(VendorMenuNotifier.new);
-
-/// Vendor's public profile settings (session-only).
-class VendorProfileNotifier extends Notifier<VendorProfile> {
-  @override
-  VendorProfile build() => vendorProfileSeed;
-
-  void set(VendorProfile p) => state = p;
-}
-
-final vendorProfileProvider =
-    NotifierProvider<VendorProfileNotifier, VendorProfile>(VendorProfileNotifier.new);
-
-/// Bell notifications (session-only).
-class VendorNotifsNotifier extends Notifier<List<VendorNotif>> {
-  @override
-  List<VendorNotif> build() => vendorNotifsSeed;
-
-  void markOne(String id) =>
-      state = [for (final n in state) n.id == id ? n.copyWith(unread: false) : n];
-  void markAll() => state = [for (final n in state) n.copyWith(unread: false)];
-}
-
-final vendorNotifsProvider =
-    NotifierProvider<VendorNotifsNotifier, List<VendorNotif>>(VendorNotifsNotifier.new);
-
-/// Result of validating a code at the vendor counter.
-class ValidationResult {
-  final bool valid;
-  final String code;
-  final String? name;
-  final String? detail; // country/style line
-  final String? offer;
-  final String? value;
-  const ValidationResult({
-    required this.valid,
-    required this.code,
-    this.name,
-    this.detail,
-    this.offer,
-    this.value,
-  });
-}
-
-/// Widget-side entry point: `ref.read(codeValidatorProvider)(code)`.
-final codeValidatorProvider =
-    Provider<ValidationResult Function(String)>((ref) => (raw) => validateCode(ref, raw));
-
-/// Validates seeded demo codes AND codes the traveller genuinely claimed
-/// in this install (the cross-app flow).
-ValidationResult validateCode(Ref ref, String raw) {
-  final code = raw.trim().toUpperCase();
-
-  final known = validCodes[code];
-  if (known != null) {
-    return ValidationResult(
-      valid: true,
-      code: code,
-      name: known.name,
-      detail: '${known.country} · ${known.style}',
-      offer: known.offer,
-      value: known.value,
-    );
-  }
-
-  final claims = ref.read(claimsProvider);
-  final placeId = claims.entries.where((e) => e.value == code).map((e) => e.key).firstOrNull;
-  if (placeId != null) {
-    final place = seed.places.where((p) => p.id == placeId).firstOrNull;
-    final style = ref.read(prefsProvider)?.style;
-    final styleLabel =
-        seed.travelStyles.where((s) => s.id == style).map((s) => s.label).firstOrNull;
-    return ValidationResult(
-      valid: true,
-      code: code,
-      name: 'You (this device)',
-      detail: styleLabel ?? 'Traveller',
-      offer: place?.deal.label ?? 'Claimed deal',
-      value: place?.deal.tag,
-    );
-  }
-
-  final legacy = validCodesLegacy[code];
-  if (legacy != null) {
-    return ValidationResult(
-      valid: true,
-      code: code,
-      name: legacy.name,
-      detail: '${legacy.country} · ${legacy.style}',
-      offer: legacy.offer,
-      value: legacy.value,
-    );
-  }
-
-  return ValidationResult(valid: false, code: code);
-}

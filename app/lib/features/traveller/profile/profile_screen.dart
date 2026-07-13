@@ -383,9 +383,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const SizedBox(height: 22),
 
                   sectionCard(context, null, [
-                    profRow(context, Icons.swap_horiz, 'Switch role',
-                        sub: 'Traveller / business', onTap: () => context.go('/')),
-                    const Divider(height: 1),
                     profRow(context, Icons.logout, 'Log out', danger: true, onTap: () {
                       ref.read(authProvider.notifier).signOut();
                       context.go('/t/auth');

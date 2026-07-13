@@ -364,7 +364,8 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                   onOpen: place.spottoId == null
                       ? null
                       : () {
-                          final p = data.places
+                          final p = ref
+                              .read(placesProvider)
                               .where((x) => x.id == place.spottoId)
                               .firstOrNull;
                           if (p != null) showBusinessDrawer(context, p);

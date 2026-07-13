@@ -6,6 +6,12 @@ class WifiInfo {
   final String speed;
   final String label;
   const WifiInfo({required this.score, required this.speed, required this.label});
+
+  factory WifiInfo.fromJson(Map<String, dynamic> json) => WifiInfo(
+        score: (json['score'] as num?)?.toDouble() ?? 0,
+        speed: json['speed'] as String? ?? '',
+        label: json['label'] as String? ?? '',
+      );
 }
 
 class Deal {
@@ -14,6 +20,12 @@ class Deal {
   final String? tag;
   const Deal({required this.active, this.label, this.tag});
   static const none = Deal(active: false);
+
+  factory Deal.fromJson(Map<String, dynamic> json) => Deal(
+        active: json['active'] as bool? ?? false,
+        label: json['label'] as String?,
+        tag: json['tag'] as String?,
+      );
 }
 
 class MenuItem {
@@ -29,6 +41,14 @@ class MenuItem {
     required this.desc,
     required this.icon,
   });
+
+  factory MenuItem.fromJson(Map<String, dynamic> json) => MenuItem(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        price: (json['price'] as num?)?.toInt() ?? 0,
+        desc: json['desc'] as String? ?? '',
+        icon: json['icon'] as String? ?? '',
+      );
 }
 
 class MenuSection {
@@ -36,6 +56,15 @@ class MenuSection {
   final String name;
   final List<MenuItem> items;
   const MenuSection({required this.id, required this.name, required this.items});
+
+  factory MenuSection.fromJson(Map<String, dynamic> json) => MenuSection(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        items: [
+          for (final i in (json['items'] as List? ?? const []))
+            MenuItem.fromJson(i as Map<String, dynamic>)
+        ],
+      );
 }
 
 class Place {
@@ -90,6 +119,41 @@ class Place {
     required this.photo,
     this.menu = const [],
   });
+
+  /// Parses the API shape: place row flattened with its JSONB data document.
+  factory Place.fromJson(Map<String, dynamic> json) => Place(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        type: json['type'] as String? ?? '',
+        icon: json['icon'] as String? ?? 'MapPin',
+        color: json['color'] as String? ?? 'teal',
+        x: (json['x'] as num?)?.toDouble() ?? 50,
+        y: (json['y'] as num?)?.toDouble() ?? 50,
+        rating: (json['rating'] as num?)?.toDouble() ?? 0,
+        reviews: (json['reviews'] as num?)?.toInt() ?? 0,
+        distance: json['distance'] as String? ?? '',
+        priceLevel: json['priceLevel'] as String? ?? '',
+        wifi: json['wifi'] is Map
+            ? WifiInfo.fromJson((json['wifi'] as Map).cast<String, dynamic>())
+            : const WifiInfo(score: 0, speed: '', label: ''),
+        hours: json['hours'] as String? ?? '',
+        openNow: json['openNow'] as bool? ?? false,
+        bestTimes: [for (final t in (json['bestTimes'] as List? ?? const [])) t as String],
+        deal: json['deal'] is Map
+            ? Deal.fromJson((json['deal'] as Map).cast<String, dynamic>())
+            : Deal.none,
+        tags: [for (final t in (json['tags'] as List? ?? const [])) t as String],
+        blurb: json['blurb'] as String? ?? '',
+        seaView: json['seaView'] as bool? ?? false,
+        indoor: json['indoor'] as bool? ?? false,
+        artisan: json['artisan'] as bool? ?? false,
+        popularEvening: json['popularEvening'] as bool? ?? false,
+        photo: json['photo'] as String? ?? 'cowork',
+        menu: [
+          for (final s in (json['menu'] as List? ?? const []))
+            MenuSection.fromJson(s as Map<String, dynamic>)
+        ],
+      );
 }
 
 class TravelStyle {
