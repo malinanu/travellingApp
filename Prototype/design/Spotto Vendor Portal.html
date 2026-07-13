@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Spotto Vendor Portal</title>
+
+<link rel="stylesheet" href="tailwind.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Baloo+2:wght@500;600;700;800&family=Quicksand:wght@500;600;700&family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #fbf6ed; }
+  body { font-family: 'Nunito', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  #root { height: 100%; }
+  h1, h2, h3 { margin: 0; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: rgba(15,61,58,0.18); border-radius: 9px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  input, textarea, button { font-family: inherit; }
+
+  /* responsive sidebar: drawer on small, static rail on large */
+  @media (min-width: 1024px) {
+    aside[data-sidebar] { transform: translateX(0) !important; }
+    [data-content] { margin-left: 248px !important; }
+    [data-nav-overlay] { display: none !important; }
+  }
+
+  @keyframes scanLine {
+    0% { top: 6%; } 50% { top: 90%; } 100% { top: 6%; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<template id="__bundler_thumbnail" data-bg-color="#fbf6ed">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#fbf6ed"/>
+    <rect x="120" y="170" width="470" height="210" rx="22" fill="#fff"/>
+    <rect x="610" y="170" width="470" height="210" rx="22" fill="#fff"/>
+    <rect x="120" y="420" width="960" height="210" rx="22" fill="#0d9488"/>
+    <path d="M600,250 C548,250 506,291 506,343 C506,408 600,500 600,500 S694,408 694,343 C694,291 652,250 600,250 Z" fill="#0d9488" transform="translate(0,-150) scale(0.5) translate(600,100)"/>
+    <circle cx="600" cy="55" r="30" fill="#0d9488"/>
+    <circle cx="600" cy="48" r="12" fill="#f6b81e"/>
+  </svg>
+</template>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="icons.jsx"></script>
+<script type="text/babel" src="illustrations.jsx"></script>
+<script type="text/babel" src="vendor-data.jsx"></script>
+<script type="text/babel" src="VendorAuth.jsx"></script>
+<script type="text/babel" src="Charts.jsx"></script>
+<script type="text/babel" src="VendorDashboard.jsx"></script>
+<script type="text/babel" src="OfferCreator.jsx"></script>
+<script type="text/babel" src="MenuManager.jsx"></script>
+<script type="text/babel" src="GrowthTools.jsx"></script>
+<script type="text/babel" src="QRValidator.jsx"></script>
+<script type="text/babel" src="Reports.jsx"></script>
+<script type="text/babel" src="ProfileEditor.jsx"></script>
+<script type="text/babel" src="AccountProfile.jsx"></script>
+<script type="text/babel" src="VendorApp.jsx"></script>
+</body>
+</html>

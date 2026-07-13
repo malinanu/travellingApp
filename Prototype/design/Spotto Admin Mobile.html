@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Spotto Command — Mobile</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
+
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #fbf6ed; }
+  body { font-family: 'IBM Plex Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  #root { height: 100%; }
+  h1, h2, h3 { margin: 0; }
+  .font-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+  input, textarea, button, table { font-family: inherit; }
+  kbd { font-family: 'IBM Plex Mono', monospace; }
+  /* Hide scrollbars inside the phone for a native feel */
+  .noscroll::-webkit-scrollbar { width: 0; height: 0; }
+  .noscroll { scrollbar-width: none; }
+  @keyframes mFresh { from { background: rgba(13,148,136,0.16); } to { background: transparent; } }
+  @keyframes mSlideUp { from { transform: translateY(18px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @keyframes mSheetIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<template id="__bundler_thumbnail" data-bg-color="#0d1525">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#0d1525"/>
+    <rect x="470" y="170" width="260" height="500" rx="46" fill="#111a2b" stroke="#0d9488" stroke-width="3"/>
+    <path d="M600 250c-30 0-54 23-54 52 0 37 54 88 54 88s54-51 54-88c0-29-24-52-54-52z" fill="#0d9488"/>
+    <circle cx="600" cy="300" r="22" fill="#f6b81e"/>
+    <rect x="500" y="600" width="200" height="34" rx="10" fill="#0d9488" opacity="0.5"/>
+  </svg>
+</template>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="icons.jsx"></script>
+<script type="text/babel" src="illustrations.jsx"></script>
+<script type="text/babel" src="admin-data.jsx"></script>
+<script type="text/babel" src="SriLankaMap.jsx"></script>
+<script type="text/babel" src="admin-mobile/MobileQueue.jsx"></script>
+<script type="text/babel" src="admin-mobile/MobileMonitor.jsx"></script>
+<script type="text/babel" src="admin-mobile/MobileGeo.jsx"></script>
+<script type="text/babel" src="admin-mobile/MobileSubs.jsx"></script>
+<script type="text/babel" src="admin-mobile/MobileAudio.jsx"></script>
+<script type="text/babel" src="admin-mobile/AdminMobileApp.jsx"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Go
+server/.env
+server/bin/
+
+# Flutter / Dart
+app/.dart_tool/
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/android/.gradle/
+app/android/local.properties
+app/.idea/
+*.iml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+
+# Prototype build artifacts (2 MB standalone snapshots)
+Prototype/upload/

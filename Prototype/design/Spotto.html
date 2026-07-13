@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Spotto — Weligama</title>
+
+<link rel="stylesheet" href="tailwind.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Baloo+2:wght@500;600;700;800&family=Quicksand:wght@500;600;700&family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+<!-- Lucide icon data (UMD) -->
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #fbf6ed; overflow: hidden; }
+  body { font-family: 'Nunito', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  #root { height: 100%; }
+  h1, h2, h3 { font-family: var(--font-display, 'Fredoka'), system-ui; margin: 0; }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+  textarea { font-family: inherit; }
+  @keyframes spottoPulse {
+    0%   { transform: translate(-50%,-50%) scale(0.6); opacity: 0.5; }
+    70%  { transform: translate(-50%,-50%) scale(1.6); opacity: 0; }
+    100% { opacity: 0; }
+  }
+  @keyframes spottoBounce {
+    0%, 80%, 100% { transform: translateY(0); opacity: 0.5; }
+    40%           { transform: translateY(-5px); opacity: 1; }
+  }
+  .spotto-rain {
+    background-image: repeating-linear-gradient(
+      105deg, transparent 0 7px,
+      rgba(220,235,245,0.0) 7px,
+      rgba(220,235,245,0.35) 8px,
+      rgba(220,235,245,0.0) 9px 14px);
+    background-size: 100% 26px;
+    animation: spottoRainFall 0.5s linear infinite;
+    opacity: 0.7;
+  }
+  @keyframes spottoRainFall {
+    from { background-position: 0 0; }
+    to   { background-position: 14px 26px; }
+  }
+  @keyframes spottoGuideIn {
+    from { transform: translateY(14px); opacity: 0; }
+    to   { transform: translateY(0); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<template id="__bundler_thumbnail" data-bg-color="#0b6f86">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#0b6f86"/>
+    <path d="M0,520 C220,470 420,560 620,545 C820,530 1000,480 1200,520 L1200,800 L0,800 Z" fill="#0e8c8a"/>
+    <path d="M600,250 C548,250 506,291 506,343 C506,408 600,500 600,500 S694,408 694,343 C694,291 652,250 600,250 Z" fill="#fff"/>
+    <circle cx="600" cy="338" r="42" fill="#f6b81e"/>
+  </svg>
+</template>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="icons.jsx"></script>
+<script type="text/babel" src="illustrations.jsx"></script>
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="SatelliteMap.jsx"></script>
+<script type="text/babel" src="Onboarding.jsx"></script>
+<script type="text/babel" src="Auth.jsx"></script>
+<script type="text/babel" src="MapView.jsx"></script>
+<script type="text/babel" src="HomeVariants.jsx"></script>
+<script type="text/babel" src="SpotsList.jsx"></script>
+<script type="text/babel" src="BusinessDrawer.jsx"></script>
+<script type="text/babel" src="GroupSheet.jsx"></script>
+<script type="text/babel" src="AIGuide.jsx"></script>
+<script type="text/babel" src="trip-data.jsx"></script>
+<script type="text/babel" src="TripPlanner.jsx"></script>
+<script type="text/babel" src="Profile.jsx"></script>
+<script type="text/babel" src="App.jsx"></script>
+</body>
+</html>
