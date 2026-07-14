@@ -24,24 +24,30 @@ git push -u origin main
 ## 3. Fill in your environment
 
 Copy `.env.example` to `.env` and fill in real values — **you'll paste this
-into Portainer's stack environment editor**, not commit it:
+into Portainer's stack environment editor**, not commit it. If you're
+mapping domains through CloudPanel (see step 4a below), use your real
+subdomains here, over HTTPS, not the bare IP:
 
 ```
 DATABASE_URL=postgres://postgres:<password>@<postgres-host>:5432/spotto?sslmode=disable
 JWT_SECRET=<a long random string>
-CORS_ORIGINS=http://<server-ip-or-domain>:3000,http://<server-ip-or-domain>:3001
-NEXT_PUBLIC_API_URL=http://<server-ip-or-domain>:8080
+CORS_ORIGINS=https://spotto-vendor.yourdomain.com,https://spotto-admin.yourdomain.com
+NEXT_PUBLIC_API_URL=https://spotto-api.yourdomain.com
 ```
 
 `NEXT_PUBLIC_API_URL` is baked into the vendor/admin webapps **at build
-time** (Next.js public env vars aren't runtime-configurable) — if your
-server's address ever changes, the stack needs a rebuild, not just a
-restart (see step 5).
+time** (Next.js public env vars aren't runtime-configurable) — if this
+value ever changes, the stack needs a rebuild, not just a restart (see the
+"Updating" section below).
 
 If your Postgres runs as another container on the same Docker host (not via
 Portainer's own network), `<postgres-host>` can usually be that container's
 name if it's on a shared Docker network, or `host.docker.internal` if it's
 bound to the host's own port.
+
+**Port check**: this stack publishes `8080` (api), `3000` (vendor), `3001`
+(admin) on the host. None of these need to change — they don't collide with
+anything else already running on this box.
 
 ## 4. Deploy in Portainer
 
@@ -53,6 +59,37 @@ bound to the host's own port.
 - **Deploy the stack**
 
 This builds all three images on the Docker host and starts them.
+
+## 4a. Domain mapping via CloudPanel (reverse proxy)
+
+CloudPanel runs its own Nginx directly on the host (ports 80/443) — it
+isn't part of the Docker stack, so nothing above needs to change. Point
+CloudPanel at the three local ports with one **Reverse Proxy** site per
+subdomain:
+
+For each of the three (repeat with the matching port):
+
+| Subdomain | Reverse proxy target |
+|---|---|
+| `spotto-api.yourdomain.com` | `http://127.0.0.1:8080` |
+| `spotto-vendor.yourdomain.com` | `http://127.0.0.1:3000` |
+| `spotto-admin.yourdomain.com` | `http://127.0.0.1:3001` |
+
+In CloudPanel: **Sites → Add Site → Reverse Proxy** → enter the domain →
+set the reverse-proxy target to the `127.0.0.1:<port>` above → save → then
+use CloudPanel's built-in **Let's Encrypt** button on that site to issue a
+free SSL cert. Repeat for all three subdomains.
+
+Point each subdomain's DNS (A record) at this server's IP before requesting
+the certificate, same as any other CloudPanel site.
+
+No websocket/long-lived-connection config is needed — this app only uses
+short HTTP polling, not websockets, so CloudPanel's default reverse-proxy
+settings work as-is.
+
+Once all three subdomains resolve over HTTPS, go back to step 3 and make
+sure `NEXT_PUBLIC_API_URL`/`CORS_ORIGINS` use those `https://` domains
+(rebuild if you change them after the first deploy).
 
 ## 5. Load demo data (first run only)
 
@@ -69,9 +106,13 @@ Safe to re-run any time you want a clean demo state.
 
 ## 6. Verify
 
-- `http://<server>:8080/health` → `{"status":"ok"}`
-- `http://<server>:3000/login` → vendor portal
-- `http://<server>:3001/login` → admin command center
+- `https://spotto-api.yourdomain.com/health` → `{"status":"ok"}`
+- `https://spotto-vendor.yourdomain.com/login` → vendor portal
+- `https://spotto-admin.yourdomain.com/login` → admin command center
+
+(Or `http://<server-ip>:8080/health` etc. directly, before/without
+CloudPanel in front — useful for isolating whether an issue is in the
+container or in the reverse proxy.)
 
 ## Updating after a config change
 
@@ -85,10 +126,9 @@ Safe to re-run any time you want a clean demo state.
 
 ## Notes / limitations
 
-- This exposes plain HTTP directly on three ports — there's no TLS or
-  reverse proxy in this stack. Fine for an internal/test deployment; put a
-  reverse proxy (Traefik, Nginx, Caddy) in front before exposing this
-  publicly.
+- The stack itself has no TLS — that's handled by CloudPanel's reverse
+  proxy + Let's Encrypt in front of it (see step 4a). If you skip CloudPanel
+  and hit the ports directly, it's plain HTTP.
 - Web auth tokens are kept in browser localStorage with client-side fetch —
   acceptable for a test deployment, not hardened for production (no
   cookie/CSRF story yet).
