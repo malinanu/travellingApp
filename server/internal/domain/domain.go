@@ -17,26 +17,30 @@ const (
 )
 
 type User struct {
-	ID           string          `json:"id"`
-	Email        string          `json:"email"`
-	PasswordHash string          `json:"-"`
-	Role         Role            `json:"role"`
-	Name         string          `json:"name"`
-	Country      string          `json:"country"`
-	TravelStyle  string          `json:"travelStyle"`
-	Interests    []string        `json:"interests"`
-	VendorID     *string         `json:"vendorId,omitempty"`
-	Extra        json.RawMessage `json:"-"`
-	CreatedAt    time.Time       `json:"createdAt"`
+	ID                string          `json:"id"`
+	Email             string          `json:"email"`
+	PasswordHash      string          `json:"-"`
+	Role              Role            `json:"role"`
+	Name              string          `json:"name"`
+	Country           string          `json:"country"`
+	TravelStyle       string          `json:"travelStyle"`
+	Interests         []string        `json:"interests"`
+	VendorID          *string         `json:"vendorId,omitempty"`
+	Extra             json.RawMessage `json:"-"`
+	CreatedAt         time.Time       `json:"createdAt"`
+	TOTPSecret        string          `json:"-"`
+	TOTPPendingSecret string          `json:"-"`
+	TOTPEnabled       bool            `json:"totpEnabled"`
 }
 
 type VendorStatus string
 
 const (
-	VendorPending  VendorStatus = "pending"
-	VendorApproved VendorStatus = "approved"
-	VendorRejected VendorStatus = "rejected"
-	VendorEdits    VendorStatus = "edits" // edits requested
+	VendorPending   VendorStatus = "pending"
+	VendorApproved  VendorStatus = "approved"
+	VendorRejected  VendorStatus = "rejected"
+	VendorEdits     VendorStatus = "edits"     // edits requested
+	VendorSuspended VendorStatus = "suspended" // pulled from the app after admin review
 )
 
 type Vendor struct {
@@ -57,6 +61,11 @@ type Vendor struct {
 	Profile     json.RawMessage `json:"profile"` // hours, amenities, blurb, wifi, bestTimes…
 	Menu        json.RawMessage `json:"menu"`    // sections/items document
 	SubmittedAt time.Time       `json:"submittedAt"`
+	Lat         float64         `json:"lat"`
+	Lng         float64         `json:"lng"`
+	// Joined fields (not columns), populated by admin map/near queries.
+	BadReviewCount int  `json:"badReviewCount,omitempty"`
+	Flagged        bool `json:"flagged,omitempty"`
 }
 
 type OfferStatus string
@@ -153,12 +162,28 @@ type FeedItem struct {
 }
 
 type Region struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	X         int    `json:"x"`
-	Y         int    `json:"y"`
-	Travelers int    `json:"travelers"`
-	Vendors   int    `json:"vendors"`
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	X         int     `json:"x"`
+	Y         int     `json:"y"`
+	Lat       float64 `json:"lat"`
+	Lng       float64 `json:"lng"`
+	Travelers int     `json:"travelers"`
+	Vendors   int     `json:"vendors"`
+}
+
+// Review is a traveller's rating/text for a Place. Ratings of 1-2 count as
+// "bad" for the purposes of flagging the owning vendor on the admin map.
+type Review struct {
+	ID          string    `json:"id"`
+	PlaceID     string    `json:"placeId"`
+	VendorID    *string   `json:"vendorId,omitempty"`
+	TravellerID string    `json:"travellerId"`
+	Rating      int       `json:"rating"`
+	Text        string    `json:"text"`
+	CreatedAt   time.Time `json:"createdAt"`
+	// Joined display field (not a column).
+	TravellerName string `json:"travellerName,omitempty"`
 }
 
 type Subscription struct {

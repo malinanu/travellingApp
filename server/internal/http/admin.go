@@ -45,6 +45,58 @@ func (s *Server) handleAdminVendors(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, vendors)
 }
 
+// handleAdminVendorsMap powers the geo page's vendor pins: every vendor with
+// real coordinates, plus a computed badReviewCount/flagged.
+func (s *Server) handleAdminVendorsMap(w http.ResponseWriter, r *http.Request) {
+	vendors, err := s.Store.VendorsForMap(r.Context())
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if vendors == nil {
+		vendors = []domain.Vendor{}
+	}
+	writeJSON(w, http.StatusOK, vendors)
+}
+
+// handleAdminVendorsNear powers the investigation-pin feature: vendors
+// within radiusKm (default 5) of an arbitrary point a super-admin clicks.
+func (s *Server) handleAdminVendorsNear(w http.ResponseWriter, r *http.Request) {
+	lat, err1 := strconv.ParseFloat(r.URL.Query().Get("lat"), 64)
+	lng, err2 := strconv.ParseFloat(r.URL.Query().Get("lng"), 64)
+	if err1 != nil || err2 != nil {
+		writeErr(w, http.StatusBadRequest, "lat and lng are required")
+		return
+	}
+	radiusKm := 5.0
+	if v, err := strconv.ParseFloat(r.URL.Query().Get("radiusKm"), 64); err == nil && v > 0 {
+		radiusKm = v
+	}
+	vendors, err := s.Store.VendorsNear(r.Context(), lat, lng, radiusKm)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if vendors == nil {
+		vendors = []domain.Vendor{}
+	}
+	writeJSON(w, http.StatusOK, vendors)
+}
+
+// handleAdminVendorReviews lists the bad (<=2 star) reviews behind a
+// vendor's flag, for the admin detail panel.
+func (s *Server) handleAdminVendorReviews(w http.ResponseWriter, r *http.Request) {
+	reviews, err := s.Store.ReviewsByVendorBad(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if reviews == nil {
+		reviews = []domain.Review{}
+	}
+	writeJSON(w, http.StatusOK, reviews)
+}
+
 func (s *Server) vendorStatusHandler(status domain.VendorStatus) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")

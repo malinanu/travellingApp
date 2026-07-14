@@ -43,21 +43,27 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 
 	r.Post("/auth/register", s.handleRegister)
 	r.Post("/auth/login", s.handleLogin)
+	r.Post("/auth/2fa/login-verify", s.handleTwoFactorLoginVerify)
 
 	// Authenticated (any role).
 	r.Group(func(r chi.Router) {
 		r.Use(s.Tokens.Authenticated)
 		r.Get("/me", s.handleMe)
 		r.Put("/me", s.handleUpdateMe)
+		r.Post("/auth/2fa/setup", s.handleTwoFactorSetup)
+		r.Post("/auth/2fa/enable", s.handleTwoFactorEnable)
+		r.Post("/auth/2fa/disable", s.handleTwoFactorDisable)
 
 		r.Get("/places", s.handlePlaces)
 		r.Get("/places/{id}", s.handlePlace)
+		r.Get("/places/{id}/reviews", s.handlePlaceReviews)
 	})
 
 	// Traveller.
 	r.Group(func(r chi.Router) {
 		r.Use(s.Tokens.Authenticated, auth.RequireRole(domain.RoleTraveller))
 		r.Post("/places/{id}/vibes/{vibeId}", s.handleVibeVote)
+		r.Post("/places/{id}/reviews", s.handleCreateReview)
 		r.Post("/checkins", s.handleCheckin)
 		r.Post("/claims", s.handleCreateClaim)
 		r.Get("/me/claims", s.handleMyClaims)
@@ -96,6 +102,11 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Post("/admin/vendors/{id}/approve", s.vendorStatusHandler(domain.VendorApproved))
 		r.Post("/admin/vendors/{id}/reject", s.vendorStatusHandler(domain.VendorRejected))
 		r.Post("/admin/vendors/{id}/request-edits", s.vendorStatusHandler(domain.VendorEdits))
+		r.Post("/admin/vendors/{id}/suspend", s.vendorStatusHandler(domain.VendorSuspended))
+		r.Post("/admin/vendors/{id}/reinstate", s.vendorStatusHandler(domain.VendorApproved))
+		r.Get("/admin/vendors/map", s.handleAdminVendorsMap)
+		r.Get("/admin/vendors/near", s.handleAdminVendorsNear)
+		r.Get("/admin/vendors/{id}/reviews", s.handleAdminVendorReviews)
 		r.Get("/admin/feed", s.handleAdminFeed)
 		r.Post("/admin/feed/{id}/approve", s.feedResolveHandler("approved"))
 		r.Post("/admin/feed/{id}/remove", s.feedResolveHandler("removed"))

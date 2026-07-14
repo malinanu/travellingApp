@@ -20,6 +20,10 @@ var migrations embed.FS
 
 var ErrNotFound = errors.New("not found")
 
+// BadReviewFlagThreshold is how many 1-2 star reviews a vendor accumulates
+// before the admin map shows it red-flagged.
+const BadReviewFlagThreshold = 5
+
 type Store struct {
 	Pool *pgxpool.Pool
 }
@@ -104,7 +108,8 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	var u domain.User
 	var interests []byte
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.Name, &u.Country,
-		&u.TravelStyle, &interests, &u.VendorID, &u.Extra, &u.CreatedAt)
+		&u.TravelStyle, &interests, &u.VendorID, &u.Extra, &u.CreatedAt,
+		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -115,7 +120,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -132,16 +137,37 @@ func (s *Store) UpdateUserProfile(ctx context.Context, id, name, country, style 
 	return err
 }
 
+// SetUserTOTPPending stores a freshly generated (not yet active) secret.
+func (s *Store) SetUserTOTPPending(ctx context.Context, id, pendingSecret string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE users SET totp_pending_secret=$2 WHERE id=$1`, id, pendingSecret)
+	return err
+}
+
+// EnableUserTOTP promotes the pending secret to active and clears it.
+func (s *Store) EnableUserTOTP(ctx context.Context, id, secret string) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE users SET totp_secret=$2, totp_pending_secret='', totp_enabled=true WHERE id=$1`,
+		id, secret)
+	return err
+}
+
+// DisableUserTOTP clears both secrets and turns 2FA off.
+func (s *Store) DisableUserTOTP(ctx context.Context, id string) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE users SET totp_secret='', totp_pending_secret='', totp_enabled=false WHERE id=$1`, id)
+	return err
+}
+
 // ---- vendors ----
 
-const vendorCols = `id, name, category, town, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at`
+const vendorCols = `id, name, category, town, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng`
 
 func scanVendor(row pgx.Row) (domain.Vendor, error) {
 	var v domain.Vendor
 	var flags []byte
 	err := row.Scan(&v.ID, &v.Name, &v.Category, &v.Town, &v.RegionID, &v.Owner, &v.Status,
 		&v.Priority, &v.Docs, &v.Photos, &v.WifiScore, &flags, &v.Note, &v.Tier,
-		&v.Profile, &v.Menu, &v.SubmittedAt)
+		&v.Profile, &v.Menu, &v.SubmittedAt, &v.Lat, &v.Lng)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, ErrNotFound
 	}
@@ -154,19 +180,107 @@ func scanVendor(row pgx.Row) (domain.Vendor, error) {
 
 func (s *Store) UpsertVendor(ctx context.Context, v domain.Vendor) error {
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO vendors (id, name, category, town, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		INSERT INTO vendors (id, name, category, town, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 		ON CONFLICT (id) DO UPDATE SET
 			name=EXCLUDED.name, category=EXCLUDED.category, town=EXCLUDED.town,
 			region_id=EXCLUDED.region_id, owner=EXCLUDED.owner, status=EXCLUDED.status,
 			priority=EXCLUDED.priority, docs=EXCLUDED.docs, photos=EXCLUDED.photos,
 			wifi_score=EXCLUDED.wifi_score, flags=EXCLUDED.flags, note=EXCLUDED.note,
 			tier=EXCLUDED.tier, profile=EXCLUDED.profile, menu=EXCLUDED.menu,
-			submitted_at=EXCLUDED.submitted_at`,
+			submitted_at=EXCLUDED.submitted_at, lat=EXCLUDED.lat, lng=EXCLUDED.lng`,
 		v.ID, v.Name, v.Category, v.Town, v.RegionID, v.Owner, v.Status, v.Priority,
 		v.Docs, v.Photos, v.WifiScore, jsonb(v.Flags), v.Note, v.Tier,
-		orEmptyObj(v.Profile), orEmptyObj(v.Menu), v.SubmittedAt)
+		orEmptyObj(v.Profile), orEmptyObj(v.Menu), v.SubmittedAt, v.Lat, v.Lng)
 	return err
+}
+
+// VendorsForMap returns every vendor with lat/lng and a computed
+// badReviewCount/flagged (>=5 reviews rated 1-2), for the admin geo map.
+func (s *Store) VendorsForMap(ctx context.Context) ([]domain.Vendor, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT v.`+vendorColsPrefixed()+`,
+			COALESCE(r.bad_count, 0) AS bad_count
+		FROM vendors v
+		LEFT JOIN (
+			SELECT vendor_id, count(*) AS bad_count
+			FROM reviews
+			WHERE vendor_id IS NOT NULL AND rating <= 2
+			GROUP BY vendor_id
+		) r ON r.vendor_id = v.id
+		WHERE v.lat != 0 OR v.lng != 0
+		ORDER BY v.name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Vendor
+	for rows.Next() {
+		v, badCount, err := scanVendorWithBadCount(rows)
+		if err != nil {
+			return nil, err
+		}
+		v.BadReviewCount = badCount
+		v.Flagged = badCount >= BadReviewFlagThreshold
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// VendorsNear returns vendors within radiusKm of (lat,lng) using the
+// haversine formula — the only proximity query in the app, so a full GIS
+// extension isn't warranted.
+func (s *Store) VendorsNear(ctx context.Context, lat, lng, radiusKm float64) ([]domain.Vendor, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT v.`+vendorColsPrefixed()+`,
+			COALESCE(r.bad_count, 0) AS bad_count
+		FROM vendors v
+		LEFT JOIN (
+			SELECT vendor_id, count(*) AS bad_count
+			FROM reviews
+			WHERE vendor_id IS NOT NULL AND rating <= 2
+			GROUP BY vendor_id
+		) r ON r.vendor_id = v.id
+		WHERE (v.lat != 0 OR v.lng != 0) AND (
+			6371 * acos(least(1.0, greatest(-1.0,
+				cos(radians($1)) * cos(radians(v.lat)) * cos(radians(v.lng) - radians($2))
+				+ sin(radians($1)) * sin(radians(v.lat))
+			)))
+		) <= $3
+		ORDER BY v.name`, lat, lng, radiusKm)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Vendor
+	for rows.Next() {
+		v, badCount, err := scanVendorWithBadCount(rows)
+		if err != nil {
+			return nil, err
+		}
+		v.BadReviewCount = badCount
+		v.Flagged = badCount >= BadReviewFlagThreshold
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func vendorColsPrefixed() string {
+	return "id, name, category, town, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng"
+}
+
+func scanVendorWithBadCount(row pgx.Row) (domain.Vendor, int, error) {
+	var v domain.Vendor
+	var flags []byte
+	var badCount int
+	err := row.Scan(&v.ID, &v.Name, &v.Category, &v.Town, &v.RegionID, &v.Owner, &v.Status,
+		&v.Priority, &v.Docs, &v.Photos, &v.WifiScore, &flags, &v.Note, &v.Tier,
+		&v.Profile, &v.Menu, &v.SubmittedAt, &v.Lat, &v.Lng, &badCount)
+	if err != nil {
+		return v, 0, err
+	}
+	json.Unmarshal(flags, &v.Flags)
+	return v, badCount, nil
 }
 
 func orEmptyObj(m json.RawMessage) json.RawMessage {
@@ -547,15 +661,16 @@ func (s *Store) PruneFeed(ctx context.Context, max int) error {
 
 func (s *Store) UpsertRegion(ctx context.Context, r domain.Region) error {
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO regions (id, name, x, y, travelers, vendors) VALUES ($1,$2,$3,$4,$5,$6)
+		INSERT INTO regions (id, name, x, y, lat, lng, travelers, vendors) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, x=EXCLUDED.x, y=EXCLUDED.y,
+			lat=EXCLUDED.lat, lng=EXCLUDED.lng,
 			travelers=EXCLUDED.travelers, vendors=EXCLUDED.vendors`,
-		r.ID, r.Name, r.X, r.Y, r.Travelers, r.Vendors)
+		r.ID, r.Name, r.X, r.Y, r.Lat, r.Lng, r.Travelers, r.Vendors)
 	return err
 }
 
 func (s *Store) Regions(ctx context.Context) ([]domain.Region, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id, name, x, y, travelers, vendors FROM regions ORDER BY id`)
+	rows, err := s.Pool.Query(ctx, `SELECT id, name, x, y, lat, lng, travelers, vendors FROM regions ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -563,7 +678,7 @@ func (s *Store) Regions(ctx context.Context) ([]domain.Region, error) {
 	var out []domain.Region
 	for rows.Next() {
 		var r domain.Region
-		if err := rows.Scan(&r.ID, &r.Name, &r.X, &r.Y, &r.Travelers, &r.Vendors); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.X, &r.Y, &r.Lat, &r.Lng, &r.Travelers, &r.Vendors); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -652,6 +767,70 @@ func (s *Store) SetAudioGuidePublished(ctx context.Context, id string, published
 	return err
 }
 
+// ---- reviews ----
+
+const reviewCols = `r.id, r.place_id, r.vendor_id, r.traveller_id, r.rating, r.text, r.created_at, COALESCE(u.name,'')`
+const reviewFrom = ` FROM reviews r LEFT JOIN users u ON u.id = r.traveller_id `
+
+func scanReview(row pgx.Row) (domain.Review, error) {
+	var rv domain.Review
+	err := row.Scan(&rv.ID, &rv.PlaceID, &rv.VendorID, &rv.TravellerID, &rv.Rating, &rv.Text,
+		&rv.CreatedAt, &rv.TravellerName)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return rv, ErrNotFound
+	}
+	return rv, err
+}
+
+// UpsertReview is idempotent per traveller+place (one review each, editable).
+func (s *Store) UpsertReview(ctx context.Context, rv domain.Review) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO reviews (id, place_id, vendor_id, traveller_id, rating, text, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)
+		ON CONFLICT (place_id, traveller_id) DO UPDATE SET
+			rating=EXCLUDED.rating, text=EXCLUDED.text, created_at=EXCLUDED.created_at`,
+		rv.ID, rv.PlaceID, rv.VendorID, rv.TravellerID, rv.Rating, rv.Text, rv.CreatedAt)
+	return err
+}
+
+func (s *Store) ReviewsByPlace(ctx context.Context, placeID string) ([]domain.Review, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT `+reviewCols+reviewFrom+`WHERE r.place_id=$1 ORDER BY r.created_at DESC`, placeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Review
+	for rows.Next() {
+		rv, err := scanReview(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rv)
+	}
+	return out, rows.Err()
+}
+
+// ReviewsByVendorBad returns only the low (<=2) ratings for a vendor — the
+// ones behind an admin-map flag.
+func (s *Store) ReviewsByVendorBad(ctx context.Context, vendorID string) ([]domain.Review, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT `+reviewCols+reviewFrom+`WHERE r.vendor_id=$1 AND r.rating <= 2 ORDER BY r.created_at DESC`, vendorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Review
+	for rows.Next() {
+		rv, err := scanReview(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rv)
+	}
+	return out, rows.Err()
+}
+
 // ---- vibes / checkins ----
 
 func (s *Store) AddVibeVote(ctx context.Context, placeID, vibeID, travellerID string) error {
@@ -730,7 +909,7 @@ func (s *Store) Wipe(ctx context.Context) error {
 	_, err := s.Pool.Exec(ctx, `
 		TRUNCATE users, vendors, offers, places, claims, trips, groups, feed_items,
 			regions, subscriptions, audio_guides, vibe_votes, checkins,
-			vendor_notifications, vendor_blobs`)
+			vendor_notifications, vendor_blobs, reviews`)
 	return err
 }
 

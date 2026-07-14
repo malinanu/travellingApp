@@ -11,12 +11,16 @@
   "dependencies": {
     "@spotto/shared": "*",
     "@tanstack/react-query": "^5.62.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.469.0",
     "next": "^14.2.5",
+    "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1"
   },
   "devDependencies": {
+    "@types/leaflet": "^1.9.14",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

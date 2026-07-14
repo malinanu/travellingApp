@@ -116,6 +116,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
+	if u.TOTPEnabled {
+		pending, err := s.Tokens.IssueTwoFactorPending(u.ID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"twoFactorRequired": true,
+			"twoFactorToken":    pending,
+		})
+		return
+	}
 	token, err := s.Tokens.Issue(u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")

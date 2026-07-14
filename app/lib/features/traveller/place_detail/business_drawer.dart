@@ -192,6 +192,9 @@ class BusinessDrawerBody extends ConsumerWidget {
                 ],
               ],
 
+              const SizedBox(height: 18),
+              _ReviewsSection(place: place),
+
               // bottom actions
               const SizedBox(height: 18),
               Row(
@@ -469,6 +472,178 @@ class _DealCard extends ConsumerWidget {
                 ),
               ],
             ),
+    );
+  }
+}
+
+/// Reviews: existing list (rating + text) plus a form to submit or edit
+/// your own. Ratings of 1-2 count against the vendor for the admin map's
+/// red-flag threshold — this is the real write path behind that feature.
+class _ReviewsSection extends ConsumerStatefulWidget {
+  final Place place;
+  const _ReviewsSection({required this.place});
+
+  @override
+  ConsumerState<_ReviewsSection> createState() => _ReviewsSectionState();
+}
+
+class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
+  int _draftRating = 0;
+  final _textController = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_draftRating == 0 || _submitting) return;
+    setState(() => _submitting = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await submitReview(ref, widget.place.id, _draftRating, _textController.text.trim());
+      _textController.clear();
+      setState(() => _draftRating = 0);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final reviewsAsync = ref.watch(placeReviewsProvider(widget.place.id));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Reviews', style: text.titleMedium),
+        const SizedBox(height: 10),
+
+        // write/edit form
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: SpottoColors.sand,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  for (var i = 1; i <= 5; i++)
+                    PressScale(
+                      scale: 0.85,
+                      onTap: () => setState(() => _draftRating = i),
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Icon(
+                          i <= _draftRating ? Icons.star : Icons.star_border,
+                          color: SpottoColors.sun,
+                          size: 26,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _textController,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  hintText: 'Share how it went (optional)',
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _draftRating == 0 || _submitting ? null : _submit,
+                  child: Text(_submitting ? 'Posting…' : 'Post review'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        reviewsAsync.when(
+          data: (reviews) {
+            if (reviews.isEmpty) {
+              return Text('No reviews yet — be the first.',
+                  style: text.bodySmall?.copyWith(color: SpottoColors.muted));
+            }
+            return Column(
+              children: [
+                for (final r in reviews) ...[
+                  _ReviewTile(review: r),
+                  const SizedBox(height: 8),
+                ],
+              ],
+            );
+          },
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+          error: (_, __) => Text('Couldn\'t load reviews.',
+              style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReviewTile extends StatelessWidget {
+  final Review review;
+  const _ReviewTile({required this.review});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SpottoColors.ink.withValues(alpha: 0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Row(
+                children: [
+                  for (var i = 1; i <= 5; i++)
+                    Icon(
+                      i <= review.rating ? Icons.star : Icons.star_border,
+                      color: SpottoColors.sun,
+                      size: 15,
+                    ),
+                ],
+              ),
+              if (review.travellerName != null && review.travellerName!.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Text(review.travellerName!,
+                    style: text.labelSmall?.copyWith(fontWeight: FontWeight.w800)),
+              ],
+            ],
+          ),
+          if (review.text.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(review.text, style: text.bodySmall),
+          ],
+        ],
+      ),
     );
   }
 }

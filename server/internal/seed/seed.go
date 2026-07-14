@@ -35,6 +35,7 @@ func Run(ctx context.Context, s *postgres.Store) error {
 		WifiScore: ptr(9.2), Flags: []string{}, Tier: "Premium",
 		Profile: json.RawMessage(driftwoodProfile), Menu: json.RawMessage(driftwoodMenu),
 		SubmittedAt: now.AddDate(0, -6, 0),
+		Lat:         5.9731, Lng: 80.4280,
 	}); err != nil {
 		return fmt.Errorf("driftwood vendor: %w", err)
 	}
@@ -47,19 +48,20 @@ func Run(ctx context.Context, s *postgres.Store) error {
 		photos                                             int
 		wifi                                               *float64
 		flags                                              []string
+		lat, lng                                           float64
 	}{
 		{"V-2041", "Ahangama Yoga Studio", "Yoga / Wellness", "Ahangama", "Nimali Fernando",
-			"Sunrise rooftop shala, 200hr certified instructors. Requesting Premium.", "high", "south", 12, true, 6, ptr(7.4), []string{}},
+			"Sunrise rooftop shala, 200hr certified instructors. Requesting Premium.", "high", "south", 12, true, 6, ptr(7.4), []string{}, 5.9730, 80.3597},
 		{"V-2040", "Hiriketiya Poke Bar", "Restaurant", "Dickwella", "Sea & Co Ltd",
-			"Beachfront poke & smoothies. Shares plot with registered surf shop.", "normal", "south", 38, true, 4, ptr(6.1), []string{"Duplicate address?"}},
+			"Beachfront poke & smoothies. Shares plot with registered surf shop.", "normal", "south", 38, true, 4, ptr(6.1), []string{"Duplicate address?"}, 5.9667, 80.7000},
 		{"V-2039", "Ella Rock Trail Guides", "Tours / Activity", "Ella", "Kasun Bandara",
-			"Guided sunrise hikes. License upload pending.", "normal", "hill", 60, false, 2, nil, []string{"Missing business license"}},
+			"Guided sunrise hikes. License upload pending.", "normal", "hill", 60, false, 2, nil, []string{"Missing business license"}, 6.8667, 81.0466},
 		{"V-2038", "Fort Print & Coffee", "Coworking Café", "Galle Fort", "Dilan Jayawardene",
-			"Heritage-building café with fibre internet. Strong nomad fit.", "high", "south", 120, true, 9, ptr(9.0), []string{}},
+			"Heritage-building café with fibre internet. Strong nomad fit.", "high", "south", 120, true, 9, ptr(9.0), []string{}, 6.0269, 80.2168},
 		{"V-2037", "Arugam Board Co.", "Surf School", "Arugam Bay", "Wave Theory",
-			"Board rental + lessons on the east coast point break.", "normal", "east", 180, true, 5, ptr(5.2), []string{}},
+			"Board rental + lessons on the east coast point break.", "normal", "east", 180, true, 5, ptr(5.2), []string{}, 6.8404, 81.8360},
 		{"V-2036", "Kandy Spice Kitchen", "Restaurant", "Kandy", "Heritage Foods",
-			"Family curry house near the temple.", "low", "hill", 300, true, 3, ptr(6.8), []string{"Low photo quality"}},
+			"Family curry house near the temple.", "low", "hill", 300, true, 3, ptr(6.8), []string{"Low photo quality"}, 7.2906, 80.6337},
 	}
 	for _, q := range queue {
 		if err := s.UpsertVendor(ctx, domain.Vendor{
@@ -68,6 +70,7 @@ func Run(ctx context.Context, s *postgres.Store) error {
 			Docs: q.docs, Photos: q.photos, WifiScore: q.wifi, Flags: q.flags,
 			Note: q.note, Tier: "Free",
 			SubmittedAt: now.Add(-time.Duration(q.agoMin) * time.Minute),
+			Lat:         q.lat, Lng: q.lng,
 		}); err != nil {
 			return fmt.Errorf("queue vendor %s: %w", q.id, err)
 		}
@@ -195,18 +198,18 @@ func Run(ctx context.Context, s *postgres.Store) error {
 
 	// ── Regions (REGIONS from admin-data.jsx) ────────────────────────────
 	regions := []domain.Region{
-		{ID: "colombo", Name: "Colombo", X: 25, Y: 56, Travelers: 88, Vendors: 96},
-		{ID: "negombo", Name: "Negombo", X: 23, Y: 49, Travelers: 54, Vendors: 60},
-		{ID: "kandy", Name: "Kandy", X: 50, Y: 47, Travelers: 71, Vendors: 64},
-		{ID: "sigiriya", Name: "Sigiriya", X: 54, Y: 34, Travelers: 66, Vendors: 28},
-		{ID: "ella", Name: "Ella", X: 61, Y: 60, Travelers: 82, Vendors: 41},
-		{ID: "nuwara", Name: "Nuwara Eliya", X: 54, Y: 56, Travelers: 58, Vendors: 39},
-		{ID: "galle", Name: "Galle", X: 31, Y: 82, Travelers: 90, Vendors: 78},
-		{ID: "weligama", Name: "Weligama", X: 39, Y: 86, Travelers: 95, Vendors: 70},
-		{ID: "mirissa", Name: "Mirissa", X: 44, Y: 88, Travelers: 84, Vendors: 52},
-		{ID: "arugam", Name: "Arugam Bay", X: 80, Y: 61, Travelers: 76, Vendors: 22},
-		{ID: "trinco", Name: "Trincomalee", X: 70, Y: 27, Travelers: 61, Vendors: 18},
-		{ID: "jaffna", Name: "Jaffna", X: 45, Y: 8, Travelers: 44, Vendors: 12},
+		{ID: "colombo", Name: "Colombo", X: 25, Y: 56, Lat: 6.9271, Lng: 79.8612, Travelers: 88, Vendors: 96},
+		{ID: "negombo", Name: "Negombo", X: 23, Y: 49, Lat: 7.2083, Lng: 79.8358, Travelers: 54, Vendors: 60},
+		{ID: "kandy", Name: "Kandy", X: 50, Y: 47, Lat: 7.2906, Lng: 80.6337, Travelers: 71, Vendors: 64},
+		{ID: "sigiriya", Name: "Sigiriya", X: 54, Y: 34, Lat: 7.9570, Lng: 80.7603, Travelers: 66, Vendors: 28},
+		{ID: "ella", Name: "Ella", X: 61, Y: 60, Lat: 6.8667, Lng: 81.0466, Travelers: 82, Vendors: 41},
+		{ID: "nuwara", Name: "Nuwara Eliya", X: 54, Y: 56, Lat: 6.9497, Lng: 80.7891, Travelers: 58, Vendors: 39},
+		{ID: "galle", Name: "Galle", X: 31, Y: 82, Lat: 6.0535, Lng: 80.2210, Travelers: 90, Vendors: 78},
+		{ID: "weligama", Name: "Weligama", X: 39, Y: 86, Lat: 5.9724, Lng: 80.4292, Travelers: 95, Vendors: 70},
+		{ID: "mirissa", Name: "Mirissa", X: 44, Y: 88, Lat: 5.9483, Lng: 80.4589, Travelers: 84, Vendors: 52},
+		{ID: "arugam", Name: "Arugam Bay", X: 80, Y: 61, Lat: 6.8404, Lng: 81.8360, Travelers: 76, Vendors: 22},
+		{ID: "trinco", Name: "Trincomalee", X: 70, Y: 27, Lat: 8.5874, Lng: 81.2152, Travelers: 61, Vendors: 18},
+		{ID: "jaffna", Name: "Jaffna", X: 45, Y: 8, Lat: 9.6615, Lng: 80.0255, Travelers: 44, Vendors: 12},
 	}
 	for _, r := range regions {
 		if err := s.UpsertRegion(ctx, r); err != nil {
@@ -290,6 +293,37 @@ func Run(ctx context.Context, s *postgres.Store) error {
 	for _, n := range notifs {
 		if err := s.UpsertVendorNotification(ctx, driftwoodID, n); err != nil {
 			return fmt.Errorf("notification %s: %w", n.ID, err)
+		}
+	}
+
+	// A minimal place for the "Hiriketiya Poke Bar" queue vendor (V-2040) so
+	// it can carry demo bad reviews — enough for the admin map's red-flag
+	// threshold, showing off the pinpoint-a-problem-vendor flow distinctly
+	// from the healthy, approved Driftwood vendor.
+	hiriketiyaVendorID := "V-2040"
+	if err := s.UpsertPlace(ctx, domain.Place{
+		ID: "hiriketiya", Name: "Hiriketiya Poke Bar", VendorID: &hiriketiyaVendorID,
+		Data: json.RawMessage(`{"type":"Restaurant","icon":"UtensilsCrossed","color":"coral","x":50,"y":50,"lat":5.9667,"lng":80.7000,"rating":2.1,"reviews":5,"distance":"1.2 km","priceLevel":"$$","hours":"11:00 AM – 9:00 PM","openNow":true,"bestTimes":["afternoon"],"tags":["Poke","Smoothies"],"blurb":"Beachfront poke & smoothie bar.","seaView":true,"photo":"surf"}`),
+	}); err != nil {
+		return fmt.Errorf("hiriketiya place: %w", err)
+	}
+	badReviews := []struct {
+		id, traveller, text string
+		rating              int
+	}{
+		{"rev1", "usr_tom", "Waited 45 minutes and the poke bowl was warm, not chilled. Wouldn't return.", 1},
+		{"rev2", "usr_sara", "Overcharged us compared to the menu board. Asked twice, never fixed.", 1},
+		{"rev3", "usr_marco", "Smoothie tasted off, mild food poisoning after. Avoid.", 1},
+		{"rev4", "usr_aiko", "Rude staff when we asked about allergens.", 2},
+		{"rev5", "usr_sam", "Nice location but the fish wasn't fresh at all.", 2},
+	}
+	for i, br := range badReviews {
+		if err := s.UpsertReview(ctx, domain.Review{
+			ID: br.id, PlaceID: "hiriketiya", VendorID: &hiriketiyaVendorID,
+			TravellerID: br.traveller, Rating: br.rating, Text: br.text,
+			CreatedAt: now.Add(-time.Duration(i+1) * 24 * time.Hour),
+		}); err != nil {
+			return fmt.Errorf("bad review %s: %w", br.id, err)
 		}
 	}
 

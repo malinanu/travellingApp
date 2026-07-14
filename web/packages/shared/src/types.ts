@@ -1,7 +1,7 @@
 // Hand-maintained TS mirror of the Go API's JSON shapes (see server/internal/domain).
 
 export type Role = 'traveller' | 'vendor' | 'admin';
-export type VendorStatus = 'pending' | 'approved' | 'rejected' | 'edits';
+export type VendorStatus = 'pending' | 'approved' | 'rejected' | 'edits' | 'suspended';
 export type OfferStatus = 'draft' | 'live' | 'ending' | 'ended';
 export type ClaimStatus = 'claimed' | 'redeemed';
 export type FeedStatus = 'ok' | 'review' | 'flag';
@@ -17,11 +17,29 @@ export interface User {
   vendorId?: string;
   createdAt: string;
   vendorStatus?: VendorStatus; // present on GET /me for vendor users
+  totpEnabled: boolean;
 }
 
 export interface AuthResponse {
   token: string;
   user: User;
+}
+
+/** Returned by POST /auth/login instead of AuthResponse when 2FA is enabled. */
+export interface TwoFactorRequiredResponse {
+  twoFactorRequired: true;
+  twoFactorToken: string;
+}
+
+export function isTwoFactorRequired(
+  res: AuthResponse | TwoFactorRequiredResponse,
+): res is TwoFactorRequiredResponse {
+  return (res as TwoFactorRequiredResponse).twoFactorRequired === true;
+}
+
+export interface TwoFactorSetupResponse {
+  secret: string;
+  otpauthUrl: string;
 }
 
 export interface Vendor {
@@ -42,6 +60,23 @@ export interface Vendor {
   profile: VendorProfile;
   menu: { sections?: MenuSection[] } | null;
   submittedAt: string;
+  lat: number;
+  lng: number;
+  badReviewCount?: number;
+  flagged?: boolean;
+}
+
+/** A traveller's rating/text for a Place; 1-2 star reviews count against the
+ * owning vendor for the admin map's red-flag threshold. */
+export interface Review {
+  id: string;
+  placeId: string;
+  vendorId?: string;
+  travellerId: string;
+  rating: number;
+  text: string;
+  createdAt: string;
+  travellerName?: string;
 }
 
 export interface VendorProfile {
@@ -156,6 +191,8 @@ export interface Region {
   name: string;
   x: number;
   y: number;
+  lat: number;
+  lng: number;
   travelers: number;
   vendors: number;
 }

@@ -62,6 +62,56 @@ func (s *Server) handleVibeVote(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"placeId": placeID, "vibes": counts})
 }
 
+func (s *Server) handlePlaceReviews(w http.ResponseWriter, r *http.Request) {
+	reviews, err := s.Store.ReviewsByPlace(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if reviews == nil {
+		reviews = []domain.Review{}
+	}
+	writeJSON(w, http.StatusOK, reviews)
+}
+
+// handleCreateReview is idempotent per traveller+place (submitting again
+// edits your existing review). Ratings of 1-2 count against the vendor for
+// the admin map's red-flag threshold.
+func (s *Server) handleCreateReview(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	placeID := chi.URLParam(r, "id")
+	var req struct {
+		Rating int    `json:"rating"`
+		Text   string `json:"text"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.Rating < 1 || req.Rating > 5 {
+		writeErr(w, http.StatusBadRequest, "rating must be between 1 and 5")
+		return
+	}
+	place, err := s.Store.PlaceByID(r.Context(), placeID)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	review := domain.Review{
+		ID:          newID("rev"),
+		PlaceID:     place.ID,
+		VendorID:    place.VendorID,
+		TravellerID: c.Subject,
+		Rating:      req.Rating,
+		Text:        req.Text,
+		CreatedAt:   time.Now(),
+	}
+	if err := s.Store.UpsertReview(r.Context(), review); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusCreated, review)
+}
+
 func (s *Server) handleCheckin(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	var req struct {

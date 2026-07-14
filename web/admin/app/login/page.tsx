@@ -1,12 +1,14 @@
 'use client';
 
-// Admin auth — split layout, login then a 6-box 2FA UI step (any 6 digits
-// pass, per the prototype). Port of AdminAuth.jsx.
+// Admin auth — split layout, login then a real TOTP verification step
+// (only shown when the account actually has 2FA enabled). Port of
+// AdminAuth.jsx, now backed by /auth/2fa/login-verify instead of accepting
+// any 6 digits.
 
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 
-import type { AuthResponse } from '@spotto/shared';
+import { isTwoFactorRequired, type AuthResponse, type TwoFactorRequiredResponse } from '@spotto/shared';
 import { api } from '../../lib/api';
 
 export default function AdminLoginPage() {
@@ -15,24 +17,34 @@ export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const finishSession = (res: AuthResponse) => {
+    if (res.user.role !== 'admin') {
+      api.setToken(null);
+      setError('This account is not an admin.');
+      return;
+    }
+    api.setToken(res.token);
+    router.replace('/queue');
+  };
 
   const submitCreds = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const res = await api.post<AuthResponse>('/auth/login', { email, password });
-      if (res.user.role !== 'admin') {
-        setError('This account is not an admin.');
+      const res = await api.post<AuthResponse | TwoFactorRequiredResponse>('/auth/login', { email, password });
+      if (isTwoFactorRequired(res)) {
+        setTwoFactorToken(res.twoFactorToken);
+        setStep('otp');
+        setTimeout(() => otpRefs.current[0]?.focus(), 50);
         return;
       }
-      setPendingToken(res.token);
-      setStep('otp');
-      setTimeout(() => otpRefs.current[0]?.focus(), 50);
+      finishSession(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed');
     } finally {
@@ -48,10 +60,23 @@ export default function AdminLoginPage() {
     if (digit && i < 5) otpRefs.current[i + 1]?.focus();
   };
 
-  const submitOtp = () => {
-    if (otp.join('').length !== 6 || !pendingToken) return;
-    api.setToken(pendingToken);
-    router.replace('/queue');
+  const submitOtp = async () => {
+    if (otp.join('').length !== 6 || !twoFactorToken) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.post<AuthResponse>('/auth/2fa/login-verify', {
+        twoFactorToken,
+        code: otp.join(''),
+      });
+      finishSession(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid code');
+      setOtp(['', '', '', '', '', '']);
+      otpRefs.current[0]?.focus();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -90,8 +115,8 @@ export default function AdminLoginPage() {
         ) : (
           <div className="w-full max-w-md">
             <h2 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Two-factor verification</h2>
-            <p className="text-muted font-medium mt-1 mb-6">Enter any 6 digits to continue (demo).</p>
-            <div className="flex gap-2 mb-6">
+            <p className="text-muted font-medium mt-1 mb-6">Enter the 6-digit code from your authenticator app.</p>
+            <div className="flex gap-2 mb-4">
               {otp.map((d, i) => (
                 <input
                   key={i}
@@ -104,8 +129,9 @@ export default function AdminLoginPage() {
                 />
               ))}
             </div>
-            <button className="btn btn-primary w-full py-3" disabled={otp.join('').length !== 6} onClick={submitOtp}>
-              Verify & continue
+            {error && <p className="text-[13.5px] font-bold mb-3" style={{ color: '#e11d48' }}>{error}</p>}
+            <button className="btn btn-primary w-full py-3" disabled={otp.join('').length !== 6 || busy} onClick={submitOtp}>
+              {busy ? 'Verifying…' : 'Verify & continue'}
             </button>
           </div>
         )}

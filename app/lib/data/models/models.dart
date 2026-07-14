@@ -204,6 +204,35 @@ class Traveler {
   });
 }
 
+/// A traveller's rating (1-5) + text for a place. 1-2 star reviews count
+/// against the vendor for the admin map's red-flag threshold.
+class Review {
+  final String id;
+  final String placeId;
+  final int rating;
+  final String text;
+  final String createdAt;
+  final String? travellerName;
+
+  const Review({
+    required this.id,
+    required this.placeId,
+    required this.rating,
+    required this.text,
+    required this.createdAt,
+    this.travellerName,
+  });
+
+  factory Review.fromJson(Map<String, dynamic> json) => Review(
+        id: json['id'] as String? ?? '',
+        placeId: json['placeId'] as String? ?? '',
+        rating: (json['rating'] as num?)?.toInt() ?? 0,
+        text: json['text'] as String? ?? '',
+        createdAt: json['createdAt'] as String? ?? '',
+        travellerName: json['travellerName'] as String?,
+      );
+}
+
 class Group {
   final String name;
   final String code;

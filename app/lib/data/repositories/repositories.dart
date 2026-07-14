@@ -406,3 +406,23 @@ final checkInsProvider = NotifierProvider<CheckInsNotifier, Set<String>>(CheckIn
 
 /// Group mode: show group members on the Discover map (session-only).
 final groupModeProvider = StateProvider<bool>((ref) => false);
+
+// ── reviews (real traveller ratings; 1-2 stars flag the vendor) ───
+
+/// Reviews for a single place, newest first. Call
+/// `ref.invalidate(placeReviewsProvider(placeId))` after submitting to refresh.
+final placeReviewsProvider =
+    FutureProvider.family<List<Review>, String>((ref, placeId) async {
+  final res = await ref.read(apiProvider).dio.get('/places/$placeId/reviews');
+  return [for (final r in (res.data as List)) Review.fromJson((r as Map).cast<String, dynamic>())];
+});
+
+/// Submits (or edits) the current traveller's review for a place, then
+/// refreshes [placeReviewsProvider] for that place.
+Future<void> submitReview(WidgetRef ref, String placeId, int rating, String text) async {
+  await ref.read(apiProvider).dio.post('/places/$placeId/reviews', data: {
+    'rating': rating,
+    'text': text,
+  });
+  ref.invalidate(placeReviewsProvider(placeId));
+}

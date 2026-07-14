@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/pquerna/otp"
+	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/spotto/server/internal/domain"
@@ -26,8 +28,14 @@ func CheckPassword(hash, plain string) bool {
 type Claims struct {
 	Role     domain.Role `json:"role"`
 	VendorID string      `json:"vendorId,omitempty"`
+	// Purpose distinguishes a real session token (empty) from a short-lived
+	// pending-2FA token (set to twoFactorPurpose) — Authenticated rejects
+	// anything but a real session, so a pending token can't be used as one.
+	Purpose string `json:"purpose,omitempty"`
 	jwt.RegisteredClaims
 }
+
+const twoFactorPurpose = "2fa-pending"
 
 type Tokens struct {
 	secret []byte
@@ -64,6 +72,61 @@ func (t *Tokens) Verify(token string) (*Claims, error) {
 	return c, nil
 }
 
+// IssueTwoFactorPending issues a short-lived token identifying a login that
+// passed password auth but still needs a TOTP code. It cannot be used as a
+// Bearer session token (Authenticated rejects any non-empty Purpose).
+func (t *Tokens) IssueTwoFactorPending(userID string) (string, error) {
+	c := Claims{
+		Purpose: twoFactorPurpose,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString(t.secret)
+}
+
+// VerifyTwoFactorPending validates a token from IssueTwoFactorPending and
+// returns the pending user's ID.
+func (t *Tokens) VerifyTwoFactorPending(token string) (string, error) {
+	c, err := t.Verify(token)
+	if err != nil {
+		return "", err
+	}
+	if c.Purpose != twoFactorPurpose {
+		return "", jwt.ErrTokenInvalidClaims
+	}
+	return c.Subject, nil
+}
+
+// GenerateTOTPSecret creates a new secret + otpauth:// provisioning URI for
+// an authenticator app (Google Authenticator/Authy/1Password-compatible).
+func GenerateTOTPSecret(accountEmail string) (secret string, otpauthURL string, err error) {
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "Spotto",
+		AccountName: accountEmail,
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return key.Secret(), key.URL(), nil
+}
+
+// ValidateTOTP checks a 6-digit code against a secret (30s step, per RFC 6238 default).
+func ValidateTOTP(secret, code string) bool {
+	if secret == "" || code == "" {
+		return false
+	}
+	valid, _ := totp.ValidateCustom(code, secret, time.Now(), totp.ValidateOpts{
+		Period:    30,
+		Skew:      1,
+		Digits:    otp.DigitsSix,
+		Algorithm: otp.AlgorithmSHA1,
+	})
+	return valid
+}
+
 type ctxKey struct{}
 
 // FromContext returns the verified claims set by Authenticated.
@@ -88,7 +151,7 @@ func (t *Tokens) Authenticated(next http.Handler) http.Handler {
 			return
 		}
 		c, err := t.Verify(raw)
-		if err != nil {
+		if err != nil || c.Purpose != "" {
 			writeErr(w, http.StatusUnauthorized, "invalid token")
 			return
 		}
