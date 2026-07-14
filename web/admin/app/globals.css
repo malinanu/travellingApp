@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Command-center theme variables (direct port of AdminApp.jsx cssVars),
+   toggled via <html data-theme> and persisted to localStorage. */
+:root,
+:root[data-theme='light'] {
+  --bg: #f7f2e8;
+  --surface: #ffffff;
+  --line: #e7e1d4;
+  --ink: #103d3a;
+  --ink-soft: #33524f;
+  --muted: #6c8582;
+  --accent: #0b6f86;
+  --sun: #f6b81e;
+}
+
+:root[data-theme='dark'] {
+  --bg: #0b2320;
+  --surface: #10302c;
+  --line: rgba(255, 255, 255, 0.09);
+  --ink: #eaf2ef;
+  --ink-soft: #c3d6d1;
+  --muted: #7f9d97;
+  --accent: #14a5c2;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.btn {
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  transition: border-color 120ms, filter 120ms;
+}
+.btn:hover {
+  border-color: var(--accent);
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover {
+  filter: brightness(1.1);
+}
+.btn-danger {
+  background: #e11d48;
+  border-color: #e11d48;
+  color: #fff;
+}
+
+.input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-weight: 500;
+  font-size: 13.5px;
+  color: var(--ink);
+  outline: none;
+}
+.input:focus {
+  border-color: var(--accent);
+}
+
+@keyframes feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.feed-in {
+  animation: feed-in 300ms ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.toast-in {
+  animation: toast-in 200ms ease-out;
+}
