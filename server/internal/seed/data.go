@@ -23,7 +23,7 @@ var FeedTemplates = []FeedTemplate{
 // app/lib/data/mock/places.dart (id/name/vendorId live on the row).
 const placeDriftwoodData = `{
   "type": "Coworking Café", "icon": "Coffee", "color": "teal",
-  "x": 33, "y": 38, "rating": 4.8, "reviews": 212, "distance": "400 m", "priceLevel": "$$",
+  "x": 33, "y": 38, "lat": 5.9731, "lng": 80.4280, "rating": 4.8, "reviews": 212, "distance": "400 m", "priceLevel": "$$",
   "wifi": {"score": 9.2, "speed": "88 Mbps", "label": "Blazing"},
   "hours": "7:00 AM – 9:00 PM", "openNow": true, "bestTimes": ["morning", "afternoon"],
   "deal": {"active": true, "label": "Free flat white with any day pass", "tag": "Perk"},
@@ -49,7 +49,7 @@ const placeDriftwoodData = `{
 
 const placeBaysurfData = `{
   "type": "Surf School", "icon": "Waves", "color": "coral",
-  "x": 62, "y": 64, "rating": 4.9, "reviews": 540, "distance": "650 m", "priceLevel": "$$",
+  "x": 62, "y": 64, "lat": 5.9711, "lng": 80.4301, "rating": 4.9, "reviews": 540, "distance": "650 m", "priceLevel": "$$",
   "wifi": {"score": 6.1, "speed": "24 Mbps", "label": "Okay"},
   "hours": "6:00 AM – 6:00 PM", "openNow": true, "bestTimes": ["morning", "afternoon"],
   "deal": {"active": true, "label": "20% off beginner group lessons — today only", "tag": "20% OFF"},
@@ -61,7 +61,7 @@ const placeBaysurfData = `{
 
 const placeHangtimeData = `{
   "type": "Sunset Bar", "icon": "Martini", "color": "sun",
-  "x": 48, "y": 22, "rating": 4.7, "reviews": 388, "distance": "900 m", "priceLevel": "$$$",
+  "x": 48, "y": 22, "lat": 5.9744, "lng": 80.4291, "rating": 4.7, "reviews": 388, "distance": "900 m", "priceLevel": "$$$",
   "wifi": {"score": 7.0, "speed": "31 Mbps", "label": "Good"},
   "hours": "4:00 PM – 1:00 AM", "openNow": false, "bestTimes": ["evening"],
   "deal": {"active": true, "label": "Happy hour 5–7 PM · 2-for-1 arrack cocktails", "tag": "Happy Hr"},
@@ -83,7 +83,7 @@ const placeHangtimeData = `{
 
 const placeClaystudioData = `{
   "type": "Pottery Workshop", "icon": "Palette", "color": "clay",
-  "x": 19, "y": 34, "rating": 4.9, "reviews": 96, "distance": "300 m", "priceLevel": "$$",
+  "x": 19, "y": 34, "lat": 5.9734, "lng": 80.4270, "rating": 4.9, "reviews": 96, "distance": "300 m", "priceLevel": "$$",
   "wifi": {"score": 5.0, "speed": "18 Mbps", "label": "Okay"},
   "hours": "9:00 AM – 6:00 PM", "openNow": true, "bestTimes": ["morning", "afternoon"],
   "indoor": true, "artisan": true,
@@ -96,7 +96,7 @@ const placeClaystudioData = `{
 
 const placeBatikData = `{
   "type": "Batik Atelier", "icon": "Brush", "color": "plum",
-  "x": 73, "y": 30, "rating": 4.8, "reviews": 73, "distance": "750 m", "priceLevel": "$$",
+  "x": 73, "y": 30, "lat": 5.9738, "lng": 80.4309, "rating": 4.8, "reviews": 73, "distance": "750 m", "priceLevel": "$$",
   "wifi": {"score": 5.5, "speed": "20 Mbps", "label": "Okay"},
   "hours": "9:30 AM – 5:30 PM", "openNow": true, "bestTimes": ["morning", "afternoon"],
   "indoor": true, "artisan": true,

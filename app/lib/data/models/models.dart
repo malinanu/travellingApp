@@ -75,6 +75,8 @@ class Place {
   final String color; // pin tone key: teal/coral/sun/clay/plum
   final double x; // map position, percent 0-100
   final double y;
+  final double lat; // real-world coordinates, for the Google Map
+  final double lng;
   final double rating;
   final int reviews;
   final String distance;
@@ -101,6 +103,8 @@ class Place {
     required this.color,
     required this.x,
     required this.y,
+    this.lat = 0,
+    this.lng = 0,
     required this.rating,
     required this.reviews,
     required this.distance,
@@ -129,6 +133,8 @@ class Place {
         color: json['color'] as String? ?? 'teal',
         x: (json['x'] as num?)?.toDouble() ?? 50,
         y: (json['y'] as num?)?.toDouble() ?? 50,
+        lat: (json['lat'] as num?)?.toDouble() ?? 0,
+        lng: (json['lng'] as num?)?.toDouble() ?? 0,
         rating: (json['rating'] as num?)?.toDouble() ?? 0,
         reviews: (json['reviews'] as num?)?.toInt() ?? 0,
         distance: json['distance'] as String? ?? '',
@@ -178,6 +184,8 @@ class Traveler {
   final int color; // ARGB
   final double x;
   final double y;
+  final double lat; // real-world coordinates, for the Google Map
+  final double lng;
   final String at;
   final String sub;
   final bool seededIn; // `in` in the prototype: seeded group member
@@ -188,6 +196,8 @@ class Traveler {
     required this.color,
     this.x = 0,
     this.y = 0,
+    this.lat = 0,
+    this.lng = 0,
     required this.at,
     required this.sub,
     this.seededIn = false,

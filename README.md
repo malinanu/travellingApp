@@ -49,6 +49,23 @@ flutter pub get          # first time
 flutter run               # API defaults to http://10.0.2.2:8080; override with --dart-define=API_URL=...
 ```
 
+### Google Maps setup (Discover tab)
+
+The Discover tab shows a real Google Map of Weligama Bay. It needs a Maps SDK
+for Android API key:
+
+1. Create/select a project at https://console.cloud.google.com/, enable
+   **Maps SDK for Android**, and enable billing (Google's free tier covers
+   normal dev/demo usage).
+2. Add one line to `app/android/local.properties` (already gitignored, so
+   the key is never committed):
+   ```
+   MAPS_API_KEY=your-key-here
+   ```
+3. Rebuild the app. Without a key the map shows a grey background with a
+   Google logo, but nothing crashes — everything else (weather bar, quest
+   chip, filters) still works.
+
 ## Demo accounts (created by `cmd/seed`, password `spotto123`)
 
 - Traveller: `lena@spotto.dev`

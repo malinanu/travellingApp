@@ -28,6 +28,7 @@ const places = [
     icon: 'Coffee',
     color: 'teal',
     x: 33, y: 38,
+    lat: 5.9731, lng: 80.4280,
     rating: 4.8,
     reviews: 212,
     distance: '400 m',
@@ -63,6 +64,7 @@ const places = [
     icon: 'Waves',
     color: 'coral',
     x: 62, y: 64,
+    lat: 5.9711, lng: 80.4301,
     rating: 4.9,
     reviews: 540,
     distance: '650 m',
@@ -84,6 +86,7 @@ const places = [
     icon: 'Martini',
     color: 'sun',
     x: 48, y: 22,
+    lat: 5.9744, lng: 80.4291,
     rating: 4.7,
     reviews: 388,
     distance: '900 m',
@@ -116,6 +119,7 @@ const places = [
     icon: 'Palette',
     color: 'clay',
     x: 19, y: 34,
+    lat: 5.9734, lng: 80.4270,
     rating: 4.9,
     reviews: 96,
     distance: '300 m',
@@ -139,6 +143,7 @@ const places = [
     icon: 'Brush',
     color: 'plum',
     x: 73, y: 30,
+    lat: 5.9738, lng: 80.4309,
     rating: 4.8,
     reviews: 73,
     distance: '750 m',
@@ -170,12 +175,12 @@ const weatherKinds = {
 };
 
 const travelers = [
-  Traveler(id: 'mia', name: 'Mia', initial: 'M', color: 0xFFF0682F, x: 36, y: 33, at: 'Driftwood Coffee', sub: 'Surfing the main break', seededIn: true),
-  Traveler(id: 'theo', name: 'Theo', initial: 'T', color: 0xFF7C5CFF, x: 60, y: 58, at: 'Bay Surf School', sub: 'On for sunset drinks', seededIn: true),
-  Traveler(id: 'ines', name: 'Inès', initial: 'I', color: 0xFF0EA5E9, x: 50, y: 26, at: 'Hangtime Rooftop', sub: 'Café-hopping today', seededIn: true),
-  Traveler(id: 'kai', name: 'Kai', initial: 'K', color: 0xFF0B6F86, x: 28, y: 64, at: 'Lazy Left', sub: 'Also in Weligama'),
-  Traveler(id: 'sofia', name: 'Sofia', initial: 'S', color: 0xFFDB2777, x: 70, y: 38, at: 'Clay Studio', sub: 'From your Ella trip'),
-  Traveler(id: 'noah', name: 'Noah', initial: 'N', color: 0xFFEAA200, x: 44, y: 48, at: 'Coconut Tree Hill', sub: '2 mutual travellers'),
+  Traveler(id: 'mia', name: 'Mia', initial: 'M', color: 0xFFF0682F, x: 36, y: 33, lat: 5.9735, lng: 80.4282, at: 'Driftwood Coffee', sub: 'Surfing the main break', seededIn: true),
+  Traveler(id: 'theo', name: 'Theo', initial: 'T', color: 0xFF7C5CFF, x: 60, y: 58, lat: 5.9715, lng: 80.4300, at: 'Bay Surf School', sub: 'On for sunset drinks', seededIn: true),
+  Traveler(id: 'ines', name: 'Inès', initial: 'I', color: 0xFF0EA5E9, x: 50, y: 26, lat: 5.9741, lng: 80.4292, at: 'Hangtime Rooftop', sub: 'Café-hopping today', seededIn: true),
+  Traveler(id: 'kai', name: 'Kai', initial: 'K', color: 0xFF0B6F86, x: 28, y: 64, lat: 5.9710, lng: 80.4276, at: 'Lazy Left', sub: 'Also in Weligama'),
+  Traveler(id: 'sofia', name: 'Sofia', initial: 'S', color: 0xFFDB2777, x: 70, y: 38, lat: 5.9731, lng: 80.4307, at: 'Clay Studio', sub: 'From your Ella trip'),
+  Traveler(id: 'noah', name: 'Noah', initial: 'N', color: 0xFFEAA200, x: 44, y: 48, lat: 5.9723, lng: 80.4288, at: 'Coconut Tree Hill', sub: '2 mutual travellers'),
 ];
 
 const me = Traveler(id: 'me', name: 'You', initial: 'LM', color: 0xFF0B6F86, at: 'Weligama town', sub: 'Trip host');

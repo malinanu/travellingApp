@@ -1,25 +1,92 @@
-// Discover tab: stylised Weligama Bay map with pins, weather bar and
-// time-of-day filter — port of MapView.jsx + SatelliteMap.jsx (M1 scope).
+// Discover tab: real Google Map of Weligama Bay with highlighted place
+// markers, weather bar and time-of-day filter — port of MapView.jsx +
+// SatelliteMap.jsx, upgraded from the illustrated SVG to google_maps_flutter.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/theme/palette.dart';
+import '../../../core/widgets/map_marker.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/spotto_icons.dart';
 import '../../../data/mock/places.dart' as data;
+import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import '../group/group_sheet.dart';
 import '../place_detail/business_drawer.dart';
-import '../trip/widgets/trip_common.dart';
 
-class DiscoverScreen extends ConsumerWidget {
+/// Weligama Bay center — initial camera target for the Discover map.
+const _weligamaBay = LatLng(5.9724, 80.4292);
+
+class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DiscoverScreen> createState() => _DiscoverScreenState();
+}
+
+class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
+  final _pinCache = PinBitmapCache();
+  Set<Marker> _markers = {};
+  String? _builtForTime;
+  bool _builtForGroupMode = false;
+
+  Future<void> _rebuildMarkers({
+    required List<Place> places,
+    required String time,
+    required bool groupMode,
+    required List<Traveler> members,
+    required BuildContext context,
+  }) async {
+    final next = <Marker>{};
+    for (final p in places) {
+      if (p.lat == 0 && p.lng == 0) continue; // no real coordinates yet
+      final emphasized = p.bestTimes.contains(time);
+      final icon = await _pinCache.place(
+        key: p.id,
+        color: SpottoColors.pinTones[p.color] ?? SpottoColors.accent,
+        icon: spottoIcon(p.icon),
+        hasDeal: p.deal.active,
+        emphasized: emphasized,
+      );
+      next.add(Marker(
+        markerId: MarkerId('place_${p.id}'),
+        position: LatLng(p.lat, p.lng),
+        icon: icon,
+        anchor: const Offset(0.5, 0.5),
+        alpha: emphasized ? 1.0 : 0.45,
+        zIndexInt: emphasized ? 1 : 0,
+        consumeTapEvents: true,
+        onTap: () => showBusinessDrawer(context, p),
+      ));
+    }
+
+    if (groupMode) {
+      for (final m in members) {
+        if (m.lat == 0 && m.lng == 0) continue;
+        final icon = await _pinCache.avatar(
+          key: 'traveler_${m.id}',
+          initial: m.initial,
+          color: Color(m.color),
+        );
+        next.add(Marker(
+          markerId: MarkerId('traveler_${m.id}'),
+          position: LatLng(m.lat, m.lng),
+          icon: icon,
+          anchor: const Offset(0.5, 0.5),
+          infoWindow: InfoWindow(title: m.name, snippet: m.sub),
+        ));
+      }
+    }
+
+    if (!mounted) return;
+    setState(() => _markers = next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final time = ref.watch(timeFilterProvider);
     final weather = data.weatherKinds[ref.watch(weatherProvider)]!;
     final text = Theme.of(context).textTheme;
@@ -29,72 +96,40 @@ class DiscoverScreen extends ConsumerWidget {
         .map((id) => data.travelers.where((t) => t.id == id).firstOrNull)
         .nonNulls
         .toList();
+    final places = ref.watch(placesProvider);
+
+    if (_builtForTime != time || _builtForGroupMode != groupMode) {
+      _builtForTime = time;
+      _builtForGroupMode = groupMode;
+      _rebuildMarkers(
+        places: places,
+        time: time,
+        groupMode: groupMode,
+        members: members,
+        context: context,
+      );
+    }
 
     return Stack(
       fit: StackFit.expand,
       children: [
         // base map
-        SvgPicture.asset('assets/map/weligama_bay.svg', fit: BoxFit.cover),
-
-        // time-of-day lighting overlay (700ms like the prototype)
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 700),
-          decoration: BoxDecoration(gradient: _lighting(time)),
+        GoogleMap(
+          initialCameraPosition: const CameraPosition(target: _weligamaBay, zoom: 16),
+          markers: _markers,
+          myLocationButtonEnabled: false,
+          zoomControlsEnabled: false,
+          mapToolbarEnabled: false,
+          compassEnabled: false,
         ),
 
-        // pins
-        ...ref.watch(placesProvider).map((p) {
-          final emphasized = p.bestTimes.contains(time);
-          return Align(
-            alignment: FractionalOffset(p.x / 100, p.y / 100),
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 400),
-              opacity: emphasized ? 1 : 0.45,
-              child: PressScale(
-                onTap: () => showBusinessDrawer(context, p),
-                child: _Pin(
-                  color: SpottoColors.pinTones[p.color] ?? SpottoColors.accent,
-                  icon: spottoIcon(p.icon),
-                  hasDeal: p.deal.active,
-                  emphasized: emphasized,
-                ),
-              ),
-            ),
-          );
-        }),
-
-        // group member overlay
-        if (groupMode)
-          ...members.where((m) => m.x > 0 || m.y > 0).map(
-                (m) => Align(
-                  alignment: FractionalOffset(m.x / 100, m.y / 100),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AvatarBubble(initial: m.initial, color: Color(m.color), size: 34),
-                      Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: const [
-                            BoxShadow(
-                                color: SpottoColors.inkShadow,
-                                blurRadius: 6,
-                                offset: Offset(0, 2))
-                          ],
-                        ),
-                        child: Text(m.name,
-                            style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                color: SpottoColors.ink)),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+        // time-of-day lighting overlay (700ms like the prototype)
+        IgnorePointer(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 700),
+            decoration: BoxDecoration(gradient: _lighting(time)),
+          ),
+        ),
 
         // top: weather bar
         SafeArea(
@@ -408,52 +443,3 @@ class _QuestChip extends StatelessWidget {
   }
 }
 
-class _Pin extends StatelessWidget {
-  final Color color;
-  final IconData icon;
-  final bool hasDeal;
-  final bool emphasized;
-
-  const _Pin({required this.color, required this.icon, required this.hasDeal, required this.emphasized});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 52,
-      height: 58,
-      child: Stack(
-        alignment: Alignment.topCenter,
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            width: emphasized ? 44 : 38,
-            height: emphasized ? 44 : 38,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 3),
-              boxShadow: const [
-                BoxShadow(color: SpottoColors.inkShadow, blurRadius: 8, offset: Offset(0, 3)),
-              ],
-            ),
-            child: Icon(icon, color: Colors.white, size: emphasized ? 20 : 17),
-          ),
-          if (hasDeal)
-            Positioned(
-              right: 2,
-              top: 0,
-              child: Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: SpottoColors.sun,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
