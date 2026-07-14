@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Sunny Postcard tokens (shared with the Flutter app + prototype) */
+:root {
+  --cream: #fbf6ed;
+  --sand: #f3ecdd;
+  --ink: #103d3a;
+  --muted: #6c8582;
+  --line: #e7dfd0;
+  --accent: #0b6f86;
+  --accent-2: #0e8c8a;
+  --accent-tint: #e0eef1;
+  --sun: #f6b81e;
+  --coral: #f0682f;
+}
+
+body {
+  background: var(--cream);
+  color: var(--ink);
+}
+
+::selection {
+  background: var(--accent-tint);
+}
+
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 12px;
+  font-weight: 800;
+  transition: filter 120ms;
+}
+.btn-accent:hover {
+  filter: brightness(1.08);
+}
+.btn-accent:disabled {
+  opacity: 0.5;
+}
+
+.input {
+  width: 100%;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 600;
+  outline: none;
+}
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+@keyframes feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.feed-in {
+  animation: feed-in 300ms ease-out;
+}

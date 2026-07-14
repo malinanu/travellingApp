@@ -1,0 +1,14 @@
+{
+  "name": "spotto-web",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "vendor",
+    "admin"
+  ],
+  "scripts": {
+    "dev:vendor": "npm run dev -w vendor",
+    "dev:admin": "npm run dev -w admin",
+    "build": "npm run build -w vendor && npm run build -w admin"
+  }
+}
