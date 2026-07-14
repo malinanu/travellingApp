@@ -8,6 +8,9 @@ out/
 server/.env
 server/bin/
 
+# Docker Compose (root) — real secrets/URLs live here, never commit
+.env
+
 # Flutter / Dart
 app/.dart_tool/
 app/build/

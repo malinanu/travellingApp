@@ -1,0 +1,43 @@
+services:
+  api:
+    build:
+      context: ./server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    networks: [spotto]
+
+  vendor:
+    build:
+      context: ./web
+      dockerfile: vendor/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on: [api]
+    networks: [spotto]
+
+  admin:
+    build:
+      context: ./web
+      dockerfile: admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    restart: unless-stopped
+    environment:
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on: [api]
+    networks: [spotto]
+
+networks:
+  spotto:
+    driver: bridge
