@@ -10,6 +10,19 @@ Three platforms sharing one Go API:
 | `server/` | API | Go (chi + pgx) + PostgreSQL | 8080 |
 | `Prototype/` | Original React JSX design prototype (reference only) | — | — |
 
+## Quick start
+
+```powershell
+.\run-all.ps1            # starts Postgres check, API, vendor webapp, admin webapp
+.\run-all.ps1 -SkipSeed  # keep existing DB data instead of reseeding
+.\run-all.ps1 -App       # also launches the Flutter traveller app
+```
+
+Each service opens in its own PowerShell window so you can see its logs; the
+script waits on health checks and prints a summary with URLs and demo
+accounts when everything's up. See below for what it automates, or to run
+things manually one at a time.
+
 ## Run everything (4 terminals)
 
 ```powershell
