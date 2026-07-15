@@ -1,9 +1,12 @@
 'use client';
 
 // Growth tools — flash sale radius, stamp card, BTS clips, sponsored boost.
-// Port of GrowthTools.jsx (actions are demo-local, data from /vendor/growth).
+// Port of GrowthTools.jsx. Flash sale is a real action (POST
+// /vendor/growth/flash-sale); Boost is a paid feature deferred pending a
+// payment-processor decision (see PORTAINER.md / profile Payment page for
+// the same deferral elsewhere) and shown as a "coming soon" stub.
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Coffee, Flame, MapPin, Megaphone, Play, Sparkles, Star, Zap, LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 
@@ -15,12 +18,17 @@ const CLIP_ICONS: Record<string, LucideIcon> = { Coffee, Flame, Sparkles };
 const TIER_ICONS: Record<string, LucideIcon> = { MapPin, Star, Megaphone };
 
 export default function GrowthPage() {
+  const qc = useQueryClient();
   const { data: g } = useQuery<GrowthBlob>({
     queryKey: ['growth'],
     queryFn: () => api.get<GrowthBlob>('/vendor/growth'),
   });
-  const [flashSent, setFlashSent] = useState(false);
   const [boostTier, setBoostTier] = useState('category');
+
+  const sendFlashSale = useMutation({
+    mutationFn: () => api.post('/vendor/growth/flash-sale', {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['growth'] }),
+  });
 
   return (
     <Shell>
@@ -42,11 +50,16 @@ export default function GrowthPage() {
           </div>
           <button
             className="btn-accent w-full py-3"
-            disabled={flashSent}
-            onClick={() => setFlashSent(true)}
+            disabled={sendFlashSale.isPending || (g?.flash?.lastSentMins ?? Infinity) < 180}
+            onClick={() => sendFlashSale.mutate()}
           >
-            {flashSent ? 'Blast sent ✓' : 'Send a flash sale'}
+            {sendFlashSale.isSuccess ? 'Blast sent ✓' : sendFlashSale.isPending ? 'Sending…' : 'Send a flash sale'}
           </button>
+          {sendFlashSale.isError && (
+            <p className="text-[11.5px] font-semibold mt-2 text-center" style={{ color: '#c2666f' }}>
+              {sendFlashSale.error instanceof Error ? sendFlashSale.error.message : 'Could not send — try again.'}
+            </p>
+          )}
           <p className="text-[11.5px] text-muted font-semibold mt-2 text-center">
             Last sent {Math.round((g?.flash?.lastSentMins ?? 0) / 60)} hr ago · limit 1 per 3 hr
           </p>
@@ -135,7 +148,9 @@ export default function GrowthPage() {
               );
             })}
           </div>
-          <button className="btn-accent w-full py-3">Boost for ${g?.boost?.tiers?.find((t) => t.id === boostTier)?.price ?? 0}</button>
+          <button className="btn-accent w-full py-3 opacity-50 cursor-not-allowed" disabled title="Paid boosts are coming soon">
+            Boost for ${g?.boost?.tiers?.find((t) => t.id === boostTier)?.price ?? 0} · Coming soon
+          </button>
         </div>
       </div>
     </Shell>

@@ -1,8 +1,14 @@
-// Profile sub-pages (all mock/local state): security, payment, privacy, help.
+// Profile sub-pages. Security and Privacy are wired to the real API;
+// Payment is a deferred "coming soon" stub (needs a payment processor
+// decision); Help is legitimate static content.
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
+import '../../../data/repositories/repositories.dart';
 import 'profile_screen.dart';
 
 class _SubPage extends StatelessWidget {
@@ -42,20 +48,22 @@ class _SubPage extends StatelessWidget {
   }
 }
 
-class SecurityPage extends StatefulWidget {
+class SecurityPage extends ConsumerStatefulWidget {
   final VoidCallback onBack;
   const SecurityPage({super.key, required this.onBack});
 
   @override
-  State<SecurityPage> createState() => _SecurityPageState();
+  ConsumerState<SecurityPage> createState() => _SecurityPageState();
 }
 
-class _SecurityPageState extends State<SecurityPage> {
+class _SecurityPageState extends ConsumerState<SecurityPage> {
   final _current = TextEditingController();
   final _pw = TextEditingController();
   final _pw2 = TextEditingController();
-  bool _twofa = true;
   bool _saved = false;
+  bool _saving = false;
+  String? _error;
+  bool _twofaBusy = false;
 
   @override
   void dispose() {
@@ -63,6 +71,170 @@ class _SecurityPageState extends State<SecurityPage> {
     _pw.dispose();
     _pw2.dispose();
     super.dispose();
+  }
+
+  Future<void> _changePassword() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final res = await ref.read(apiProvider).dio.put('/auth/password', data: {
+        'currentPassword': _current.text,
+        'newPassword': _pw.text,
+      });
+      await ref.read(localStoreProvider).setToken(res.data['token'] as String);
+      _current.clear();
+      _pw.clear();
+      _pw2.clear();
+      setState(() {
+        _saving = false;
+        _saved = true;
+      });
+      Future.delayed(const Duration(milliseconds: 1800), () {
+        if (mounted) setState(() => _saved = false);
+      });
+    } catch (e) {
+      setState(() {
+        _saving = false;
+        _error = ApiClient.errorMessage(e);
+      });
+    }
+  }
+
+  Future<void> _toggleTwoFactor(bool enable) async {
+    setState(() => _twofaBusy = true);
+    try {
+      if (enable) {
+        final setup = await ref.read(apiProvider).dio.post('/auth/2fa/setup');
+        if (!mounted) return;
+        final confirmed = await _showTwoFactorSetupSheet(
+          secret: setup.data['secret'] as String,
+          otpauthUrl: setup.data['otpauthUrl'] as String,
+        );
+        if (confirmed) await ref.read(meProvider.notifier).refresh();
+      } else {
+        final code = await _promptForCode(
+          title: 'Disable two-factor authentication',
+          confirmLabel: 'Disable',
+        );
+        if (code == null) return;
+        final res =
+            await ref.read(apiProvider).dio.post('/auth/2fa/disable', data: {'code': code});
+        await ref.read(localStoreProvider).setToken(res.data['token'] as String);
+        await ref.read(meProvider.notifier).refresh();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
+      }
+    } finally {
+      if (mounted) setState(() => _twofaBusy = false);
+    }
+  }
+
+  /// Shows the QR + manual-entry secret, then a code field to confirm setup
+  /// via POST /auth/2fa/enable. Returns true once enabling succeeds.
+  Future<bool> _showTwoFactorSetupSheet({
+    required String secret,
+    required String otpauthUrl,
+  }) async {
+    final codeCtrl = TextEditingController();
+    var enabling = false;
+    String? error;
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Scan with your authenticator app',
+                  style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 16),
+              Center(
+                child: QrImageView(data: otpauthUrl, size: 200),
+              ),
+              const SizedBox(height: 12),
+              Text('Or enter this code manually:',
+                  style: Theme.of(ctx)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: SpottoColors.muted)),
+              const SizedBox(height: 4),
+              SelectableText(secret,
+                  style: Theme.of(ctx)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(letterSpacing: 1.2)),
+              const SizedBox(height: 20),
+              profField(ctx, '6-digit code', codeCtrl, Icons.pin_outlined),
+              if (error != null) ...[
+                const SizedBox(height: 8),
+                Text(error!, style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+              ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: enabling
+                      ? null
+                      : () async {
+                          setSheetState(() {
+                            enabling = true;
+                            error = null;
+                          });
+                          try {
+                            await ref
+                                .read(apiProvider)
+                                .dio
+                                .post('/auth/2fa/enable', data: {'code': codeCtrl.text});
+                            if (ctx.mounted) Navigator.of(ctx).pop(true);
+                          } catch (e) {
+                            setSheetState(() {
+                              enabling = false;
+                              error = ApiClient.errorMessage(e);
+                            });
+                          }
+                        },
+                  child: Text(enabling ? 'Enabling…' : 'Enable'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  /// Prompts for a 6-digit code (used to confirm disabling 2FA). Returns
+  /// null if the user cancels.
+  Future<String?> _promptForCode({required String title, required String confirmLabel}) {
+    final codeCtrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: profField(ctx, '6-digit code', codeCtrl, Icons.pin_outlined),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(codeCtrl.text),
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
   }
 
   ({int score, String label, Color color}) get _strength {
@@ -119,23 +291,19 @@ class _SecurityPageState extends State<SecurityPage> {
           const SizedBox(height: 14),
           profField(context, 'Confirm new password', _pw2, Icons.lock_outline,
               obscure: true, onChanged: () => setState(() {})),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: FilledButton(
               style: _saved ? FilledButton.styleFrom(backgroundColor: const Color(0xFF16A34A)) : null,
-              onPressed: _pw.text.isNotEmpty && _pw.text == _pw2.text
-                  ? () {
-                      setState(() => _saved = true);
-                      _current.clear();
-                      _pw.clear();
-                      _pw2.clear();
-                      Future.delayed(const Duration(milliseconds: 1800), () {
-                        if (mounted) setState(() => _saved = false);
-                      });
-                    }
+              onPressed: !_saving && _pw.text.isNotEmpty && _pw.text == _pw2.text && _current.text.isNotEmpty
+                  ? _changePassword
                   : null,
-              child: Text(_saved ? 'Password updated' : 'Update password'),
+              child: Text(_saved ? 'Password updated' : (_saving ? 'Updating…' : 'Update password')),
             ),
           ),
         ]),
@@ -155,11 +323,17 @@ class _SecurityPageState extends State<SecurityPage> {
                   ],
                 ),
               ),
-              Switch(
-                value: _twofa,
-                activeTrackColor: SpottoColors.accent,
-                onChanged: (v) => setState(() => _twofa = v),
-              ),
+              _twofaBusy
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                    )
+                  : Switch(
+                      value: ref.watch(meProvider)?['totpEnabled'] as bool? ?? false,
+                      activeTrackColor: SpottoColors.accent,
+                      onChanged: _toggleTwoFactor,
+                    ),
             ],
           ),
         ]),
@@ -306,27 +480,46 @@ class PaymentPage extends StatelessWidget {
   }
 }
 
-class PrivacyPage extends StatefulWidget {
+class PrivacyPage extends ConsumerStatefulWidget {
   final VoidCallback onBack;
   const PrivacyPage({super.key, required this.onBack});
 
   @override
-  State<PrivacyPage> createState() => _PrivacyPageState();
+  ConsumerState<PrivacyPage> createState() => _PrivacyPageState();
 }
 
-class _PrivacyPageState extends State<PrivacyPage> {
+class _PrivacyPageState extends ConsumerState<PrivacyPage> {
+  // 'location' is backed by the real /me/privacy endpoint (see meProvider
+  // below); the rest have no backend field yet and stay local-only.
   final Map<String, bool> _toggles = {
-    'location': true,
     'group': true,
     'vibe': true,
     'analytics': false,
     'marketing': false,
   };
+  bool _locationBusy = false;
+
+  Future<void> _setShareLocation(bool value) async {
+    setState(() => _locationBusy = true);
+    try {
+      await ref.read(apiProvider).dio.put('/me/privacy', data: {'shareLocation': value});
+      await ref.read(meProvider.notifier).refresh();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
+      }
+    } finally {
+      if (mounted) setState(() => _locationBusy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    Widget toggleRow(String key, IconData icon, String title, String sub) => Padding(
+    Widget toggleRow(String title, String sub, IconData icon,
+            {required bool value, required ValueChanged<bool> onChanged, bool busy = false}) =>
+        Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
             children: [
@@ -341,11 +534,17 @@ class _PrivacyPageState extends State<PrivacyPage> {
                   ],
                 ),
               ),
-              Switch(
-                value: _toggles[key] ?? false,
-                activeTrackColor: SpottoColors.accent,
-                onChanged: (v) => setState(() => _toggles[key] = v),
-              ),
+              busy
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                    )
+                  : Switch(
+                      value: value,
+                      activeTrackColor: SpottoColors.accent,
+                      onChanged: onChanged,
+                    ),
             ],
           ),
         );
@@ -355,22 +554,36 @@ class _PrivacyPageState extends State<PrivacyPage> {
       onBack: widget.onBack,
       children: [
         sectionCard(context, 'Location & sharing', [
-          toggleRow('location', Icons.place_outlined, 'Share live location',
-              'Friends in your group can see you on the map'),
+          toggleRow(
+            'Share live location',
+            'Other opted-in travellers nearby can see you on the map',
+            Icons.place_outlined,
+            value: ref.watch(meProvider)?['shareLocation'] as bool? ?? false,
+            onChanged: _setShareLocation,
+            busy: _locationBusy,
+          ),
           const Divider(height: 1),
-          toggleRow('group', Icons.group_outlined, 'Visible to group',
-              'Appear in the group member list'),
+          toggleRow('Visible to group', 'Appear in the group member list',
+              Icons.group_outlined,
+              value: _toggles['group']!,
+              onChanged: (v) => setState(() => _toggles['group'] = v)),
           const Divider(height: 1),
-          toggleRow('vibe', Icons.monitor_heart_outlined, 'Count my vibe votes',
-              'Include your votes in public vibe stats'),
+          toggleRow('Count my vibe votes', 'Include your votes in public vibe stats',
+              Icons.monitor_heart_outlined,
+              value: _toggles['vibe']!,
+              onChanged: (v) => setState(() => _toggles['vibe'] = v)),
         ]),
         const SizedBox(height: 22),
         sectionCard(context, 'Data', [
-          toggleRow('analytics', Icons.insights_outlined, 'Usage analytics',
-              'Help improve Spotto with anonymous stats'),
+          toggleRow('Usage analytics', 'Help improve Spotto with anonymous stats',
+              Icons.insights_outlined,
+              value: _toggles['analytics']!,
+              onChanged: (v) => setState(() => _toggles['analytics'] = v)),
           const Divider(height: 1),
-          toggleRow('marketing', Icons.campaign_outlined, 'Personalised offers',
-              'Deals matched to your travel style'),
+          toggleRow('Personalised offers', 'Deals matched to your travel style',
+              Icons.campaign_outlined,
+              value: _toggles['marketing']!,
+              onChanged: (v) => setState(() => _toggles['marketing'] = v)),
         ]),
         const SizedBox(height: 22),
         sectionCard(context, null, [

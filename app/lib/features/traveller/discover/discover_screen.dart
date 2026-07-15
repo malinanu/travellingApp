@@ -20,6 +20,13 @@ import '../place_detail/business_drawer.dart';
 /// Weligama Bay center — initial camera target for the Discover map.
 const _weligamaBay = LatLng(5.9724, 80.4292);
 
+/// Real user's initial for the "you" avatar bubble, falling back to '?'
+/// before /me has loaded.
+String _myInitial(WidgetRef ref) {
+  final name = ref.watch(meProvider)?['name'] as String?;
+  return name != null && name.isNotEmpty ? name[0].toUpperCase() : '?';
+}
+
 class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
 
@@ -92,11 +99,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final text = Theme.of(context).textTheme;
     final groupMode = ref.watch(groupModeProvider);
     final group = ref.watch(groupProvider);
-    final members = group.memberIds
-        .map((id) => data.travelers.where((t) => t.id == id).firstOrNull)
-        .nonNulls
-        .toList();
+    final members = group.members.map(Traveler.fromGroupMember).toList();
     final places = ref.watch(placesProvider);
+    // Kicks off periodic location reporting + nearby-travellers fetch while
+    // this screen is open and the user has opted in (see PrivacyPage) — not
+    // used for markers directly (no exact position for non-group members),
+    // but keeps group_sheet's "invite nearby travellers" list fresh.
+    ref.watch(nearbyTravellersProvider);
 
     if (_builtForTime != time || _builtForGroupMode != groupMode) {
       _builtForTime = time;
@@ -266,7 +275,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                                 offset: Offset(0, 3)),
                           ],
                         ),
-                        child: Text(data.me.initial,
+                        child: Text(_myInitial(ref),
                             style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w800,

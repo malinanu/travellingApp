@@ -1,7 +1,7 @@
 'use client';
 
 // Audio guides CMS — library grid + new-guide form with depth multi-select
-// and a fake upload progress, publish toggle. Port of AudioCMS.jsx.
+// and publish toggle. Port of AudioCMS.jsx.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Headphones, MapPin, Plus, Radio, X } from 'lucide-react';
@@ -84,14 +84,14 @@ function NewGuideDrawer({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [site, setSite] = useState('');
   const [region, setRegion] = useState('');
+  const [lat, setLat] = useState('');
+  const [lng, setLng] = useState('');
   const [depths, setDepths] = useState<string[]>(['Quick']);
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
 
   const create = useMutation({
     mutationFn: () =>
       api.post('/admin/audio-guides', {
-        site, region, lat: 6.03, lng: 80.2, lang: 'EN', published: false, plays: 0,
+        site, region, lat: parseFloat(lat), lng: parseFloat(lng), lang: 'EN', published: false, plays: 0,
         depths, duration: Object.fromEntries(depths.map((d) => [d, d === 'Quick' ? '4m' : d === 'Standard' ? '12m' : '28m'])),
       }),
     onSuccess: () => {
@@ -100,20 +100,7 @@ function NewGuideDrawer({ onClose }: { onClose: () => void }) {
     },
   });
 
-  const submit = () => {
-    setUploading(true);
-    setProgress(0);
-    const t = setInterval(() => {
-      setProgress((p) => {
-        if (p >= 100) {
-          clearInterval(t);
-          create.mutate();
-          return 100;
-        }
-        return p + 20;
-      });
-    }, 150);
-  };
+  const validCoords = lat !== '' && lng !== '' && !Number.isNaN(parseFloat(lat)) && !Number.isNaN(parseFloat(lng));
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={onClose}>
@@ -127,6 +114,17 @@ function NewGuideDrawer({ onClose }: { onClose: () => void }) {
         <input className="input mb-4" value={site} onChange={(e) => setSite(e.target.value)} />
         <label className="block text-[13px] font-bold mb-1.5">Region</label>
         <input className="input mb-4" value={region} onChange={(e) => setRegion(e.target.value)} />
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="block text-[13px] font-bold mb-1.5">Latitude</label>
+            <input className="input" type="number" step="any" placeholder="5.9724" value={lat} onChange={(e) => setLat(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-[13px] font-bold mb-1.5">Longitude</label>
+            <input className="input" type="number" step="any" placeholder="80.4292" value={lng} onChange={(e) => setLng(e.target.value)} />
+          </div>
+        </div>
 
         <label className="block text-[13px] font-bold mb-1.5">Depths</label>
         <div className="space-y-2 mb-5">
@@ -144,17 +142,8 @@ function NewGuideDrawer({ onClose }: { onClose: () => void }) {
           })}
         </div>
 
-        {uploading && (
-          <div className="mb-4">
-            <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--line)' }}>
-              <div className="h-full" style={{ width: `${progress}%`, background: 'var(--accent)', transition: 'width 150ms' }} />
-            </div>
-            <p className="text-[12px] text-muted font-semibold mt-1">Uploading audio… {progress}%</p>
-          </div>
-        )}
-
-        <button className="btn btn-primary w-full py-3" disabled={!site || uploading} onClick={submit}>
-          {uploading ? 'Uploading…' : 'Create guide'}
+        <button className="btn btn-primary w-full py-3" disabled={!site || !validCoords || create.isPending} onClick={() => create.mutate()}>
+          {create.isPending ? 'Creating…' : 'Create guide'}
         </button>
       </div>
     </div>

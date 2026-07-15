@@ -94,6 +94,15 @@ class Place {
   final bool popularEvening;
   final String photo; // illustration kind: cowork/surf/sunset/clay/batik
   final List<MenuSection> menu;
+  final Map<String, int> vibes; // vibeId -> vote count, from the server
+  // Trip-planner fields — only meaningful for stops surfaced in the trip
+  // catalog (see TripCatalogItem.fromPlace in data/mock/trip_catalog.dart).
+  final int cost; // suggested visit cost, Rs
+  final List<String> styles; // travel styles this stop suits
+  final String hint; // suggested time "HH:mm"
+  final bool curated; // true for the 5 original Spotto business places —
+  // gates whether the trip planner links a stop to the full business drawer
+  // (menu/wifi/deal/reviews); plain points of interest have none of that.
 
   const Place({
     required this.id,
@@ -122,6 +131,11 @@ class Place {
     this.popularEvening = false,
     required this.photo,
     this.menu = const [],
+    this.vibes = const {},
+    this.cost = 0,
+    this.styles = const [],
+    this.hint = '',
+    this.curated = false,
   });
 
   /// Parses the API shape: place row flattened with its JSONB data document.
@@ -159,6 +173,14 @@ class Place {
           for (final s in (json['menu'] as List? ?? const []))
             MenuSection.fromJson(s as Map<String, dynamic>)
         ],
+        vibes: (json['vibes'] as Map?)?.map(
+              (k, v) => MapEntry(k as String, (v as num).toInt()),
+            ) ??
+            const {},
+        cost: (json['cost'] as num?)?.toInt() ?? 0,
+        styles: [for (final s in (json['styles'] as List? ?? const [])) s as String],
+        hint: json['hint'] as String? ?? '',
+        curated: json['curated'] as bool? ?? false,
       );
 }
 
@@ -189,6 +211,10 @@ class Traveler {
   final String at;
   final String sub;
   final bool seededIn; // `in` in the prototype: seeded group member
+  // hasPosition is false when a real group member hasn't opted into (or
+  // recently reported) their location — the map should skip their pin
+  // rather than show one at a stale/default (0,0) position.
+  final bool hasPosition;
   const Traveler({
     required this.id,
     required this.name,
@@ -201,7 +227,78 @@ class Traveler {
     required this.at,
     required this.sub,
     this.seededIn = false,
+    this.hasPosition = true,
   });
+
+  static const _colors = [0xFFF0682F, 0xFF0369A1, 0xFF7C5CFF, 0xFF0B6F86, 0xFF16A34A];
+
+  /// Maps a real, resolved group member onto the Traveler shape the map/UI
+  /// already knows how to render — real position only if they've shared it
+  /// (see GroupMember.lat/lng), never a fabricated one.
+  factory Traveler.fromGroupMember(GroupMember m) => Traveler(
+        id: m.id,
+        name: m.name,
+        initial: m.name.isNotEmpty ? m.name[0].toUpperCase() : '?',
+        color: _colors[m.id.hashCode.abs() % _colors.length],
+        lat: m.lat ?? 0,
+        lng: m.lng ?? 0,
+        at: m.lat != null ? 'their live location' : 'not sharing location right now',
+        sub: m.email,
+        seededIn: true,
+        hasPosition: m.lat != null && m.lng != null,
+      );
+
+  /// Maps a nearby-traveller lookup result onto the same display shape used
+  /// for the "add nearby travellers" suggestion list — distance shown
+  /// instead of an exact position, since NearbyTraveller never carries one.
+  factory Traveler.fromNearby(NearbyTraveller t) => Traveler(
+        id: t.id,
+        name: t.name,
+        initial: t.name.isNotEmpty ? t.name[0].toUpperCase() : '?',
+        color: _colors[t.id.hashCode.abs() % _colors.length],
+        at: t.distanceKm < 1
+            ? '${(t.distanceKm * 1000).round()} m away'
+            : '${t.distanceKm.toStringAsFixed(1)} km away',
+        sub: t.travelStyle,
+        hasPosition: false,
+      );
+
+  /// The current user's own row (group host), from /me's raw map
+  /// (see meProvider) — falls back to generic text before /me has loaded.
+  factory Traveler.fromMe(Map<String, dynamic>? me) {
+    final name = me?['name'] as String? ?? 'You';
+    return Traveler(
+      id: 'me',
+      name: name,
+      initial: name.isNotEmpty ? name[0].toUpperCase() : '?',
+      color: 0xFF0B6F86,
+      at: 'here',
+      sub: 'Trip host',
+    );
+  }
+}
+
+/// A nearby opted-in traveller (GET /travellers/nearby) — coarse distance
+/// only, never their exact position (unlike group members, who are a
+/// mutual-trust circle the user explicitly joined).
+class NearbyTraveller {
+  final String id;
+  final String name;
+  final String travelStyle;
+  final double distanceKm;
+  const NearbyTraveller({
+    required this.id,
+    required this.name,
+    required this.travelStyle,
+    required this.distanceKm,
+  });
+
+  factory NearbyTraveller.fromJson(Map<String, dynamic> json) => NearbyTraveller(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        travelStyle: json['travelStyle'] as String? ?? '',
+        distanceKm: (json['distanceKm'] as num).toDouble(),
+      );
 }
 
 /// A traveller's rating (1-5) + text for a place. 1-2 star reviews count
@@ -233,16 +330,47 @@ class Review {
       );
 }
 
+/// A group member's real profile, resolved server-side from memberIds
+/// (GET /me/group) — replaces the old fake local phone-contacts list.
+/// lat/lng are only present when that member has opted into live location
+/// sharing and reported a recent position — otherwise null, meaning "don't
+/// show a map pin for them right now" rather than a stale/fake one.
+class GroupMember {
+  final String id;
+  final String name;
+  final String email;
+  final double? lat;
+  final double? lng;
+  const GroupMember({required this.id, required this.name, required this.email, this.lat, this.lng});
+
+  factory GroupMember.fromJson(Map<String, dynamic> json) => GroupMember(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        email: json['email'] as String,
+        lat: (json['lat'] as num?)?.toDouble(),
+        lng: (json['lng'] as num?)?.toDouble(),
+      );
+}
+
 class Group {
   final String name;
   final String code;
   final List<String> memberIds;
-  const Group({required this.name, required this.code, required this.memberIds});
+  final List<GroupMember> members;
+  const Group({
+    required this.name,
+    required this.code,
+    required this.memberIds,
+    this.members = const [],
+  });
 
   Group copyWith({String? name, String? code, List<String>? memberIds}) => Group(
         name: name ?? this.name,
         code: code ?? this.code,
         memberIds: memberIds ?? this.memberIds,
+        // Resolved members are server-owned — cleared on any local edit
+        // until the next successful /me/group pull refreshes them.
+        members: const [],
       );
 
   Map<String, dynamic> toJson() => {'name': name, 'code': code, 'memberIds': memberIds};
@@ -250,6 +378,10 @@ class Group {
         name: json['name'] as String,
         code: json['code'] as String,
         memberIds: (json['memberIds'] as List).cast<String>(),
+        members: [
+          for (final m in (json['members'] as List? ?? const []))
+            GroupMember.fromJson((m as Map).cast<String, dynamic>())
+        ],
       );
 }
 

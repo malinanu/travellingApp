@@ -174,7 +174,13 @@ const weatherKinds = {
   'rainy': WeatherInfo(id: 'rainy', label: 'Rainy', icon: 'CloudRain', temp: '26°', tip: 'Monsoon shower — swap to indoor picks'),
 };
 
-const travelers = [
+// `travelers`/`me` start as this hardcoded offline fallback, then get
+// overwritten with real data (group members + nearby travellers resolved
+// via Traveler.fromGroupMember/fromNearby/fromMe) once available — same
+// offline-first pattern as tripCatalog in trip_catalog.dart. Kept around so
+// tripWho() (trip_common.dart) and any other id → Traveler lookups work
+// before the first successful fetch.
+var travelers = [
   Traveler(id: 'mia', name: 'Mia', initial: 'M', color: 0xFFF0682F, x: 36, y: 33, lat: 5.9735, lng: 80.4282, at: 'Driftwood Coffee', sub: 'Surfing the main break', seededIn: true),
   Traveler(id: 'theo', name: 'Theo', initial: 'T', color: 0xFF7C5CFF, x: 60, y: 58, lat: 5.9715, lng: 80.4300, at: 'Bay Surf School', sub: 'On for sunset drinks', seededIn: true),
   Traveler(id: 'ines', name: 'Inès', initial: 'I', color: 0xFF0EA5E9, x: 50, y: 26, lat: 5.9741, lng: 80.4292, at: 'Hangtime Rooftop', sub: 'Café-hopping today', seededIn: true),
@@ -183,7 +189,7 @@ const travelers = [
   Traveler(id: 'noah', name: 'Noah', initial: 'N', color: 0xFFEAA200, x: 44, y: 48, lat: 5.9723, lng: 80.4288, at: 'Coconut Tree Hill', sub: '2 mutual travellers'),
 ];
 
-const me = Traveler(id: 'me', name: 'You', initial: 'LM', color: 0xFF0B6F86, at: 'Weligama town', sub: 'Trip host');
+var me = const Traveler(id: 'me', name: 'You', initial: 'LM', color: 0xFF0B6F86, at: 'Weligama town', sub: 'Trip host');
 
 const groupSeed = Group(name: 'Weligama Crew', code: 'WLG-4K2', memberIds: ['mia', 'theo', 'ines']);
 
@@ -192,11 +198,3 @@ const vibes = [
   VibeTag(id: 'loud', label: 'Loud', icon: 'Volume2', color: 0xFFF0682F),
   VibeTag(id: 'empty', label: 'Empty', icon: 'Wind', color: 0xFF6C8582),
 ];
-
-const vibeSeed = {
-  'driftwood': {'productive': 28, 'loud': 3, 'empty': 4},
-  'baysurf': {'productive': 5, 'loud': 14, 'empty': 6},
-  'hangtime': {'productive': 2, 'loud': 31, 'empty': 1},
-  'claystudio': {'productive': 12, 'loud': 2, 'empty': 9},
-  'batik': {'productive': 7, 'loud': 1, 'empty': 11},
-};

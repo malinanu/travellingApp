@@ -111,6 +111,20 @@ func Run(ctx context.Context, s *postgres.Store) error {
 		{ID: "hangtime", Name: "Hangtime Rooftop & Sunset Bar", Data: json.RawMessage(placeHangtimeData)},
 		{ID: "claystudio", Name: "Clay & Co Pottery Studio", Data: json.RawMessage(placeClaystudioData)},
 		{ID: "batik", Name: "Sea Salt Batik Atelier", Data: json.RawMessage(placeBatikData)},
+		// Wider-Weligama-area trip-planner stops — no vendor account, not
+		// curated Spotto businesses, just points of interest for the trip
+		// planner catalog (see data.go's comment above these blobs).
+		{ID: "bayvilla", Name: "Bay Villa Boutique Stay", Data: json.RawMessage(placeBayvillaData)},
+		{ID: "palmhostel", Name: "Palm & Board Hostel", Data: json.RawMessage(placePalmhostelData)},
+		{ID: "welibeach", Name: "Weligama Beach Point", Data: json.RawMessage(placeWelibeachData)},
+		{ID: "mirissa", Name: "Mirissa Beach", Data: json.RawMessage(placeMirissaData)},
+		{ID: "coconuthill", Name: "Coconut Tree Hill", Data: json.RawMessage(placeCoconuthillData)},
+		{ID: "kottu", Name: "Smoky Kottu Shack", Data: json.RawMessage(placeKottuData)},
+		{ID: "reefdine", Name: "Reef & Vine Dining", Data: json.RawMessage(placeReefdineData)},
+		{ID: "secretroot", Name: "Secret Root Spa", Data: json.RawMessage(placeSecretrootData)},
+		{ID: "taprobane", Name: "Taprobane Island Viewpoint", Data: json.RawMessage(placeTaprobaneData)},
+		{ID: "oldlight", Name: "Old Light Gallery Bar", Data: json.RawMessage(placeOldlightData)},
+		{ID: "morningmkt", Name: "Weligama Morning Market", Data: json.RawMessage(placeMorningmktData)},
 	}
 	for _, p := range places {
 		if err := s.UpsertPlace(ctx, p); err != nil {
@@ -168,9 +182,11 @@ func Run(ctx context.Context, s *postgres.Store) error {
 	}
 
 	// ── Group for Lena (groupSeed from places.dart) ──────────────────────
+	// Members must be real user IDs (not the old mock traveler names) so
+	// GET /me/group can resolve them to actual profiles.
 	if err := s.UpsertGroup(ctx, domain.Group{
 		OwnerID: "usr_lena", Name: "Weligama Crew", Code: "WLG-4K2",
-		MemberIDs: []string{"mia", "theo", "ines"},
+		MemberIDs: []string{"usr_tom", "usr_sara", "usr_marco"},
 	}); err != nil {
 		return fmt.Errorf("group: %w", err)
 	}

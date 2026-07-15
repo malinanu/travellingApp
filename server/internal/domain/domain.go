@@ -34,6 +34,13 @@ type User struct {
 	// TokenVersion is embedded in issued JWTs; bumping it (e.g. on 2FA
 	// disable) invalidates every token issued before the bump.
 	TokenVersion int `json:"-"`
+	// ShareLocation is the traveller's opt-in consent for the nearby-
+	// travellers feature; Lat/Lng/LocationUpdatedAt are only ever written
+	// when it's true, and cleared when it's turned off.
+	ShareLocation     bool       `json:"shareLocation"`
+	Lat               *float64   `json:"-"`
+	Lng               *float64   `json:"-"`
+	LocationUpdatedAt *time.Time `json:"-"`
 }
 
 type VendorStatus string

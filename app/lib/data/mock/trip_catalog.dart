@@ -1,9 +1,14 @@
 // Trip planner catalog + seed trip + distance helpers.
-// 1:1 port of Prototype/design/trip-data.jsx.
+// 1:1 port of Prototype/design/trip-data.jsx. `tripCatalog` below starts as
+// this hardcoded offline fallback, then PlacesNotifier overwrites it with
+// real /places data (mapped via TripCatalogItem.fromPlace) once fetched —
+// same offline-first pattern as seed.places/tripSeed/groupSeed elsewhere.
 
 import 'dart:math' as math;
 
 import 'package:intl/intl.dart';
+
+import '../models/models.dart' show Place;
 
 class TripCatalogItem {
   final String id;
@@ -28,6 +33,23 @@ class TripCatalogItem {
     required this.styles,
     required this.hint,
   });
+
+  /// Maps a real /places entry onto the trip-planner shape. `spottoId` is
+  /// only set for `curated` places (the original Spotto businesses with a
+  /// full menu/wifi/deal/reviews) — plain points of interest don't get a
+  /// business-drawer link.
+  factory TripCatalogItem.fromPlace(Place p) => TripCatalogItem(
+        id: p.id,
+        spottoId: p.curated ? p.id : null,
+        name: p.name,
+        type: p.type,
+        icon: p.icon,
+        lat: p.lat,
+        lng: p.lng,
+        cost: p.cost,
+        styles: p.styles,
+        hint: p.hint,
+      );
 }
 
 /// A one-off stop typed in by the user (not in the catalog).
@@ -161,7 +183,7 @@ class Leg {
   });
 }
 
-const tripCatalog = [
+var tripCatalog = [
   // Spotto curated (linked to PLACES so tapping opens the business drawer)
   TripCatalogItem(id: 'driftwood', spottoId: 'driftwood', name: 'Driftwood Coffee & Co-Work', type: 'Coworking Café', icon: 'Coffee', lat: 5.9762, lng: 80.4221, cost: 1200, styles: ['nomad'], hint: '8:00'),
   TripCatalogItem(id: 'baysurf', spottoId: 'baysurf', name: 'Weligama Bay Surf School', type: 'Surf School', icon: 'Waves', lat: 5.9716, lng: 80.4308, cost: 3500, styles: ['surf', 'backpacker'], hint: '6:30'),
@@ -296,25 +318,19 @@ int _tripUid = 100;
 String tripNewId(String prefix) =>
     '$prefix${++_tripUid}_${DateTime.now().millisecondsSinceEpoch % 10000}';
 
-/// A phone contact not on Spotto yet — invited with a link.
+/// An invitable person shown on the trip-share sheet — built from a real
+/// GroupMember (see trip_share_sheet.dart), not a hardcoded contacts list.
 class TripContact {
   final String id;
   final String name;
-  final String phone;
+  final String sub; // email, shown under the name
   final String initial;
   final int color; // ARGB
   const TripContact({
     required this.id,
     required this.name,
-    required this.phone,
+    required this.sub,
     required this.initial,
     required this.color,
   });
 }
-
-const tripContacts = [
-  TripContact(id: 'c_ava', name: 'Ava Fernando', phone: '+94 77 214 8890', initial: 'A', color: 0xFFF0682F),
-  TripContact(id: 'c_liam', name: 'Liam Perera', phone: '+94 76 551 2034', initial: 'L', color: 0xFF0369A1),
-  TripContact(id: 'c_nadia', name: 'Nadia Khan', phone: '+44 7700 900221', initial: 'N', color: 0xFF7C5CFF),
-  TripContact(id: 'c_ruth', name: 'Ruth Silva', phone: '+61 412 776 305', initial: 'R', color: 0xFF0B6F86),
-];

@@ -4,21 +4,6 @@
 // offset from now.
 package seed
 
-// FeedTemplate feeds the API's live-content generator goroutine.
-type FeedTemplate struct {
-	Vendor, Town, Type, Text, Status, Reason string
-}
-
-// FeedTemplates is FEED_TEMPLATES from admin-data.jsx.
-var FeedTemplates = []FeedTemplate{
-	{"Unawatuna Dive", "Unawatuna", "Offer", "Discover-scuba intro · 20% off", "ok", ""},
-	{"Hiriketiya Surf", "Dickwella", "Offer", "Beginner group lesson deal", "ok", ""},
-	{"Colombo Roasters", "Colombo", "Event", "Latte art throwdown · Friday", "ok", ""},
-	{"Best Deals Lanka", "Hikkaduwa", "Offer", "FREE MONEY click here to win $$$", "flag", "Phishing pattern detected"},
-	{"Sigiriya Sunrise", "Sigiriya", "Event", "Guided rock climb at dawn", "review", "Unverified safety cert"},
-	{"Jaffna Palmyra", "Jaffna", "Offer", "Authentic crab curry · lunch set", "ok", ""},
-}
-
 // placeDriftwoodData …placeBatikData mirror the Dart Place model in
 // app/lib/data/mock/places.dart (id/name/vendorId live on the row).
 const placeDriftwoodData = `{
@@ -31,6 +16,7 @@ const placeDriftwoodData = `{
   "blurb": "Airy garden café with a dedicated co-work loft, standing desks and the fastest fibre line in the bay. Sea-view seats on the upper deck.",
   "seaView": true, "photo": "cowork",
   "vibes": {"productive": 28, "loud": 3, "empty": 4},
+  "cost": 1200, "styles": ["nomad"], "hint": "8:00", "curated": true,
   "menu": [
     {"id": "s1", "name": "Breakfast", "items": [
       {"id": "m1", "name": "Coconut roti & curd bowl", "price": 950, "desc": "Pol roti, kithul treacle, buffalo curd", "icon": "EggFried"},
@@ -56,7 +42,8 @@ const placeBaysurfData = `{
   "tags": ["Surf", "Board rental", "Beginner friendly"],
   "blurb": "Right on the gentle beach-break that made Weligama famous for first-timers. Boards, rash guards and ISA-certified instructors.",
   "seaView": true, "photo": "surf",
-  "vibes": {"productive": 5, "loud": 14, "empty": 6}
+  "vibes": {"productive": 5, "loud": 14, "empty": 6},
+  "cost": 3500, "styles": ["surf", "backpacker"], "hint": "6:30", "curated": true
 }`
 
 const placeHangtimeData = `{
@@ -69,6 +56,7 @@ const placeHangtimeData = `{
   "blurb": "Palm-fringed rooftop facing due west over the bay — the spot locals point to when the sky turns gold. DJ sets Thu–Sun.",
   "seaView": true, "popularEvening": true, "photo": "sunset",
   "vibes": {"productive": 2, "loud": 31, "empty": 1},
+  "cost": 2800, "styles": ["nomad", "luxury"], "hint": "17:30", "curated": true,
   "menu": [
     {"id": "s1", "name": "Cocktails", "items": [
       {"id": "m1", "name": "Arrack sour", "price": 1400, "desc": "Ceylon arrack, lime, kithul, egg white", "icon": "Martini"},
@@ -91,7 +79,8 @@ const placeClaystudioData = `{
   "tags": ["Pottery", "Hands-on", "Indoor", "Local artisan"],
   "blurb": "A working clay studio tucked off the main road. Spin the wheel with resident potters — the perfect rainy-day plan when the surf is blown out.",
   "seaView": false, "photo": "clay",
-  "vibes": {"productive": 12, "loud": 2, "empty": 9}
+  "vibes": {"productive": 12, "loud": 2, "empty": 9},
+  "cost": 1500, "styles": ["backpacker"], "hint": "10:00", "curated": true
 }`
 
 const placeBatikData = `{
@@ -104,7 +93,72 @@ const placeBatikData = `{
   "tags": ["Batik", "Hand-dyed", "Indoor", "Local artisan"],
   "blurb": "Family atelier hand-waxing and dyeing batik the traditional way. Watch a panel come to life, or wax your own under the canopy.",
   "seaView": false, "photo": "batik",
-  "vibes": {"productive": 7, "loud": 1, "empty": 11}
+  "vibes": {"productive": 7, "loud": 1, "empty": 11},
+  "cost": 1000, "styles": ["luxury"], "hint": "11:00", "curated": true
+}`
+
+// The 11 blocks below are the wider-Weligama-area trip-planner stops (no
+// vendor account — vendor_id is NULL for all of them), ported from
+// app/lib/data/mock/trip_catalog.dart's tripCatalog so the trip planner can
+// source its full catalog from /places instead of a hardcoded Dart list.
+// Only the fields the trip planner actually needs (type/icon/lat/lng/cost/
+// styles/hint) are set — everything else defaults to zero/empty in the
+// Flutter Place model, which is fine for stops that aren't Spotto
+// businesses (no menu, wifi score, deal, etc. to show).
+
+const placeBayvillaData = `{
+  "type": "Hotel", "icon": "BedDouble", "color": "teal",
+  "lat": 5.9731, "lng": 80.4254, "cost": 9500, "styles": ["luxury", "nomad"], "hint": "14:00"
+}`
+
+const placePalmhostelData = `{
+  "type": "Hostel", "icon": "Backpack", "color": "coral",
+  "lat": 5.9758, "lng": 80.4332, "cost": 2200, "styles": ["backpacker", "surf"], "hint": "13:00"
+}`
+
+const placeWelibeachData = `{
+  "type": "Beach", "icon": "Palmtree", "color": "sun",
+  "lat": 5.9722, "lng": 80.4286, "cost": 0, "styles": ["surf", "backpacker", "nomad", "luxury"], "hint": "7:00"
+}`
+
+const placeMirissaData = `{
+  "type": "Beach", "icon": "Palmtree", "color": "sun",
+  "lat": 5.9445, "lng": 80.4595, "cost": 0, "styles": ["surf", "backpacker", "luxury"], "hint": "15:00"
+}`
+
+const placeCoconuthillData = `{
+  "type": "Viewpoint", "icon": "Mountain", "color": "clay",
+  "lat": 5.9417, "lng": 80.4632, "cost": 0, "styles": ["backpacker", "luxury", "nomad"], "hint": "17:00"
+}`
+
+const placeKottuData = `{
+  "type": "Street Food", "icon": "UtensilsCrossed", "color": "coral",
+  "lat": 5.9755, "lng": 80.4312, "cost": 800, "styles": ["backpacker", "surf"], "hint": "19:30"
+}`
+
+const placeReefdineData = `{
+  "type": "Restaurant", "icon": "Wine", "color": "plum",
+  "lat": 5.9740, "lng": 80.4260, "cost": 5200, "styles": ["luxury"], "hint": "19:00"
+}`
+
+const placeSecretrootData = `{
+  "type": "Spa & Wellness", "icon": "Flower2", "color": "plum",
+  "lat": 5.9768, "lng": 80.4338, "cost": 4200, "styles": ["luxury", "nomad"], "hint": "16:00"
+}`
+
+const placeTaprobaneData = `{
+  "type": "Viewpoint", "icon": "Mountain", "color": "teal",
+  "lat": 5.9735, "lng": 80.4203, "cost": 0, "styles": ["nomad", "luxury", "backpacker"], "hint": "8:30"
+}`
+
+const placeOldlightData = `{
+  "type": "Bar & Gallery", "icon": "Martini", "color": "clay",
+  "lat": 5.9701, "lng": 80.4179, "cost": 2400, "styles": ["nomad", "backpacker"], "hint": "21:00"
+}`
+
+const placeMorningmktData = `{
+  "type": "Local Market", "icon": "ShoppingBasket", "color": "sun",
+  "lat": 5.9769, "lng": 80.4297, "cost": 500, "styles": ["backpacker", "nomad"], "hint": "6:30"
 }`
 
 // driftwoodProfile is PROFILE from vendor-data.jsx.

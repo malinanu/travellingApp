@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/sheet_scaffold.dart';
-import '../../../data/mock/places.dart' as data;
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import '../trip/widgets/trip_common.dart';
@@ -56,12 +55,12 @@ class _GroupSheetState extends ConsumerState<_GroupSheet> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final group = ref.watch(groupProvider);
-    final members = group.memberIds
-        .map((id) => data.travelers.where((t) => t.id == id).firstOrNull)
-        .nonNulls
+    final members = group.members.map(Traveler.fromGroupMember).toList();
+    final suggestions = ref
+        .watch(nearbyTravellersProvider)
+        .where((t) => !group.memberIds.contains(t.id))
+        .map(Traveler.fromNearby)
         .toList();
-    final suggestions =
-        data.travelers.where((t) => !group.memberIds.contains(t.id)).toList();
     final link = 'spotto.app/g/${group.code}';
 
     return SheetScaffold(
@@ -145,7 +144,7 @@ class _GroupSheetState extends ConsumerState<_GroupSheet> {
                       ],
                     ),
                   ),
-                  _memberRow(text, data.me, host: true),
+                  _memberRow(text, Traveler.fromMe(ref.watch(meProvider)), host: true),
                   for (final m in members) _memberRow(text, m),
                   if (suggestions.isNotEmpty) ...[
                     Padding(

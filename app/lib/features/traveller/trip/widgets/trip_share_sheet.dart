@@ -13,6 +13,10 @@ import '../../../../data/mock/trip_catalog.dart';
 import '../../../../data/repositories/repositories.dart';
 import 'trip_common.dart';
 
+/// Deterministic avatar colors for group members, who don't have one stored
+/// server-side (unlike the mock traveler list, which hardcoded a color).
+const _memberColors = [0xFFF0682F, 0xFF0369A1, 0xFF7C5CFF, 0xFF0B6F86, 0xFF16A34A];
+
 Future<void> showTripShareSheet(BuildContext context) {
   return showModalBottomSheet(
     context: context,
@@ -53,6 +57,19 @@ class _TripShareSheetState extends ConsumerState<_TripShareSheet> {
     final trip = ref.watch(tripProvider);
     final collabs = trip.collaborators.map(tripWho).nonNulls.toList();
     final canAdd = data.travelers.where((t) => !trip.collaborators.contains(t.id)).toList();
+    // Real group members (from GET /me/group), excluding anyone already a
+    // trip collaborator — replaces the old hardcoded phone-contacts list.
+    final groupContacts = [
+      for (final m in ref.watch(groupProvider).members)
+        if (!trip.collaborators.contains(m.id))
+          TripContact(
+            id: m.id,
+            name: m.name,
+            sub: m.email,
+            initial: m.name.isNotEmpty ? m.name[0].toUpperCase() : '?',
+            color: _memberColors[m.id.hashCode.abs() % _memberColors.length],
+          ),
+    ];
 
     return SheetScaffold(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
@@ -228,24 +245,26 @@ class _TripShareSheetState extends ConsumerState<_TripShareSheet> {
                         }),
                       ),
                   ],
-                  const SizedBox(height: 8),
-                  _sectionLabel(text, 'Invite from contacts', icon: Icons.contacts_outlined),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4, bottom: 8),
-                    child: Text('Not on Spotto yet — send them an invite link.',
-                        style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
-                  ),
-                  for (final c in tripContacts)
-                    _memberRow(
-                      text,
-                      initial: c.initial,
-                      color: Color(c.color),
-                      title: c.name,
-                      sub: c.phone,
-                      trailing: _sentIds.contains(c.id)
-                          ? _inviteButton('Invited', Icons.check, null)
-                          : _inviteButton('Invite', Icons.send, () => _showInvitation(c)),
+                  if (groupContacts.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _sectionLabel(text, 'Your group', icon: Icons.groups_outlined),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 8),
+                      child: Text('From your ${ref.watch(groupProvider).name} group.',
+                          style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
                     ),
+                    for (final c in groupContacts)
+                      _memberRow(
+                        text,
+                        initial: c.initial,
+                        color: Color(c.color),
+                        title: c.name,
+                        sub: c.sub,
+                        trailing: _sentIds.contains(c.id)
+                            ? _inviteButton('Invited', Icons.check, null)
+                            : _inviteButton('Invite', Icons.send, () => _showInvitation(c)),
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -456,7 +475,7 @@ class _TripInvitationDialog extends ConsumerWidget {
                               Text('SENDING TO',
                                   style: text.labelSmall?.copyWith(
                                       fontSize: 10, color: SpottoColors.muted)),
-                              Text('${to!.name} · ${to!.phone}',
+                              Text('${to!.name} · ${to!.sub}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: text.titleSmall),

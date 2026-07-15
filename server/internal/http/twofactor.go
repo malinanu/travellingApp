@@ -138,5 +138,15 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"enabled": false})
+	// DisableUserTOTP just bumped token_version — mirror that locally and
+	// re-issue a token so this same session (which just proved possession
+	// via a valid code) isn't immediately logged out by its own action.
+	u.TOTPEnabled = false
+	u.TokenVersion++
+	token, err := s.Tokens.Issue(u)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": false, "token": token})
 }

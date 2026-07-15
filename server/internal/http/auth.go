@@ -263,6 +263,77 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, u)
 }
 
+// handleChangePassword requires proof of the current password, then applies
+// the same strength rules as registration to the new one. Bumps
+// token_version (see Store.UpdateUserPassword) so other logged-in sessions
+// are signed out.
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	u, err := s.Store.UserByID(r.Context(), c.Subject)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	var req struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if !auth.CheckPassword(u.PasswordHash, req.CurrentPassword) {
+		writeErr(w, http.StatusUnauthorized, "current password is incorrect")
+		return
+	}
+	if len(req.NewPassword) < 10 {
+		writeErr(w, http.StatusBadRequest, "new password must be at least 10 characters")
+		return
+	}
+	if isWeakPassword(req.NewPassword, u.Email) {
+		writeErr(w, http.StatusBadRequest, "password is too weak — avoid all-digit, all-repeated, or email-derived passwords")
+		return
+	}
+	hash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if err := s.Store.UpdateUserPassword(r.Context(), u.ID, hash); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	// UpdateUserPassword just bumped token_version in the DB — mirror that
+	// locally so the token we issue below matches, instead of immediately
+	// failing Server.Authenticated's version check on the very next request.
+	u.TokenVersion++
+	// Re-issue a token for THIS session (the one that just proved current
+	// possession) since its old token_version no longer matches.
+	token, err := s.Tokens.Issue(u)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"token": token})
+}
+
+// handleUpdatePrivacy toggles the traveller's nearby-travellers consent.
+// Turning it off clears any previously reported position (see
+// Store.SetShareLocation) rather than leaving it stale and merely unused.
+func (s *Server) handleUpdatePrivacy(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	var req struct {
+		ShareLocation bool `json:"shareLocation"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if err := s.Store.SetShareLocation(r.Context(), c.Subject, req.ShareLocation); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"shareLocation": req.ShareLocation})
+}
+
 // requireVendor loads the caller's vendor, or writes an error and returns false.
 func (s *Server) requireVendor(w http.ResponseWriter, r *http.Request) (domain.Vendor, bool) {
 	c := auth.FromContext(r.Context())

@@ -109,7 +109,8 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	var interests []byte
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.Name, &u.Country,
 		&u.TravelStyle, &interests, &u.VendorID, &u.Extra, &u.CreatedAt,
-		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled, &u.TokenVersion)
+		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled, &u.TokenVersion,
+		&u.ShareLocation, &u.Lat, &u.Lng, &u.LocationUpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -120,7 +121,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -130,11 +131,114 @@ func (s *Store) UserByID(ctx context.Context, id string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE id=$1`, id))
 }
 
+// UsersByIDs resolves group member IDs to full profiles (used to show real
+// names/emails instead of bare IDs on the trip-invite sheet). Silently
+// drops any ID that no longer matches a user rather than erroring — a
+// group member who deleted their account shouldn't break the whole group.
+func (s *Store) UsersByIDs(ctx context.Context, ids []string) ([]domain.User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT `+userCols+` FROM users WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) UpdateUserProfile(ctx context.Context, id, name, country, style string, interests []string) error {
 	_, err := s.Pool.Exec(ctx,
 		`UPDATE users SET name=$2, country=$3, travel_style=$4, interests=$5 WHERE id=$1`,
 		id, name, country, style, jsonb(interests))
 	return err
+}
+
+// UpdateUserPassword sets a new password hash and bumps token_version, since
+// a password change — like a 2FA disable — should invalidate any session
+// token issued before it (e.g. one leaked before the change).
+func (s *Store) UpdateUserPassword(ctx context.Context, id, passwordHash string) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE users SET password_hash=$2, token_version=token_version+1 WHERE id=$1`,
+		id, passwordHash)
+	return err
+}
+
+// SetShareLocation toggles the traveller's nearby-travellers consent. When
+// turned off, any previously reported position is cleared immediately
+// rather than left stale and merely unqueried.
+func (s *Store) SetShareLocation(ctx context.Context, id string, share bool) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE users SET share_location=$2, lat=CASE WHEN $2 THEN lat ELSE NULL END,
+			lng=CASE WHEN $2 THEN lng ELSE NULL END,
+			location_updated_at=CASE WHEN $2 THEN location_updated_at ELSE NULL END
+		WHERE id=$1`,
+		id, share)
+	return err
+}
+
+// UpdateUserLocation records the traveller's current position. Callers
+// must check share_location themselves first (see handleUpdateMyLocation) —
+// this just writes whatever it's given.
+func (s *Store) UpdateUserLocation(ctx context.Context, id string, lat, lng float64) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE users SET lat=$2, lng=$3, location_updated_at=now() WHERE id=$1`,
+		id, lat, lng)
+	return err
+}
+
+// NearbyTraveller is the coarse, privacy-conscious shape returned by
+// NearbyTravellers — never another traveller's exact lat/lng, just enough
+// to show them as a nearby pin at a rounded distance.
+type NearbyTraveller struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	TravelStyle string  `json:"travelStyle"`
+	DistanceKm  float64 `json:"distanceKm"`
+}
+
+// NearbyTravellers finds other opted-in, recently-active travellers within
+// radiusKm of (lat, lng), nearest first. "Recently active" means a location
+// report in the last 15 minutes — older reports are treated as stale and
+// excluded rather than shown at a wrong position.
+func (s *Store) NearbyTravellers(ctx context.Context, callerID string, lat, lng, radiusKm float64) ([]NearbyTraveller, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT id, name, travel_style, distance_km FROM (
+			SELECT id, name, travel_style,
+				6371 * acos(LEAST(1, GREATEST(-1,
+					cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2))
+					+ sin(radians($1)) * sin(radians(lat))
+				))) AS distance_km
+			FROM users
+			WHERE share_location = true
+				AND id != $3
+				AND lat IS NOT NULL AND lng IS NOT NULL
+				AND location_updated_at > now() - interval '15 minutes'
+		) nearby
+		WHERE distance_km <= $4
+		ORDER BY distance_km ASC`,
+		lat, lng, callerID, radiusKm)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []NearbyTraveller{}
+	for rows.Next() {
+		var t NearbyTraveller
+		if err := rows.Scan(&t.ID, &t.Name, &t.TravelStyle, &t.DistanceKm); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 // SetUserTOTPPending stores a freshly generated (not yet active) secret.

@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -13,14 +15,19 @@ import (
 	"github.com/spotto/server/internal/store/postgres"
 )
 
-// placeJSON flattens Place.Data with id/name/vendorId for the Flutter model.
-func placeJSON(p domain.Place) map[string]any {
+// placeJSON flattens Place.Data with id/name/vendorId for the Flutter model,
+// plus real vibe vote counts — so the app never needs a hardcoded vibe seed
+// even on a place's first load, before anyone in this session has voted.
+func (s *Server) placeJSON(ctx context.Context, p domain.Place) map[string]any {
 	m := map[string]any{}
 	json.Unmarshal(p.Data, &m)
 	m["id"] = p.ID
 	m["name"] = p.Name
 	if p.VendorID != nil {
 		m["vendorId"] = *p.VendorID
+	}
+	if counts, err := s.Store.VibeCounts(ctx, p.ID); err == nil {
+		m["vibes"] = counts
 	}
 	return m
 }
@@ -33,7 +40,7 @@ func (s *Server) handlePlaces(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(places))
 	for _, p := range places {
-		out = append(out, placeJSON(p))
+		out = append(out, s.placeJSON(r.Context(), p))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -44,7 +51,7 @@ func (s *Server) handlePlace(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, placeJSON(p))
+	writeJSON(w, http.StatusOK, s.placeJSON(r.Context(), p))
 }
 
 func (s *Server) handleVibeVote(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +231,28 @@ func (s *Server) handlePutTrip(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
+// groupMember is the resolved-profile shape the trip-invite sheet and
+// group map markers need — never expose the full domain.User (password
+// hash, TOTP fields). Lat/Lng are only set when the member has opted into
+// share_location AND reported a position in the last 15 minutes — group
+// membership is a mutual-trust circle the member explicitly joined, unlike
+// the broader NearbyTravellers lookup which never exposes exact position.
+type groupMember struct {
+	ID    string   `json:"id"`
+	Name  string   `json:"name"`
+	Email string   `json:"email"`
+	Lat   *float64 `json:"lat,omitempty"`
+	Lng   *float64 `json:"lng,omitempty"`
+}
+
+// groupResp adds resolved member profiles alongside the raw memberIds, so
+// the app doesn't need a separate round trip (or fake local contacts) to
+// show who's actually in the group.
+type groupResp struct {
+	domain.Group
+	Members []groupMember `json:"members"`
+}
+
 func (s *Server) handleGetGroup(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	g, err := s.Store.GroupByOwner(r.Context(), c.Subject)
@@ -235,7 +264,21 @@ func (s *Server) handleGetGroup(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, g)
+	users, err := s.Store.UsersByIDs(r.Context(), g.MemberIDs)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	members := make([]groupMember, 0, len(users))
+	for _, u := range users {
+		m := groupMember{ID: u.ID, Name: u.Name, Email: u.Email}
+		fresh := u.LocationUpdatedAt != nil && time.Since(*u.LocationUpdatedAt) < 15*time.Minute
+		if u.ShareLocation && fresh {
+			m.Lat, m.Lng = u.Lat, u.Lng
+		}
+		members = append(members, m)
+	}
+	writeJSON(w, http.StatusOK, groupResp{Group: g, Members: members})
 }
 
 func (s *Server) handlePutGroup(w http.ResponseWriter, r *http.Request) {
@@ -250,4 +293,68 @@ func (s *Server) handlePutGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, g)
+}
+
+// handleUpdateMyLocation records the caller's current position for the
+// nearby-travellers feature. Requires share_location to already be on
+// (via PUT /me/privacy) — reporting a position you haven't consented to
+// share would defeat the point of the toggle.
+func (s *Server) handleUpdateMyLocation(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	u, err := s.Store.UserByID(r.Context(), c.Subject)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if !u.ShareLocation {
+		writeErr(w, http.StatusForbidden, "enable location sharing first (PUT /me/privacy)")
+		return
+	}
+	var req struct {
+		Lat float64 `json:"lat"`
+		Lng float64 `json:"lng"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.Lat < -90 || req.Lat > 90 || req.Lng < -180 || req.Lng > 180 {
+		writeErr(w, http.StatusBadRequest, "lat/lng out of range")
+		return
+	}
+	if err := s.Store.UpdateUserLocation(r.Context(), u.ID, req.Lat, req.Lng); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleNearbyTravellers requires the caller to be opted in AND have a
+// recent position of their own — seeing others without being visible
+// yourself would be a one-way surveillance pattern this deliberately avoids.
+func (s *Server) handleNearbyTravellers(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	u, err := s.Store.UserByID(r.Context(), c.Subject)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if !u.ShareLocation || u.Lat == nil || u.Lng == nil {
+		writeErr(w, http.StatusForbidden, "enable location sharing and report your position first")
+		return
+	}
+	radiusKm := 5.0
+	if v := r.URL.Query().Get("radiusKm"); v != "" {
+		if parsed, err := strconv.ParseFloat(v, 64); err == nil && parsed > 0 {
+			radiusKm = parsed
+		}
+	}
+	if radiusKm > 50 {
+		radiusKm = 50 // don't let this become a whole-country query
+	}
+	nearby, err := s.Store.NearbyTravellers(r.Context(), u.ID, *u.Lat, *u.Lng, radiusKm)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, nearby)
 }

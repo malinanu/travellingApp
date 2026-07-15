@@ -81,6 +81,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Use(s.Authenticated)
 		r.Get("/me", s.handleMe)
 		r.Put("/me", s.handleUpdateMe)
+		r.Put("/me/privacy", s.handleUpdatePrivacy)
+		r.Put("/auth/password", s.handleChangePassword)
 		r.Post("/auth/2fa/setup", s.handleTwoFactorSetup)
 		r.Post("/auth/2fa/enable", s.handleTwoFactorEnable)
 		r.Post("/auth/2fa/disable", s.handleTwoFactorDisable)
@@ -102,6 +104,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Put("/me/trip", s.handlePutTrip)
 		r.Get("/me/group", s.handleGetGroup)
 		r.Put("/me/group", s.handlePutGroup)
+		r.Put("/me/location", s.handleUpdateMyLocation)
+		r.Get("/travellers/nearby", s.handleNearbyTravellers)
 	})
 
 	// Vendor (approved vendors only, checked in handlers where relevant).
@@ -122,6 +126,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/vendor/notifications", s.handleVendorNotifications)
 		r.Post("/vendor/notifications/read", s.handleVendorNotificationsRead)
 		r.Get("/vendor/growth", s.handleVendorGrowth)
+		r.Post("/vendor/growth/flash-sale", s.handleVendorFlashSale)
 		r.Get("/vendor/reports", s.handleVendorReports)
 	})
 

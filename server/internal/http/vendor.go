@@ -254,6 +254,63 @@ func (s *Server) handleVendorReports(w http.ResponseWriter, r *http.Request) {
 	s.blobHandler("reports")(w, r)
 }
 
+// handleVendorFlashSale records a real flash-sale send against the growth
+// blob's `flash.lastSentMins`, enforcing the same 1-per-3h limit the UI
+// displays (server-side, not just a disabled button) — a client can't just
+// re-enable the button to bypass it.
+func (s *Server) handleVendorFlashSale(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	raw, err := s.Store.VendorBlob(r.Context(), v.ID, "growth")
+	if err != nil && !errors.Is(err, postgres.ErrNotFound) {
+		storeErr(w, err)
+		return
+	}
+	var blob map[string]json.RawMessage
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &blob); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+	}
+	if blob == nil {
+		blob = map[string]json.RawMessage{}
+	}
+	var flash struct {
+		RadiusKm     int `json:"radiusKm"`
+		InRange      int `json:"inRange"`
+		Nomads       int `json:"nomads"`
+		Surfers      int `json:"surfers"`
+		LastSentMins int `json:"lastSentMins"`
+	}
+	if f, ok := blob["flash"]; ok {
+		json.Unmarshal(f, &flash)
+	}
+	if flash.LastSentMins < 180 {
+		writeErr(w, http.StatusTooManyRequests, "a flash sale was already sent within the last 3 hours")
+		return
+	}
+	flash.LastSentMins = 0
+	updated, err := json.Marshal(flash)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	blob["flash"] = updated
+	newData, err := json.Marshal(blob)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if err := s.Store.UpsertVendorBlob(r.Context(), v.ID, "growth", newData); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"sent": true})
+}
+
 func (s *Server) handleVendorRedemptions(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireVendor(w, r)
 	if !ok {

@@ -5,6 +5,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/storage/local_store.dart';
@@ -91,6 +92,31 @@ class AuthNotifier extends Notifier<bool> {
 
 final authProvider = NotifierProvider<AuthNotifier, bool>(AuthNotifier.new);
 
+// ── current user (email, totpEnabled, shareLocation, …) ────────────
+
+/// Raw `/me` response — read directly by the security/privacy profile pages
+/// rather than modeled, since those are the only consumers so far.
+class MeNotifier extends Notifier<Map<String, dynamic>?> {
+  @override
+  Map<String, dynamic>? build() {
+    Future.microtask(refresh);
+    return null;
+  }
+
+  Future<void> refresh() async {
+    if (!ref.read(authProvider)) return;
+    try {
+      final res = await ref.read(apiProvider).dio.get('/me');
+      state = (res.data as Map).cast<String, dynamic>();
+      seed.me = Traveler.fromMe(state);
+    } catch (_) {
+      // Offline — leave the previous state (or null) as-is.
+    }
+  }
+}
+
+final meProvider = NotifierProvider<MeNotifier, Map<String, dynamic>?>(MeNotifier.new);
+
 // ── prefs (travel style + interests) ──────────────────────────────
 
 class PrefsNotifier extends Notifier<UserPrefs?> {
@@ -127,10 +153,19 @@ class PlacesNotifier extends Notifier<List<Place>> {
     final cached = ref.read(localStoreProvider).getJsonList(StoreKeys.places);
     if (cached != null && cached.isNotEmpty) {
       try {
-        return [for (final p in cached) Place.fromJson((p as Map).cast<String, dynamic>())];
+        final places = [for (final p in cached) Place.fromJson((p as Map).cast<String, dynamic>())];
+        _syncTripCatalog(places);
+        return places;
       } catch (_) {}
     }
     return seed.places;
+  }
+
+  /// Replaces the trip planner's catalog with real places, once available —
+  /// the hardcoded tripCatalog list otherwise stays as the pre-fetch
+  /// fallback (see trip_catalog.dart's top-of-file comment).
+  void _syncTripCatalog(List<Place> places) {
+    tripCatalog = [for (final p in places) TripCatalogItem.fromPlace(p)];
   }
 
   Future<void> _refresh() async {
@@ -138,7 +173,9 @@ class PlacesNotifier extends Notifier<List<Place>> {
       final res = await ref.read(apiProvider).dio.get('/places');
       final list = res.data as List;
       if (list.isEmpty) return;
-      state = [for (final p in list) Place.fromJson((p as Map).cast<String, dynamic>())];
+      final places = [for (final p in list) Place.fromJson((p as Map).cast<String, dynamic>())];
+      state = places;
+      _syncTripCatalog(places);
       await ref.read(localStoreProvider).setJsonList(StoreKeys.places, list);
     } catch (_) {
       // Offline — keep the cached/seed state.
@@ -166,8 +203,16 @@ class GroupNotifier extends Notifier<Group> {
       if (data is Map<String, dynamic> && data['code'] != null) {
         state = Group.fromJson(data);
         await ref.read(localStoreProvider).setJson(StoreKeys.group, state.toJson());
+        _syncKnownTravelers();
       }
     } catch (_) {}
+  }
+
+  /// Keeps tripWho()'s lookup pool (trip_common.dart) current — trip
+  /// collaborators are drawn from the same real group members shown
+  /// elsewhere, not the old hardcoded mock list.
+  void _syncKnownTravelers() {
+    seed.travelers = state.members.map(Traveler.fromGroupMember).toList();
   }
 
   void _persist(Group g) {
@@ -189,6 +234,67 @@ class GroupNotifier extends Notifier<Group> {
 
   void leave() => _persist(state.copyWith(memberIds: []));
 }
+
+// ── nearby travellers (live location, opt-in) ──────────────────────
+
+/// Reports the device's position (only while the user has opted into
+/// location sharing) and fetches other opted-in travellers nearby. Only
+/// runs while something is actually watching nearbyTravellersProvider
+/// (Riverpod tears the notifier down otherwise) — e.g. the Discover map.
+class NearbyTravellersNotifier extends Notifier<List<NearbyTraveller>> {
+  Timer? _timer;
+
+  @override
+  List<NearbyTraveller> build() {
+    ref.onDispose(() => _timer?.cancel());
+    final shareLocation = ref.watch(meProvider)?['shareLocation'] as bool? ?? false;
+    _timer?.cancel();
+    if (shareLocation && ref.watch(authProvider)) {
+      Future.microtask(_tick);
+      _timer = Timer.periodic(const Duration(minutes: 2), (_) => _tick());
+    }
+    return shareLocation ? state : [];
+  }
+
+  Future<void> _tick() async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        return;
+      }
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
+      );
+      await ref
+          .read(apiProvider)
+          .dio
+          .put('/me/location', data: {'lat': pos.latitude, 'lng': pos.longitude});
+      final res = await ref.read(apiProvider).dio.get('/travellers/nearby');
+      state = [
+        for (final t in (res.data as List)) NearbyTraveller.fromJson((t as Map).cast<String, dynamic>())
+      ];
+      // Extend tripWho()'s lookup pool (trip_common.dart) with real nearby
+      // travellers too, alongside group members — trip_share_sheet.dart's
+      // "invite travellers" suggestions draw from the same pool.
+      final knownIds = seed.travelers.map((t) => t.id).toSet();
+      seed.travelers = [
+        ...seed.travelers,
+        for (final t in state)
+          if (!knownIds.contains(t.id)) Traveler.fromNearby(t),
+      ];
+    } catch (_) {
+      // Offline, permission denied, or not opted in server-side — leave
+      // the last-known state rather than clearing it on a transient error.
+    }
+  }
+}
+
+final nearbyTravellersProvider =
+    NotifierProvider<NearbyTravellersNotifier, List<NearbyTraveller>>(NearbyTravellersNotifier.new);
 
 final groupProvider = NotifierProvider<GroupNotifier, Group>(GroupNotifier.new);
 
@@ -368,19 +474,29 @@ final weatherProvider = StateProvider<String>((ref) => 'sunny');
 /// Active time-of-day filter: morning | afternoon | evening.
 final timeFilterProvider = StateProvider<String>((ref) => 'afternoon');
 
-/// Vibe votes per place. Seeded locally; votes post to the server
-/// fire-and-forget with optimistic local counts.
+/// Vibe votes per place. Initialized from each place's real `vibes` counts
+/// (returned by the server with /places); a vote's response carries the
+/// server's updated counts, which are what actually get stored — an
+/// optimistic local bump is only used as an offline fallback.
 class VibeVotesNotifier extends Notifier<Map<String, Map<String, int>>> {
   @override
-  Map<String, Map<String, int>> build() =>
-      seed.vibeSeed.map((k, v) => MapEntry(k, Map<String, int>.from(v)));
+  Map<String, Map<String, int>> build() => {
+        for (final p in ref.watch(placesProvider)) p.id: Map<String, int>.from(p.vibes),
+      };
 
-  void vote(String placeId, String vibeId) {
-    final place = Map<String, int>.from(state[placeId] ?? {});
-    place[vibeId] = (place[vibeId] ?? 0) + 1;
-    state = {...state, placeId: place};
-    if (ref.read(authProvider)) {
-      ref.read(apiProvider).dio.post('/places/$placeId/vibes/$vibeId').ignore();
+  Future<void> vote(String placeId, String vibeId) async {
+    if (!ref.read(authProvider)) return;
+    final optimistic = Map<String, int>.from(state[placeId] ?? {});
+    optimistic[vibeId] = (optimistic[vibeId] ?? 0) + 1;
+    state = {...state, placeId: optimistic};
+    try {
+      final res = await ref.read(apiProvider).dio.post('/places/$placeId/vibes/$vibeId');
+      final counts = (res.data['vibes'] as Map).map(
+        (k, v) => MapEntry(k as String, (v as num).toInt()),
+      );
+      state = {...state, placeId: counts};
+    } catch (_) {
+      // Offline — keep the optimistic bump.
     }
   }
 }

@@ -1,7 +1,8 @@
 'use client';
 
 // Account — business identity, plan, owner, two-factor auth, sign-out.
-// Port of AccountProfile.jsx (billing actions are demo stubs).
+// Port of AccountProfile.jsx (billing management is a disabled "coming
+// soon" stub, deferred pending a payment-processor decision).
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BadgeCheck, KeyRound, LogOut, Mail, MapPin, ShieldCheck, Store, Wallet } from 'lucide-react';
@@ -57,8 +58,12 @@ export default function AccountPage() {
               ? 'Premium — $49/mo. Priority placement, growth tools, boosted events.'
               : 'Free plan. Upgrade for priority placement and growth tools.'}
           </p>
-          <button className="rounded-xl border border-line bg-white px-4 py-2.5 font-extrabold text-[13.5px] flex items-center gap-2 hover:border-accent">
-            <Wallet size={16} /> Manage billing
+          <button
+            className="rounded-xl border border-line bg-white px-4 py-2.5 font-extrabold text-[13.5px] flex items-center gap-2 opacity-50 cursor-not-allowed"
+            disabled
+            title="Billing management is coming soon"
+          >
+            <Wallet size={16} /> Manage billing · Coming soon
           </button>
         </div>
 
