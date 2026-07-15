@@ -6,6 +6,8 @@ export type OfferStatus = 'draft' | 'live' | 'ending' | 'ended';
 export type ClaimStatus = 'claimed' | 'redeemed';
 export type FeedStatus = 'ok' | 'review' | 'flag';
 
+export type VendorRole = 'owner' | 'staff';
+
 export interface User {
   id: string;
   email: string;
@@ -15,9 +17,36 @@ export interface User {
   travelStyle: string;
   interests: string[] | null;
   vendorId?: string;
+  vendorRole?: VendorRole;
   createdAt: string;
   vendorStatus?: VendorStatus; // present on GET /me for vendor users
   totpEnabled: boolean;
+  phone: string;
+  shareLocation: boolean;
+  notifyRedemptions: boolean;
+  notifyReviews: boolean;
+  notifyPayouts: boolean;
+  notifyGrowthTips: boolean;
+}
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
+  vendorRole: VendorRole;
+  createdAt: string;
+}
+
+export interface TeamInvite {
+  id: string;
+  code: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface TeamResponse {
+  members: TeamMember[];
+  invites: TeamInvite[];
 }
 
 export interface AuthResponse {

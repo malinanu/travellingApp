@@ -82,6 +82,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/me", s.handleMe)
 		r.Put("/me", s.handleUpdateMe)
 		r.Put("/me/privacy", s.handleUpdatePrivacy)
+		r.Put("/me/contact", s.handleUpdateMyContact)
+		r.Put("/me/notification-prefs", s.handleUpdateNotificationPrefs)
 		r.Put("/auth/password", s.handleChangePassword)
 		r.Post("/auth/2fa/setup", s.handleTwoFactorSetup)
 		r.Post("/auth/2fa/enable", s.handleTwoFactorEnable)
@@ -128,6 +130,15 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/vendor/growth", s.handleVendorGrowth)
 		r.Post("/vendor/growth/flash-sale", s.handleVendorFlashSale)
 		r.Get("/vendor/reports", s.handleVendorReports)
+		r.Get("/vendor/team", s.handleVendorTeam)
+
+		// Team management — the account's own owner only, not invited staff.
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireVendorOwner)
+			r.Post("/vendor/team/invite", s.handleCreateVendorInvite)
+			r.Delete("/vendor/team/members/{userId}", s.handleRemoveVendorTeamMember)
+			r.Delete("/vendor/team/invites/{id}", s.handleRevokeVendorInvite)
+		})
 	})
 
 	// Admin.

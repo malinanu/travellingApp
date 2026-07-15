@@ -1,13 +1,16 @@
 package httpapi
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/store/postgres"
 )
@@ -354,4 +357,118 @@ func (s *Server) handleVendorNotificationsRead(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// teamMember is the safe subset of domain.User exposed on the team list —
+// never the full record (password hash, TOTP fields).
+type teamMember struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	Role      string    `json:"vendorRole"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type teamInvite struct {
+	ID        string    `json:"id"`
+	Code      string    `json:"code"`
+	CreatedAt time.Time `json:"createdAt"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// handleVendorTeam lists current members (owner + staff) and still-pending
+// invites — viewable by anyone on the team, not just the owner.
+func (s *Server) handleVendorTeam(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	users, err := s.Store.VendorTeamMembers(r.Context(), v.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	members := make([]teamMember, 0, len(users))
+	for _, u := range users {
+		members = append(members, teamMember{ID: u.ID, Name: u.Name, Email: u.Email, Role: u.VendorRole, CreatedAt: u.CreatedAt})
+	}
+	invites, err := s.Store.VendorInvites(r.Context(), v.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	pending := make([]teamInvite, 0, len(invites))
+	for _, inv := range invites {
+		pending = append(pending, teamInvite{ID: inv.ID, Code: inv.Code, CreatedAt: inv.CreatedAt, ExpiresAt: inv.ExpiresAt})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"members": members, "invites": pending})
+}
+
+// inviteCodeAlphabet avoids visually-ambiguous characters (no 0/O/1/I),
+// matching newClaimCode's convention for codes a human might retype.
+const inviteCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+func newInviteCode() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	out := make([]byte, 8)
+	for i, v := range b {
+		out[i] = inviteCodeAlphabet[int(v)%len(inviteCodeAlphabet)]
+	}
+	return string(out)
+}
+
+// handleCreateVendorInvite generates a 7-day invite code for a new staff
+// member to join this vendor account. Owner-only (see server.go's
+// RequireVendorOwner). There's no email system in this app, so the invite
+// is a copy-link code, not a sent email.
+func (s *Server) handleCreateVendorInvite(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	inv := domain.VendorInvite{
+		ID:        newID("inv"),
+		VendorID:  v.ID,
+		Code:      newInviteCode(),
+		CreatedBy: c.Subject,
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+	}
+	if err := s.Store.CreateVendorInvite(r.Context(), inv); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusCreated, teamInvite{ID: inv.ID, Code: inv.Code, CreatedAt: inv.CreatedAt, ExpiresAt: inv.ExpiresAt})
+}
+
+// handleRemoveVendorTeamMember detaches a staff member from the vendor
+// account. Owner-only; RemoveVendorTeamMember itself also refuses to touch
+// anyone but staff, so an owner account can't be removed this way.
+func (s *Server) handleRemoveVendorTeamMember(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	userID := chi.URLParam(r, "userId")
+	if err := s.Store.RemoveVendorTeamMember(r.Context(), v.ID, userID); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"removed": true})
+}
+
+// handleRevokeVendorInvite cancels a still-pending invite. Owner-only.
+func (s *Server) handleRevokeVendorInvite(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if err := s.Store.RevokeVendorInvite(r.Context(), id, v.ID); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"revoked": true})
 }

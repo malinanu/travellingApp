@@ -72,6 +72,9 @@ type registerReq struct {
 	BusinessName string `json:"businessName,omitempty"`
 	Category     string `json:"category,omitempty"`
 	Town         string `json:"town,omitempty"`
+	// InviteCode joins an existing vendor as staff instead of creating a
+	// new pending vendor — see the team-invite flow in handleRegister.
+	InviteCode string `json:"inviteCode,omitempty"`
 	// Traveller extras
 	Country     string   `json:"country,omitempty"`
 	TravelStyle string   `json:"travelStyle,omitempty"`
@@ -124,8 +127,20 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:    time.Now(),
 	}
 
-	// Vendor registration creates a pending vendor gated until admin approval.
-	if role == domain.RoleVendor {
+	var invite *domain.VendorInvite
+	if role == domain.RoleVendor && req.InviteCode != "" {
+		// Joining an existing vendor as staff — validated below, after we
+		// know the invite exists, isn't revoked/accepted/expired.
+		inv, err := s.Store.VendorInviteByCode(r.Context(), req.InviteCode)
+		if err != nil || inv.Revoked || inv.AcceptedAt != nil || time.Now().After(inv.ExpiresAt) {
+			writeErr(w, http.StatusBadRequest, "invalid or expired invite code")
+			return
+		}
+		invite = &inv
+		u.VendorID = &inv.VendorID
+		u.VendorRole = domain.VendorRoleStaff
+	} else if role == domain.RoleVendor {
+		// Vendor registration creates a pending vendor gated until admin approval.
 		v := domain.Vendor{
 			ID:          newID("ven"),
 			Name:        req.BusinessName,
@@ -146,9 +161,26 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		u.VendorID = &v.ID
+		u.VendorRole = domain.VendorRoleOwner
 	}
 
 	if err := s.Store.CreateUser(r.Context(), u); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if invite != nil {
+		if err := s.Store.AcceptVendorInvite(r.Context(), invite.ID, u.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+	}
+	// Re-fetch rather than reusing the in-memory u: several columns (the
+	// notification-preference defaults in particular) are only set by the
+	// database's own DEFAULT, not by this handler, so the local struct's
+	// Go zero values (false) would otherwise be echoed back instead of
+	// what was actually just stored.
+	u, err = s.Store.UserByID(r.Context(), u.ID)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -332,6 +364,64 @@ func (s *Server) handleUpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"shareLocation": req.ShareLocation})
+}
+
+// handleUpdateMyContact updates the account page's editable identity
+// fields (name/email/phone). Email doubles as the login credential, so a
+// change here is checked for uniqueness just like registration.
+func (s *Server) handleUpdateMyContact(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	u, err := s.Store.UserByID(r.Context(), c.Subject)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	var req struct {
+		Name  string `json:"name"`
+		Email string `json:"email"`
+		Phone string `json:"phone"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	if email == "" {
+		writeErr(w, http.StatusBadRequest, "email is required")
+		return
+	}
+	if email != u.Email {
+		if _, err := s.Store.UserByEmail(r.Context(), email); err == nil {
+			writeErr(w, http.StatusConflict, "email already registered")
+			return
+		}
+	}
+	if err := s.Store.UpdateUserContact(r.Context(), u.ID, req.Name, email, req.Phone); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	u.Name, u.Email, u.Phone = req.Name, email, req.Phone
+	writeJSON(w, http.StatusOK, u)
+}
+
+// handleUpdateNotificationPrefs saves the account page's notification
+// toggles. Nothing in the app sends notifications yet — this just persists
+// the preference for whenever that exists.
+func (s *Server) handleUpdateNotificationPrefs(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	var req struct {
+		Redemptions bool `json:"notifyRedemptions"`
+		Reviews     bool `json:"notifyReviews"`
+		Payouts     bool `json:"notifyPayouts"`
+		GrowthTips  bool `json:"notifyGrowthTips"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if err := s.Store.UpdateNotificationPrefs(r.Context(), c.Subject, req.Redemptions, req.Reviews, req.Payouts, req.GrowthTips); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, req)
 }
 
 // requireVendor loads the caller's vendor, or writes an error and returns false.

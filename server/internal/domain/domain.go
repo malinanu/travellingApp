@@ -41,7 +41,21 @@ type User struct {
 	Lat               *float64   `json:"-"`
 	Lng               *float64   `json:"-"`
 	LocationUpdatedAt *time.Time `json:"-"`
+	Phone             string     `json:"phone"`
+	// VendorRole distinguishes a vendor account's own owner from invited
+	// staff — staff can use the vendor's existing tools (offers, scan/
+	// redeem) but not team management. Meaningless for non-vendor roles.
+	VendorRole        string `json:"vendorRole,omitempty"`
+	NotifyRedemptions bool   `json:"notifyRedemptions"`
+	NotifyReviews     bool   `json:"notifyReviews"`
+	NotifyPayouts     bool   `json:"notifyPayouts"`
+	NotifyGrowthTips  bool   `json:"notifyGrowthTips"`
 }
+
+const (
+	VendorRoleOwner = "owner"
+	VendorRoleStaff = "staff"
+)
 
 type VendorStatus string
 
@@ -229,4 +243,20 @@ type VendorNotification struct {
 	Sub    string `json:"sub"`
 	Time   string `json:"time"`
 	Unread bool   `json:"unread"`
+}
+
+// VendorInvite is a shareable, expiring, single-use code an owner generates
+// to bring a staff member onto their vendor account — there's no email
+// system in this app, so invites work as a copy-link code rather than a
+// sent email.
+type VendorInvite struct {
+	ID             string     `json:"id"`
+	VendorID       string     `json:"vendorId"`
+	Code           string     `json:"code"`
+	CreatedBy      string     `json:"createdBy"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	ExpiresAt      time.Time  `json:"expiresAt"`
+	AcceptedAt     *time.Time `json:"acceptedAt,omitempty"`
+	AcceptedUserID *string    `json:"acceptedUserId,omitempty"`
+	Revoked        bool       `json:"revoked"`
 }

@@ -34,6 +34,9 @@ func CheckPassword(hash, plain string) bool {
 type Claims struct {
 	Role     domain.Role `json:"role"`
 	VendorID string      `json:"vendorId,omitempty"`
+	// VendorRole distinguishes a vendor account's own owner from invited
+	// staff — checked by RequireVendorOwner for team-management endpoints.
+	VendorRole string `json:"vendorRole,omitempty"`
 	// Purpose distinguishes a real session token (empty) from a short-lived
 	// pending-2FA token (set to twoFactorPurpose) — Authenticated rejects
 	// anything but a real session, so a pending token can't be used as one.
@@ -73,6 +76,7 @@ func (t *Tokens) Issue(u domain.User) (string, error) {
 	}
 	if u.VendorID != nil {
 		c.VendorID = *u.VendorID
+		c.VendorRole = u.VendorRole
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString(t.secret)
 }
@@ -251,4 +255,20 @@ func RequireRole(role domain.Role) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// RequireVendorOwner further restricts a vendor-role route (use after
+// RequireRole(domain.RoleVendor)) to the account's own owner, not invited
+// staff — for team-management endpoints (invite/remove/revoke). Accounts
+// predating vendor_role (or its zero value) are treated as owners, matching
+// the migration's DEFAULT 'owner' for existing rows.
+func RequireVendorOwner(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c := FromContext(r.Context())
+		if c == nil || c.VendorRole == domain.VendorRoleStaff {
+			writeErr(w, http.StatusForbidden, "owner only")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

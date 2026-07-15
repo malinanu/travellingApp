@@ -96,11 +96,15 @@ func jsonb(v any) []byte {
 // ---- users ----
 
 func (s *Store) CreateUser(ctx context.Context, u domain.User) error {
+	vendorRole := u.VendorRole
+	if vendorRole == "" {
+		vendorRole = domain.VendorRoleOwner
+	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		INSERT INTO users (id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, vendor_role)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 		u.ID, u.Email, u.PasswordHash, u.Role, u.Name, u.Country, u.TravelStyle,
-		jsonb(u.Interests), u.VendorID, u.Extra, u.CreatedAt)
+		jsonb(u.Interests), u.VendorID, u.Extra, u.CreatedAt, vendorRole)
 	return err
 }
 
@@ -110,7 +114,8 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.Name, &u.Country,
 		&u.TravelStyle, &interests, &u.VendorID, &u.Extra, &u.CreatedAt,
 		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled, &u.TokenVersion,
-		&u.ShareLocation, &u.Lat, &u.Lng, &u.LocationUpdatedAt)
+		&u.ShareLocation, &u.Lat, &u.Lng, &u.LocationUpdatedAt,
+		&u.Phone, &u.VendorRole, &u.NotifyRedemptions, &u.NotifyReviews, &u.NotifyPayouts, &u.NotifyGrowthTips)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -121,7 +126,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -239,6 +244,122 @@ func (s *Store) NearbyTravellers(ctx context.Context, callerID string, lat, lng,
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// UpdateUserContact updates the vendor account settings page's editable
+// fields. Callers must check email uniqueness themselves first (see
+// handleUpdateMyContact) — this just writes whatever it's given.
+func (s *Store) UpdateUserContact(ctx context.Context, id, name, email, phone string) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE users SET name=$2, email=$3, phone=$4 WHERE id=$1`,
+		id, name, email, phone)
+	return err
+}
+
+// UpdateNotificationPrefs saves the account page's notification toggles.
+func (s *Store) UpdateNotificationPrefs(ctx context.Context, id string, redemptions, reviews, payouts, growthTips bool) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE users SET notify_redemptions=$2, notify_reviews=$3, notify_payouts=$4, notify_growth_tips=$5 WHERE id=$1`,
+		id, redemptions, reviews, payouts, growthTips)
+	return err
+}
+
+// VendorTeamMembers lists everyone (owner + staff) currently attached to a
+// vendor account, oldest first (so the owner — always created first —
+// naturally sorts to the top).
+func (s *Store) VendorTeamMembers(ctx context.Context, vendorID string) ([]domain.User, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+userCols+` FROM users WHERE vendor_id=$1 ORDER BY created_at ASC`, vendorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// RemoveVendorTeamMember detaches a staff member from the vendor account
+// (clears vendor_id/role rather than deleting the account outright, so
+// their login persists but loses all vendor access) — scoped to vendorID
+// and vendor_role='staff' so an owner can't be removed this way.
+func (s *Store) RemoveVendorTeamMember(ctx context.Context, vendorID, userID string) error {
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE users SET vendor_id=NULL, vendor_role='' WHERE id=$1 AND vendor_id=$2 AND vendor_role=$3`,
+		userID, vendorID, domain.VendorRoleStaff)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// CreateVendorInvite stores a freshly generated invite code.
+func (s *Store) CreateVendorInvite(ctx context.Context, inv domain.VendorInvite) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO vendor_invites (id, vendor_id, code, created_by, created_at, expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6)`,
+		inv.ID, inv.VendorID, inv.Code, inv.CreatedBy, inv.CreatedAt, inv.ExpiresAt)
+	return err
+}
+
+func scanVendorInvite(row pgx.Row) (domain.VendorInvite, error) {
+	var inv domain.VendorInvite
+	err := row.Scan(&inv.ID, &inv.VendorID, &inv.Code, &inv.CreatedBy, &inv.CreatedAt,
+		&inv.ExpiresAt, &inv.AcceptedAt, &inv.AcceptedUserID, &inv.Revoked)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return inv, ErrNotFound
+	}
+	return inv, err
+}
+
+const vendorInviteCols = `id, vendor_id, code, created_by, created_at, expires_at, accepted_at, accepted_user_id, revoked`
+
+func (s *Store) VendorInviteByCode(ctx context.Context, code string) (domain.VendorInvite, error) {
+	return scanVendorInvite(s.Pool.QueryRow(ctx, `SELECT `+vendorInviteCols+` FROM vendor_invites WHERE code=$1`, code))
+}
+
+// VendorInvites lists still-pending (not accepted, not revoked) invites for
+// a vendor — expired-but-otherwise-pending ones are included so the owner
+// can see and clean them up, rather than having them vanish silently.
+func (s *Store) VendorInvites(ctx context.Context, vendorID string) ([]domain.VendorInvite, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT `+vendorInviteCols+` FROM vendor_invites WHERE vendor_id=$1 AND accepted_at IS NULL AND revoked=false ORDER BY created_at DESC`,
+		vendorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.VendorInvite
+	for rows.Next() {
+		inv, err := scanVendorInvite(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, inv)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) AcceptVendorInvite(ctx context.Context, id, userID string) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE vendor_invites SET accepted_at=now(), accepted_user_id=$2 WHERE id=$1`, id, userID)
+	return err
+}
+
+// RevokeVendorInvite is scoped to vendorID so one vendor's owner can't
+// revoke another vendor's invite by guessing an id.
+func (s *Store) RevokeVendorInvite(ctx context.Context, id, vendorID string) error {
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE vendor_invites SET revoked=true WHERE id=$1 AND vendor_id=$2`, id, vendorID)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
 }
 
 // SetUserTOTPPending stores a freshly generated (not yet active) secret.
@@ -1026,7 +1147,7 @@ func (s *Store) Wipe(ctx context.Context) error {
 	_, err := s.Pool.Exec(ctx, `
 		TRUNCATE users, vendors, offers, places, claims, trips, groups, feed_items,
 			regions, subscriptions, audio_guides, vibe_votes, checkins,
-			vendor_notifications, vendor_blobs, reviews`)
+			vendor_notifications, vendor_blobs, reviews, vendor_invites`)
 	return err
 }
 
