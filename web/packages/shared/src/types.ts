@@ -188,7 +188,7 @@ export interface DashboardBlob {
 }
 
 export interface GrowthBlob {
-  flash?: { radiusKm: number; inRange: number; nomads: number; surfers: number; lastSentMins: number };
+  flash?: { radiusKm: number; inRange: number; nomads: number; surfers: number; lastSentMins: number; discountPct?: number };
   stampCard?: {
     reward: string;
     stampsNeeded: number;

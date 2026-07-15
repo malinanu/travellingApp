@@ -25,7 +25,16 @@ const NAV: { href: string; label: string; icon: LucideIcon; foodOnly?: boolean }
   { href: '/profile', label: 'Profile', icon: Store },
 ];
 
-const FOOD_CATEGORIES = ['restaurant', 'cafe', 'bar'];
+// Matched case-insensitively against whatever substring appears in the
+// category string — vendor categories are generated in a few different
+// places (registration's lowercase ids like "cafe", the admin queue's
+// capitalized "Restaurant", cmd/gendata's "Cafe"/"Bakery"/"Street Food")
+// and none of them are guaranteed to equal one of these exactly.
+const FOOD_KEYWORDS = ['restaurant', 'cafe', 'café', 'bar', 'bakery', 'food', 'coffee'];
+function isFoodCategory(category?: string) {
+  const c = (category ?? '').toLowerCase();
+  return FOOD_KEYWORDS.some((k) => c.includes(k));
+}
 
 const NOTIF_ICONS: Record<string, LucideIcon> = {
   Ticket, Star, Clock, TrendingUp, Wallet,
@@ -151,7 +160,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return <PendingGate status={me.vendorStatus} />;
   }
 
-  const isFood = FOOD_CATEGORIES.includes(business?.category ?? '');
+  const isFood = isFoodCategory(business?.category);
   const title = NAV.find((n) => pathname.startsWith(n.href))?.label ??
     (pathname.startsWith('/account') ? 'Account' : '');
 

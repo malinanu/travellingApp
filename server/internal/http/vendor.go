@@ -266,6 +266,12 @@ func (s *Server) handleVendorFlashSale(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	var req struct {
+		DiscountPct int `json:"discountPct"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
 	raw, err := s.Store.VendorBlob(r.Context(), v.ID, "growth")
 	if err != nil && !errors.Is(err, postgres.ErrNotFound) {
 		storeErr(w, err)
@@ -287,6 +293,7 @@ func (s *Server) handleVendorFlashSale(w http.ResponseWriter, r *http.Request) {
 		Nomads       int `json:"nomads"`
 		Surfers      int `json:"surfers"`
 		LastSentMins int `json:"lastSentMins"`
+		DiscountPct  int `json:"discountPct"`
 	}
 	if f, ok := blob["flash"]; ok {
 		json.Unmarshal(f, &flash)
@@ -296,6 +303,11 @@ func (s *Server) handleVendorFlashSale(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	flash.LastSentMins = 0
+	if req.DiscountPct > 0 {
+		flash.DiscountPct = req.DiscountPct
+	} else if flash.DiscountPct == 0 {
+		flash.DiscountPct = 20
+	}
 	updated, err := json.Marshal(flash)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")

@@ -1,15 +1,22 @@
 'use client';
 
 // Validate — manual SPOTTO-code entry with the QRValidator.jsx result states:
-// valid / already redeemed / wrong vendor / unknown.
+// valid / already redeemed / wrong vendor / unknown. Port of the Validate
+// mockup — a camera-viewfinder visual plus "Simulate scan" (this is a
+// desktop web portal with no real device camera integration, matching the
+// mockup's own "simulate" wording) alongside the manual entry form.
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, CircleSlash, QrCode, RotateCcw, XCircle } from 'lucide-react';
+import {
+  CheckCircle2, CircleSlash, QrCode, RotateCcw, ScanLine, ShieldCheck, XCircle,
+} from 'lucide-react';
 import { useState } from 'react';
 
 import { timeAgo, type ValidateResponse } from '@spotto/shared';
 import Shell from '../../components/shell';
 import { api } from '../../lib/api';
+
+const DEMO_CODES = ['SPOTTO-DRIF', 'SPOTTO-X4K9', 'SPOTTO-88Q2'];
 
 export default function ValidatePage() {
   const qc = useQueryClient();
@@ -29,44 +36,99 @@ export default function ValidatePage() {
     setCode('SPOTTO-');
   };
 
+  const submitCode = (c: string) => {
+    if (c.trim().length > 7) validate.mutate(c.trim());
+  };
+
   return (
     <Shell>
-      <div className="max-w-xl mx-auto">
-        <div className="card p-8 text-center">
-          <span className="mx-auto w-14 h-14 rounded-2xl bg-accent-tint text-accent flex items-center justify-center mb-4">
-            <QrCode size={28} />
-          </span>
-          <h2 className="text-xl font-extrabold mb-1">Validate a deal code</h2>
-          <p className="text-muted font-semibold text-[14px] mb-6">
-            Ask the traveller for the code on their claim screen.
-          </p>
+      <div className="mb-5">
+        <h1 className="text-2xl font-extrabold">Validate a redemption</h1>
+        <p className="text-muted font-semibold mt-0.5">
+          Scan the traveler&rsquo;s Spotto code, or type it in. Confirm in one tap.
+        </p>
+      </div>
 
-          {!result && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (code.trim().length > 7) validate.mutate(code.trim());
-              }}
-            >
-              <input
-                className="input text-center text-[22px] tracking-[0.2em] font-extrabold uppercase mb-4"
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
-                spellCheck={false}
-                autoFocus
-              />
-              <button className="btn-accent w-full py-3" disabled={validate.isPending}>
-                {validate.isPending ? 'Checking…' : 'Validate'}
-              </button>
-              {validate.isError && (
-                <p className="text-coral font-bold text-[13px] mt-3">
-                  {validate.error instanceof Error ? validate.error.message : 'Failed'}
-                </p>
-              )}
-            </form>
+      <div className="grid lg:grid-cols-[1fr_340px] gap-5 items-start">
+        <div>
+          <div className="rounded-2xl overflow-hidden aspect-[4/3] flex items-center justify-center relative"
+            style={{ background: 'linear-gradient(160deg, #0b1f22 0%, #0e2b2e 100%)' }}>
+            <div className="relative w-40 h-40 flex items-center justify-center">
+              <span className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-accent rounded-tl-xl" />
+              <span className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-accent rounded-tr-xl" />
+              <span className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-accent rounded-bl-xl" />
+              <span className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-accent rounded-br-xl" />
+              <div className="text-center text-white/70">
+                <QrCode size={40} className="mx-auto mb-2" />
+                <p className="text-[12.5px] font-semibold">Point at traveler&rsquo;s code</p>
+              </div>
+            </div>
+            <span className="absolute bottom-4 rounded-full bg-black/40 text-white text-[12px] font-bold px-3 py-1.5 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#3ec97a]" /> Camera ready
+            </span>
+          </div>
+          <button
+            className="btn-accent w-full py-3 mt-3 flex items-center justify-center gap-2"
+            disabled={validate.isPending}
+            onClick={() => submitCode(DEMO_CODES[Math.floor(Math.random() * DEMO_CODES.length)])}
+          >
+            <ScanLine size={16} /> Simulate scan
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {!result ? (
+            <>
+              <div className="card p-5">
+                <h3 className="font-extrabold text-[15px] mb-1">Enter code manually</h3>
+                <p className="text-[13px] text-muted font-semibold mb-3">If the camera won&rsquo;t focus.</p>
+                <form
+                  className="flex gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    submitCode(code);
+                  }}
+                >
+                  <input
+                    className="input flex-1 uppercase tracking-wide font-extrabold"
+                    placeholder="SPOTTO-XXXX"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.toUpperCase())}
+                    spellCheck={false}
+                  />
+                  <button className="btn-accent px-5" disabled={validate.isPending}>
+                    {validate.isPending ? '…' : 'Check'}
+                  </button>
+                </form>
+                {validate.isError && (
+                  <p className="text-coral font-bold text-[13px] mt-3">
+                    {validate.error instanceof Error ? validate.error.message : 'Failed'}
+                  </p>
+                )}
+                <p className="text-[12px] text-muted font-semibold mt-4 mb-2">Try a demo code:</p>
+                <div className="flex flex-wrap gap-2">
+                  {DEMO_CODES.map((c) => (
+                    <button key={c} onClick={() => setCode(c)}
+                      className="rounded-lg bg-sand px-2.5 py-1 text-[12px] font-extrabold font-mono hover:bg-accent-tint transition-colors">
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-accent-tint p-4 flex gap-3">
+                <ShieldCheck size={18} className="text-accent shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-extrabold text-[13.5px] text-accent">Fraud-safe</p>
+                  <p className="text-[12.5px] font-semibold text-ink/80 mt-0.5">
+                    Each code can only be redeemed once. Spotto auto-expires it the moment you confirm.
+                  </p>
+                </div>
+              </div>
+            </>
+          ) : (
+            <ResultCard r={result} code={code} onReset={reset} />
           )}
-
-          {result && <ResultCard r={result} code={code} onReset={reset} />}
         </div>
       </div>
     </Shell>
@@ -74,7 +136,7 @@ export default function ValidatePage() {
 }
 
 function ResultCard({ r, code, onReset }: { r: ValidateResponse; code: string; onReset: () => void }) {
-  const base = 'rounded-2xl p-6 text-left';
+  const base = 'rounded-2xl p-6 text-left card';
   return (
     <div>
       {r.result === 'valid' && r.claim && (
