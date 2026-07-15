@@ -80,7 +80,8 @@ func TestValidateEdgeCases(t *testing.T) {
 
 	tokens := auth.NewTokens("test-secret-" + t.Name())
 	cfg := config.Config{CORSOrigins: []string{"http://localhost:3000"}}
-	srv := httptest.NewServer(httpapi.New(store, tokens).Router(cfg))
+	testTOTPKey := make([]byte, 32) // zero key is fine for this test — no 2FA flows exercised here
+	srv := httptest.NewServer(httpapi.New(store, tokens, testTOTPKey).Router(cfg))
 	defer srv.Close()
 
 	now := time.Now()

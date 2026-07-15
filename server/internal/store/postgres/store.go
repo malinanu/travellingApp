@@ -109,7 +109,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	var interests []byte
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.Name, &u.Country,
 		&u.TravelStyle, &interests, &u.VendorID, &u.Extra, &u.CreatedAt,
-		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled)
+		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled, &u.TokenVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -120,7 +120,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -151,11 +151,24 @@ func (s *Store) EnableUserTOTP(ctx context.Context, id, secret string) error {
 	return err
 }
 
-// DisableUserTOTP clears both secrets and turns 2FA off.
+// DisableUserTOTP clears both secrets, turns 2FA off, and bumps
+// token_version so any session token issued while 2FA was still active
+// (e.g. one leaked before this call) stops being accepted immediately.
 func (s *Store) DisableUserTOTP(ctx context.Context, id string) error {
 	_, err := s.Pool.Exec(ctx,
-		`UPDATE users SET totp_secret='', totp_pending_secret='', totp_enabled=false WHERE id=$1`, id)
+		`UPDATE users SET totp_secret='', totp_pending_secret='', totp_enabled=false, token_version=token_version+1 WHERE id=$1`, id)
 	return err
+}
+
+// UserTokenVersion fetches just the token_version column, for cheap
+// per-request revocation checks in Server.Authenticated.
+func (s *Store) UserTokenVersion(ctx context.Context, id string) (int, error) {
+	var v int
+	err := s.Pool.QueryRow(ctx, `SELECT token_version FROM users WHERE id=$1`, id).Scan(&v)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return v, err
 }
 
 // ---- vendors ----

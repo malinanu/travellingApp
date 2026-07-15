@@ -11,16 +11,10 @@
 import { CircleMarker, MapContainer, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 
 import type { Region, Vendor } from '@spotto/shared';
+import { regionTone } from './region-tone';
 
 const SRI_LANKA_CENTER: [number, number] = [7.8731, 80.7718];
 const SRI_LANKA_ZOOM = 8;
-
-export function regionTone(gap: number) {
-  if (gap >= 28) return { ring: '#e11d48', label: 'Critical gap' };
-  if (gap >= 12) return { ring: '#d97706', label: 'Under-served' };
-  if (gap <= -10) return { ring: '#0b6f86', label: 'Saturated' };
-  return { ring: '#64748b', label: 'Balanced' };
-}
 
 function vendorColor(v: Vendor): string {
   if (v.flagged) return '#e11d48'; // red — bad-review flag

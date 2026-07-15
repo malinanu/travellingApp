@@ -1,13 +1,13 @@
 # Deploying Spotto on Portainer
 
 Three services — `api` (Go, container port 8080, published on the host as
-`18080`), `vendor` (Next.js, :3000), `admin` (Next.js, :3001) — built from
+`8881`), `vendor` (Next.js, :3000), `admin` (Next.js, :3001) — built from
 `docker-compose.yml` at the repo root. This stack does **not** run its own
 Postgres; it connects to one you already have reachable from the Docker
 host.
 
-(The api's host port was moved from 8080 → 18080 because 8080 was already
-in use on the deployment host — the container still listens on 8080
+(The api's host port was moved from 8080 → 18080 → 8881 as the deployment
+host's port assignments evolved — the container still listens on 8080
 internally, only the host-side published port changed.)
 
 ## 1. One-time database setup
@@ -50,7 +50,7 @@ Portainer's own network), `<postgres-host>` can usually be that container's
 name if it's on a shared Docker network, or `host.docker.internal` if it's
 bound to the host's own port.
 
-**Port check**: this stack publishes `18080` (api), `3000` (vendor), `3001`
+**Port check**: this stack publishes `8881` (api), `3000` (vendor), `3001`
 (admin) on the host. If any of these ever collide with something else
 already running on the box, change the host-side number in
 `docker-compose.yml`'s `ports:` mapping (left side of the `:` — leave the
@@ -78,7 +78,7 @@ For each of the three (repeat with the matching port):
 
 | Subdomain | Reverse proxy target |
 |---|---|
-| `spotto-api.yourdomain.com` | `http://127.0.0.1:18080` |
+| `spotto-api.yourdomain.com` | `http://127.0.0.1:8881` |
 | `spotto-vendor.yourdomain.com` | `http://127.0.0.1:3000` |
 | `spotto-admin.yourdomain.com` | `http://127.0.0.1:3001` |
 
@@ -117,7 +117,7 @@ Safe to re-run any time you want a clean demo state.
 - `https://spotto-vendor.yourdomain.com/login` → vendor portal
 - `https://spotto-admin.yourdomain.com/login` → admin command center
 
-(Or `http://<server-ip>:18080/health` etc. directly, before/without
+(Or `http://<server-ip>:8881/health` etc. directly, before/without
 CloudPanel in front — useful for isolating whether an issue is in the
 container or in the reverse proxy.)
 

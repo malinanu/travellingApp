@@ -10,5 +10,8 @@
     "dev:vendor": "npm run dev -w vendor",
     "dev:admin": "npm run dev -w admin",
     "build": "npm run build -w vendor && npm run build -w admin"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
   }
 }

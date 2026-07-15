@@ -32,7 +32,7 @@ func main() {
 
 	go feedGenerator(ctx, store)
 
-	srv := httpapi.New(store, auth.NewTokens(cfg.JWTSecret))
+	srv := httpapi.New(store, auth.NewTokens(cfg.JWTSecret), cfg.TOTPEncryptionKey)
 	log.Printf("spotto api listening on :%s", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, srv.Router(cfg)); err != nil {
 		log.Fatal(err)

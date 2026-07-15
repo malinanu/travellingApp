@@ -3,6 +3,10 @@
 #   docker build -f web/admin/Dockerfile --build-arg NEXT_PUBLIC_API_URL=... web/
 
 FROM node:20-alpine AS builder
+# NEXT_PUBLIC_* build args are Next.js's own convention for values it inlines
+# into the client bundle, so this one is already public by design — fine to
+# persist in image layer history. Never repurpose this ARG/ENV pair for an
+# actual secret; use a runtime env var (not a build arg) for anything private.
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 WORKDIR /web
@@ -15,9 +19,12 @@ RUN npm run build -w admin
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=builder /web/admin/.next/standalone ./
-COPY --from=builder /web/admin/.next/static ./admin/.next/static
+# node:20-alpine ships a built-in unprivileged `node` user (uid 1000) —
+# the standard Next.js-recommended non-root runtime user.
+COPY --from=builder --chown=node:node /web/admin/.next/standalone ./
+COPY --from=builder --chown=node:node /web/admin/.next/static ./admin/.next/static
 # No public/ directory exists yet in this app — add a
-# `COPY --from=builder /web/admin/public ./admin/public` line back if one is added.
+# `COPY --from=builder --chown=node:node /web/admin/public ./admin/public` line back if one is added.
+USER node
 EXPOSE 3001
 CMD ["node", "admin/server.js"]

@@ -1,12 +1,18 @@
 // SharedPreferences wrapper mirroring the prototype's localStorage keys.
+// The session JWT is the one exception — it's kept in the OS-level secure
+// store (Keychain on iOS, Keystore-backed EncryptedSharedPreferences on
+// Android) instead of plaintext SharedPreferences, since it's a bearer
+// credential: readable via ADB backup extraction or on a rooted device
+// otherwise.
 
 import 'dart:convert';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 abstract final class StoreKeys {
   static const auth = 'spotto_auth';
-  static const token = 'spotto_token'; // API JWT
+  static const token = 'spotto_token'; // API JWT — secure storage, see below
   static const prefs = 'spotto_prefs';
   static const group = 'spotto_group';
   static const trip = 'spotto_trip';
@@ -16,9 +22,44 @@ abstract final class StoreKeys {
 
 class LocalStore {
   final SharedPreferences _prefs;
-  LocalStore(this._prefs);
+  final FlutterSecureStorage _secure;
 
-  static Future<LocalStore> init() async => LocalStore(await SharedPreferences.getInstance());
+  // flutter_secure_storage has no synchronous read (Keychain/Keystore access
+  // is inherently async on both platforms), but callers throughout the app
+  // expect a synchronous getToken() — so it's loaded once into memory here
+  // during init() and kept current on every write/clear.
+  String? _cachedToken;
+
+  LocalStore(this._prefs, this._secure, this._cachedToken);
+
+  static Future<LocalStore> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    const secure = FlutterSecureStorage();
+    var token = await secure.read(key: StoreKeys.token);
+    // One-time migration for installs from before secure storage: move a
+    // plaintext token left over in SharedPreferences into secure storage.
+    final legacy = prefs.getString(StoreKeys.token);
+    if (token == null && legacy != null) {
+      await secure.write(key: StoreKeys.token, value: legacy);
+      token = legacy;
+    }
+    if (legacy != null) {
+      await prefs.remove(StoreKeys.token);
+    }
+    return LocalStore(prefs, secure, token);
+  }
+
+  String? getToken() => _cachedToken;
+
+  Future<void> setToken(String token) async {
+    _cachedToken = token;
+    await _secure.write(key: StoreKeys.token, value: token);
+  }
+
+  Future<void> clearToken() async {
+    _cachedToken = null;
+    await _secure.delete(key: StoreKeys.token);
+  }
 
   bool getBool(String key) => _prefs.getBool(key) ?? false;
   Future<void> setBool(String key, bool value) => _prefs.setBool(key, value);

@@ -1,15 +1,30 @@
 // Thin dio wrapper for the Spotto Go API.
 //
 // Base URL comes from --dart-define=API_URL, defaulting to the Android
-// emulator's host loopback. The JWT is kept in LocalStore under
-// StoreKeys.token and attached as a Bearer header; a 401 triggers the
-// onUnauthorized callback (wired to sign-out in main.dart).
+// emulator's host loopback. The JWT is kept in LocalStore's secure storage
+// and attached as a Bearer header; a 401 triggers the onUnauthorized
+// callback (wired to sign-out in main.dart).
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 
 import '../storage/local_store.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:8080');
+
+// Guards against shipping a release build that still points at the plaintext
+// emulator default (or any http:// URL) — the bearer token would go out
+// over cleartext. Uses kReleaseMode + a thrown error rather than assert()
+// because asserts are stripped from release binaries and wouldn't fire here.
+String _validatedBaseUrl() {
+  if (kReleaseMode && !apiBaseUrl.startsWith('https://')) {
+    throw StateError(
+      'Release builds must set --dart-define=API_URL=https://... '
+      '(got "$apiBaseUrl") — refusing to send auth tokens over plaintext HTTP.',
+    );
+  }
+  return apiBaseUrl;
+}
 
 class ApiClient {
   final Dio dio;
@@ -18,13 +33,13 @@ class ApiClient {
 
   ApiClient(this.store)
       : dio = Dio(BaseOptions(
-          baseUrl: apiBaseUrl,
+          baseUrl: _validatedBaseUrl(),
           connectTimeout: const Duration(seconds: 5),
           receiveTimeout: const Duration(seconds: 10),
         )) {
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
-        final token = store.getString(StoreKeys.token);
+        final token = store.getToken();
         if (token != null && token.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $token';
         }

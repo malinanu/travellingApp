@@ -3,6 +3,7 @@ package httpapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -15,18 +16,48 @@ import (
 )
 
 type Server struct {
-	Store  *postgres.Store
-	Tokens *auth.Tokens
+	Store   *postgres.Store
+	Tokens  *auth.Tokens
+	TOTPKey []byte // AES-256 key for encrypting TOTP secrets at rest
+
+	loginLimit *loginLimiter // guards /auth/login (key: ip+email)
+	totpLimit  *loginLimiter // guards /auth/2fa/login-verify (key: ip+userID)
 }
 
-func New(store *postgres.Store, tokens *auth.Tokens) *Server {
-	return &Server{Store: store, Tokens: tokens}
+func New(store *postgres.Store, tokens *auth.Tokens, totpKey []byte) *Server {
+	return &Server{
+		Store:      store,
+		Tokens:     tokens,
+		TOTPKey:    totpKey,
+		loginLimit: newLoginLimiter(5, 15*time.Minute),
+		totpLimit:  newLoginLimiter(5, 15*time.Minute),
+	}
+}
+
+// Authenticated requires a valid Bearer session token AND that its embedded
+// token_version still matches the user's current one in the database — a
+// signature-valid token whose version has been bumped (e.g. by a 2FA
+// disable) is rejected even though Tokens.Verify alone would accept it.
+func (s *Server) Authenticated(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := s.Tokens.ParseBearer(r.Header.Get("Authorization"))
+		if err != nil {
+			writeErr(w, http.StatusUnauthorized, "invalid token")
+			return
+		}
+		version, err := s.Store.UserTokenVersion(r.Context(), c.Subject)
+		if err != nil || version != c.TokenVersion {
+			writeErr(w, http.StatusUnauthorized, "invalid token")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(auth.WithClaims(r.Context(), c)))
+	})
 }
 
 func (s *Server) Router(cfg config.Config) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(realIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
@@ -47,7 +78,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 
 	// Authenticated (any role).
 	r.Group(func(r chi.Router) {
-		r.Use(s.Tokens.Authenticated)
+		r.Use(s.Authenticated)
 		r.Get("/me", s.handleMe)
 		r.Put("/me", s.handleUpdateMe)
 		r.Post("/auth/2fa/setup", s.handleTwoFactorSetup)
@@ -61,7 +92,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 
 	// Traveller.
 	r.Group(func(r chi.Router) {
-		r.Use(s.Tokens.Authenticated, auth.RequireRole(domain.RoleTraveller))
+		r.Use(s.Authenticated, auth.RequireRole(domain.RoleTraveller))
 		r.Post("/places/{id}/vibes/{vibeId}", s.handleVibeVote)
 		r.Post("/places/{id}/reviews", s.handleCreateReview)
 		r.Post("/checkins", s.handleCheckin)
@@ -75,7 +106,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 
 	// Vendor (approved vendors only, checked in handlers where relevant).
 	r.Group(func(r chi.Router) {
-		r.Use(s.Tokens.Authenticated, auth.RequireRole(domain.RoleVendor))
+		r.Use(s.Authenticated, auth.RequireRole(domain.RoleVendor))
 		r.Get("/vendor/business", s.handleVendorBusiness)
 		r.Put("/vendor/business", s.handleUpdateVendorBusiness)
 		r.Get("/vendor/menu", s.handleVendorMenu)
@@ -96,7 +127,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 
 	// Admin.
 	r.Group(func(r chi.Router) {
-		r.Use(s.Tokens.Authenticated, auth.RequireRole(domain.RoleAdmin))
+		r.Use(s.Authenticated, auth.RequireRole(domain.RoleAdmin))
 		r.Get("/admin/kpis", s.handleAdminKPIs)
 		r.Get("/admin/vendors", s.handleAdminVendors)
 		r.Post("/admin/vendors/{id}/approve", s.vendorStatusHandler(domain.VendorApproved))

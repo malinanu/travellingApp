@@ -26,7 +26,7 @@ final apiProvider = Provider<ApiClient>((ref) {
 class AuthNotifier extends Notifier<bool> {
   @override
   bool build() {
-    final token = ref.read(localStoreProvider).getString(StoreKeys.token);
+    final token = ref.read(localStoreProvider).getToken();
     return token != null && token.isNotEmpty;
   }
 
@@ -55,7 +55,7 @@ class AuthNotifier extends Notifier<bool> {
 
   Future<void> _adoptSession(Map<String, dynamic> data) async {
     final store = ref.read(localStoreProvider);
-    await store.setString(StoreKeys.token, data['token'] as String);
+    await store.setToken(data['token'] as String);
     await store.setBool(StoreKeys.auth, true);
 
     // Adopt server-side prefs so a returning user skips onboarding.
@@ -76,7 +76,7 @@ class AuthNotifier extends Notifier<bool> {
   void signOut() {
     state = false;
     final store = ref.read(localStoreProvider);
-    store.remove(StoreKeys.token);
+    store.clearToken();
     store.setBool(StoreKeys.auth, false);
     store.remove(StoreKeys.prefs);
     store.remove(StoreKeys.claims);

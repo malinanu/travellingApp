@@ -3,7 +3,13 @@ package auth
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -32,10 +38,22 @@ type Claims struct {
 	// pending-2FA token (set to twoFactorPurpose) — Authenticated rejects
 	// anything but a real session, so a pending token can't be used as one.
 	Purpose string `json:"purpose,omitempty"`
+	// TokenVersion is compared against the user's current token_version in
+	// the database on every request; a mismatch means the token was issued
+	// before a revoking event (e.g. 2FA disable) and is rejected even
+	// though its signature is still valid.
+	TokenVersion int `json:"tokenVersion"`
 	jwt.RegisteredClaims
 }
 
 const twoFactorPurpose = "2fa-pending"
+
+// sessionLifetime bounds how long a stolen/leaked token stays valid. There's
+// no refresh-token flow yet, so this is a straight tradeoff against
+// re-login frequency — 24h was chosen over the previous 7 days to shrink
+// the exposure window significantly without requiring users to sign in
+// more than once a day.
+const sessionLifetime = 24 * time.Hour
 
 type Tokens struct {
 	secret []byte
@@ -45,11 +63,12 @@ func NewTokens(secret string) *Tokens { return &Tokens{secret: []byte(secret)} }
 
 func (t *Tokens) Issue(u domain.User) (string, error) {
 	c := Claims{
-		Role: u.Role,
+		Role:         u.Role,
+		TokenVersion: u.TokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   u.ID,
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(sessionLifetime)),
 		},
 	}
 	if u.VendorID != nil {
@@ -61,7 +80,10 @@ func (t *Tokens) Issue(u domain.User) (string, error) {
 func (t *Tokens) Verify(token string) (*Claims, error) {
 	c := &Claims{}
 	_, err := jwt.ParseWithClaims(token, c, func(tok *jwt.Token) (any, error) {
-		if _, ok := tok.Method.(*jwt.SigningMethodHMAC); !ok {
+		// Pin to the exact algorithm used at issuance (HS256), not just
+		// "any HMAC variant" — narrows the trusted signing surface to
+		// precisely what Issue/IssueTwoFactorPending produce.
+		if tok.Method != jwt.SigningMethodHS256 {
 			return nil, jwt.ErrSignatureInvalid
 		}
 		return t.secret, nil
@@ -113,6 +135,55 @@ func GenerateTOTPSecret(accountEmail string) (secret string, otpauthURL string, 
 	return key.Secret(), key.URL(), nil
 }
 
+// EncryptSecret seals plaintext (a TOTP secret) with AES-256-GCM under key,
+// returning a base64 string safe to store in a TEXT column. A leaked
+// database alone can't be used to derive live 2FA codes — the encryption
+// key is only ever held in the server's environment, never in the DB.
+func EncryptSecret(key []byte, plaintext string) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	sealed := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	return base64.StdEncoding.EncodeToString(sealed), nil
+}
+
+// DecryptSecret reverses EncryptSecret.
+func DecryptSecret(key []byte, encoded string) (string, error) {
+	if encoded == "" {
+		return "", nil
+	}
+	sealed, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	if len(sealed) < gcm.NonceSize() {
+		return "", errors.New("ciphertext too short")
+	}
+	nonce, ciphertext := sealed[:gcm.NonceSize()], sealed[gcm.NonceSize():]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", err
+	}
+	return string(plaintext), nil
+}
+
 // ValidateTOTP checks a 6-digit code against a secret (30s step, per RFC 6238 default).
 func ValidateTOTP(secret, code string) bool {
 	if secret == "" || code == "" {
@@ -135,28 +206,37 @@ func FromContext(ctx context.Context) *Claims {
 	return c
 }
 
+// WithClaims stores verified claims in ctx, exported for callers (such as
+// Server.Authenticated in package httpapi) that need to layer additional
+// checks — e.g. a token_version lookup — on top of plain signature
+// verification before claims become visible to handlers via FromContext.
+func WithClaims(ctx context.Context, c *Claims) context.Context {
+	return context.WithValue(ctx, ctxKey{}, c)
+}
+
 func writeErr(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
-// Authenticated requires a valid Bearer token and stores claims in context.
-func (t *Tokens) Authenticated(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
-		raw, ok := strings.CutPrefix(h, "Bearer ")
-		if !ok || raw == "" {
-			writeErr(w, http.StatusUnauthorized, "missing token")
-			return
-		}
-		c, err := t.Verify(raw)
-		if err != nil || c.Purpose != "" {
-			writeErr(w, http.StatusUnauthorized, "invalid token")
-			return
-		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, c)))
-	})
+// ParseBearer extracts and verifies a session token (rejecting pending-2FA
+// tokens) from an Authorization header. Callers that also need to enforce
+// token_version revocation (see Server.Authenticated in package httpapi)
+// use this instead of a self-contained middleware.
+func (t *Tokens) ParseBearer(header string) (*Claims, error) {
+	raw, ok := strings.CutPrefix(header, "Bearer ")
+	if !ok || raw == "" {
+		return nil, jwt.ErrTokenMalformed
+	}
+	c, err := t.Verify(raw)
+	if err != nil {
+		return nil, err
+	}
+	if c.Purpose != "" {
+		return nil, jwt.ErrTokenInvalidClaims
+	}
+	return c, nil
 }
 
 // RequireRole gates a subtree to one role (use after Authenticated).

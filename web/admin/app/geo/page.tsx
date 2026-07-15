@@ -11,7 +11,7 @@ import { useState } from 'react';
 
 import { timeAgo, type Region, type Review, type Vendor } from '@spotto/shared';
 import Shell from '../../components/shell';
-import { regionTone } from '../../components/vendor-map';
+import { regionTone } from '../../components/region-tone';
 import { api } from '../../lib/api';
 
 // Leaflet touches `window` at import time, so the map must not be part of

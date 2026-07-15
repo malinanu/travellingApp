@@ -22,15 +22,23 @@ func (s *Server) handleTwoFactorLoginVerify(w http.ResponseWriter, r *http.Reque
 		writeErr(w, http.StatusUnauthorized, "invalid or expired login")
 		return
 	}
+	limitKey := clientIP(r) + ":" + userID
+	if !s.totpLimit.allow(limitKey) {
+		writeTooManyRequests(w)
+		return
+	}
 	u, err := s.Store.UserByID(r.Context(), userID)
 	if err != nil {
 		storeErr(w, err)
 		return
 	}
-	if !auth.ValidateTOTP(u.TOTPSecret, req.Code) {
+	secret, err := auth.DecryptSecret(s.TOTPKey, u.TOTPSecret)
+	if err != nil || !auth.ValidateTOTP(secret, req.Code) {
+		s.totpLimit.recordFailure(limitKey)
 		writeErr(w, http.StatusUnauthorized, "invalid code")
 		return
 	}
+	s.totpLimit.reset(limitKey)
 	token, err := s.Tokens.Issue(u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
@@ -53,10 +61,17 @@ func (s *Server) handleTwoFactorSetup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	if err := s.Store.SetUserTOTPPending(r.Context(), u.ID, secret); err != nil {
+	encrypted, err := auth.EncryptSecret(s.TOTPKey, secret)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	if err := s.Store.SetUserTOTPPending(r.Context(), u.ID, encrypted); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	// The client only ever sees the plaintext secret/otpauthUrl for QR
+	// rendering at setup time — nothing plaintext is ever persisted.
 	writeJSON(w, http.StatusOK, map[string]string{"secret": secret, "otpauthUrl": otpauthURL})
 }
 
@@ -79,10 +94,13 @@ func (s *Server) handleTwoFactorEnable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "no pending 2FA setup — call /auth/2fa/setup first")
 		return
 	}
-	if !auth.ValidateTOTP(u.TOTPPendingSecret, req.Code) {
+	pendingSecret, err := auth.DecryptSecret(s.TOTPKey, u.TOTPPendingSecret)
+	if err != nil || !auth.ValidateTOTP(pendingSecret, req.Code) {
 		writeErr(w, http.StatusUnauthorized, "invalid code")
 		return
 	}
+	// u.TOTPPendingSecret is already encrypted — EnableUserTOTP just moves
+	// it from the pending column to the active one, no re-encryption needed.
 	if err := s.Store.EnableUserTOTP(r.Context(), u.ID, u.TOTPPendingSecret); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
@@ -104,10 +122,18 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if !u.TOTPEnabled || !auth.ValidateTOTP(u.TOTPSecret, req.Code) {
+	limitKey := clientIP(r) + ":" + u.ID
+	if !s.totpLimit.allow(limitKey) {
+		writeTooManyRequests(w)
+		return
+	}
+	secret, err := auth.DecryptSecret(s.TOTPKey, u.TOTPSecret)
+	if !u.TOTPEnabled || err != nil || !auth.ValidateTOTP(secret, req.Code) {
+		s.totpLimit.recordFailure(limitKey)
 		writeErr(w, http.StatusUnauthorized, "invalid code")
 		return
 	}
+	s.totpLimit.reset(limitKey)
 	if err := s.Store.DisableUserTOTP(r.Context(), u.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return

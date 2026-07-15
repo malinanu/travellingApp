@@ -31,6 +31,9 @@ type User struct {
 	TOTPSecret        string          `json:"-"`
 	TOTPPendingSecret string          `json:"-"`
 	TOTPEnabled       bool            `json:"totpEnabled"`
+	// TokenVersion is embedded in issued JWTs; bumping it (e.g. on 2FA
+	// disable) invalidates every token issued before the bump.
+	TokenVersion int `json:"-"`
 }
 
 type VendorStatus string

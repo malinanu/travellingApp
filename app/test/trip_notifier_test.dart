@@ -1,6 +1,7 @@
 // TripNotifier semantics: move swaps times, custom stops survive JSON,
 // and pre-custom-schema payloads still load.
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,8 +9,29 @@ import 'package:spotto/core/storage/local_store.dart';
 import 'package:spotto/data/mock/trip_catalog.dart';
 import 'package:spotto/data/repositories/repositories.dart';
 
+/// flutter_secure_storage has no real platform implementation under
+/// `flutter test` — mock its channel so LocalStore.init() (which reads the
+/// session token from secure storage) doesn't throw MissingPluginException.
+void _mockSecureStorage() {
+  const channel = MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(channel, (call) async {
+    switch (call.method) {
+      case 'read':
+        return null;
+      case 'readAll':
+        return <String, String>{};
+      case 'containsKey':
+        return false;
+      default:
+        return null;
+    }
+  });
+}
+
 Future<ProviderContainer> makeContainer() async {
   SharedPreferences.setMockInitialValues({});
+  _mockSecureStorage();
   final store = await LocalStore.init();
   final container = ProviderContainer(overrides: [
     localStoreProvider.overrideWithValue(store),

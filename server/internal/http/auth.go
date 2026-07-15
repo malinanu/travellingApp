@@ -4,11 +4,64 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/store/postgres"
 )
+
+// dummyPasswordHash is compared against when a login's email doesn't match
+// any user, so CheckPassword always pays its bcrypt cost either way —
+// otherwise response latency alone reveals which emails are registered
+// (the "||" short-circuit skips bcrypt entirely for unknown emails).
+// Computed once at startup via package-var init, not per request.
+var dummyPasswordHash = mustHashDummyPassword()
+
+func mustHashDummyPassword() string {
+	h, err := auth.HashPassword("not-a-real-password-used-only-for-constant-time-login-checks")
+	if err != nil {
+		panic(err)
+	}
+	return h
+}
+
+// commonPasswords are the handful of weak passwords that show up at the top
+// of every breach-corpus frequency list — cheap to block outright even
+// though they'd pass the other structural checks below (e.g. "password1"
+// isn't all-digit or all-repeated-char).
+var commonPasswords = map[string]bool{
+	"password": true, "password1": true, "password123": true,
+	"12345678": true, "123456789": true, "1234567890": true,
+	"qwertyui": true, "qwertyuiop": true, "letmein11": true,
+	"iloveyou1": true, "welcome123": true, "admin1234": true,
+	"abc12345": true, "changeme1": true, "trustno1x": true,
+}
+
+// isWeakPassword catches the most common trivially-guessable patterns
+// (length is already checked separately by the caller). Not a full
+// strength-scoring system — just cheap, high-value rejections.
+func isWeakPassword(password, email string) bool {
+	allDigits := true
+	allSameChar := true
+	for i, r := range password {
+		if !unicode.IsDigit(r) {
+			allDigits = false
+		}
+		if i > 0 && r != rune(password[0]) {
+			allSameChar = false
+		}
+	}
+	if allDigits || allSameChar {
+		return true
+	}
+	lower := strings.ToLower(password)
+	if commonPasswords[lower] {
+		return true
+	}
+	localPart, _, _ := strings.Cut(strings.ToLower(email), "@")
+	return lower == strings.ToLower(email) || (localPart != "" && lower == localPart)
+}
 
 type registerReq struct {
 	Email    string `json:"email"`
@@ -36,8 +89,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
-	if req.Email == "" || len(req.Password) < 6 {
-		writeErr(w, http.StatusBadRequest, "email and a password of at least 6 characters are required")
+	if req.Email == "" || len(req.Password) < 10 {
+		writeErr(w, http.StatusBadRequest, "email and a password of at least 10 characters are required")
+		return
+	}
+	if isWeakPassword(req.Password, req.Email) {
+		writeErr(w, http.StatusBadRequest, "password is too weak — avoid all-digit, all-repeated, or email-derived passwords")
 		return
 	}
 	if _, err := s.Store.UserByEmail(r.Context(), req.Email); err == nil {
@@ -111,11 +168,24 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	u, err := s.Store.UserByEmail(r.Context(), strings.TrimSpace(req.Email))
-	if err != nil || !auth.CheckPassword(u.PasswordHash, req.Password) {
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	limitKey := clientIP(r) + ":" + email
+	if !s.loginLimit.allow(limitKey) {
+		writeTooManyRequests(w)
+		return
+	}
+	u, err := s.Store.UserByEmail(r.Context(), email)
+	hash := dummyPasswordHash
+	if err == nil {
+		hash = u.PasswordHash
+	}
+	passwordOK := auth.CheckPassword(hash, req.Password)
+	if err != nil || !passwordOK {
+		s.loginLimit.recordFailure(limitKey)
 		writeErr(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
+	s.loginLimit.reset(limitKey)
 	if u.TOTPEnabled {
 		pending, err := s.Tokens.IssueTwoFactorPending(u.ID)
 		if err != nil {

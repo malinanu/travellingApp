@@ -14,9 +14,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/api ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/seed ./cmd/seed
 
 FROM alpine:latest
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates && \
+    addgroup -S app && adduser -S app -G app
 WORKDIR /app
-COPY --from=builder /out/api /app/api
-COPY --from=builder /out/seed /app/seed
+COPY --from=builder --chown=app:app /out/api /app/api
+COPY --from=builder --chown=app:app /out/seed /app/seed
+USER app
 EXPOSE 8080
 CMD ["/app/api"]
