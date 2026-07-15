@@ -36,9 +36,14 @@ subdomains here, over HTTPS, not the bare IP:
 ```
 DATABASE_URL=postgres://postgres:<password>@<postgres-host>:5432/spotto?sslmode=disable
 JWT_SECRET=<a long random string>
+TOTP_ENCRYPTION_KEY=<output of: openssl rand -base64 32>
 CORS_ORIGINS=https://spotto-vendor.yourdomain.com,https://spotto-admin.yourdomain.com
 NEXT_PUBLIC_API_URL=https://spotto-api.yourdomain.com
 ```
+
+`TOTP_ENCRYPTION_KEY` must be exactly 32 raw bytes, base64-encoded — the api
+container refuses to start without one (used to encrypt 2FA secrets at
+rest).
 
 `NEXT_PUBLIC_API_URL` is baked into the vendor/admin webapps **at build
 time** (Next.js public env vars aren't runtime-configurable) — if this

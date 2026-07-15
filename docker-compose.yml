@@ -9,6 +9,7 @@ services:
       PORT: 8080
       DATABASE_URL: ${DATABASE_URL}
       JWT_SECRET: ${JWT_SECRET}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
     networks: [spotto]
 
