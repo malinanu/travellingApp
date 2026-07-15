@@ -105,18 +105,26 @@ Once all three subdomains resolve over HTTPS, go back to step 3 and make
 sure `NEXT_PUBLIC_API_URL`/`CORS_ORIGINS` use those `https://` domains
 (rebuild if you change them after the first deploy).
 
-## 5. Load demo data (first run only)
+## 5. Load demo or test data (first run only)
 
 From Portainer's console for the `api` container, or via the CLI on the
-host:
+host — two options, either wipes and reloads all tables:
 
 ```
 docker compose run --rm api /app/seed
 ```
-
-This wipes and reloads the demo dataset — accounts `lena@spotto.dev`,
+A small, fixed demo dataset — accounts `lena@spotto.dev`,
 `vendor@driftwood.dev`, `admin@spotto.dev`, password `spotto123` for all.
-Safe to re-run any time you want a clean demo state.
+Safe to re-run any time you want a clean, predictable demo state.
+
+```
+docker compose run --rm api /app/gendata
+```
+A larger, randomized dataset for manual testing (~40 travellers, ~18
+vendors/places, ~250 reviews, offers, claims, groups, feed items, etc.) —
+every run generates different names, businesses, and review text. Prints
+a handful of ready-to-use sample logins (all sharing one password) to the
+command output at the end, since the emails are random each run.
 
 ## 6. Verify
 
