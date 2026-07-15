@@ -115,6 +115,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Use(s.Authenticated, auth.RequireRole(domain.RoleVendor))
 		r.Get("/vendor/business", s.handleVendorBusiness)
 		r.Put("/vendor/business", s.handleUpdateVendorBusiness)
+		r.Patch("/vendor/business/category", s.handleUpdateVendorCategory)
 		r.Get("/vendor/menu", s.handleVendorMenu)
 		r.Put("/vendor/menu", s.handleUpdateVendorMenu)
 		r.Get("/vendor/offers", s.handleVendorOffers)

@@ -31,7 +31,7 @@ const NAV: { href: string; label: string; icon: LucideIcon; foodOnly?: boolean }
 // capitalized "Restaurant", cmd/gendata's "Cafe"/"Bakery"/"Street Food")
 // and none of them are guaranteed to equal one of these exactly.
 const FOOD_KEYWORDS = ['restaurant', 'cafe', 'café', 'bar', 'bakery', 'food', 'coffee'];
-function isFoodCategory(category?: string) {
+export function isFoodCategory(category?: string) {
   const c = (category ?? '').toLowerCase();
   return FOOD_KEYWORDS.some((k) => c.includes(k));
 }

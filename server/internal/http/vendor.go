@@ -40,6 +40,32 @@ func (s *Server) handleUpdateVendorBusiness(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, v)
 }
 
+// handleUpdateVendorCategory changes the business type — separate from
+// handleUpdateVendorBusiness since category is a top-level vendors column,
+// not part of the profile JSON blob that endpoint replaces wholesale.
+func (s *Server) handleUpdateVendorCategory(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireApprovedVendor(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Category string `json:"category"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.Category == "" {
+		writeErr(w, http.StatusBadRequest, "category is required")
+		return
+	}
+	if err := s.Store.UpdateVendorCategory(r.Context(), v.ID, req.Category); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	v.Category = req.Category
+	writeJSON(w, http.StatusOK, v)
+}
+
 func (s *Server) handleVendorMenu(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireVendor(w, r)
 	if !ok {

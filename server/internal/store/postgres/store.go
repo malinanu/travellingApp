@@ -569,6 +569,14 @@ func (s *Store) UpdateVendorProfile(ctx context.Context, id string, profile json
 	return err
 }
 
+// UpdateVendorCategory changes the business type shown on the map pin and
+// used to gate the Menu tab (see isFoodCategory in the vendor web app) —
+// a top-level vendors.category column, not part of the profile JSON blob.
+func (s *Store) UpdateVendorCategory(ctx context.Context, id, category string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE vendors SET category=$2 WHERE id=$1`, id, category)
+	return err
+}
+
 func (s *Store) UpdateVendorMenu(ctx context.Context, id string, menu json.RawMessage) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE vendors SET menu=$2 WHERE id=$1`, id, menu)
 	return err
