@@ -4,9 +4,9 @@ services:
       context: ./server
     restart: unless-stopped
     ports:
-      - "8881:8080"
+      - "8881:8881"
     environment:
-      PORT: 8080
+      PORT: 8881
       DATABASE_URL: ${DATABASE_URL}
       JWT_SECRET: ${JWT_SECRET}
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY}

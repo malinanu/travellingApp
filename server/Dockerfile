@@ -20,5 +20,7 @@ WORKDIR /app
 COPY --from=builder --chown=app:app /out/api /app/api
 COPY --from=builder --chown=app:app /out/seed /app/seed
 USER app
-EXPOSE 8080
+# Documentation only — the actual listen port comes from the PORT env var
+# (see docker-compose.yml), which must be kept in sync with this.
+EXPOSE 8881
 CMD ["/app/api"]

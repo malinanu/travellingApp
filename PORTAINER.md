@@ -1,14 +1,16 @@
 # Deploying Spotto on Portainer
 
-Three services — `api` (Go, container port 8080, published on the host as
-`8881`), `vendor` (Next.js, :3000), `admin` (Next.js, :3001) — built from
+Three services — `api` (Go, container port `8881`, published on the host as
+`8881` too), `vendor` (Next.js, :3000), `admin` (Next.js, :3001) — built from
 `docker-compose.yml` at the repo root. This stack does **not** run its own
 Postgres; it connects to one you already have reachable from the Docker
 host.
 
-(The api's host port was moved from 8080 → 18080 → 8881 as the deployment
-host's port assignments evolved — the container still listens on 8080
-internally, only the host-side published port changed.)
+(The api's port was moved from 8080 → 18080 → 8881 as the deployment host's
+port assignments evolved — host port 8080 is taken by another site on this
+box. Host and container ports are now the same number, 8881, to keep things
+simple; the `PORT` env var in `docker-compose.yml` and the `EXPOSE` line in
+`server/Dockerfile` must be kept in sync if this ever changes again.)
 
 ## 1. One-time database setup
 
