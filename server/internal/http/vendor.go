@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -410,6 +411,8 @@ type teamMember struct {
 type teamInvite struct {
 	ID        string    `json:"id"`
 	Code      string    `json:"code"`
+	Email     string    `json:"email,omitempty"`
+	Role      string    `json:"role"`
 	CreatedAt time.Time `json:"createdAt"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
@@ -437,7 +440,7 @@ func (s *Server) handleVendorTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	pending := make([]teamInvite, 0, len(invites))
 	for _, inv := range invites {
-		pending = append(pending, teamInvite{ID: inv.ID, Code: inv.Code, CreatedAt: inv.CreatedAt, ExpiresAt: inv.ExpiresAt})
+		pending = append(pending, teamInvite{ID: inv.ID, Code: inv.Code, Email: inv.Email, Role: inv.Role, CreatedAt: inv.CreatedAt, ExpiresAt: inv.ExpiresAt})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"members": members, "invites": pending})
 }
@@ -457,19 +460,38 @@ func newInviteCode() string {
 }
 
 // handleCreateVendorInvite generates a 7-day invite code for a new staff
-// member to join this vendor account. Owner-only (see server.go's
-// RequireVendorOwner). There's no email system in this app, so the invite
-// is a copy-link code, not a sent email.
+// or manager member to join this vendor account. Owner-only (see
+// server.go's RequireVendorOwner). If an email is given and the mailer is
+// configured, the invite link is emailed to it — but the code/link is
+// always returned to the caller too, so the invite still works as a
+// copy-link if email isn't configured or delivery fails.
 func (s *Server) handleCreateVendorInvite(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	v, ok := s.requireVendor(w, r)
 	if !ok {
 		return
 	}
+	var req struct {
+		Email string `json:"email"`
+		Role  string `json:"role"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	role := strings.TrimSpace(req.Role)
+	if role == "" {
+		role = domain.VendorRoleStaff
+	}
+	if role != domain.VendorRoleStaff && role != domain.VendorRoleManager {
+		writeErr(w, http.StatusBadRequest, "role must be staff or manager")
+		return
+	}
 	inv := domain.VendorInvite{
 		ID:        newID("inv"),
 		VendorID:  v.ID,
 		Code:      newInviteCode(),
+		Email:     strings.TrimSpace(req.Email),
+		Role:      role,
 		CreatedBy: c.Subject,
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
@@ -478,12 +500,26 @@ func (s *Server) handleCreateVendorInvite(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusCreated, teamInvite{ID: inv.ID, Code: inv.Code, CreatedAt: inv.CreatedAt, ExpiresAt: inv.ExpiresAt})
+	if inv.Email != "" {
+		link := s.VendorAppURL + "/join/" + inv.Code
+		email, subject, body := inv.Email, "You've been invited to join "+v.Name+" on Spotto", inviteEmailHTML(v.Name, role, link)
+		s.Jobs.Enqueue(func() { s.Mail.Send(email, subject, body) })
+	}
+	writeJSON(w, http.StatusCreated, teamInvite{ID: inv.ID, Code: inv.Code, Email: inv.Email, Role: inv.Role, CreatedAt: inv.CreatedAt, ExpiresAt: inv.ExpiresAt})
 }
 
-// handleRemoveVendorTeamMember detaches a staff member from the vendor
-// account. Owner-only; RemoveVendorTeamMember itself also refuses to touch
-// anyone but staff, so an owner account can't be removed this way.
+func inviteEmailHTML(vendorName, role, link string) string {
+	return fmt.Sprintf(
+		`<p>You've been invited to join <strong>%s</strong> on Spotto as a <strong>%s</strong>.</p>
+		<p><a href="%s">Accept the invite</a> (expires in 7 days).</p>
+		<p>If the link doesn't work, use invite code from the vendor who invited you at %s.</p>`,
+		vendorName, role, link, link)
+}
+
+// handleRemoveVendorTeamMember detaches a staff or manager member from
+// the vendor account. Owner-only; RemoveVendorTeamMember itself also
+// refuses to touch the owner's own row, so an owner account can't be
+// removed this way.
 func (s *Server) handleRemoveVendorTeamMember(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireVendor(w, r)
 	if !ok {

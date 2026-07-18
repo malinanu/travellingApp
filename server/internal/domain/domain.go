@@ -50,11 +50,15 @@ type User struct {
 	NotifyReviews     bool   `json:"notifyReviews"`
 	NotifyPayouts     bool   `json:"notifyPayouts"`
 	NotifyGrowthTips  bool   `json:"notifyGrowthTips"`
+	// GoogleID links this account to a Google identity for OAuth sign-in;
+	// nil for accounts that have never signed in with Google.
+	GoogleID *string `json:"-"`
 }
 
 const (
-	VendorRoleOwner = "owner"
-	VendorRoleStaff = "staff"
+	VendorRoleOwner   = "owner"
+	VendorRoleStaff   = "staff"
+	VendorRoleManager = "manager"
 )
 
 type VendorStatus string
@@ -245,14 +249,19 @@ type VendorNotification struct {
 	Unread bool   `json:"unread"`
 }
 
-// VendorInvite is a shareable, expiring, single-use code an owner generates
-// to bring a staff member onto their vendor account — there's no email
-// system in this app, so invites work as a copy-link code rather than a
-// sent email.
+// VendorInvite is an expiring, single-use code an owner generates to bring
+// a staff or manager member onto their vendor account. It's emailed to the
+// invitee (see mail.Mailer) but the code/link is also always returned to
+// the owner, so the invite still works as a copy-link if email delivery
+// isn't configured or bounces.
 type VendorInvite struct {
-	ID             string     `json:"id"`
-	VendorID       string     `json:"vendorId"`
-	Code           string     `json:"code"`
+	ID        string `json:"id"`
+	VendorID  string `json:"vendorId"`
+	Code      string `json:"code"`
+	// Email is who the invite was addressed to (informational — anyone
+	// with the code can still redeem it, same as before this field existed).
+	Email          string     `json:"email,omitempty"`
+	Role           string     `json:"role"` // staff or manager
 	CreatedBy      string     `json:"createdBy"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	ExpiresAt      time.Time  `json:"expiresAt"`

@@ -8,7 +8,8 @@ import {
   BadgeDollarSign, Calendar, Check, Coffee, EyeOff, Gift, Infinity as InfinityIcon,
   Package, Pencil, Percent, Rocket, Tag, Trash2, Zap, LucideIcon,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useState } from 'react';
 
 import type { Offer, OfferStatus } from '@spotto/shared';
 import Shell, { useBusiness } from '../../components/shell';
@@ -80,7 +81,17 @@ function parseValue(typeId: string, value: string) {
 }
 
 export default function OffersPage() {
+  return (
+    <Suspense fallback={null}>
+      <OffersPageInner />
+    </Suspense>
+  );
+}
+
+function OffersPageInner() {
   const qc = useQueryClient();
+  const searchParams = useSearchParams();
+  const q = (searchParams.get('q') ?? '').trim().toLowerCase();
   const { data: business } = useBusiness();
   const { data: offers = [] } = useQuery<Offer[]>({
     queryKey: ['offers'],
@@ -189,7 +200,9 @@ export default function OffersPage() {
     draft: offers.filter((o) => o.status === 'draft').length,
     ended: offers.filter((o) => o.status === 'ended').length,
   };
-  const visible = offers.filter((o) => filter === 'all' || o.status === filter || (filter === 'live' && o.status === 'ending'));
+  const visible = offers
+    .filter((o) => filter === 'all' || o.status === filter || (filter === 'live' && o.status === 'ending'))
+    .filter((o) => !q || o.title.toLowerCase().includes(q) || o.value.toLowerCase().includes(q));
 
   return (
     <Shell>

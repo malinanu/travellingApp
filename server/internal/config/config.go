@@ -17,6 +17,23 @@ type Config struct {
 	JWTSecret         string
 	CORSOrigins       []string
 	TOTPEncryptionKey []byte // 32 raw bytes, decoded from TOTP_ENCRYPTION_KEY (base64)
+
+	// Mail and Google OAuth are optional — unset means the mailer logs
+	// instead of sending, and the Google endpoints report themselves as
+	// unconfigured rather than failing startup. Neither requires a paid
+	// account: any SMTP relay works for mail, and Google Cloud OAuth
+	// clients are free.
+	SMTPHost           string
+	SMTPPort           string
+	SMTPUser           string
+	SMTPPass           string
+	EmailFrom          string
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURL  string
+	// VendorAppURL is the base URL of the vendor Next.js app, used to build
+	// links embedded in emails (invite accept, password reset).
+	VendorAppURL string
 }
 
 // minSecretLen guards against trivially short/guessable secrets — anyone
@@ -42,6 +59,16 @@ func Load() Config {
 		JWTSecret:         jwtSecret,
 		CORSOrigins:       strings.Split(mustGetenv("CORS_ORIGINS"), ","),
 		TOTPEncryptionKey: totpKey,
+
+		SMTPHost:           getenv("SMTP_HOST", ""),
+		SMTPPort:           getenv("SMTP_PORT", ""),
+		SMTPUser:           getenv("SMTP_USER", ""),
+		SMTPPass:           getenv("SMTP_PASS", ""),
+		EmailFrom:          getenv("EMAIL_FROM", ""),
+		GoogleClientID:     getenv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret: getenv("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRedirectURL:  getenv("GOOGLE_REDIRECT_URL", ""),
+		VendorAppURL:       getenv("VENDOR_APP_URL", "http://localhost:3000"),
 	}
 }
 

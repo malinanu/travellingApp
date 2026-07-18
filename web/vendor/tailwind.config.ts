@@ -12,6 +12,7 @@ const config: Config = {
         cream: 'var(--cream)',
         sand: 'var(--sand)',
         ink: 'var(--ink)',
+        'ink-soft': 'var(--ink-soft)',
         muted: 'var(--muted)',
         line: 'var(--line)',
         accent: 'var(--accent)',
@@ -21,6 +22,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: ['var(--font-nunito)', 'ui-rounded', 'system-ui', 'sans-serif'],
+        display: ['var(--font-fredoka)', 'ui-rounded', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         xl2: '18px',

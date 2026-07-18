@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -115,7 +116,8 @@ func scanUser(row pgx.Row) (domain.User, error) {
 		&u.TravelStyle, &interests, &u.VendorID, &u.Extra, &u.CreatedAt,
 		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled, &u.TokenVersion,
 		&u.ShareLocation, &u.Lat, &u.Lng, &u.LocationUpdatedAt,
-		&u.Phone, &u.VendorRole, &u.NotifyRedemptions, &u.NotifyReviews, &u.NotifyPayouts, &u.NotifyGrowthTips)
+		&u.Phone, &u.VendorRole, &u.NotifyRedemptions, &u.NotifyReviews, &u.NotifyPayouts, &u.NotifyGrowthTips,
+		&u.GoogleID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -126,7 +128,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -134,6 +136,19 @@ func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, err
 
 func (s *Store) UserByID(ctx context.Context, id string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE id=$1`, id))
+}
+
+// UserByGoogleID looks up an account previously linked to a Google
+// identity — used by the OAuth callback to find a returning user.
+func (s *Store) UserByGoogleID(ctx context.Context, googleID string) (domain.User, error) {
+	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE google_id=$1`, googleID))
+}
+
+// LinkUserGoogleID records a Google identity against an existing account
+// (matched by email) the first time it signs in with Google.
+func (s *Store) LinkUserGoogleID(ctx context.Context, userID, googleID string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE users SET google_id=$2 WHERE id=$1`, userID, googleID)
+	return err
 }
 
 // UsersByIDs resolves group member IDs to full profiles (used to show real
@@ -284,14 +299,14 @@ func (s *Store) VendorTeamMembers(ctx context.Context, vendorID string) ([]domai
 	return out, rows.Err()
 }
 
-// RemoveVendorTeamMember detaches a staff member from the vendor account
-// (clears vendor_id/role rather than deleting the account outright, so
-// their login persists but loses all vendor access) — scoped to vendorID
-// and vendor_role='staff' so an owner can't be removed this way.
+// RemoveVendorTeamMember detaches a staff or manager member from the
+// vendor account (clears vendor_id/role rather than deleting the account
+// outright, so their login persists but loses all vendor access) — scoped
+// to vendorID and vendor_role<>'owner' so an owner can't be removed this way.
 func (s *Store) RemoveVendorTeamMember(ctx context.Context, vendorID, userID string) error {
 	tag, err := s.Pool.Exec(ctx,
-		`UPDATE users SET vendor_id=NULL, vendor_role='' WHERE id=$1 AND vendor_id=$2 AND vendor_role=$3`,
-		userID, vendorID, domain.VendorRoleStaff)
+		`UPDATE users SET vendor_id=NULL, vendor_role='' WHERE id=$1 AND vendor_id=$2 AND vendor_role<>$3`,
+		userID, vendorID, domain.VendorRoleOwner)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
@@ -301,15 +316,15 @@ func (s *Store) RemoveVendorTeamMember(ctx context.Context, vendorID, userID str
 // CreateVendorInvite stores a freshly generated invite code.
 func (s *Store) CreateVendorInvite(ctx context.Context, inv domain.VendorInvite) error {
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO vendor_invites (id, vendor_id, code, created_by, created_at, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6)`,
-		inv.ID, inv.VendorID, inv.Code, inv.CreatedBy, inv.CreatedAt, inv.ExpiresAt)
+		INSERT INTO vendor_invites (id, vendor_id, code, email, role, created_by, created_at, expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		inv.ID, inv.VendorID, inv.Code, inv.Email, inv.Role, inv.CreatedBy, inv.CreatedAt, inv.ExpiresAt)
 	return err
 }
 
 func scanVendorInvite(row pgx.Row) (domain.VendorInvite, error) {
 	var inv domain.VendorInvite
-	err := row.Scan(&inv.ID, &inv.VendorID, &inv.Code, &inv.CreatedBy, &inv.CreatedAt,
+	err := row.Scan(&inv.ID, &inv.VendorID, &inv.Code, &inv.Email, &inv.Role, &inv.CreatedBy, &inv.CreatedAt,
 		&inv.ExpiresAt, &inv.AcceptedAt, &inv.AcceptedUserID, &inv.Revoked)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return inv, ErrNotFound
@@ -317,7 +332,7 @@ func scanVendorInvite(row pgx.Row) (domain.VendorInvite, error) {
 	return inv, err
 }
 
-const vendorInviteCols = `id, vendor_id, code, created_by, created_at, expires_at, accepted_at, accepted_user_id, revoked`
+const vendorInviteCols = `id, vendor_id, code, email, role, created_by, created_at, expires_at, accepted_at, accepted_user_id, revoked`
 
 func (s *Store) VendorInviteByCode(ctx context.Context, code string) (domain.VendorInvite, error) {
 	return scanVendorInvite(s.Pool.QueryRow(ctx, `SELECT `+vendorInviteCols+` FROM vendor_invites WHERE code=$1`, code))
@@ -359,6 +374,40 @@ func (s *Store) RevokeVendorInvite(ctx context.Context, id, vendorID string) err
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	return err
+}
+
+// ---- password reset ----
+
+// ResetToken is never returned with its raw token — only token_hash is
+// stored/compared, same never-store-the-secret pattern as TOTP secrets.
+type ResetToken struct {
+	ID        string
+	UserID    string
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+}
+
+func (s *Store) CreatePasswordResetToken(ctx context.Context, id, userID, tokenHash string, expiresAt time.Time) error {
+	_, err := s.Pool.Exec(ctx,
+		`INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at) VALUES ($1,$2,$3,$4)`,
+		id, userID, tokenHash, expiresAt)
+	return err
+}
+
+func (s *Store) PasswordResetTokenByHash(ctx context.Context, tokenHash string) (ResetToken, error) {
+	var t ResetToken
+	err := s.Pool.QueryRow(ctx,
+		`SELECT id, user_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash=$1`, tokenHash,
+	).Scan(&t.ID, &t.UserID, &t.ExpiresAt, &t.UsedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return t, ErrNotFound
+	}
+	return t, err
+}
+
+func (s *Store) MarkPasswordResetTokenUsed(ctx context.Context, id string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE password_reset_tokens SET used_at=now() WHERE id=$1`, id)
 	return err
 }
 

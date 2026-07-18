@@ -1,6 +1,10 @@
 package httpapi
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -72,8 +76,11 @@ type registerReq struct {
 	BusinessName string `json:"businessName,omitempty"`
 	Category     string `json:"category,omitempty"`
 	Town         string `json:"town,omitempty"`
-	// InviteCode joins an existing vendor as staff instead of creating a
-	// new pending vendor — see the team-invite flow in handleRegister.
+	Phone        string `json:"phone,omitempty"`
+	Description  string `json:"description,omitempty"`
+	// InviteCode joins an existing vendor as the invite's assigned role
+	// (staff or manager) instead of creating a new pending vendor — see
+	// the team-invite flow in handleRegister.
 	InviteCode string `json:"inviteCode,omitempty"`
 	// Traveller extras
 	Country     string   `json:"country,omitempty"`
@@ -124,13 +131,15 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Country:      req.Country,
 		TravelStyle:  req.TravelStyle,
 		Interests:    req.Interests,
+		Phone:        req.Phone,
 		CreatedAt:    time.Now(),
 	}
 
 	var invite *domain.VendorInvite
 	if role == domain.RoleVendor && req.InviteCode != "" {
-		// Joining an existing vendor as staff — validated below, after we
-		// know the invite exists, isn't revoked/accepted/expired.
+		// Joining an existing vendor as whatever role the invite specified
+		// (staff or manager) — validated below, after we know the invite
+		// exists, isn't revoked/accepted/expired.
 		inv, err := s.Store.VendorInviteByCode(r.Context(), req.InviteCode)
 		if err != nil || inv.Revoked || inv.AcceptedAt != nil || time.Now().After(inv.ExpiresAt) {
 			writeErr(w, http.StatusBadRequest, "invalid or expired invite code")
@@ -138,7 +147,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		}
 		invite = &inv
 		u.VendorID = &inv.VendorID
-		u.VendorRole = domain.VendorRoleStaff
+		u.VendorRole = inv.Role
+		if u.VendorRole == "" {
+			// Invites created before the role column existed default to staff.
+			u.VendorRole = domain.VendorRoleStaff
+		}
 	} else if role == domain.RoleVendor {
 		// Vendor registration creates a pending vendor gated until admin approval.
 		v := domain.Vendor{
@@ -155,6 +168,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		}
 		if v.Name == "" {
 			v.Name = req.Name
+		}
+		if req.Description != "" {
+			if b, err := json.Marshal(map[string]string{"blurb": req.Description}); err == nil {
+				v.Profile = b
+			}
 		}
 		if err := s.Store.UpsertVendor(r.Context(), v); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal error")
@@ -422,6 +440,105 @@ func (s *Server) handleUpdateNotificationPrefs(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, http.StatusOK, req)
+}
+
+func newResetToken() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func hashResetToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+// handleForgotPassword always responds 200 regardless of whether the
+// email matches an account, to avoid account enumeration via response
+// differences. If it does match, a reset email is queued (see
+// internal/jobs) rather than sent inline, so this handler doesn't block
+// on SMTP latency. Only wires up the vendor app's reset screen today
+// (VendorAppURL) — traveller/admin reset UIs don't exist yet.
+func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	limitKey := clientIP(r) + ":" + email
+	if !s.resetLimit.allow(limitKey) {
+		writeTooManyRequests(w)
+		return
+	}
+	s.resetLimit.recordFailure(limitKey) // bounds requests per key; never reset — resends should stay rate-limited too
+
+	if u, err := s.Store.UserByEmail(r.Context(), email); err == nil {
+		raw := newResetToken()
+		if err := s.Store.CreatePasswordResetToken(r.Context(), newID("prt"), u.ID, hashResetToken(raw), time.Now().Add(1*time.Hour)); err == nil {
+			link := s.VendorAppURL + "/login?resetToken=" + raw
+			to, body := u.Email, resetEmailHTML(link)
+			s.Jobs.Enqueue(func() { s.Mail.Send(to, "Reset your Spotto password", body) })
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func resetEmailHTML(link string) string {
+	return `<p>Someone requested a password reset for your Spotto account.</p>` +
+		`<p><a href="` + link + `">Reset your password</a> (expires in 1 hour).</p>` +
+		`<p>If this wasn't you, you can safely ignore this email.</p>`
+}
+
+// handleResetPassword validates the token (by hash — the raw token is
+// never stored), applies the same password-strength rules as
+// registration, and bumps token_version so any existing sessions are
+// signed out (same revocation mechanism as a 2FA disable).
+func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token       string `json:"token"`
+		NewPassword string `json:"newPassword"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.Token == "" {
+		writeErr(w, http.StatusBadRequest, "invalid or expired reset link")
+		return
+	}
+	rt, err := s.Store.PasswordResetTokenByHash(r.Context(), hashResetToken(req.Token))
+	if err != nil || rt.UsedAt != nil || time.Now().After(rt.ExpiresAt) {
+		writeErr(w, http.StatusBadRequest, "invalid or expired reset link")
+		return
+	}
+	u, err := s.Store.UserByID(r.Context(), rt.UserID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if len(req.NewPassword) < 10 {
+		writeErr(w, http.StatusBadRequest, "new password must be at least 10 characters")
+		return
+	}
+	if isWeakPassword(req.NewPassword, u.Email) {
+		writeErr(w, http.StatusBadRequest, "password is too weak — avoid all-digit, all-repeated, or email-derived passwords")
+		return
+	}
+	hash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if err := s.Store.UpdateUserPassword(r.Context(), u.ID, hash); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if err := s.Store.MarkPasswordResetTokenUsed(r.Context(), rt.ID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // requireVendor loads the caller's vendor, or writes an error and returns false.

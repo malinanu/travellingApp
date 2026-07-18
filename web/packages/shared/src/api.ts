@@ -18,20 +18,28 @@ export interface Api {
   patch<T>(path: string, body?: unknown): Promise<T>;
   del<T>(path: string): Promise<T>;
   getToken(): string | null;
-  setToken(token: string | null): void;
+  /**
+   * remember (default true) picks localStorage (survives closing the
+   * browser) vs sessionStorage (cleared on tab close) — a real "Remember
+   * me" checkbox, not just cosmetic. Every existing call site that omits
+   * it keeps today's always-localStorage behavior.
+   */
+  setToken(token: string | null, remember?: boolean): void;
   onUnauthorized?: () => void;
 }
 
 export function createApi(tokenKey: string): Api {
   const getToken = () =>
-    typeof window === 'undefined' ? null : window.localStorage.getItem(tokenKey);
+    typeof window === 'undefined' ? null : window.localStorage.getItem(tokenKey) ?? window.sessionStorage.getItem(tokenKey);
 
   const api: Api = {
     getToken,
-    setToken(token) {
+    setToken(token, remember = true) {
       if (typeof window === 'undefined') return;
-      if (token) window.localStorage.setItem(tokenKey, token);
-      else window.localStorage.removeItem(tokenKey);
+      window.localStorage.removeItem(tokenKey);
+      window.sessionStorage.removeItem(tokenKey);
+      if (!token) return;
+      (remember ? window.localStorage : window.sessionStorage).setItem(tokenKey, token);
     },
     get: (path) => request('GET', path),
     post: (path, body) => request('POST', path, body),

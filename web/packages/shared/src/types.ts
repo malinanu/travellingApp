@@ -6,7 +6,7 @@ export type OfferStatus = 'draft' | 'live' | 'ending' | 'ended';
 export type ClaimStatus = 'claimed' | 'redeemed';
 export type FeedStatus = 'ok' | 'review' | 'flag';
 
-export type VendorRole = 'owner' | 'staff';
+export type VendorRole = 'owner' | 'staff' | 'manager';
 
 export interface User {
   id: string;
@@ -40,6 +40,8 @@ export interface TeamMember {
 export interface TeamInvite {
   id: string;
   code: string;
+  email?: string;
+  role: 'staff' | 'manager';
   createdAt: string;
   expiresAt: string;
 }

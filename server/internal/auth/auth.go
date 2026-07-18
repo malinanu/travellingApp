@@ -259,13 +259,15 @@ func RequireRole(role domain.Role) func(http.Handler) http.Handler {
 
 // RequireVendorOwner further restricts a vendor-role route (use after
 // RequireRole(domain.RoleVendor)) to the account's own owner, not invited
-// staff — for team-management endpoints (invite/remove/revoke). Accounts
-// predating vendor_role (or its zero value) are treated as owners, matching
-// the migration's DEFAULT 'owner' for existing rows.
+// staff or managers — for team-management endpoints (invite/remove/revoke).
+// Accounts predating vendor_role (or its zero value) are treated as
+// owners, matching the migration's DEFAULT 'owner' for existing rows —
+// this denylists staff/manager explicitly rather than allowlisting
+// "owner" so that empty-string legacy rows still pass.
 func RequireVendorOwner(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := FromContext(r.Context())
-		if c == nil || c.VendorRole == domain.VendorRoleStaff {
+		if c == nil || c.VendorRole == domain.VendorRoleStaff || c.VendorRole == domain.VendorRoleManager {
 			writeErr(w, http.StatusForbidden, "owner only")
 			return
 		}

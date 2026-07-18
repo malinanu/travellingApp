@@ -3,13 +3,16 @@
 // My account — personal login, security and alerts. Port of the vendor
 // account mockup: editable personal details, password change, two-factor
 // auth, notification preferences, plan & team (real invite-based team
-// management), sign out. Billing management stays a disabled "coming soon"
-// stub, deferred pending a payment-processor decision.
+// management, now emailed via the server's mailer with a staff/manager
+// role picker, falling back to a copy-link if email isn't configured or
+// bounces), sign out. Billing management stays a disabled "coming soon"
+// stub — see SKIPPED.md for why.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  BadgeCheck, Bell, Check, Copy, KeyRound, Lock, LogOut, Mail, MapPin, Phone,
-  ShieldCheck, Sparkles, Store, User as UserIcon, UserPlus, Wallet, X,
+  BadgeCheck, Bell, Camera, Check, Clock, Copy, Crown, KeyRound, Lightbulb, Lock,
+  LogOut, Mail, MapPin, Phone, QrCode, Send, Settings2, ShieldCheck, Star, Store,
+  Ticket, Trash2, User as UserIcon, UserPlus, Wallet, X, LucideIcon,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
@@ -30,6 +33,26 @@ function timeAgo(iso?: string) {
   if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
   const months = Math.floor(days / 30);
   return `${months} month${months === 1 ? '' : 's'} ago`;
+}
+
+function roleLabel(role?: string) {
+  if (role === 'manager') return 'Manager';
+  if (role === 'staff') return 'Staff';
+  return 'Owner';
+}
+
+function CardHeader({ icon: Icon, title, sub }: { icon: LucideIcon; title: string; sub: string }) {
+  return (
+    <div className="flex items-center gap-2.5 mb-4">
+      <span className="w-9 h-9 rounded-xl bg-accent-tint text-accent flex items-center justify-center shrink-0">
+        <Icon size={18} />
+      </span>
+      <div>
+        <h3 className="font-extrabold text-[15px]">{title}</h3>
+        <p className="text-[12.5px] text-muted font-semibold">{sub}</p>
+      </div>
+    </div>
+  );
 }
 
 export default function AccountPage() {
@@ -65,15 +88,15 @@ export default function AccountPage() {
 
   return (
     <Shell>
-      <div className="max-w-4xl">
-        <div className="flex items-start justify-between mb-5">
+      <div>
+        <div className="flex items-end justify-between gap-4 mb-5">
           <div>
             <h1 className="text-2xl font-extrabold">My account</h1>
             <p className="text-muted font-semibold mt-0.5">Your personal login, security and alerts.</p>
           </div>
-          <button className="btn-accent flex items-center gap-2 px-4 py-2.5" disabled={saveContact.isPending}
+          <button className="btn-accent flex items-center gap-2 px-4 py-2.5 shrink-0 whitespace-nowrap" disabled={saveContact.isPending}
             onClick={() => saveContact.mutate()}>
-            {saveContact.isPending ? 'Saving…' : saved ? <><Check size={16} /> Saved</> : 'Save changes'}
+            {saveContact.isPending ? 'Saving…' : saved ? <><Check size={16} /> Saved</> : <><Send size={16} /> Save changes</>}
           </button>
         </div>
 
@@ -81,15 +104,22 @@ export default function AccountPage() {
           <p className="text-[13.5px] font-bold text-coral mb-4">{contactError}</p>
         )}
 
-        <div className="card p-6 flex items-center gap-4 mb-4">
-          <span className="w-16 h-16 rounded-2xl bg-accent text-white flex items-center justify-center text-xl font-extrabold shrink-0">
-            {initialsOf(me?.name ?? '?')}
-          </span>
-          <div className="flex-1">
+        <div className="card p-5 flex items-center gap-4 mb-4">
+          <div className="relative shrink-0">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white text-[22px] font-extrabold"
+              style={{ background: 'linear-gradient(140deg, var(--accent), var(--accent-2))' }}>
+              {initialsOf(me?.name ?? '?')}
+            </div>
+            <button className="absolute -bottom-1 -right-1 w-7 h-7 rounded-lg bg-white border border-accent-tint text-accent flex items-center justify-center"
+              style={{ boxShadow: '0 3px 10px rgba(15,61,58,0.2)' }} title="Photo upload coming soon">
+              <Camera size={13} />
+            </button>
+          </div>
+          <div className="flex-1 min-w-0">
             <h2 className="text-lg font-extrabold flex items-center gap-2">
               {me?.name ?? '…'}
-              <span className="text-[11px] font-extrabold uppercase rounded-full px-2 py-0.5" style={{ background: 'var(--bg)', color: 'var(--muted)' }}>
-                {me?.vendorRole === 'staff' ? 'Staff' : 'Owner'}
+              <span className="text-[11px] font-extrabold uppercase tracking-wide rounded-full px-2 py-0.5 bg-accent-tint text-accent shrink-0">
+                {roleLabel(me?.vendorRole)}
               </span>
             </h2>
             <p className="text-[13.5px] text-muted font-semibold flex items-center gap-3 mt-0.5">
@@ -98,17 +128,15 @@ export default function AccountPage() {
             </p>
           </div>
           {business?.status === 'approved' && (
-            <span className="rounded-full bg-[#dcf5e6] text-[#16803c] text-[12px] font-extrabold px-3 py-1.5 flex items-center gap-1.5 shrink-0">
+            <span className="rounded-lg text-[11.5px] font-extrabold px-3 py-1.5 flex items-center gap-1.5 shrink-0" style={{ background: 'rgba(22,163,74,0.1)', color: '#16a34a' }}>
               <BadgeCheck size={14} /> Verified
             </span>
           )}
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4 mb-4 items-start">
-          <div className="card p-6">
-            <h3 className="font-extrabold text-[15px] mb-1 flex items-center gap-2"><UserIcon size={16} className="text-muted" /> Personal details</h3>
-            <p className="text-[13px] text-muted font-semibold mb-4">Your contact info</p>
-
+        <div className="grid gap-4 mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))' }}>
+          <div className="card p-5">
+            <CardHeader icon={UserIcon} title="Personal details" sub="Your contact info" />
             <label className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Full name</label>
             <div className="relative mb-3.5">
               <UserIcon size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -130,43 +158,52 @@ export default function AccountPage() {
 
           <SignInSecurityCard me={me} />
           <NotificationsCard me={me} />
-        </div>
 
-        <div className="card p-6 mb-4">
-          <h3 className="font-extrabold text-[15px] mb-1 flex items-center gap-2"><Sparkles size={16} className="text-muted" /> Plan &amp; team</h3>
-          <p className="text-[13px] text-muted font-semibold mb-4">Subscription and access</p>
+          <div className="card p-5">
+            <CardHeader icon={Crown} title="Plan & team" sub="Subscription and access" />
 
-          <div className="rounded-2xl bg-accent-tint p-4 flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <span className="w-10 h-10 rounded-xl bg-accent text-white flex items-center justify-center"><Sparkles size={18} /></span>
-              <div>
+            <div className="rounded-xl bg-accent-tint p-3.5 flex items-center gap-3 mb-3">
+              <span className="w-10 h-10 rounded-xl bg-accent text-white flex items-center justify-center shrink-0"><Crown size={19} /></span>
+              <div className="flex-1 min-w-0">
                 <p className="font-extrabold text-[14px]">{business?.tier === 'Premium' ? 'Premium plan' : 'Free plan'}</p>
-                <p className="text-[12.5px] text-muted font-semibold">
+                <p className="text-[12.5px] text-ink-soft font-semibold">
                   {business?.tier === 'Premium' ? 'Priority placement, growth tools, boosted events' : 'Upgrade for priority placement and growth tools'}
                 </p>
               </div>
+              <button
+                className="rounded-lg px-3 py-1.5 text-[12.5px] font-extrabold text-white bg-accent opacity-50 cursor-not-allowed shrink-0"
+                disabled
+                title="Billing management is coming soon — see SKIPPED.md"
+              >
+                <span className="flex items-center gap-1.5"><Wallet size={14} /> Manage</span>
+              </button>
             </div>
-            <button
-              className="rounded-xl border border-line bg-white px-4 py-2.5 font-extrabold text-[13.5px] flex items-center gap-2 opacity-50 cursor-not-allowed"
-              disabled
-              title="Billing management is coming soon"
-            >
-              <Wallet size={16} /> Manage
-            </button>
-          </div>
 
-          <TeamSection isOwner={me?.vendorRole !== 'staff'} />
+            <TeamSection isOwner={me?.vendorRole !== 'staff' && me?.vendorRole !== 'manager'} />
+          </div>
         </div>
 
-        <button
-          className="rounded-xl border border-coral/40 bg-[#fde4d8] text-coral px-5 py-3 font-extrabold text-[14px] flex items-center gap-2"
-          onClick={() => {
-            api.setToken(null);
-            router.replace('/login');
-          }}
-        >
-          <LogOut size={16} /> Sign out
-        </button>
+        <div className="card p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(225,29,72,0.1)', color: '#e11d48' }}>
+              <LogOut size={18} />
+            </span>
+            <div>
+              <p className="font-extrabold text-[14px]">Log out</p>
+              <p className="text-[12.5px] text-muted font-semibold">Sign out of the Vendor Portal</p>
+            </div>
+          </div>
+          <button
+            className="rounded-xl px-4 py-2.5 font-extrabold text-[13.5px] text-white shrink-0"
+            style={{ background: '#e11d48' }}
+            onClick={() => {
+              api.setToken(null);
+              router.replace('/login');
+            }}
+          >
+            Log out
+          </button>
+        </div>
       </div>
     </Shell>
   );
@@ -174,9 +211,8 @@ export default function AccountPage() {
 
 function SignInSecurityCard({ me }: { me?: User }) {
   return (
-    <div className="card p-6">
-      <h3 className="font-extrabold text-[15px] mb-1 flex items-center gap-2"><Lock size={16} className="text-muted" /> Sign-in &amp; security</h3>
-      <p className="text-[13px] text-muted font-semibold mb-4">Keep your account safe</p>
+    <div className="card p-5">
+      <CardHeader icon={Lock} title="Sign-in & security" sub="Keep your account safe" />
       <PasswordSection />
       <div className="h-px bg-line my-4" />
       <TwoFactorSection enabled={me?.totpEnabled ?? false} />
@@ -342,11 +378,11 @@ function TwoFactorSection({ enabled }: { enabled: boolean }) {
   );
 }
 
-const NOTIF_TOGGLES: { key: keyof Pick<User, 'notifyRedemptions' | 'notifyReviews' | 'notifyPayouts' | 'notifyGrowthTips'>; title: string; sub: string }[] = [
-  { key: 'notifyRedemptions', title: 'Redemption alerts', sub: 'When a traveler claims an offer' },
-  { key: 'notifyReviews', title: 'New reviews', sub: 'When someone rates your spot' },
-  { key: 'notifyPayouts', title: 'Payout updates', sub: 'Subscription & billing changes' },
-  { key: 'notifyGrowthTips', title: 'Growth tips', sub: 'Occasional marketing ideas' },
+const NOTIF_TOGGLES: { key: keyof Pick<User, 'notifyRedemptions' | 'notifyReviews' | 'notifyPayouts' | 'notifyGrowthTips'>; title: string; sub: string; icon: LucideIcon }[] = [
+  { key: 'notifyRedemptions', title: 'Redemption alerts', sub: 'When a traveler claims an offer', icon: Ticket },
+  { key: 'notifyReviews', title: 'New reviews', sub: 'When someone rates your spot', icon: Star },
+  { key: 'notifyPayouts', title: 'Payout updates', sub: 'Subscription & billing changes', icon: Wallet },
+  { key: 'notifyGrowthTips', title: 'Growth tips', sub: 'Occasional marketing ideas', icon: Lightbulb },
 ];
 
 function NotificationsCard({ me }: { me?: User }) {
@@ -368,17 +404,18 @@ function NotificationsCard({ me }: { me?: User }) {
   };
 
   return (
-    <div className="card p-6">
-      <h3 className="font-extrabold text-[15px] mb-1 flex items-center gap-2"><Bell size={16} className="text-muted" /> Notifications</h3>
-      <p className="text-[13px] text-muted font-semibold mb-4">What we email &amp; push you</p>
-      <div className="space-y-3.5">
-        {NOTIF_TOGGLES.map((t) => {
+    <div className="card p-5">
+      <CardHeader icon={Bell} title="Notifications" sub="What we email & push you" />
+      <div>
+        {NOTIF_TOGGLES.map((t, i) => {
           const on = me?.[t.key] ?? false;
+          const Icon = t.icon;
           return (
-            <div key={t.key} className="flex items-center justify-between">
-              <div className="pr-3">
-                <p className="font-extrabold text-[13.5px]">{t.title}</p>
-                <p className="text-[12px] text-muted font-semibold">{t.sub}</p>
+            <div key={t.key} className={`flex items-center gap-3 py-2.5 ${i ? 'border-t border-line' : ''}`}>
+              <span className="w-9 h-9 rounded-xl bg-accent-tint text-accent flex items-center justify-center shrink-0"><Icon size={17} /></span>
+              <div className="flex-1 min-w-0">
+                <p className="font-extrabold text-[14px]">{t.title}</p>
+                <p className="text-[12.5px] text-muted font-semibold">{t.sub}</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer shrink-0">
                 <input type="checkbox" className="sr-only peer" checked={on}
@@ -395,9 +432,16 @@ function NotificationsCard({ me }: { me?: User }) {
   );
 }
 
+const ROLE_META: Record<string, { label: string; sub: string; icon: LucideIcon }> = {
+  staff: { label: 'Staff', sub: 'Scan & validate QR codes at the counter', icon: QrCode },
+  manager: { label: 'Manager', sub: 'Create & edit offers, view reports, scan', icon: Settings2 },
+};
+
 function TeamSection({ isOwner }: { isOwner: boolean }) {
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'staff' | 'manager'>('staff');
   const [newInviteLink, setNewInviteLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -407,9 +451,10 @@ function TeamSection({ isOwner }: { isOwner: boolean }) {
   });
 
   const createInvite = useMutation({
-    mutationFn: () => api.post<{ code: string }>('/vendor/team/invite'),
+    mutationFn: () => api.post<{ code: string }>('/vendor/team/invite', { email: inviteEmail.trim(), role: inviteRole }),
     onSuccess: (inv) => {
       setNewInviteLink(`${window.location.origin}/join/${inv.code}`);
+      setInviteEmail('');
       qc.invalidateQueries({ queryKey: ['vendor-team'] });
     },
   });
@@ -436,7 +481,7 @@ function TeamSection({ isOwner }: { isOwner: boolean }) {
           <div>
             <p className="font-extrabold text-[14px]">Invite a team member</p>
             <p className="text-[12.5px] text-muted font-semibold">
-              {members.length} member{members.length === 1 ? '' : 's'} · {invites.length} pending · staff scan &amp; manage offers
+              {`${members.length} member${members.length === 1 ? '' : 's'} · ${invites.length} pending · staff scan & manage offers`}
             </p>
           </div>
         </div>
@@ -460,25 +505,28 @@ function TeamSection({ isOwner }: { isOwner: boolean }) {
                     {initialsOf(m.name)}
                   </span>
                   <div>
-                    <p className="font-extrabold text-[13px]">{m.name} <span className="text-muted font-semibold">· {m.vendorRole}</span></p>
+                    <p className="font-extrabold text-[13px]">{m.name} <span className="text-muted font-semibold">· {roleLabel(m.vendorRole)}</span></p>
                     <p className="text-[11.5px] text-muted font-semibold">{m.email}</p>
                   </div>
                 </div>
-                {isOwner && m.vendorRole === 'staff' && (
+                {isOwner && m.vendorRole !== 'owner' && (
                   <button className="text-coral" title="Remove" onClick={() => removeMember.mutate(m.id)} disabled={removeMember.isPending}>
-                    <X size={16} />
+                    <Trash2 size={16} />
                   </button>
                 )}
               </div>
             ))}
             {invites.map((inv) => (
-              <div key={inv.id} className="flex items-center justify-between rounded-xl border border-dashed border-line px-3 py-2.5">
-                <div>
-                  <p className="font-extrabold text-[13px]">Pending invite</p>
-                  <p className="text-[11.5px] text-muted font-semibold">Expires {timeAgo(inv.expiresAt)}</p>
+              <div key={inv.id} className="flex items-center gap-3 rounded-xl border border-dashed border-line px-3 py-2.5">
+                <span className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(246,184,30,0.16)', color: '#c98a00' }}>
+                  <Clock size={16} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-extrabold text-[13px] truncate">{inv.email || 'Pending invite'}</p>
+                  <p className="text-[11.5px] text-muted font-semibold">{roleLabel(inv.role)} · expires {timeAgo(inv.expiresAt)}</p>
                 </div>
                 {isOwner && (
-                  <button className="text-coral" title="Revoke" onClick={() => revokeInvite.mutate(inv.id)} disabled={revokeInvite.isPending}>
+                  <button className="text-coral shrink-0" title="Revoke" onClick={() => revokeInvite.mutate(inv.id)} disabled={revokeInvite.isPending}>
                     <X size={16} />
                   </button>
                 )}
@@ -487,12 +535,34 @@ function TeamSection({ isOwner }: { isOwner: boolean }) {
           </div>
 
           {isOwner && (
-            <>
+            <div className="rounded-xl bg-sand p-3.5">
+              <div className="relative mb-2.5">
+                <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                <input className="input pl-9" type="email" placeholder="name@email.com" value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && inviteEmail.trim()) createInvite.mutate(); }} />
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-2.5">
+                {(['staff', 'manager'] as const).map((r) => {
+                  const on = inviteRole === r;
+                  const Icon = ROLE_META[r].icon;
+                  return (
+                    <button key={r} type="button" onClick={() => setInviteRole(r)}
+                      className={`rounded-xl px-3 py-2.5 text-left transition-colors border ${on ? 'border-accent bg-accent-tint' : 'border-line bg-white'}`}>
+                      <span className={`flex items-center gap-1.5 font-extrabold text-[13px] ${on ? 'text-accent' : 'text-ink'}`}>
+                        <Icon size={14} /> {ROLE_META[r].label}
+                      </span>
+                      <span className="block text-[11px] text-muted font-semibold mt-1 leading-snug">{ROLE_META[r].sub}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
               {newInviteLink ? (
-                <div className="rounded-xl bg-accent-tint p-3 flex items-center justify-between gap-2">
+                <div className="rounded-xl bg-white border border-line p-3 flex items-center justify-between gap-2">
                   <code className="text-[12px] font-mono break-all">{newInviteLink}</code>
                   <button
-                    className="shrink-0 rounded-lg bg-white border border-line px-2.5 py-1.5 text-[12px] font-extrabold flex items-center gap-1"
+                    className="shrink-0 rounded-lg bg-sand border border-line px-2.5 py-1.5 text-[12px] font-extrabold flex items-center gap-1"
                     onClick={() => {
                       navigator.clipboard.writeText(newInviteLink);
                       setCopied(true);
@@ -503,12 +573,15 @@ function TeamSection({ isOwner }: { isOwner: boolean }) {
                   </button>
                 </div>
               ) : (
-                <button className="rounded-xl border border-line bg-white px-4 py-2 font-extrabold text-[13px] flex items-center gap-2"
+                <button className="btn-accent w-full px-4 py-2.5 text-[13.5px] flex items-center justify-center gap-2"
                   disabled={createInvite.isPending} onClick={() => createInvite.mutate()}>
-                  <UserPlus size={15} /> {createInvite.isPending ? 'Generating…' : 'Generate invite link'}
+                  <Send size={15} /> {createInvite.isPending ? 'Sending…' : 'Send invite'}
                 </button>
               )}
-            </>
+              <p className="text-[11px] text-muted font-semibold mt-2">
+                {inviteEmail.trim() ? "We'll email the invite — the link above still works if it bounces." : "Leave email blank to just generate a copy-link."}
+              </p>
+            </div>
           )}
         </div>
       )}

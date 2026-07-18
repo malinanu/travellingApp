@@ -8,10 +8,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/config"
 	"github.com/spotto/server/internal/domain"
+	"github.com/spotto/server/internal/jobs"
+	"github.com/spotto/server/internal/mail"
 	"github.com/spotto/server/internal/store/postgres"
 )
 
@@ -20,18 +24,50 @@ type Server struct {
 	Tokens  *auth.Tokens
 	TOTPKey []byte // AES-256 key for encrypting TOTP secrets at rest
 
+	Mail *mail.Mailer
+	// Jobs runs slow side effects (email sends) off the request goroutine —
+	// see internal/jobs for why this is best-effort, not durable.
+	Jobs         *jobs.Queue
+	VendorAppURL string
+	// GoogleOAuth is nil when GOOGLE_CLIENT_ID/SECRET aren't configured —
+	// handleGoogleLogin/handleGoogleCallback report 501 in that case rather
+	// than panicking on a nil config.
+	GoogleOAuth *oauth2.Config
+
 	loginLimit *loginLimiter // guards /auth/login (key: ip+email)
 	totpLimit  *loginLimiter // guards /auth/2fa/login-verify (key: ip+userID)
+	resetLimit *loginLimiter // guards /auth/forgot-password (key: ip+email)
+	oauthCodes *authCodeStore
 }
 
-func New(store *postgres.Store, tokens *auth.Tokens, totpKey []byte) *Server {
-	return &Server{
-		Store:      store,
-		Tokens:     tokens,
-		TOTPKey:    totpKey,
-		loginLimit: newLoginLimiter(5, 15*time.Minute),
-		totpLimit:  newLoginLimiter(5, 15*time.Minute),
+func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server {
+	s := &Server{
+		Store:   store,
+		Tokens:  tokens,
+		TOTPKey: cfg.TOTPEncryptionKey,
+		Mail: mail.New(mail.Config{
+			Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.EmailFrom,
+		}),
+		Jobs:         jobs.NewQueue(4, 256),
+		VendorAppURL: cfg.VendorAppURL,
+		loginLimit:   newLoginLimiter(5, 15*time.Minute),
+		totpLimit:    newLoginLimiter(5, 15*time.Minute),
+		resetLimit:   newLoginLimiter(5, 15*time.Minute),
+		oauthCodes:   newAuthCodeStore(),
 	}
+	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
+		s.GoogleOAuth = &oauth2.Config{
+			ClientID:     cfg.GoogleClientID,
+			ClientSecret: cfg.GoogleClientSecret,
+			RedirectURL:  cfg.GoogleRedirectURL,
+			Scopes: []string{
+				"https://www.googleapis.com/auth/userinfo.email",
+				"https://www.googleapis.com/auth/userinfo.profile",
+			},
+			Endpoint: google.Endpoint,
+		}
+	}
+	return s
 }
 
 // Authenticated requires a valid Bearer session token AND that its embedded
@@ -75,6 +111,11 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Post("/auth/register", s.handleRegister)
 	r.Post("/auth/login", s.handleLogin)
 	r.Post("/auth/2fa/login-verify", s.handleTwoFactorLoginVerify)
+	r.Post("/auth/forgot-password", s.handleForgotPassword)
+	r.Post("/auth/reset-password", s.handleResetPassword)
+	r.Get("/auth/google/login", s.handleGoogleLogin)
+	r.Get("/auth/google/callback", s.handleGoogleCallback)
+	r.Post("/auth/exchange", s.handleAuthExchange)
 
 	// Authenticated (any role).
 	r.Group(func(r chi.Router) {

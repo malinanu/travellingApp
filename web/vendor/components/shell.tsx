@@ -5,8 +5,9 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  BarChart3, Bell, LayoutDashboard, QrCode, Rocket, Store, Tag, Ticket,
-  TrendingUp, UtensilsCrossed, Star, Clock, Wallet, LogOut, LucideIcon,
+  BarChart3, Bell, ChevronDown, LayoutDashboard, Menu, QrCode, Rocket, Search,
+  Store, Tag, Ticket, TrendingUp, UtensilsCrossed, Star, Clock, Wallet, LogOut,
+  LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -39,6 +40,21 @@ export function isFoodCategory(category?: string) {
 const NOTIF_ICONS: Record<string, LucideIcon> = {
   Ticket, Star, Clock, TrendingUp, Wallet,
 };
+
+function toneStyle(tone: string) {
+  if (tone === 'sun') return { background: 'rgba(246,184,30,0.16)', color: '#c98a00' };
+  if (tone === 'muted') return { background: 'rgba(15,61,58,0.06)', color: 'var(--muted)' };
+  return { background: 'var(--accent-tint)', color: 'var(--accent)' };
+}
+
+export function SpottoMark({ size = 28, light = false }: { size?: number; light?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+      <path d="M16 3C10.5 3 6 7.3 6 12.7 6 19.5 16 29 16 29s10-9.5 10-16.3C26 7.3 21.5 3 16 3z" fill={light ? '#fff' : 'var(--accent)'} />
+      <circle cx="16" cy="12.5" r="4.4" fill="var(--sun)" />
+    </svg>
+  );
+}
 
 export function useMe() {
   return useQuery<User>({
@@ -94,38 +110,45 @@ function NotificationBell() {
       <button
         aria-label="Notifications"
         onClick={() => setOpen((o) => !o)}
-        className="relative rounded-xl bg-white border border-line p-2.5 hover:border-accent transition-colors"
+        className="relative w-10 h-10 rounded-xl flex items-center justify-center border transition-colors"
+        style={{ background: open ? 'var(--accent-tint)' : '#fff', borderColor: open ? 'var(--accent)' : 'var(--line)', color: open ? 'var(--accent)' : 'var(--ink)' }}
       >
-        <Bell size={18} />
+        <Bell size={19} />
         {unread > 0 && (
-          <span className="absolute -top-1 -right-1 bg-coral text-white text-[10px] font-extrabold rounded-full min-w-[17px] h-[17px] px-1 flex items-center justify-center">
-            {unread}
-          </span>
+          <span className="absolute top-2 right-2.5 w-2 h-2 rounded-full bg-sun" style={{ boxShadow: '0 0 0 2px #fff' }} />
         )}
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 w-[360px] card shadow-xl z-40 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-line">
-            <span className="font-extrabold text-[14px]">Notifications</span>
-            <button onClick={markAll} className="text-[12.5px] font-bold text-accent hover:underline">
-              Mark all read
-            </button>
+        <div className="absolute right-0 mt-2 w-[360px] rounded-2xl bg-white overflow-hidden z-40"
+          style={{ border: '1px solid var(--line)', boxShadow: '0 24px 50px -20px rgba(16,61,58,0.35)' }}>
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-line">
+            <span className="font-extrabold text-[14.5px] font-display">Notifications</span>
+            {unread > 0 && (
+              <span className="rounded-full px-1.5 py-0.5 text-[10.5px] font-extrabold bg-sun text-[#5a3b00]">{unread} new</span>
+            )}
+            {unread > 0 && (
+              <button onClick={markAll} className="ml-auto text-[12px] font-extrabold text-accent">Mark all read</button>
+            )}
           </div>
-          <div className="max-h-[340px] overflow-y-auto">
+          <div className="max-h-[380px] overflow-y-auto">
             {notifs.length === 0 && (
               <p className="px-4 py-6 text-[13px] text-muted font-semibold">Nothing yet.</p>
             )}
-            {notifs.map((n) => {
+            {notifs.map((n, i) => {
               const NIcon = NOTIF_ICONS[n.icon] ?? Bell;
               return (
-                <div key={n.id} className={`flex gap-3 px-4 py-3 border-b border-line last:border-0 ${n.unread ? 'bg-accent-tint/40' : ''}`}>
-                  <span className="mt-0.5 rounded-lg bg-sand p-1.5 h-fit"><NIcon size={16} /></span>
-                  <div className="min-w-0">
-                    <p className="text-[13.5px] font-extrabold leading-snug">{n.title}</p>
-                    <p className="text-[12.5px] text-muted font-semibold">{n.sub}</p>
-                    <p className="text-[11.5px] text-muted/80 font-semibold mt-0.5">{n.time}</p>
-                  </div>
-                </div>
+                <button key={n.id} className="w-full flex items-start gap-3 px-4 py-3 text-left transition-colors"
+                  style={{ borderTop: i ? '1px solid var(--line)' : 'none', background: n.unread ? 'rgba(246,184,30,0.05)' : '#fff' }}>
+                  <span className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={toneStyle(n.tone)}>
+                    <NIcon size={16} />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[13px] font-extrabold leading-snug">{n.title}</span>
+                    <span className="block text-[12px] text-muted font-semibold mt-0.5 truncate">{n.sub}</span>
+                    <span className="block text-[10.5px] text-muted/80 font-bold mt-1">{n.time}</span>
+                  </span>
+                  {n.unread && <span className="w-2 h-2 rounded-full bg-sun shrink-0 mt-1.5" />}
+                </button>
               );
             })}
           </div>
@@ -140,6 +163,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const { data: me, isError } = useMe();
   const { data: business } = useBusiness();
 
@@ -164,17 +189,31 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const title = NAV.find((n) => pathname.startsWith(n.href))?.label ??
     (pathname.startsWith('/account') ? 'Account' : '');
 
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const query = search.trim();
+    router.push(query ? `/offers?q=${encodeURIComponent(query)}` : '/offers');
+  };
+
   return (
     <div className="min-h-screen flex">
-      <aside className="w-[248px] shrink-0 border-r border-line bg-white flex flex-col sticky top-0 h-screen">
-        <div className="px-5 py-5 flex items-center gap-2.5">
-          <span className="w-9 h-9 rounded-xl bg-accent text-white flex items-center justify-center font-extrabold">S</span>
-          <div>
-            <p className="font-extrabold text-[15px] leading-tight">Spotto</p>
-            <p className="text-[11.5px] text-muted font-bold">Vendor Portal</p>
+      <div
+        onClick={() => setNavOpen(false)}
+        className="fixed inset-0 z-30 bg-[rgba(16,61,58,0.4)] transition-opacity lg:hidden"
+        style={{ opacity: navOpen ? 1 : 0, pointerEvents: navOpen ? 'auto' : 'none' }}
+      />
+      <aside
+        className="w-[248px] shrink-0 border-r border-line bg-white flex flex-col fixed lg:sticky top-0 left-0 h-screen z-40 transition-transform lg:translate-x-0"
+        style={{ transform: navOpen ? 'translateX(0)' : undefined, transitionTimingFunction: 'cubic-bezier(0.22,1,0.36,1)' }}
+      >
+        <div className="h-16 px-5 flex items-center gap-2.5 border-b border-line shrink-0">
+          <SpottoMark size={28} />
+          <div className="leading-none">
+            <p className="font-display font-extrabold text-[18px] tracking-tight">Spotto</p>
+            <p className="text-[10.5px] font-extrabold uppercase tracking-widest mt-0.5 text-accent">Vendor</p>
           </div>
         </div>
-        <nav className="px-3 flex-1 space-y-1">
+        <nav className="px-3 py-4 flex-1 space-y-1">
           {NAV.filter((n) => !n.foodOnly || isFood).map((n) => {
             const on = pathname.startsWith(n.href);
             const Icon = n.icon;
@@ -182,12 +221,16 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <Link
                 key={n.href}
                 href={n.href}
-                className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 font-extrabold text-[14.5px] transition-colors ${
-                  on ? 'bg-accent text-white' : 'text-ink hover:bg-sand'
+                onClick={() => setNavOpen(false)}
+                className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 transition-colors ${
+                  on ? 'bg-accent-tint text-accent' : 'text-ink-soft hover:bg-sand'
                 }`}
               >
                 <Icon size={20} strokeWidth={on ? 2.5 : 2} />
-                {n.label}
+                <span className="font-extrabold text-[14.5px]">{n.label}</span>
+                {n.href === '/validate' && (
+                  <span className="ml-auto text-[10px] font-extrabold rounded-full px-1.5 py-0.5 bg-accent text-white">SCAN</span>
+                )}
               </Link>
             );
           })}
@@ -196,33 +239,46 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <Link
             href="/account"
             className={`w-full rounded-xl p-3 flex items-center gap-3 text-left transition-colors ${
-              pathname.startsWith('/account') ? 'bg-accent-tint' : 'bg-sand hover:bg-accent-tint'
+              pathname.startsWith('/account') ? 'bg-accent-tint' : 'bg-sand'
             }`}
           >
-            <span className="w-9 h-9 rounded-full bg-accent text-white flex items-center justify-center text-[13px] font-extrabold">
+            <span className="w-10 h-10 rounded-lg bg-accent text-white flex items-center justify-center text-[14px] font-extrabold shrink-0">
               {initials(business?.name ?? 'S')}
             </span>
             <span className="min-w-0">
-              <span className="block truncate font-extrabold text-[13.5px]">{business?.name ?? '…'}</span>
-              <span className="block text-[11.5px] text-muted font-bold">{business?.tier ?? ''} plan</span>
+              <span className="block truncate font-extrabold text-[13px]">{business?.name ?? '…'}</span>
+              <span className="block text-[11.5px] text-muted font-semibold truncate">{business?.tier ?? ''} plan</span>
             </span>
           </Link>
         </div>
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-30 bg-cream/90 backdrop-blur border-b border-line px-8 py-4 flex items-center justify-between">
-          <h1 className="text-[20px] font-extrabold">{title}</h1>
-          <div className="flex items-center gap-3">
+        <header className="h-16 sticky top-0 z-20 bg-cream/90 backdrop-blur border-b border-line px-5 flex items-center gap-3 shrink-0">
+          <button onClick={() => setNavOpen(true)} className="lg:hidden w-9 h-9 rounded-lg flex items-center justify-center text-ink shrink-0">
+            <Menu size={22} />
+          </button>
+          <form onSubmit={submitSearch} className="hidden sm:flex items-center gap-2 rounded-xl px-3 py-2 flex-1 max-w-xs bg-white border border-line">
+            <Search size={17} className="text-muted shrink-0" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search offers, codes…"
+              className="bg-transparent outline-none text-[13.5px] font-semibold w-full text-ink"
+            />
+          </form>
+          <h1 className="flex-1 sm:hidden font-display font-extrabold text-[17px]">{title}</h1>
+          <div className="ml-auto flex items-center gap-2 shrink-0">
             <NotificationBell />
             <Link
               href="/account"
-              className="rounded-xl bg-white border border-line px-3 py-2 flex items-center gap-2 font-extrabold text-[13px] hover:border-accent transition-colors"
+              className="rounded-xl bg-white px-3 py-2 flex items-center gap-2 border transition-colors"
+              style={{ borderColor: pathname.startsWith('/account') ? 'var(--accent)' : 'var(--line)' }}
             >
-              <span className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-[10.5px]">
+              <span className="w-7 h-7 rounded-lg bg-accent text-white flex items-center justify-center text-[12px] font-extrabold">
                 {initials(business?.owner ?? 'V')}
               </span>
-              {business?.owner ?? ''}
+              <ChevronDown size={15} className="text-muted" />
             </Link>
           </div>
         </header>
