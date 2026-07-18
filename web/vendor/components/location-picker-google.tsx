@@ -10,7 +10,6 @@
 // script tag), same reason the Leaflet picker is dynamic-imported with
 // ssr:false.
 
-import { Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { loadGoogleMaps } from '../lib/google-maps';
@@ -23,7 +22,7 @@ export default function LocationPickerGoogle({
   onChange: (lat: number, lng: number) => void;
 }) {
   const mapDivRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
   // onChange is re-created every render on the caller's side (an inline
   // arrow function in profile/page.tsx) — capturing it in a ref lets the
   // map-setup effect below run exactly once without needing onChange in
@@ -34,7 +33,7 @@ export default function LocationPickerGoogle({
 
   useEffect(() => {
     let cancelled = false;
-    loadGoogleMaps().then((g) => {
+    loadGoogleMaps().then(async (g) => {
       if (cancelled || !mapDivRef.current) return;
 
       const map = new g.maps.Map(mapDivRef.current, {
@@ -56,16 +55,17 @@ export default function LocationPickerGoogle({
         onChangeRef.current(e.latLng.lat(), e.latLng.lng());
       });
 
-      if (searchInputRef.current) {
+      if (searchContainerRef.current) {
         // Every vendor in this app is Sri Lanka-based today (matches the
         // same assumption the public-holiday feature already makes).
-        const autocomplete = new g.maps.places.Autocomplete(searchInputRef.current, {
-          componentRestrictions: { country: 'lk' },
-          fields: ['geometry'],
-        });
-        autocomplete.addListener('place_changed', () => {
-          const place = autocomplete.getPlace();
-          const loc = place.geometry?.location;
+        const { PlaceAutocompleteElement } = await g.maps.importLibrary('places') as google.maps.PlacesLibrary;
+        const autocomplete = new PlaceAutocompleteElement({ includedRegionCodes: ['lk'] });
+        autocomplete.classList.add('w-full');
+        searchContainerRef.current.appendChild(autocomplete);
+        autocomplete.addEventListener('gmp-select', async ({ placePrediction }) => {
+          const place = placePrediction.toPlace();
+          const { place: detailedPlace } = await place.fetchFields({ fields: ['location'] });
+          const loc = detailedPlace.location;
           if (!loc) return;
           map.setCenter(loc);
           map.setZoom(16);
@@ -74,7 +74,7 @@ export default function LocationPickerGoogle({
         });
       }
 
-      setReady(true);
+      if (!cancelled) setReady(true);
     });
     return () => {
       cancelled = true;
@@ -89,11 +89,7 @@ export default function LocationPickerGoogle({
   return (
     <div className="relative w-full h-full">
       <div className="absolute top-2 left-2 right-2 z-10">
-        <div className="relative">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input ref={searchInputRef} type="text" placeholder="Search for an address…"
-            className="input pl-9 shadow-md" />
-        </div>
+        <div ref={searchContainerRef} className="[&_gmp-place-autocomplete]:shadow-md [&_gmp-place-autocomplete]:rounded-xl" />
       </div>
       <div ref={mapDivRef} className="w-full h-full" />
       {!ready && (

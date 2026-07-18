@@ -11,7 +11,7 @@
 import { API_URL, isTwoFactorRequired, type AuthResponse, type TwoFactorRequiredResponse } from '@spotto/shared';
 import {
   ArrowLeft, ArrowRight, Check, Clock, Eye, EyeOff, Lock, Mail, MapPin,
-  MailCheck, PartyPopper, Phone, QrCode, Search, Send, Store, Tag,
+  MailCheck, PartyPopper, Phone, QrCode, Send, Store, Tag,
   TrendingUp, User as UserIcon, Users, LucideIcon,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -54,38 +54,38 @@ function categoryFromGoogleTypes(types: string[] | undefined): string {
 // in order of specificity and take the first that's present.
 const TOWN_COMPONENT_PRIORITY = ['locality', 'sublocality', 'administrative_area_level_2', 'administrative_area_level_1'];
 
-function townFromAddressComponents(components: google.maps.GeocoderAddressComponent[] | undefined): string {
+function townFromAddressComponents(components: google.maps.places.AddressComponent[] | undefined): string {
   for (const type of TOWN_COMPONENT_PRIORITY) {
     const match = components?.find((c) => c.types.includes(type));
-    if (match) return match.long_name;
+    if (match) return match.longText ?? '';
   }
   return '';
 }
 
-// The 'country' component's short_name is the ISO 3166-1 alpha-2 code
+// The 'country' component's shortText is the ISO 3166-1 alpha-2 code
 // (e.g. "LK", "US") — exactly what the backend's Vendor.Country expects,
 // no guessing needed since it comes straight from Google.
-function countryFromAddressComponents(components: google.maps.GeocoderAddressComponent[] | undefined): string {
-  return components?.find((c) => c.types.includes('country'))?.short_name ?? '';
+function countryFromAddressComponents(components: google.maps.places.AddressComponent[] | undefined): string {
+  return components?.find((c) => c.types.includes('country'))?.shortText ?? '';
 }
 
-// Google numbers days Sunday=0..Saturday=6 in opening_hours periods — same
-// convention server/internal/http/vendor.go's weekdayKeys already uses.
+// Google numbers days Sunday=0..Saturday=6 in regularOpeningHours periods —
+// same convention server/internal/http/vendor.go's weekdayKeys already uses.
 const GOOGLE_WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
-function formatGoogleTime(t: string): string {
-  return `${t.slice(0, 2)}:${t.slice(2, 4)}`; // "0900" -> "09:00"
+function formatGoogleTime(point: google.maps.places.OpeningHoursPoint): string {
+  return `${String(point.hour).padStart(2, '0')}:${String(point.minute).padStart(2, '0')}`;
 }
 
 function hoursFromPeriods(
-  periods: google.maps.places.PlaceOpeningHoursPeriod[] | undefined,
+  periods: google.maps.places.OpeningHoursPeriod[] | undefined,
 ): Record<string, { open: string; close: string }> | null {
   if (!periods || periods.length === 0) return null;
   const hours: Record<string, { open: string; close: string }> = {};
   for (const p of periods) {
     if (!p.open) continue;
-    const open = formatGoogleTime(p.open.time);
-    const close = p.close ? formatGoogleTime(p.close.time) : open;
+    const open = formatGoogleTime(p.open);
+    const close = p.close ? formatGoogleTime(p.close) : open;
     hours[GOOGLE_WEEKDAYS[p.open.day]] = { open, close };
   }
   return Object.keys(hours).length > 0 ? hours : null;
@@ -178,7 +178,7 @@ function LoginPageInner() {
   const [businessHours, setBusinessHours] = useState<Record<string, { open: string; close: string }> | null>(null);
   const [businessCountry, setBusinessCountry] = useState('');
   const [skippedSearch, setSkippedSearch] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
   const mapDivRef = useRef<HTMLDivElement>(null);
 
   const [forgotEmail, setForgotEmail] = useState('');
@@ -242,48 +242,48 @@ function LoginPageInner() {
   useEffect(() => {
     if (mode !== 'register' || registerStep !== 0 || skippedSearch) return;
     let cancelled = false;
-    loadGoogleMaps().then((g) => {
-      if (cancelled || !searchInputRef.current) return;
+    loadGoogleMaps().then(async (g) => {
+      if (cancelled || !searchContainerRef.current) return;
 
       // Re-entering this step (e.g. via Back) after already finding a
-      // place: restore the search box text and map preview.
-      if (foundPlace && placeLat != null && placeLng != null) {
-        searchInputRef.current.value = foundPlace.name;
-        if (mapDivRef.current) {
-          const map = new g.maps.Map(mapDivRef.current, {
-            center: { lat: placeLat, lng: placeLng }, zoom: 15,
-            disableDefaultUI: true, gestureHandling: 'none',
-          });
-          new g.maps.Marker({ position: { lat: placeLat, lng: placeLng }, map });
-        }
+      // place: restore the map preview (the found-place card below the
+      // search box already shows the name/address).
+      if (foundPlace && placeLat != null && placeLng != null && mapDivRef.current) {
+        const map = new g.maps.Map(mapDivRef.current, {
+          center: { lat: placeLat, lng: placeLng }, zoom: 15,
+          disableDefaultUI: true, gestureHandling: 'none',
+        });
+        new g.maps.Marker({ position: { lat: placeLat, lng: placeLng }, map });
       }
 
-      const autocomplete = new g.maps.places.Autocomplete(searchInputRef.current, {
-        componentRestrictions: { country: 'lk' },
-        types: ['establishment'],
-        fields: ['name', 'formatted_address', 'address_components', 'international_phone_number', 'website', 'geometry', 'opening_hours', 'types'],
-      });
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        const loc = place.geometry?.location;
+      const { PlaceAutocompleteElement } = await g.maps.importLibrary('places') as google.maps.PlacesLibrary;
+      const autocomplete = new PlaceAutocompleteElement({ includedRegionCodes: ['lk'] });
+      autocomplete.classList.add('w-full');
+      searchContainerRef.current.appendChild(autocomplete);
+      autocomplete.addEventListener('gmp-select', async ({ placePrediction }) => {
+        const place = placePrediction.toPlace();
+        const { place: detailedPlace } = await place.fetchFields({
+          fields: ['displayName', 'formattedAddress', 'addressComponents', 'internationalPhoneNumber', 'websiteURI', 'location', 'regularOpeningHours', 'types'],
+        });
+        const loc = detailedPlace.location;
         if (!loc) return;
         const lat = loc.lat();
         const lng = loc.lng();
 
         setPlaceLat(lat);
         setPlaceLng(lng);
-        setFoundPlace({ name: place.name ?? '', address: place.formatted_address ?? '' });
-        setBusinessName(place.name ?? '');
-        const foundTown = townFromAddressComponents(place.address_components);
+        setFoundPlace({ name: detailedPlace.displayName ?? '', address: detailedPlace.formattedAddress ?? '' });
+        setBusinessName(detailedPlace.displayName ?? '');
+        const foundTown = townFromAddressComponents(detailedPlace.addressComponents);
         if (foundTown) setTown(foundTown);
-        setBusinessCountry(countryFromAddressComponents(place.address_components));
-        setCategory(categoryFromGoogleTypes(place.types));
+        setBusinessCountry(countryFromAddressComponents(detailedPlace.addressComponents));
+        setCategory(categoryFromGoogleTypes(detailedPlace.types));
         setBusinessContact(
-          place.international_phone_number || place.website
-            ? { phone: place.international_phone_number ?? '', website: place.website ?? '' }
+          detailedPlace.internationalPhoneNumber || detailedPlace.websiteURI
+            ? { phone: detailedPlace.internationalPhoneNumber ?? '', website: detailedPlace.websiteURI ?? '' }
             : null,
         );
-        setBusinessHours(hoursFromPeriods(place.opening_hours?.periods));
+        setBusinessHours(hoursFromPeriods(detailedPlace.regularOpeningHours?.periods));
 
         if (mapDivRef.current) {
           const map = new g.maps.Map(mapDivRef.current, {
@@ -298,8 +298,8 @@ function LoginPageInner() {
     };
     // Deliberately excludes foundPlace/placeLat/placeLng etc — those are
     // set BY this effect's own listener, so including them would re-fire
-    // this setup (re-attaching a fresh Autocomplete) immediately after
-    // every place selection.
+    // this setup (re-attaching a fresh PlaceAutocompleteElement) immediately
+    // after every place selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, registerStep, skippedSearch]);
 
@@ -528,11 +528,7 @@ function LoginPageInner() {
           <div className="space-y-4">
             <label className="block">
               <span className="block text-[12.5px] font-extrabold mb-1.5 text-ink-soft">Search for your business</span>
-              <div className="flex items-center gap-2.5 rounded-2xl px-3.5 h-[50px] bg-white border-[1.5px] border-line">
-                <Search size={18} className="text-muted shrink-0" />
-                <input ref={searchInputRef} type="text" placeholder="e.g. Driftwood Coffee, Weligama" autoFocus
-                  className="flex-1 bg-transparent outline-none text-[15px] font-bold w-full text-ink" />
-              </div>
+              <div ref={searchContainerRef} className="[&_gmp-place-autocomplete]:w-full" />
             </label>
 
             {foundPlace && (
