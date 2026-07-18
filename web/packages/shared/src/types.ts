@@ -103,6 +103,9 @@ export interface Vendor {
   name: string;
   category: string;
   town: string;
+  /** ISO 3166-1 alpha-2 code (e.g. "LK", "US") — picks the right public-
+   * holiday calendar for the closure-prompt feature. Defaults to "LK". */
+  country: string;
   regionId?: string;
   owner: string;
   status: VendorStatus;

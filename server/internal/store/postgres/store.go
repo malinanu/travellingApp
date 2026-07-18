@@ -626,12 +626,12 @@ func (s *Store) UserTokenVersion(ctx context.Context, id string) (int, error) {
 
 // ---- vendors ----
 
-const vendorCols = `id, name, category, town, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng`
+const vendorCols = `id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng`
 
 func scanVendor(row pgx.Row) (domain.Vendor, error) {
 	var v domain.Vendor
 	var flags []byte
-	err := row.Scan(&v.ID, &v.Name, &v.Category, &v.Town, &v.RegionID, &v.Owner, &v.Status,
+	err := row.Scan(&v.ID, &v.Name, &v.Category, &v.Town, &v.Country, &v.RegionID, &v.Owner, &v.Status,
 		&v.Priority, &v.Docs, &v.Photos, &v.WifiScore, &flags, &v.Note, &v.Tier,
 		&v.Profile, &v.Menu, &v.SubmittedAt, &v.Lat, &v.Lng)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -645,17 +645,24 @@ func scanVendor(row pgx.Row) (domain.Vendor, error) {
 }
 
 func (s *Store) UpsertVendor(ctx context.Context, v domain.Vendor) error {
+	if v.Country == "" {
+		// Matches migration 009's column default — callers that don't know
+		// or haven't been updated to set this (seed/gendata scripts, older
+		// code paths) shouldn't silently write an empty string instead of
+		// the correct default.
+		v.Country = "LK"
+	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO vendors (id, name, category, town, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		INSERT INTO vendors (id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		ON CONFLICT (id) DO UPDATE SET
-			name=EXCLUDED.name, category=EXCLUDED.category, town=EXCLUDED.town,
+			name=EXCLUDED.name, category=EXCLUDED.category, town=EXCLUDED.town, country=EXCLUDED.country,
 			region_id=EXCLUDED.region_id, owner=EXCLUDED.owner, status=EXCLUDED.status,
 			priority=EXCLUDED.priority, docs=EXCLUDED.docs, photos=EXCLUDED.photos,
 			wifi_score=EXCLUDED.wifi_score, flags=EXCLUDED.flags, note=EXCLUDED.note,
 			tier=EXCLUDED.tier, profile=EXCLUDED.profile, menu=EXCLUDED.menu,
 			submitted_at=EXCLUDED.submitted_at, lat=EXCLUDED.lat, lng=EXCLUDED.lng`,
-		v.ID, v.Name, v.Category, v.Town, v.RegionID, v.Owner, v.Status, v.Priority,
+		v.ID, v.Name, v.Category, v.Town, v.Country, v.RegionID, v.Owner, v.Status, v.Priority,
 		v.Docs, v.Photos, v.WifiScore, jsonb(v.Flags), v.Note, v.Tier,
 		orEmptyObj(v.Profile), orEmptyObj(v.Menu), v.SubmittedAt, v.Lat, v.Lng)
 	return err
@@ -732,14 +739,14 @@ func (s *Store) VendorsNear(ctx context.Context, lat, lng, radiusKm float64) ([]
 }
 
 func vendorColsPrefixed() string {
-	return "id, name, category, town, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng"
+	return "id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng"
 }
 
 func scanVendorWithBadCount(row pgx.Row) (domain.Vendor, int, error) {
 	var v domain.Vendor
 	var flags []byte
 	var badCount int
-	err := row.Scan(&v.ID, &v.Name, &v.Category, &v.Town, &v.RegionID, &v.Owner, &v.Status,
+	err := row.Scan(&v.ID, &v.Name, &v.Category, &v.Town, &v.Country, &v.RegionID, &v.Owner, &v.Status,
 		&v.Priority, &v.Docs, &v.Photos, &v.WifiScore, &flags, &v.Note, &v.Tier,
 		&v.Profile, &v.Menu, &v.SubmittedAt, &v.Lat, &v.Lng, &badCount)
 	if err != nil {

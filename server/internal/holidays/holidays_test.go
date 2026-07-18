@@ -10,7 +10,7 @@ import (
 )
 
 func TestUpcomingStaticFallback(t *testing.T) {
-	got, err := Upcoming(context.Background(), "", 3650)
+	got, err := Upcoming(context.Background(), "", "LK", 3650)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestUpcomingStaticFallback(t *testing.T) {
 }
 
 func TestUpcomingStaticFallbackExcludesPast(t *testing.T) {
-	got, err := Upcoming(context.Background(), "", 7)
+	got, err := Upcoming(context.Background(), "", "LK", 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -37,6 +37,31 @@ func TestUpcomingStaticFallbackExcludesPast(t *testing.T) {
 		if h.Date.After(now.AddDate(0, 0, 7)) {
 			t.Errorf("holiday %v is outside the 7-day window", h.Date)
 		}
+	}
+}
+
+// TestUpcomingNonLKGetsNoStaticFallback confirms the static Sri Lanka list
+// is never substituted for a different country — a mapped-but-unreachable
+// (no API key) country should get an empty list, not LK's holidays.
+func TestUpcomingNonLKGetsNoStaticFallback(t *testing.T) {
+	got, err := Upcoming(context.Background(), "", "US", 3650)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no holidays for US with no API key, got %d: %+v", len(got), got)
+	}
+}
+
+// TestUpcomingUnmappedCountryReturnsEmpty confirms an unrecognized country
+// code short-circuits to an empty list without attempting any API call.
+func TestUpcomingUnmappedCountryReturnsEmpty(t *testing.T) {
+	got, err := Upcoming(context.Background(), "some-key", "ZZ", 7)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no holidays for an unmapped country, got %d: %+v", len(got), got)
 	}
 }
 

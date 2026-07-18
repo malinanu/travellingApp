@@ -1,8 +1,7 @@
-// Package holidays looks up upcoming Sri Lankan public holidays for the
-// vendor Business Profile's automatic closure-prompt feature. There is no
-// vendor→country field anywhere in this app yet (every vendor/region in
-// the current dataset is Sri Lankan by convention), so the calendar is
-// hardcoded rather than looked up per vendor — see server/internal/http/
+// Package holidays looks up each vendor's upcoming public holidays for the
+// Business Profile's automatic closure-prompt feature, keyed by the
+// vendor's country (see country_calendars.go for the country→Google
+// calendar ID mapping and its caveats) — see server/internal/http/
 // holiday_scheduler.go for how this is used.
 package holidays
 
@@ -10,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"time"
@@ -20,20 +20,45 @@ type Holiday struct {
 	Name string
 }
 
-// sriLankaHolidayCalendarID is Google's public holiday calendar for Sri
-// Lanka — readable via a plain API-key GET, no user OAuth consent needed.
-const sriLankaHolidayCalendarID = "en.lk#holiday@group.v.calendar.google.com"
-
-// Upcoming returns Sri Lankan public holidays in [now, now+days]. If apiKey
-// is empty (GOOGLE_CALENDAR_API_KEY unset), it falls back to a bundled
-// static list — see static_lk_holidays.go for that list's known gaps
-// (notably: lunar Poya days aren't included, since they don't fall on
-// fixed dates and aren't reliably known without a real data source).
-func Upcoming(ctx context.Context, apiKey string, days int) ([]Holiday, error) {
-	if apiKey == "" {
-		return filterWindow(StaticSriLankaHolidays, days), nil
+// Upcoming returns countryCode's public holidays in [now, now+days] (an
+// ISO 3166-1 alpha-2 code, e.g. "LK", "US" — see domain.Vendor.Country).
+//
+// If countryCode has no entry in CountryHolidayCalendars, this returns an
+// empty list immediately without attempting any API call — no country's
+// holidays are ever substituted for another's.
+//
+// Otherwise: if apiKey is empty (GOOGLE_CALENDAR_API_KEY unset) — or the
+// live call fails for any reason (network error, API not enabled, a
+// referrer-restricted key being used from this server-side call, which
+// sends no Referer header at all — referrer restrictions are meant for
+// the browser-side Maps key, not this one) — Sri Lanka ("LK") falls back
+// to a bundled static list rather than erroring, since a stale-but-present
+// holiday list is much better than breaking the Business Profile page
+// entirely; see static_lk_holidays.go for that list's known gaps (notably:
+// lunar Poya days aren't included, since they don't fall on fixed dates
+// and aren't reliably known without a real data source). Every other
+// country just gets an empty list on the same failure, since there's no
+// curated static list for it yet.
+func Upcoming(ctx context.Context, apiKey, countryCode string, days int) ([]Holiday, error) {
+	calendarID, ok := CountryHolidayCalendars[countryCode]
+	if !ok {
+		return nil, nil
 	}
-	return fetchFromGoogle(ctx, apiKey, days)
+	if apiKey == "" {
+		if countryCode == "LK" {
+			return filterWindow(StaticSriLankaHolidays, days), nil
+		}
+		return nil, nil
+	}
+	got, err := fetchFromGoogle(ctx, apiKey, calendarID, days)
+	if err != nil {
+		log.Printf("holidays: live Google Calendar fetch failed for country=%s: %v", countryCode, err)
+		if countryCode == "LK" {
+			return filterWindow(StaticSriLankaHolidays, days), nil
+		}
+		return nil, nil
+	}
+	return got, nil
 }
 
 func filterWindow(all []Holiday, days int) []Holiday {
@@ -61,7 +86,7 @@ type calendarEventsResponse struct {
 	} `json:"items"`
 }
 
-func fetchFromGoogle(ctx context.Context, apiKey string, days int) ([]Holiday, error) {
+func fetchFromGoogle(ctx context.Context, apiKey, calendarID string, days int) ([]Holiday, error) {
 	now := time.Now()
 	q := url.Values{
 		"key":          {apiKey},
@@ -70,7 +95,7 @@ func fetchFromGoogle(ctx context.Context, apiKey string, days int) ([]Holiday, e
 		"singleEvents": {"true"},
 		"orderBy":      {"startTime"},
 	}
-	calendarPath := url.PathEscape(sriLankaHolidayCalendarID)
+	calendarPath := url.PathEscape(calendarID)
 	reqURL := fmt.Sprintf("https://www.googleapis.com/calendar/v3/calendars/%s/events?%s", calendarPath, q.Encode())
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)

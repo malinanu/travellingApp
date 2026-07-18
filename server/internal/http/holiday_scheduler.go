@@ -40,20 +40,33 @@ func (s *Server) StartHolidayScheduler(ctx context.Context) {
 }
 
 func (s *Server) runHolidayCheck(ctx context.Context) {
-	upcoming, err := holidays.Upcoming(ctx, s.GoogleCalendarAPIKey, holidayNoticeDays)
-	if err != nil {
-		log.Printf("holiday scheduler: fetch upcoming holidays: %v", err)
-		return
-	}
-	if len(upcoming) == 0 {
-		return
-	}
 	vendors, err := s.Store.Vendors(ctx, string(domain.VendorApproved))
 	if err != nil {
 		log.Printf("holiday scheduler: list vendors: %v", err)
 		return
 	}
+
+	// Fetch each represented country's holiday list once per tick, not
+	// once per vendor — country here always means Vendor.Country ("LK" for
+	// any vendor predating that field).
+	byCountry := make(map[string][]holidays.Holiday)
 	for _, v := range vendors {
+		if _, ok := byCountry[v.Country]; ok {
+			continue
+		}
+		upcoming, err := holidays.Upcoming(ctx, s.GoogleCalendarAPIKey, v.Country, holidayNoticeDays)
+		if err != nil {
+			log.Printf("holiday scheduler: fetch upcoming holidays for country=%s: %v", v.Country, err)
+			continue
+		}
+		byCountry[v.Country] = upcoming
+	}
+
+	for _, v := range vendors {
+		upcoming := byCountry[v.Country]
+		if len(upcoming) == 0 {
+			continue
+		}
 		var profile vendorProfileDoc
 		_ = json.Unmarshal(orEmpty(v.Profile), &profile)
 		decided := make(map[string]bool, len(profile.HolidayOverrides))

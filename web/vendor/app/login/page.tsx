@@ -62,6 +62,13 @@ function townFromAddressComponents(components: google.maps.GeocoderAddressCompon
   return '';
 }
 
+// The 'country' component's short_name is the ISO 3166-1 alpha-2 code
+// (e.g. "LK", "US") — exactly what the backend's Vendor.Country expects,
+// no guessing needed since it comes straight from Google.
+function countryFromAddressComponents(components: google.maps.GeocoderAddressComponent[] | undefined): string {
+  return components?.find((c) => c.types.includes('country'))?.short_name ?? '';
+}
+
 // Google numbers days Sunday=0..Saturday=6 in opening_hours periods — same
 // convention server/internal/http/vendor.go's weekdayKeys already uses.
 const GOOGLE_WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -169,6 +176,7 @@ function LoginPageInner() {
   const [foundPlace, setFoundPlace] = useState<{ name: string; address: string } | null>(null);
   const [businessContact, setBusinessContact] = useState<{ phone: string; website: string } | null>(null);
   const [businessHours, setBusinessHours] = useState<Record<string, { open: string; close: string }> | null>(null);
+  const [businessCountry, setBusinessCountry] = useState('');
   const [skippedSearch, setSkippedSearch] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const mapDivRef = useRef<HTMLDivElement>(null);
@@ -268,6 +276,7 @@ function LoginPageInner() {
         setBusinessName(place.name ?? '');
         const foundTown = townFromAddressComponents(place.address_components);
         if (foundTown) setTown(foundTown);
+        setBusinessCountry(countryFromAddressComponents(place.address_components));
         setCategory(categoryFromGoogleTypes(place.types));
         setBusinessContact(
           place.international_phone_number || place.website
@@ -334,6 +343,7 @@ function LoginPageInner() {
         ...(placeLat != null && placeLng != null ? { lat: placeLat, lng: placeLng } : {}),
         ...(businessContact ? { contact: businessContact } : {}),
         ...(businessHours ? { hours: businessHours } : {}),
+        ...(businessCountry ? { businessCountry } : {}),
       });
       if (isTwoFactorRequired(res)) {
         setTwoFactorToken(res.twoFactorToken);

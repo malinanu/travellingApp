@@ -148,7 +148,7 @@ func (s *Server) handleUpcomingVendorHolidays(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	all, err := holidays.Upcoming(r.Context(), s.GoogleCalendarAPIKey, holidayNoticeDays)
+	all, err := holidays.Upcoming(r.Context(), s.GoogleCalendarAPIKey, v.Country, holidayNoticeDays)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return

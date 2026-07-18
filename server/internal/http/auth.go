@@ -92,6 +92,13 @@ type registerReq struct {
 		Website string `json:"website"`
 	} `json:"contact,omitempty"`
 	Hours map[string]dayHoursDoc `json:"hours,omitempty"`
+	// BusinessCountry is an ISO 3166-1 alpha-2 code (e.g. "LK", "US") read
+	// from the Places search result's address_components — distinct from
+	// the traveller-registration Country field below (that one is the
+	// traveller's own home country, an unrelated concept). Empty defaults
+	// to "LK" in Store.UpsertVendor, matching every vendor that predates
+	// this field.
+	BusinessCountry string `json:"businessCountry,omitempty"`
 	// InviteCode joins an existing vendor as the invite's assigned role
 	// (staff or manager) instead of creating a new pending vendor — see
 	// the team-invite flow in handleRegister.
@@ -181,6 +188,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			SubmittedAt: time.Now(),
 			Lat:         req.Lat,
 			Lng:         req.Lng,
+			Country:     req.BusinessCountry,
 		}
 		if v.Name == "" {
 			v.Name = req.Name

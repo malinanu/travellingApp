@@ -72,10 +72,15 @@ const (
 )
 
 type Vendor struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Category    string          `json:"category"` // BUSINESS_TYPES id
-	Town        string          `json:"town"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Category string `json:"category"` // BUSINESS_TYPES id
+	Town     string `json:"town"`
+	// Country is an ISO 3166-1 alpha-2 code (e.g. "LK", "US"), used to pick
+	// the right public-holiday calendar — see internal/holidays. Defaults
+	// to "LK" (see migration 009) since every vendor predating this field
+	// really is Sri Lanka.
+	Country     string          `json:"country"`
 	RegionID    *string         `json:"regionId,omitempty"`
 	Owner       string          `json:"owner"`
 	Status      VendorStatus    `json:"status"`
