@@ -15,6 +15,7 @@ import (
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
+	"github.com/spotto/server/internal/holidays"
 	"github.com/spotto/server/internal/store/postgres"
 )
 
@@ -128,6 +129,98 @@ func (s *Server) handleUpdateVendorCategory(w http.ResponseWriter, r *http.Reque
 	v.Category = req.Category
 	s.syncVendorPlaceBestEffort(r.Context(), v)
 	writeJSON(w, http.StatusOK, v)
+}
+
+const holidayNoticeDays = 7
+
+type upcomingHoliday struct {
+	Date string `json:"date"` // "2006-01-02"
+	Name string `json:"name"`
+}
+
+// handleUpcomingVendorHolidays lists public holidays within the notice
+// window that this vendor hasn't yet recorded an open/closed decision for
+// — gated to owner+manager (RequireVendorManagerOrAbove in server.go), not
+// staff, and deliberately not behind requireBusinessProfileAccess since
+// answering it is a narrow, lighter action than full profile edits.
+func (s *Server) handleUpcomingVendorHolidays(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	all, err := holidays.Upcoming(r.Context(), s.GoogleCalendarAPIKey, holidayNoticeDays)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	var profile vendorProfileDoc
+	_ = json.Unmarshal(orEmpty(v.Profile), &profile)
+	decided := make(map[string]bool, len(profile.HolidayOverrides))
+	for _, ov := range profile.HolidayOverrides {
+		decided[ov.Date] = true
+	}
+
+	out := make([]upcomingHoliday, 0, len(all))
+	for _, h := range all {
+		date := h.Date.Format("2006-01-02")
+		if !decided[date] {
+			out = append(out, upcomingHoliday{Date: date, Name: h.Name})
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleVendorHolidayDecision records an owner/manager's open/closed
+// decision for a specific date — a narrow read-modify-write on just the
+// holidayOverrides field, reusing the existing full-profile store method
+// rather than needing a dedicated one.
+func (s *Server) handleVendorHolidayDecision(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Date   string `json:"date"`
+		Name   string `json:"name"`
+		Closed bool   `json:"closed"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if _, err := time.Parse("2006-01-02", req.Date); err != nil {
+		writeErr(w, http.StatusBadRequest, "date must be YYYY-MM-DD")
+		return
+	}
+
+	var data map[string]any
+	_ = json.Unmarshal(orEmpty(v.Profile), &data)
+	if data == nil {
+		data = map[string]any{}
+	}
+	var profile vendorProfileDoc
+	_ = json.Unmarshal(orEmpty(v.Profile), &profile)
+
+	overrides := make([]holidayOverrideDoc, 0, len(profile.HolidayOverrides)+1)
+	for _, ov := range profile.HolidayOverrides {
+		if ov.Date != req.Date {
+			overrides = append(overrides, ov)
+		}
+	}
+	overrides = append(overrides, holidayOverrideDoc{Date: req.Date, Name: req.Name, Closed: req.Closed})
+	data["holidayOverrides"] = overrides
+
+	updated, err := json.Marshal(data)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if err := s.Store.UpdateVendorProfile(r.Context(), v.ID, updated); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	v.Profile = updated
+	s.syncVendorPlaceBestEffort(r.Context(), v)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handleVendorMenu(w http.ResponseWriter, r *http.Request) {
@@ -305,18 +398,67 @@ type vendorProfileDoc struct {
 	} `json:"wifi"`
 	BestTimes []string `json:"bestTimes"`
 	SeaView   bool     `json:"seaView"`
-	Hours     *struct {
-		Open  string `json:"open"`
-		Close string `json:"close"`
-	} `json:"hours"`
-	Amenities []string `json:"amenities"`
-	Blurb     string   `json:"blurb"`
+	// Hours is keyed by lowercase weekday name ("monday".."sunday") — see
+	// weekdayKey. A missing entry or one with Closed=true means the vendor
+	// is closed that day. vendorHoursDoc's UnmarshalJSON transparently
+	// migrates the pre-per-day {open,close} shape on read.
+	Hours     vendorHoursDoc `json:"hours"`
+	Amenities []string       `json:"amenities"`
+	Blurb     string         `json:"blurb"`
 	Contact   *struct {
 		Phone     string `json:"phone"`
 		Website   string `json:"website"`
 		Instagram string `json:"instagram"`
 		Facebook  string `json:"facebook"`
 	} `json:"contact"`
+	// HolidayOverrides records an owner/manager's explicit open/closed
+	// decision for a specific date (see handleVendorHolidayDecision) — a
+	// Closed:true entry for today always wins over the regular weekly
+	// Hours schedule in syncVendorPlace.
+	HolidayOverrides []holidayOverrideDoc `json:"holidayOverrides"`
+}
+
+type dayHoursDoc struct {
+	Open   string `json:"open"`
+	Close  string `json:"close"`
+	Closed bool   `json:"closed"`
+}
+
+// vendorHoursDoc is keyed by lowercase weekday name. Its UnmarshalJSON
+// transparently migrates the single {open, close} pair every vendor's
+// hours were stored as before per-day hours existed: on read, if the
+// per-day shape doesn't parse, it falls back to the legacy shape and
+// expands it across all 7 days, so existing vendors don't silently show
+// blank hours to travellers until they happen to resave via the new UI.
+// Saves always write the new per-day shape (the vendor web app no longer
+// produces the legacy one).
+type vendorHoursDoc map[string]dayHoursDoc
+
+func (h *vendorHoursDoc) UnmarshalJSON(b []byte) error {
+	var perDay map[string]dayHoursDoc
+	if err := json.Unmarshal(b, &perDay); err == nil {
+		*h = perDay
+		return nil
+	}
+	var legacy struct {
+		Open  string `json:"open"`
+		Close string `json:"close"`
+	}
+	if err := json.Unmarshal(b, &legacy); err != nil {
+		return err
+	}
+	expanded := make(vendorHoursDoc, len(weekdayKeys))
+	for _, k := range weekdayKeys {
+		expanded[k] = dayHoursDoc{Open: legacy.Open, Close: legacy.Close}
+	}
+	*h = expanded
+	return nil
+}
+
+type holidayOverrideDoc struct {
+	Date   string `json:"date"` // "2006-01-02"
+	Name   string `json:"name"`
+	Closed bool   `json:"closed"`
 }
 
 // vendorMenuDoc mirrors the {sections: [...]} shape Vendor.Menu is stored
@@ -388,6 +530,38 @@ func isOpenNow(open, close string) bool {
 	return now >= open || now < close
 }
 
+// weekdayKeys maps time.Weekday's Sunday=0 ordering to the lowercase
+// keys vendorProfileDoc.Hours and the vendor web app both use.
+var weekdayKeys = [...]string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
+
+func weekdayKey(t time.Time) string { return weekdayKeys[t.Weekday()] }
+
+// todayHoursAndOpenNow computes the traveller-facing "hours" display string
+// and "openNow" bool for `now`'s date: a Closed:true holiday override for
+// today always wins over the regular weekly schedule (see
+// vendorProfileDoc.HolidayOverrides), otherwise today's weekday entry in
+// Hours is used (or "closed today" if absent/marked closed).
+func todayHoursAndOpenNow(profile vendorProfileDoc, now time.Time) (string, bool) {
+	todayDate := now.Format("2006-01-02")
+	for _, ov := range profile.HolidayOverrides {
+		if ov.Date == todayDate && ov.Closed {
+			name := ov.Name
+			if name == "" {
+				name = "public holiday"
+			}
+			return "Closed today — " + name, false
+		}
+	}
+	day, ok := profile.Hours[weekdayKey(now)]
+	if !ok || day.Closed || day.Open == "" || day.Close == "" {
+		if ok && day.Closed {
+			return "Closed today", false
+		}
+		return "", false
+	}
+	return formatHourLabel(day.Open) + " – " + formatHourLabel(day.Close), isOpenNow(day.Open, day.Close)
+}
+
 // syncVendorPlace mirrors vendor v's current profile — headline offer,
 // Wi-Fi/sea-view/best-times/amenities/blurb/hours/contact, and menu — into
 // the traveller-facing Place.Data, lazily creating a minimal Place if v
@@ -453,13 +627,7 @@ func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
 	data["tags"] = tags
 	data["blurb"] = profile.Blurb
 
-	if profile.Hours != nil && profile.Hours.Open != "" && profile.Hours.Close != "" {
-		data["hours"] = formatHourLabel(profile.Hours.Open) + " – " + formatHourLabel(profile.Hours.Close)
-		data["openNow"] = isOpenNow(profile.Hours.Open, profile.Hours.Close)
-	} else {
-		data["hours"] = ""
-		data["openNow"] = false
-	}
+	data["hours"], data["openNow"] = todayHoursAndOpenNow(profile, time.Now())
 
 	contact := map[string]any{"phone": "", "website": "", "instagram": "", "facebook": ""}
 	if profile.Contact != nil {

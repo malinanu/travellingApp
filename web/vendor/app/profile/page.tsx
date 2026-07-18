@@ -18,7 +18,8 @@ import {
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 
-import type { Vendor, VendorProfile, VendorProfileGrant } from '@spotto/shared';
+import type { DayHours, UpcomingHoliday, Vendor, VendorProfile, VendorProfileGrant, Weekday } from '@spotto/shared';
+import { WEEKDAYS } from '@spotto/shared';
 import Shell, { isFoodCategory, useBusiness, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
 import { BUSINESS_CATEGORIES, isSelectedCategory } from '../../lib/business-categories';
@@ -79,6 +80,57 @@ function useCountdown(target?: string) {
     return () => clearInterval(id);
   }, [target]);
   return label;
+}
+
+// UpcomingHolidaysCard surfaces public holidays within the notice window
+// that don't yet have an open/closed decision — a lighter action than the
+// rest of Business Profile (see requireBusinessProfileAccess's bypass in
+// vendor.go), so it renders for owner and manager alike regardless of
+// whether a temporary edit grant is active.
+function UpcomingHolidaysCard() {
+  const qc = useQueryClient();
+  const { data: upcoming = [] } = useQuery<UpcomingHoliday[]>({
+    queryKey: ['upcoming-holidays'],
+    queryFn: () => api.get<UpcomingHoliday[]>('/vendor/holidays/upcoming'),
+  });
+  const decide = useMutation({
+    mutationFn: (vars: { date: string; name: string; closed: boolean }) => api.post('/vendor/holidays/decision', vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['upcoming-holidays'] }),
+  });
+
+  if (upcoming.length === 0) return null;
+
+  return (
+    <div className="space-y-2 mb-5">
+      {upcoming.map((h) => {
+        const days = Math.ceil((new Date(h.date).getTime() - Date.now()) / 86_400_000);
+        const dateLabel = new Date(h.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return (
+          <div key={h.date} className="flex items-center justify-between gap-3 rounded-xl px-4 py-3"
+            style={{ background: 'rgba(246,184,30,0.12)', border: '1px solid rgba(246,184,30,0.4)' }}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(246,184,30,0.2)', color: '#a97b00' }}>
+                <Clock size={17} />
+              </span>
+              <p className="text-[13px] font-semibold min-w-0">
+                <span className="font-extrabold">{h.name}</span> is {days <= 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`} ({dateLabel}) — will you be open?
+              </p>
+            </div>
+            <div className="flex gap-1.5 shrink-0">
+              <button className="rounded-lg border border-line bg-white px-3 py-1.5 font-extrabold text-[12.5px] hover:border-accent hover:text-accent transition-colors"
+                disabled={decide.isPending} onClick={() => decide.mutate({ date: h.date, name: h.name, closed: false })}>
+                Open
+              </button>
+              <button className="rounded-lg border border-line bg-white px-3 py-1.5 font-extrabold text-[12.5px] hover:border-coral hover:text-coral transition-colors"
+                disabled={decide.isPending} onClick={() => decide.mutate({ date: h.date, name: h.name, closed: true })}>
+                Closed
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function LockedProfileCard({ grantId }: { grantId?: string }) {
@@ -190,8 +242,9 @@ export default function ProfilePage() {
   const setWifi = (patch: Partial<NonNullable<VendorProfile['wifi']>>) => {
     set({ wifi: { enabled: p.wifi?.enabled ?? false, score: p.wifi?.score ?? 0, speed: p.wifi?.speed ?? 0, ...patch } });
   };
-  const setHours = (patch: Partial<NonNullable<VendorProfile['hours']>>) => {
-    set({ hours: { open: p.hours?.open ?? '', close: p.hours?.close ?? '', ...patch } });
+  const setDayHours = (day: Weekday, patch: Partial<DayHours>) => {
+    const current = p.hours?.[day] ?? { open: '09:00', close: '17:00' };
+    set({ hours: { ...p.hours, [day]: { ...current, ...patch } } });
   };
   const setContact = (patch: Partial<NonNullable<VendorProfile['contact']>>) => {
     set({ contact: { ...p.contact, ...patch } });
@@ -236,6 +289,8 @@ export default function ProfilePage() {
             <ShieldCheck size={16} /> Temporary edit access expires in {accessCountdown}
           </div>
         )}
+
+        {!isStaff && <UpcomingHolidaysCard />}
 
         {isStaff && <LockedProfileCard />}
         {!isOwner && !isStaff && !hasAccess && <LockedProfileCard grantId={pendingGrantId} />}
@@ -399,18 +454,35 @@ export default function ProfilePage() {
           </div>
 
           <div className="card p-6">
-            <CardHeader icon={Clock} title="Hours" sub="When travelers can expect you to be open" />
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Opens</span>
-                <input type="time" className="input" value={p.hours?.open ?? ''}
-                  onChange={(e) => setHours({ open: e.target.value })} />
-              </label>
-              <label className="block">
-                <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Closes</span>
-                <input type="time" className="input" value={p.hours?.close ?? ''}
-                  onChange={(e) => setHours({ close: e.target.value })} />
-              </label>
+            <div className="flex items-center justify-between mb-4">
+              <CardHeader icon={Clock} title="Hours" sub="When travelers can expect you to be open, day by day" />
+              <button type="button" onClick={() => {
+                const monday = p.hours?.monday ?? { open: '09:00', close: '17:00' };
+                set({ hours: Object.fromEntries(WEEKDAYS.map((d) => [d, { ...monday }])) as VendorProfile['hours'] });
+              }} className="text-[12px] font-extrabold text-accent shrink-0 whitespace-nowrap">
+                Same every day
+              </button>
+            </div>
+            <div className="space-y-2">
+              {WEEKDAYS.map((day) => {
+                const d: DayHours = p.hours?.[day] ?? { open: '09:00', close: '17:00', closed: true };
+                return (
+                  <div key={day} className="grid grid-cols-[34px_1fr_1fr_auto] gap-1.5 items-center">
+                    <span className="text-[13px] font-extrabold capitalize">{day.slice(0, 3)}</span>
+                    <input type="time" className="input min-w-0 !px-2 !text-[12.5px]" disabled={d.closed} value={d.open}
+                      onChange={(e) => setDayHours(day, { open: e.target.value })} />
+                    <input type="time" className="input min-w-0 !px-2 !text-[12.5px]" disabled={d.closed} value={d.close}
+                      onChange={(e) => setDayHours(day, { close: e.target.value })} />
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0" title="Closed">
+                      <input type="checkbox" className="sr-only peer" checked={!d.closed}
+                        onChange={(e) => setDayHours(day, { closed: !e.target.checked })} />
+                      <span className={`w-9 h-5 rounded-full relative transition-colors ${!d.closed ? 'bg-accent' : 'bg-line'}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${!d.closed ? 'left-[18px]' : 'left-0.5'}`} />
+                      </span>
+                    </label>
+                  </div>
+                );
+              })}
             </div>
             <p className="text-[12px] text-muted font-semibold mt-3">
               Shown to travelers as your open/closed status on the map.

@@ -135,11 +135,37 @@ export interface Review {
   travellerName?: string;
 }
 
+export type Weekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+export const WEEKDAYS: Weekday[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+export interface DayHours {
+  open: string;
+  close: string;
+  closed?: boolean;
+}
+
+/** An owner/manager's explicit open/closed decision for one date, recorded
+ * via POST /vendor/holidays/decision — a Closed:true entry for today always
+ * overrides the regular weekly `hours` schedule. */
+export interface HolidayOverride {
+  date: string; // "YYYY-MM-DD"
+  name: string;
+  closed: boolean;
+}
+
+/** An upcoming public holiday the vendor hasn't yet recorded a decision
+ * for — GET /vendor/holidays/upcoming. */
+export interface UpcomingHoliday {
+  date: string; // "YYYY-MM-DD"
+  name: string;
+}
+
 export interface VendorProfile {
   wifi?: { enabled: boolean; score: number; speed: number };
   bestTimes?: string[];
   seaView?: boolean;
-  hours?: { open: string; close: string };
+  hours?: Partial<Record<Weekday, DayHours>>;
+  holidayOverrides?: HolidayOverride[];
   amenities?: string[];
   blurb?: string;
   contact?: { phone?: string; website?: string; instagram?: string; facebook?: string };

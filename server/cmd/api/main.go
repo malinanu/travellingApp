@@ -26,6 +26,7 @@ func main() {
 	}
 
 	srv := httpapi.New(store, auth.NewTokens(cfg.JWTSecret), cfg)
+	go srv.StartHolidayScheduler(ctx)
 	log.Printf("spotto api listening on :%s", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, srv.Router(cfg)); err != nil {
 		log.Fatal(err)

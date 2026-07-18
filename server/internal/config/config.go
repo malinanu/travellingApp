@@ -31,6 +31,12 @@ type Config struct {
 	GoogleClientID     string
 	GoogleClientSecret string
 	GoogleRedirectURL  string
+	// GoogleCalendarAPIKey enables live public-holiday lookups (see
+	// internal/holidays) — a plain API key (not an OAuth client), since
+	// Google's public holiday calendars are readable without user consent.
+	// Unset means the holiday scheduler falls back to a bundled static list
+	// instead of failing.
+	GoogleCalendarAPIKey string
 	// VendorAppURL is the base URL of the vendor Next.js app, used to build
 	// links embedded in emails (invite accept, password reset).
 	VendorAppURL string
@@ -60,15 +66,16 @@ func Load() Config {
 		CORSOrigins:       strings.Split(mustGetenv("CORS_ORIGINS"), ","),
 		TOTPEncryptionKey: totpKey,
 
-		SMTPHost:           getenv("SMTP_HOST", ""),
-		SMTPPort:           getenv("SMTP_PORT", ""),
-		SMTPUser:           getenv("SMTP_USER", ""),
-		SMTPPass:           getenv("SMTP_PASS", ""),
-		EmailFrom:          getenv("EMAIL_FROM", ""),
-		GoogleClientID:     getenv("GOOGLE_CLIENT_ID", ""),
-		GoogleClientSecret: getenv("GOOGLE_CLIENT_SECRET", ""),
-		GoogleRedirectURL:  getenv("GOOGLE_REDIRECT_URL", ""),
-		VendorAppURL:       getenv("VENDOR_APP_URL", "http://localhost:3000"),
+		SMTPHost:             getenv("SMTP_HOST", ""),
+		SMTPPort:             getenv("SMTP_PORT", ""),
+		SMTPUser:             getenv("SMTP_USER", ""),
+		SMTPPass:             getenv("SMTP_PASS", ""),
+		EmailFrom:            getenv("EMAIL_FROM", ""),
+		GoogleClientID:       getenv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret:   getenv("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRedirectURL:    getenv("GOOGLE_REDIRECT_URL", ""),
+		GoogleCalendarAPIKey: getenv("GOOGLE_CALENDAR_API_KEY", ""),
+		VendorAppURL:         getenv("VENDOR_APP_URL", "http://localhost:3000"),
 	}
 }
 

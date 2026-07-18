@@ -29,6 +29,10 @@ type Server struct {
 	// see internal/jobs for why this is best-effort, not durable.
 	Jobs         *jobs.Queue
 	VendorAppURL string
+	// GoogleCalendarAPIKey enables live public-holiday lookups (see
+	// internal/holidays and holiday_scheduler.go) — empty means the
+	// scheduler falls back to a bundled static list instead.
+	GoogleCalendarAPIKey string
 	// GoogleOAuth is nil when GOOGLE_CLIENT_ID/SECRET aren't configured —
 	// handleGoogleLogin/handleGoogleCallback report 501 in that case rather
 	// than panicking on a nil config.
@@ -49,13 +53,14 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		Mail: mail.New(mail.Config{
 			Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.EmailFrom,
 		}),
-		Jobs:          jobs.NewQueue(4, 256),
-		VendorAppURL:  cfg.VendorAppURL,
-		loginLimit:    newLoginLimiter(5, 15*time.Minute),
-		totpLimit:     newLoginLimiter(5, 15*time.Minute),
-		resetLimit:    newLoginLimiter(5, 15*time.Minute),
-		grantPinLimit: newLoginLimiter(5, 15*time.Minute),
-		oauthCodes:    newAuthCodeStore(),
+		Jobs:                 jobs.NewQueue(4, 256),
+		VendorAppURL:         cfg.VendorAppURL,
+		GoogleCalendarAPIKey: cfg.GoogleCalendarAPIKey,
+		loginLimit:           newLoginLimiter(5, 15*time.Minute),
+		totpLimit:            newLoginLimiter(5, 15*time.Minute),
+		resetLimit:           newLoginLimiter(5, 15*time.Minute),
+		grantPinLimit:        newLoginLimiter(5, 15*time.Minute),
+		oauthCodes:           newAuthCodeStore(),
 	}
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
 		s.GoogleOAuth = &oauth2.Config{
@@ -189,6 +194,11 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			r.Get("/vendor/growth", s.handleVendorGrowth)
 			r.Post("/vendor/growth/flash-sale", s.handleVendorFlashSale)
 			r.Get("/vendor/reports", s.handleVendorReports)
+			// Answering a holiday-closure prompt is a lighter action than a
+			// full Business Profile edit, so it's gated here (owner+manager,
+			// no PIN grant needed) rather than by requireBusinessProfileAccess.
+			r.Get("/vendor/holidays/upcoming", s.handleUpcomingVendorHolidays)
+			r.Post("/vendor/holidays/decision", s.handleVendorHolidayDecision)
 		})
 
 		// Team management — the account's own owner only, not invited staff
