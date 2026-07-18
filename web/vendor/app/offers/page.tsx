@@ -92,7 +92,8 @@ function OffersPageInner() {
     queryKey: ['offers'],
     queryFn: () => api.get<Offer[]>('/vendor/offers'),
   });
-  const [detailOffer, setDetailOffer] = useState<Offer | null>(null);
+  const [detailOfferId, setDetailOfferId] = useState<string | null>(null);
+  const detailOffer = offers.find((o) => o.id === detailOfferId) ?? null;
 
   const [filter, setFilter] = useState<FilterId>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -365,10 +366,12 @@ function OffersPageInner() {
         {visible.map((o) => (
           <OfferCard key={o.id} offer={o} onEdit={() => startEdit(o)}
             onSetStatus={(status) => setStatus.mutate({ id: o.id, status })}
-            onDelete={() => remove.mutate(o.id)} onOpenDetail={() => setDetailOffer(o)} />
+            onDelete={() => remove.mutate(o.id)} onOpenDetail={() => setDetailOfferId(o.id)} />
         ))}
       </div>
-      <OfferDetailDrawer offer={detailOffer} onClose={() => setDetailOffer(null)} />
+      <OfferDetailDrawer offer={detailOffer} onClose={() => setDetailOfferId(null)}
+        onSetStatus={(status) => detailOfferId && setStatus.mutate({ id: detailOfferId, status })}
+        onDelete={() => { if (detailOfferId) remove.mutate(detailOfferId); setDetailOfferId(null); }} />
     </Shell>
   );
 }

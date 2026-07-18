@@ -3,7 +3,7 @@
 // Dashboard — greeting + KPIs, weekly traffic, live redemption feed (3s
 // polling), and active offers. Port of VendorDashboard.jsx.
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowRight, Eye, Plus, Tag, Ticket, TrendingDown, TrendingUp, LucideIcon,
 } from 'lucide-react';
@@ -11,7 +11,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { Donut, TrafficChart } from '@spotto/charts';
-import { timeAgo, type Claim, type DashboardBlob, type Offer } from '@spotto/shared';
+import { timeAgo, type Claim, type DashboardBlob, type Offer, type OfferStatus } from '@spotto/shared';
 import Shell, { useBusiness } from '../../components/shell';
 import OfferDetailDrawer from '../../components/offer-detail-drawer';
 import { api } from '../../lib/api';
@@ -43,6 +43,7 @@ function initial(name: string) {
 }
 
 export default function DashboardPage() {
+  const qc = useQueryClient();
   const { data: business } = useBusiness();
   const { data: dash } = useQuery<DashboardBlob>({
     queryKey: ['dashboard'],
@@ -57,7 +58,17 @@ export default function DashboardPage() {
     queryKey: ['offers'],
     queryFn: () => api.get<Offer[]>('/vendor/offers'),
   });
-  const [detailOffer, setDetailOffer] = useState<Offer | null>(null);
+  const [detailOfferId, setDetailOfferId] = useState<string | null>(null);
+  const detailOffer = offers.find((o) => o.id === detailOfferId) ?? null;
+  const setStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: OfferStatus }) =>
+      api.patch(`/vendor/offers/${id}/status`, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['offers'] }),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del(`/vendor/offers/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['offers'] }),
+  });
 
   const activeOffers = offers.filter((o) => o.status === 'live' || o.status === 'ending');
 
@@ -178,7 +189,7 @@ export default function DashboardPage() {
             const ending = o.status === 'ending';
             return (
               <div key={o.id} className="flex items-center gap-4 py-3.5 border-t border-line cursor-pointer"
-                onClick={() => setDetailOffer(o)}>
+                onClick={() => setDetailOfferId(o.id)}>
                 <Donut value={o.claimed} max={o.limit} accent={ending ? '#f0682f' : ACCENT} size={50} stroke={7} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -197,7 +208,9 @@ export default function DashboardPage() {
           })}
         </div>
       </div>
-      <OfferDetailDrawer offer={detailOffer} onClose={() => setDetailOffer(null)} />
+      <OfferDetailDrawer offer={detailOffer} onClose={() => setDetailOfferId(null)}
+        onSetStatus={(status) => detailOfferId && setStatus.mutate({ id: detailOfferId, status })}
+        onDelete={() => { if (detailOfferId) remove.mutate(detailOfferId); setDetailOfferId(null); }} />
     </Shell>
   );
 }
