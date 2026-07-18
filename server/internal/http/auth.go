@@ -78,6 +78,20 @@ type registerReq struct {
 	Town         string `json:"town,omitempty"`
 	Phone        string `json:"phone,omitempty"`
 	Description  string `json:"description,omitempty"`
+	// Lat/Lng/Contact/Hours are populated only when the owner found their
+	// business via the registration wizard's Google Places search step
+	// (web/vendor/app/login/page.tsx) rather than typing everything by
+	// hand — carried directly in this request because a freshly-registered
+	// vendor is `pending` and can't yet call the approval-gated
+	// PUT /vendor/business / PATCH /vendor/business/identity endpoints to
+	// set these itself.
+	Lat     float64 `json:"lat,omitempty"`
+	Lng     float64 `json:"lng,omitempty"`
+	Contact *struct {
+		Phone   string `json:"phone"`
+		Website string `json:"website"`
+	} `json:"contact,omitempty"`
+	Hours map[string]dayHoursDoc `json:"hours,omitempty"`
 	// InviteCode joins an existing vendor as the invite's assigned role
 	// (staff or manager) instead of creating a new pending vendor — see
 	// the team-invite flow in handleRegister.
@@ -165,12 +179,24 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			Flags:       []string{},
 			Tier:        "Free",
 			SubmittedAt: time.Now(),
+			Lat:         req.Lat,
+			Lng:         req.Lng,
 		}
 		if v.Name == "" {
 			v.Name = req.Name
 		}
+		profile := map[string]any{}
 		if req.Description != "" {
-			if b, err := json.Marshal(map[string]string{"blurb": req.Description}); err == nil {
+			profile["blurb"] = req.Description
+		}
+		if req.Contact != nil && (req.Contact.Phone != "" || req.Contact.Website != "") {
+			profile["contact"] = map[string]any{"phone": req.Contact.Phone, "website": req.Contact.Website}
+		}
+		if len(req.Hours) > 0 {
+			profile["hours"] = req.Hours
+		}
+		if len(profile) > 0 {
+			if b, err := json.Marshal(profile); err == nil {
 				v.Profile = b
 			}
 		}

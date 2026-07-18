@@ -66,6 +66,14 @@ for Android API key:
    Google logo, but nothing crashes — everything else (weather bar, quest
    chip, filters) still works.
 
+The same Cloud project/key (with Calendar API, Maps JavaScript API, and
+Places API also enabled) additionally powers the vendor portal's automatic
+public-holiday prompts and its address-search location picker — see
+`server/.env.example`'s `GOOGLE_CALENDAR_API_KEY` and
+`web/vendor/.env.example`'s `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. All three are
+optional; each feature degrades gracefully (a static holiday list, or the
+free Leaflet map picker) when its key is unset.
+
 ## Demo accounts (created by `cmd/seed`, password `spotto123`)
 
 - Traveller: `lena@spotto.dev`

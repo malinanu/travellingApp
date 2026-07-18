@@ -10,6 +10,9 @@ server/bin/
 
 # Docker Compose (root) — real secrets/URLs live here, never commit
 .env
+# Next.js local env overrides (e.g. web/vendor/.env.local) — .env.example
+# files are still meant to be committed, this only excludes the *.local ones.
+.env*.local
 
 # Flutter / Dart
 app/.dart_tool/

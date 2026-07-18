@@ -1,6 +1,7 @@
 # Built with context = web/ (the npm workspace root), since this app depends
 # on local @spotto/shared and @spotto/charts packages:
-#   docker build -f web/vendor/Dockerfile --build-arg NEXT_PUBLIC_API_URL=... web/
+#   docker build -f web/vendor/Dockerfile --build-arg NEXT_PUBLIC_API_URL=... \
+#     --build-arg NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=... web/
 
 FROM node:20-alpine AS builder
 # NEXT_PUBLIC_* build args are Next.js's own convention for values it inlines
@@ -9,6 +10,13 @@ FROM node:20-alpine AS builder
 # actual secret; use a runtime env var (not a build arg) for anything private.
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+# Same reasoning as above: a Maps JS API key is inherently client-visible
+# (it ships in the browser bundle/network requests no matter how it's
+# configured), so baking it in as a NEXT_PUBLIC_ build arg doesn't add any
+# real exposure beyond what the key already has — restrict it via HTTP
+# referrer restrictions in Google Cloud Console instead, not by hiding it.
+ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+ENV NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
 WORKDIR /web
 COPY . .
 RUN npm install

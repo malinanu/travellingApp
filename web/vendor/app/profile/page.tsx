@@ -24,12 +24,19 @@ import Shell, { isFoodCategory, useBusiness, useMe } from '../../components/shel
 import { api } from '../../lib/api';
 import { BUSINESS_CATEGORIES, isSelectedCategory } from '../../lib/business-categories';
 
-// Leaflet touches `window` at import time, so the map must not be part of
-// the server-rendered bundle.
-const LocationPicker = dynamic(() => import('../../components/location-picker'), {
-  ssr: false,
-  loading: () => <div className="h-full flex items-center justify-center text-muted font-semibold text-[13px]">Loading map…</div>,
-});
+// Both the Leaflet and Google map pickers touch `window` at import time,
+// so neither can be part of the server-rendered bundle. Google's picker
+// (with address search) is used when NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is
+// configured — this check is inlined at build time by Next.js, so it's a
+// static, dead-code-eliminated branch, not a runtime env lookup. Falls
+// back to the free Leaflet/OpenStreetMap picker otherwise (same graceful-
+// degrade pattern as this app's other optional Google integrations).
+const mapPickerLoading = () => (
+  <div className="h-full flex items-center justify-center text-muted font-semibold text-[13px]">Loading map…</div>
+);
+const LocationPicker = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+  ? dynamic(() => import('../../components/location-picker-google'), { ssr: false, loading: mapPickerLoading })
+  : dynamic(() => import('../../components/location-picker'), { ssr: false, loading: mapPickerLoading });
 
 const TIME_SLOTS = [
   { id: 'morning', label: 'Morning', icon: Sunrise },

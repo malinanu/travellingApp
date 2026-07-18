@@ -11,7 +11,7 @@
 import { API_URL, isTwoFactorRequired, type AuthResponse, type TwoFactorRequiredResponse } from '@spotto/shared';
 import {
   ArrowLeft, ArrowRight, Check, Clock, Eye, EyeOff, Lock, Mail, MapPin,
-  MailCheck, PartyPopper, Phone, QrCode, Send, Store, Tag,
+  MailCheck, PartyPopper, Phone, QrCode, Search, Send, Store, Tag,
   TrendingUp, User as UserIcon, Users, LucideIcon,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -20,8 +20,69 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import { SpottoMark } from '../../components/shell';
 import { api } from '../../lib/api';
 import { BUSINESS_CATEGORIES } from '../../lib/business-categories';
+import { loadGoogleMaps } from '../../lib/google-maps';
 
-const REGISTER_STEPS = ['Your account', 'Your business', 'A few details'];
+const REGISTER_STEPS = ['Find your business', 'Your account', 'Your business', 'A few details'];
+
+// Best-effort Google place-type → Spotto category mapping, checked in
+// array order (first match wins) — falls back to the wizard's existing
+// 'cafe' default when nothing matches. The category grid in the next step
+// stays fully visible either way, so a wrong guess is a one-tap fix.
+const GOOGLE_TYPE_TO_CATEGORY: [string, string][] = [
+  ['cafe', 'cafe'],
+  ['restaurant', 'restaurant'],
+  ['bar', 'bar'], ['night_club', 'bar'],
+  ['bakery', 'Bakery'],
+  ['lodging', 'Hotel'],
+  ['spa', 'Spa & Wellness'],
+  ['gym', 'Yoga / Wellness'],
+  ['tourist_attraction', 'Tours / Activity'], ['travel_agency', 'Tours / Activity'],
+  ['meal_takeaway', 'Street Food'],
+  ['art_gallery', 'craft'],
+  ['store', 'shop'], ['clothing_store', 'shop'],
+];
+
+function categoryFromGoogleTypes(types: string[] | undefined): string {
+  for (const [googleType, spottoCategory] of GOOGLE_TYPE_TO_CATEGORY) {
+    if (types?.includes(googleType)) return spottoCategory;
+  }
+  return 'cafe';
+}
+
+// Sri Lankan addresses don't always have a `locality` (small towns often
+// only show up as a sublocality or the district-level admin area) — check
+// in order of specificity and take the first that's present.
+const TOWN_COMPONENT_PRIORITY = ['locality', 'sublocality', 'administrative_area_level_2', 'administrative_area_level_1'];
+
+function townFromAddressComponents(components: google.maps.GeocoderAddressComponent[] | undefined): string {
+  for (const type of TOWN_COMPONENT_PRIORITY) {
+    const match = components?.find((c) => c.types.includes(type));
+    if (match) return match.long_name;
+  }
+  return '';
+}
+
+// Google numbers days Sunday=0..Saturday=6 in opening_hours periods — same
+// convention server/internal/http/vendor.go's weekdayKeys already uses.
+const GOOGLE_WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+function formatGoogleTime(t: string): string {
+  return `${t.slice(0, 2)}:${t.slice(2, 4)}`; // "0900" -> "09:00"
+}
+
+function hoursFromPeriods(
+  periods: google.maps.places.PlaceOpeningHoursPeriod[] | undefined,
+): Record<string, { open: string; close: string }> | null {
+  if (!periods || periods.length === 0) return null;
+  const hours: Record<string, { open: string; close: string }> = {};
+  for (const p of periods) {
+    if (!p.open) continue;
+    const open = formatGoogleTime(p.open.time);
+    const close = p.close ? formatGoogleTime(p.close.time) : open;
+    hours[GOOGLE_WEEKDAYS[p.open.day]] = { open, close };
+  }
+  return Object.keys(hours).length > 0 ? hours : null;
+}
 
 function GoogleG({ size = 18 }: { size?: number }) {
   return (
@@ -101,6 +162,17 @@ function LoginPageInner() {
   const [town, setTown] = useState('Weligama');
   const [description, setDescription] = useState('');
 
+  // Populated by the "Find your business" step's Google Places search —
+  // all optional, sent with the registration request only when present.
+  const [placeLat, setPlaceLat] = useState<number | null>(null);
+  const [placeLng, setPlaceLng] = useState<number | null>(null);
+  const [foundPlace, setFoundPlace] = useState<{ name: string; address: string } | null>(null);
+  const [businessContact, setBusinessContact] = useState<{ phone: string; website: string } | null>(null);
+  const [businessHours, setBusinessHours] = useState<Record<string, { open: string; close: string }> | null>(null);
+  const [skippedSearch, setSkippedSearch] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const mapDivRef = useRef<HTMLDivElement>(null);
+
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
   const [resetToken, setResetToken] = useState<string | null>(null);
@@ -156,6 +228,72 @@ function LoginPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Loads Google Places Autocomplete for the "Find your business" step
+  // (registerStep 0) — only while that step is actually visible, and not
+  // at all if the owner chose to skip search entirely.
+  useEffect(() => {
+    if (mode !== 'register' || registerStep !== 0 || skippedSearch) return;
+    let cancelled = false;
+    loadGoogleMaps().then((g) => {
+      if (cancelled || !searchInputRef.current) return;
+
+      // Re-entering this step (e.g. via Back) after already finding a
+      // place: restore the search box text and map preview.
+      if (foundPlace && placeLat != null && placeLng != null) {
+        searchInputRef.current.value = foundPlace.name;
+        if (mapDivRef.current) {
+          const map = new g.maps.Map(mapDivRef.current, {
+            center: { lat: placeLat, lng: placeLng }, zoom: 15,
+            disableDefaultUI: true, gestureHandling: 'none',
+          });
+          new g.maps.Marker({ position: { lat: placeLat, lng: placeLng }, map });
+        }
+      }
+
+      const autocomplete = new g.maps.places.Autocomplete(searchInputRef.current, {
+        componentRestrictions: { country: 'lk' },
+        types: ['establishment'],
+        fields: ['name', 'formatted_address', 'address_components', 'international_phone_number', 'website', 'geometry', 'opening_hours', 'types'],
+      });
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        const loc = place.geometry?.location;
+        if (!loc) return;
+        const lat = loc.lat();
+        const lng = loc.lng();
+
+        setPlaceLat(lat);
+        setPlaceLng(lng);
+        setFoundPlace({ name: place.name ?? '', address: place.formatted_address ?? '' });
+        setBusinessName(place.name ?? '');
+        const foundTown = townFromAddressComponents(place.address_components);
+        if (foundTown) setTown(foundTown);
+        setCategory(categoryFromGoogleTypes(place.types));
+        setBusinessContact(
+          place.international_phone_number || place.website
+            ? { phone: place.international_phone_number ?? '', website: place.website ?? '' }
+            : null,
+        );
+        setBusinessHours(hoursFromPeriods(place.opening_hours?.periods));
+
+        if (mapDivRef.current) {
+          const map = new g.maps.Map(mapDivRef.current, {
+            center: loc, zoom: 15, disableDefaultUI: true, gestureHandling: 'none',
+          });
+          new g.maps.Marker({ position: loc, map });
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Deliberately excludes foundPlace/placeLat/placeLng etc — those are
+    // set BY this effect's own listener, so including them would re-fire
+    // this setup (re-attaching a fresh Autocomplete) immediately after
+    // every place selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, registerStep, skippedSearch]);
+
   const finishSession = (res: AuthResponse, rememberOverride?: boolean) => {
     if (res.user.role !== 'vendor') {
       api.setToken(null);
@@ -193,6 +331,9 @@ function LoginPageInner() {
       const res = await api.post<AuthResponse | TwoFactorRequiredResponse>('/auth/register', {
         email, password, name, role: 'vendor', businessName, category,
         phone: phone ? `+94 ${phone}` : '', town, description,
+        ...(placeLat != null && placeLng != null ? { lat: placeLat, lng: placeLng } : {}),
+        ...(businessContact ? { contact: businessContact } : {}),
+        ...(businessHours ? { hours: businessHours } : {}),
       });
       if (isTwoFactorRequired(res)) {
         setTwoFactorToken(res.twoFactorToken);
@@ -201,9 +342,9 @@ function LoginPageInner() {
         return;
       }
       // Hold onto the session but don't navigate yet — show the
-      // "Application received" confirmation first (registerStep 3).
+      // "Application received" confirmation first (registerStep 4).
       api.setToken(res.token, remember);
-      setRegisterStep(3);
+      setRegisterStep(4);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
       api.setToken(null);
@@ -337,7 +478,7 @@ function LoginPageInner() {
   }
 
   if (mode === 'register') {
-    if (registerStep >= 3) {
+    if (registerStep >= 4) {
       return (
         <AuthShell wide>
           <div className="text-center">
@@ -364,16 +505,51 @@ function LoginPageInner() {
     return (
       <AuthShell wide>
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-[11.5px] font-extrabold uppercase tracking-wider text-accent">Step {registerStep + 1} of 3</span>
+          <span className="text-[11.5px] font-extrabold uppercase tracking-wider text-accent">Step {registerStep + 1} of 4</span>
         </div>
         <div className="flex gap-1.5 mb-5">
-          {[0, 1, 2].map((i) => (
+          {[0, 1, 2, 3].map((i) => (
             <div key={i} className={`h-1.5 rounded-full flex-1 transition-colors ${i <= registerStep ? 'bg-accent' : 'bg-[rgba(15,61,58,0.12)]'}`} />
           ))}
         </div>
         <h1 className="font-display font-extrabold leading-tight text-[25px] mb-5">{REGISTER_STEPS[registerStep]}</h1>
 
         {registerStep === 0 && (
+          <div className="space-y-4">
+            <label className="block">
+              <span className="block text-[12.5px] font-extrabold mb-1.5 text-ink-soft">Search for your business</span>
+              <div className="flex items-center gap-2.5 rounded-2xl px-3.5 h-[50px] bg-white border-[1.5px] border-line">
+                <Search size={18} className="text-muted shrink-0" />
+                <input ref={searchInputRef} type="text" placeholder="e.g. Driftwood Coffee, Weligama" autoFocus
+                  className="flex-1 bg-transparent outline-none text-[15px] font-bold w-full text-ink" />
+              </div>
+            </label>
+
+            {foundPlace && (
+              <div className="rounded-2xl border-[1.5px] border-line overflow-hidden bg-white">
+                <div ref={mapDivRef} className="h-[130px] w-full bg-sand" />
+                <div className="p-3.5 flex items-start gap-2.5">
+                  <span className="w-9 h-9 rounded-xl bg-accent-tint text-accent flex items-center justify-center shrink-0"><MapPin size={17} /></span>
+                  <div className="min-w-0">
+                    <p className="font-extrabold text-[14px] truncate">{foundPlace.name}</p>
+                    <p className="text-[12.5px] text-muted font-semibold truncate">{foundPlace.address}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <p className="text-[12.5px] text-muted font-semibold text-center">
+              We&rsquo;ll use this to pre-fill your business name, category, town and hours — you can adjust anything next.
+            </p>
+
+            <button type="button" onClick={() => { setSkippedSearch(true); setRegisterStep(1); }}
+              className="w-full text-center text-[13px] font-extrabold text-muted">
+              Enter your business details manually instead
+            </button>
+          </div>
+        )}
+
+        {registerStep === 1 && (
           <div className="space-y-3.5">
             <Field label="Owner / contact name" value={name} onChange={setName} icon={UserIcon} placeholder="e.g. Tharindu Perera" autoFocus />
             <Field label="Email" type="email" value={email} onChange={setEmail} icon={Mail} placeholder="you@yourbusiness.lk" />
@@ -382,7 +558,7 @@ function LoginPageInner() {
           </div>
         )}
 
-        {registerStep === 1 && (
+        {registerStep === 2 && (
           <div className="space-y-4">
             <Field label="Business name" value={businessName} onChange={setBusinessName} icon={Store} placeholder="e.g. Driftwood Coffee & Co-Work" autoFocus />
             <div>
@@ -406,7 +582,7 @@ function LoginPageInner() {
           </div>
         )}
 
-        {registerStep === 2 && (
+        {registerStep === 3 && (
           <div className="space-y-3.5">
             <div className="flex gap-2.5">
               <div className="flex items-center gap-1.5 rounded-2xl px-3 h-[50px] bg-white border-[1.5px] border-line shrink-0">
@@ -437,11 +613,11 @@ function LoginPageInner() {
           )}
           <div className="flex-1">
             <Primary
-              disabled={busy || (registerStep === 0 && (!name || !email || password.length < 10)) || (registerStep === 1 && !businessName)}
-              icon={busy ? null : registerStep === 2 ? Check : ArrowRight}
-              onClick={() => (registerStep === 2 ? submitRegister() : setRegisterStep((s) => s + 1))}
+              disabled={busy || (registerStep === 1 && (!name || !email || password.length < 10)) || (registerStep === 2 && !businessName)}
+              icon={busy ? null : registerStep === 3 ? Check : ArrowRight}
+              onClick={() => (registerStep === 3 ? submitRegister() : setRegisterStep((s) => s + 1))}
             >
-              {busy ? 'Submitting…' : registerStep === 2 ? 'Submit application' : 'Continue'}
+              {busy ? 'Submitting…' : registerStep === 3 ? 'Submit application' : 'Continue'}
             </Primary>
           </div>
         </div>
