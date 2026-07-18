@@ -26,9 +26,33 @@ func (s *Server) handleVendorBusiness(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, v)
 }
 
+// requireBusinessProfileAccess additionally gates Business Profile writes:
+// owners (and legacy empty-VendorRole rows) always pass; managers need an
+// active (redeemed, unrevoked, unexpired) profile grant; staff are always
+// rejected. Call after requireApprovedVendor, before any Business Profile
+// mutation. GET /vendor/business intentionally stays open to all roles
+// (see server.go) since the portal shell reads it on every page — only
+// writes are gated here.
+func (s *Server) requireBusinessProfileAccess(w http.ResponseWriter, r *http.Request, v domain.Vendor) bool {
+	c := auth.FromContext(r.Context())
+	if c.VendorRole == domain.VendorRoleOwner || c.VendorRole == "" {
+		return true
+	}
+	if c.VendorRole == domain.VendorRoleManager {
+		if active, err := s.Store.ActiveVendorProfileGrant(r.Context(), v.ID, c.Subject); err == nil && active {
+			return true
+		}
+	}
+	writeJSON(w, http.StatusForbidden, map[string]string{"error": "profile_access_locked"})
+	return false
+}
+
 func (s *Server) handleUpdateVendorBusiness(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireApprovedVendor(w, r)
 	if !ok {
+		return
+	}
+	if !s.requireBusinessProfileAccess(w, r, v) {
 		return
 	}
 	var profile json.RawMessage
@@ -40,6 +64,39 @@ func (s *Server) handleUpdateVendorBusiness(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	v.Profile = profile
+	s.syncVendorPlaceBestEffort(r.Context(), v)
+	writeJSON(w, http.StatusOK, v)
+}
+
+// handleUpdateVendorIdentity corrects business name/town/map-pin location —
+// these are otherwise set once at registration and never touched again.
+func (s *Server) handleUpdateVendorIdentity(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireApprovedVendor(w, r)
+	if !ok {
+		return
+	}
+	if !s.requireBusinessProfileAccess(w, r, v) {
+		return
+	}
+	var req struct {
+		Name string  `json:"name"`
+		Town string  `json:"town"`
+		Lat  float64 `json:"lat"`
+		Lng  float64 `json:"lng"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.Name == "" || req.Town == "" {
+		writeErr(w, http.StatusBadRequest, "name and town are required")
+		return
+	}
+	if err := s.Store.UpdateVendorIdentity(r.Context(), v.ID, req.Name, req.Town, req.Lat, req.Lng); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	v.Name, v.Town, v.Lat, v.Lng = req.Name, req.Town, req.Lat, req.Lng
+	s.syncVendorPlaceBestEffort(r.Context(), v)
 	writeJSON(w, http.StatusOK, v)
 }
 
@@ -49,6 +106,9 @@ func (s *Server) handleUpdateVendorBusiness(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleUpdateVendorCategory(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireApprovedVendor(w, r)
 	if !ok {
+		return
+	}
+	if !s.requireBusinessProfileAccess(w, r, v) {
 		return
 	}
 	var req struct {
@@ -66,6 +126,7 @@ func (s *Server) handleUpdateVendorCategory(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	v.Category = req.Category
+	s.syncVendorPlaceBestEffort(r.Context(), v)
 	writeJSON(w, http.StatusOK, v)
 }
 
@@ -97,6 +158,8 @@ func (s *Server) handleUpdateVendorMenu(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	v.Menu = menu
+	s.syncVendorPlaceBestEffort(r.Context(), v)
 	writeJSON(w, http.StatusOK, menu)
 }
 
@@ -233,13 +296,105 @@ func (s *Server) syncVendorPlaceBestEffort(ctx context.Context, v domain.Vendor)
 	}
 }
 
-// syncVendorPlace mirrors vendor v's current headline offer into the
-// traveller-facing Place.Data.deal (with a real offer id, so a resulting
-// claim can be linked back to the offer), lazily creating a minimal Place
-// if v doesn't have one yet — real (non-seeded) vendors otherwise have no
-// map presence at all. Deliberately does not sync the rest of Vendor.Profile
-// (wifi/amenities/photos/hours) into Place.Data — a separate, pre-existing
-// gap out of scope here.
+// vendorProfileDoc mirrors the vendor-facing VendorProfile shape
+// (web/packages/shared/src/types.ts) stored as opaque JSON on Vendor.Profile.
+type vendorProfileDoc struct {
+	Wifi *struct {
+		Enabled bool    `json:"enabled"`
+		Score   float64 `json:"score"`
+	} `json:"wifi"`
+	BestTimes []string `json:"bestTimes"`
+	SeaView   bool     `json:"seaView"`
+	Hours     *struct {
+		Open  string `json:"open"`
+		Close string `json:"close"`
+	} `json:"hours"`
+	Amenities []string `json:"amenities"`
+	Blurb     string   `json:"blurb"`
+	Contact   *struct {
+		Phone     string `json:"phone"`
+		Website   string `json:"website"`
+		Instagram string `json:"instagram"`
+		Facebook  string `json:"facebook"`
+	} `json:"contact"`
+}
+
+// vendorMenuDoc mirrors the {sections: [...]} shape Vendor.Menu is stored
+// as — the traveller-facing Place.Data.menu is a bare array, not wrapped
+// in an object, so syncVendorPlace unwraps one from the other.
+type vendorMenuDoc struct {
+	Sections []map[string]any `json:"sections"`
+}
+
+// wifiSpeedLabel derives the two display strings the traveller app expects
+// (speed/label) from the single 0-10 score a vendor sets — the vendor
+// portal only collects a score, not free text, so this keeps both sides
+// consistent with the score slider's own "Patchy ↔ Blazing fast" labels.
+func wifiSpeedLabel(score float64) string {
+	switch {
+	case score >= 8:
+		return "Blazing fast"
+	case score >= 5:
+		return "Good"
+	case score > 0:
+		return "Patchy"
+	default:
+		return ""
+	}
+}
+
+// categoryOriginalLabels maps the original 6 lowercase category ids
+// (used by the vendor portal's onboarding wizard) to a traveller-friendly
+// display label. Every other category — the richer free-text set real/
+// seeded vendor applications carry (e.g. "Spa & Wellness") — already
+// stores its own display label as the id, so it passes through unchanged.
+// Mirrors web/vendor/lib/business-categories.ts's BUSINESS_CATEGORIES.
+var categoryOriginalLabels = map[string]string{
+	"restaurant": "Restaurant",
+	"cafe":       "Café",
+	"bar":        "Bar & Sunset",
+	"surf":       "Surf & Water",
+	"craft":      "Craft & Studio",
+	"shop":       "Shop",
+}
+
+func categoryLabel(category string) string {
+	if label, ok := categoryOriginalLabels[category]; ok {
+		return label
+	}
+	return category
+}
+
+// formatHourLabel renders a "HH:MM" 24h time (as produced by an
+// &lt;input type="time"&gt;) as a traveller-friendly "3:04 PM" string.
+// Returns the input unchanged if it doesn't parse.
+func formatHourLabel(hhmm string) string {
+	t, err := time.Parse("15:04", hhmm)
+	if err != nil {
+		return hhmm
+	}
+	return t.Format("3:04 PM")
+}
+
+// isOpenNow does a naive same-day/overnight comparison of the current
+// local time against open/close — there's no vendor timezone tracked
+// anywhere else in this app either, so this matches existing precision.
+func isOpenNow(open, close string) bool {
+	now := time.Now().Format("15:04")
+	if close > open {
+		return now >= open && now < close
+	}
+	// Overnight range (e.g. open 18:00, close 02:00).
+	return now >= open || now < close
+}
+
+// syncVendorPlace mirrors vendor v's current profile — headline offer,
+// Wi-Fi/sea-view/best-times/amenities/blurb/hours/contact, and menu — into
+// the traveller-facing Place.Data, lazily creating a minimal Place if v
+// doesn't have one yet (real, non-seeded vendors otherwise have no map
+// presence at all). Vendor is the sole authoritative source for
+// name/lat/lng/category now that all of them have a real update path, so
+// this always overwrites those rather than only seeding them once.
 func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
 	offers, err := s.Store.OffersByVendor(ctx, v.ID)
 	if err != nil {
@@ -249,27 +404,21 @@ func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
 
 	place, err := s.Store.PlaceByVendorID(ctx, v.ID)
 	if errors.Is(err, postgres.ErrNotFound) {
-		place = domain.Place{ID: newID("plc"), Name: v.Name, VendorID: &v.ID, Data: json.RawMessage(`{}`)}
+		place = domain.Place{ID: newID("plc"), VendorID: &v.ID, Data: json.RawMessage(`{}`)}
 	} else if err != nil {
 		return err
 	}
+	place.Name = v.Name
 
 	var data map[string]any
 	_ = json.Unmarshal(orEmpty(place.Data), &data)
 	if data == nil {
 		data = map[string]any{}
 	}
-	// Minimal base fields for a lazily-created Place only — never overwrite
-	// hand-curated data on an existing Place.
-	if _, ok := data["lat"]; !ok {
-		data["lat"] = v.Lat
-	}
-	if _, ok := data["lng"]; !ok {
-		data["lng"] = v.Lng
-	}
-	if _, ok := data["type"]; !ok {
-		data["type"] = v.Category
-	}
+	data["lat"] = v.Lat
+	data["lng"] = v.Lng
+	data["type"] = categoryLabel(v.Category)
+
 	if headline != nil {
 		data["deal"] = map[string]any{
 			"id": headline.ID, "active": true,
@@ -278,6 +427,57 @@ func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
 	} else {
 		data["deal"] = map[string]any{"id": nil, "active": false, "label": "", "tag": ""}
 	}
+
+	var profile vendorProfileDoc
+	_ = json.Unmarshal(orEmpty(v.Profile), &profile)
+
+	if profile.Wifi != nil && profile.Wifi.Enabled {
+		data["wifi"] = map[string]any{
+			"score": profile.Wifi.Score,
+			"speed": wifiSpeedLabel(profile.Wifi.Score),
+			"label": wifiSpeedLabel(profile.Wifi.Score),
+		}
+	} else {
+		delete(data, "wifi")
+	}
+	data["seaView"] = profile.SeaView
+	bestTimes := profile.BestTimes
+	if bestTimes == nil {
+		bestTimes = []string{}
+	}
+	data["bestTimes"] = bestTimes
+	tags := profile.Amenities
+	if tags == nil {
+		tags = []string{}
+	}
+	data["tags"] = tags
+	data["blurb"] = profile.Blurb
+
+	if profile.Hours != nil && profile.Hours.Open != "" && profile.Hours.Close != "" {
+		data["hours"] = formatHourLabel(profile.Hours.Open) + " – " + formatHourLabel(profile.Hours.Close)
+		data["openNow"] = isOpenNow(profile.Hours.Open, profile.Hours.Close)
+	} else {
+		data["hours"] = ""
+		data["openNow"] = false
+	}
+
+	contact := map[string]any{"phone": "", "website": "", "instagram": "", "facebook": ""}
+	if profile.Contact != nil {
+		contact = map[string]any{
+			"phone": profile.Contact.Phone, "website": profile.Contact.Website,
+			"instagram": profile.Contact.Instagram, "facebook": profile.Contact.Facebook,
+		}
+	}
+	data["contact"] = contact
+
+	var menuDoc vendorMenuDoc
+	_ = json.Unmarshal(orEmpty(v.Menu), &menuDoc)
+	sections := menuDoc.Sections
+	if sections == nil {
+		sections = []map[string]any{}
+	}
+	data["menu"] = sections
+
 	place.Data, err = json.Marshal(data)
 	if err != nil {
 		return err

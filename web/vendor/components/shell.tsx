@@ -5,7 +5,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  BarChart3, Bell, ChevronDown, LayoutDashboard, Menu, QrCode, Rocket, Search,
+  BarChart3, Bell, ChevronDown, LayoutDashboard, Lock, Menu, QrCode, Rocket, Search,
   Store, Tag, Ticket, TrendingUp, UtensilsCrossed, Star, Clock, Wallet, LogOut,
   LucideIcon,
 } from 'lucide-react';
@@ -16,13 +16,16 @@ import { useEffect, useRef, useState } from 'react';
 import type { User, Vendor, VendorNotification } from '@spotto/shared';
 import { api } from '../lib/api';
 
-const NAV: { href: string; label: string; icon: LucideIcon; foodOnly?: boolean }[] = [
+// staffHidden marks nav items staff has zero access to on the backend
+// (RequireVendorManagerOrAbove — see server.go) — hiding them here is
+// defense in depth, not the real enforcement.
+const NAV: { href: string; label: string; icon: LucideIcon; foodOnly?: boolean; staffHidden?: boolean }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/offers', label: 'Offers', icon: Tag },
-  { href: '/menu', label: 'Menu', icon: UtensilsCrossed, foodOnly: true },
-  { href: '/growth', label: 'Growth', icon: Rocket },
+  { href: '/menu', label: 'Menu', icon: UtensilsCrossed, foodOnly: true, staffHidden: true },
+  { href: '/growth', label: 'Growth', icon: Rocket, staffHidden: true },
   { href: '/validate', label: 'Validate', icon: QrCode },
-  { href: '/reports', label: 'Reports', icon: BarChart3 },
+  { href: '/reports', label: 'Reports', icon: BarChart3, staffHidden: true },
   { href: '/profile', label: 'Profile', icon: Store },
 ];
 
@@ -70,6 +73,24 @@ export function useBusiness() {
     queryFn: () => api.get<Vendor>('/vendor/business'),
     enabled: typeof window !== 'undefined' && !!api.getToken(),
   });
+}
+
+/** Shown in place of a page's content for staff, who have zero backend
+ * access to it (RequireVendorManagerOrAbove — see server.go). Pages using
+ * this should also skip their data fetch with `enabled: !isStaff` so they
+ * don't fire a request that's just going to 403. */
+export function RoleLockedCard({ what }: { what: string }) {
+  return (
+    <div className="card p-8 max-w-md mx-auto text-center">
+      <span className="mx-auto w-14 h-14 rounded-2xl bg-accent-tint text-accent flex items-center justify-center mb-4">
+        <Lock size={26} />
+      </span>
+      <h2 className="font-extrabold text-[16px] font-display mb-1.5">Not available for your role</h2>
+      <p className="text-muted font-semibold text-[13.5px]">
+        {what} is only available to managers and owners. Ask an owner if you need access.
+      </p>
+    </div>
+  );
 }
 
 function initials(name: string) {
@@ -186,6 +207,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }
 
   const isFood = isFoodCategory(business?.category);
+  const isStaff = me?.vendorRole === 'staff';
+  const visibleNav = NAV.filter((n) => (!n.foodOnly || isFood) && (!n.staffHidden || !isStaff));
   const title = NAV.find((n) => pathname.startsWith(n.href))?.label ??
     (pathname.startsWith('/account') ? 'Account' : '');
 
@@ -214,7 +237,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <nav className="px-3 py-4 flex-1 space-y-1">
-          {NAV.filter((n) => !n.foodOnly || isFood).map((n) => {
+          {visibleNav.map((n) => {
             const on = pathname.startsWith(n.href);
             const Icon = n.icon;
             return (

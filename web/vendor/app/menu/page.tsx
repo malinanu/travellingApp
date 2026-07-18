@@ -12,7 +12,7 @@ import {
 import { useEffect, useState } from 'react';
 
 import type { MenuSection } from '@spotto/shared';
-import Shell, { useBusiness } from '../../components/shell';
+import Shell, { RoleLockedCard, useBusiness, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
 
 const ITEM_ICONS: Record<string, LucideIcon> = {
@@ -28,10 +28,13 @@ const newId = (p: string) => `${p}_${Date.now().toString(36)}${nextId++}`;
 
 export default function MenuPage() {
   const qc = useQueryClient();
+  const { data: me } = useMe();
+  const isStaff = me?.vendorRole === 'staff';
   const { data: business } = useBusiness();
   const { data } = useQuery<MenuDoc>({
     queryKey: ['menu'],
     queryFn: () => api.get<MenuDoc>('/vendor/menu'),
+    enabled: !isStaff,
   });
   const [sections, setSections] = useState<MenuSection[]>([]);
   const [dirty, setDirty] = useState(false);
@@ -78,6 +81,17 @@ export default function MenuPage() {
   };
 
   const totalItems = sections.reduce((a, s) => a + s.items.length, 0);
+
+  if (isStaff) {
+    return (
+      <Shell>
+        <div className="mb-5">
+          <h1 className="text-2xl font-extrabold font-display">Your menu</h1>
+        </div>
+        <RoleLockedCard what="Menu" />
+      </Shell>
+    );
+  }
 
   return (
     <Shell>

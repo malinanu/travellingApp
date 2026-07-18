@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Fredoka, Nunito } from 'next/font/google';
+import 'leaflet/dist/leaflet.css';
 import './globals.css';
 import Providers from '../components/providers';
 

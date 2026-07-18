@@ -377,6 +377,185 @@ func (s *Store) RevokeVendorInvite(ctx context.Context, id, vendorID string) err
 	return err
 }
 
+// CreateVendorProfileGrant stores a freshly generated PIN grant (hash only —
+// the raw PIN is never persisted).
+func (s *Store) CreateVendorProfileGrant(ctx context.Context, g domain.VendorProfileGrant) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO vendor_profile_grants (id, vendor_id, grantee_id, created_by, pin_hash, duration_mins, created_at, pin_expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		g.ID, g.VendorID, g.GranteeID, g.CreatedBy, g.PinHash, g.DurationMins, g.CreatedAt, g.PinExpiresAt)
+	return err
+}
+
+const vendorProfileGrantCols = `id, vendor_id, grantee_id, created_by, pin_hash, duration_mins, created_at, pin_expires_at, redeemed_at, access_expires_at, revoked_at, revoked_by`
+
+func scanVendorProfileGrant(row pgx.Row) (domain.VendorProfileGrant, error) {
+	var g domain.VendorProfileGrant
+	var revokedBy *string
+	err := row.Scan(&g.ID, &g.VendorID, &g.GranteeID, &g.CreatedBy, &g.PinHash, &g.DurationMins, &g.CreatedAt,
+		&g.PinExpiresAt, &g.RedeemedAt, &g.AccessExpiresAt, &g.RevokedAt, &revokedBy)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return g, ErrNotFound
+	}
+	if revokedBy != nil {
+		g.RevokedBy = *revokedBy
+	}
+	return g, err
+}
+
+func (s *Store) VendorProfileGrantByID(ctx context.Context, id string) (domain.VendorProfileGrant, error) {
+	return scanVendorProfileGrant(s.Pool.QueryRow(ctx, `SELECT `+vendorProfileGrantCols+` FROM vendor_profile_grants WHERE id=$1`, id))
+}
+
+// RedeemVendorProfileGrant marks a grant as redeemed and starts its access
+// window (redeemed_at + duration_mins) — scoped to id only; callers must
+// have already verified the PIN and ownership before calling this.
+func (s *Store) RedeemVendorProfileGrant(ctx context.Context, id string) error {
+	tag, err := s.Pool.Exec(ctx, `
+		UPDATE vendor_profile_grants
+		SET redeemed_at=now(), access_expires_at=now() + make_interval(mins => duration_mins)
+		WHERE id=$1`, id)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// ActiveVendorProfileGrant reports whether granteeID currently has a
+// redeemed, unrevoked, unexpired grant on vendorID — the real authorization
+// check used by requireBusinessProfileAccess.
+func (s *Store) ActiveVendorProfileGrant(ctx context.Context, vendorID, granteeID string) (bool, error) {
+	var exists bool
+	err := s.Pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM vendor_profile_grants
+			WHERE vendor_id=$1 AND grantee_id=$2 AND revoked_at IS NULL
+			  AND access_expires_at IS NOT NULL AND access_expires_at > now()
+		)`, vendorID, granteeID).Scan(&exists)
+	return exists, err
+}
+
+// LatestVendorProfileGrantForUser returns the most recent non-revoked grant
+// for a grantee on a vendor (pending-PIN or active), for the Profile page's
+// countdown/PIN-entry UI.
+func (s *Store) LatestVendorProfileGrantForUser(ctx context.Context, vendorID, granteeID string) (domain.VendorProfileGrant, error) {
+	return scanVendorProfileGrant(s.Pool.QueryRow(ctx, `
+		SELECT `+vendorProfileGrantCols+` FROM vendor_profile_grants
+		WHERE vendor_id=$1 AND grantee_id=$2 AND revoked_at IS NULL
+		ORDER BY created_at DESC LIMIT 1`, vendorID, granteeID))
+}
+
+// VendorProfileGrants lists all grants for a vendor (any status), newest
+// first, so an owner can see and revoke pending or active ones.
+func (s *Store) VendorProfileGrants(ctx context.Context, vendorID string) ([]domain.VendorProfileGrant, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+vendorProfileGrantCols+` FROM vendor_profile_grants WHERE vendor_id=$1 ORDER BY created_at DESC`, vendorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.VendorProfileGrant
+	for rows.Next() {
+		g, err := scanVendorProfileGrant(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// RevokeVendorProfileGrant is scoped to vendorID so one vendor's owner can't
+// revoke another vendor's grant by guessing an id.
+func (s *Store) RevokeVendorProfileGrant(ctx context.Context, id, vendorID, revokedBy string) error {
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE vendor_profile_grants SET revoked_at=now(), revoked_by=$3 WHERE id=$1 AND vendor_id=$2`, id, vendorID, revokedBy)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// AdminVendorGrantView is a joined, display-ready row for the platform
+// admin's cross-vendor grant list — status is computed here rather than
+// stored, since "active"/"pending"/"expired"/"revoked" all derive from the
+// same timestamp columns.
+type AdminVendorGrantView struct {
+	domain.VendorProfileGrant
+	VendorName  string `json:"vendorName"`
+	GranteeName string `json:"granteeName"`
+	OwnerName   string `json:"ownerName"`
+	Status      string `json:"status"`
+}
+
+// AdminListVendorProfileGrants lists grants across all vendors, optionally
+// filtered by computed status ("active", "pending", or "" for all).
+func (s *Store) AdminListVendorProfileGrants(ctx context.Context, status string) ([]AdminVendorGrantView, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT g.id, g.vendor_id, g.grantee_id, g.created_by, g.pin_hash, g.duration_mins, g.created_at,
+		       g.pin_expires_at, g.redeemed_at, g.access_expires_at, g.revoked_at, g.revoked_by,
+		       v.name, grantee.name, owner.name
+		FROM vendor_profile_grants g
+		JOIN vendors v ON v.id = g.vendor_id
+		JOIN users grantee ON grantee.id = g.grantee_id
+		JOIN users owner ON owner.id = g.created_by
+		ORDER BY g.created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AdminVendorGrantView
+	for rows.Next() {
+		var v AdminVendorGrantView
+		var revokedBy *string
+		if err := rows.Scan(&v.ID, &v.VendorID, &v.GranteeID, &v.CreatedBy, &v.PinHash, &v.DurationMins, &v.CreatedAt,
+			&v.PinExpiresAt, &v.RedeemedAt, &v.AccessExpiresAt, &v.RevokedAt, &revokedBy,
+			&v.VendorName, &v.GranteeName, &v.OwnerName); err != nil {
+			return nil, err
+		}
+		if revokedBy != nil {
+			v.RevokedBy = *revokedBy
+		}
+		v.Status = vendorGrantStatus(v.VendorProfileGrant)
+		if status == "" || status == v.Status {
+			out = append(out, v)
+		}
+	}
+	return out, rows.Err()
+}
+
+func vendorGrantStatus(g domain.VendorProfileGrant) string {
+	now := time.Now()
+	switch {
+	case g.RevokedAt != nil:
+		return "revoked"
+	case g.AccessExpiresAt != nil && g.AccessExpiresAt.After(now):
+		return "active"
+	case g.RedeemedAt == nil && g.PinExpiresAt.After(now):
+		return "pending"
+	default:
+		return "expired"
+	}
+}
+
+// AdminAdjustVendorProfileGrant extends (positive) or shortens (negative)
+// whichever expiry is currently in play — access_expires_at once redeemed,
+// otherwise pin_expires_at — clamped so it can never be pushed before now
+// (use revoke for an immediate cutoff instead).
+func (s *Store) AdminAdjustVendorProfileGrant(ctx context.Context, id string, minutesDelta int) error {
+	tag, err := s.Pool.Exec(ctx, `
+		UPDATE vendor_profile_grants SET
+			access_expires_at = CASE WHEN redeemed_at IS NOT NULL
+				THEN GREATEST(now(), access_expires_at + make_interval(mins => $2)) END,
+			pin_expires_at = CASE WHEN redeemed_at IS NULL
+				THEN GREATEST(now(), pin_expires_at + make_interval(mins => $2))
+				ELSE pin_expires_at END
+		WHERE id=$1`, id, minutesDelta)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
 // ---- password reset ----
 
 // ResetToken is never returned with its raw token — only token_hash is
@@ -623,6 +802,15 @@ func (s *Store) UpdateVendorProfile(ctx context.Context, id string, profile json
 // a top-level vendors.category column, not part of the profile JSON blob.
 func (s *Store) UpdateVendorCategory(ctx context.Context, id, category string) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE vendors SET category=$2 WHERE id=$1`, id, category)
+	return err
+}
+
+// UpdateVendorIdentity corrects business name/town/map-pin location —
+// otherwise set once at registration (see handleRegister) and never
+// touched again by any other handler.
+func (s *Store) UpdateVendorIdentity(ctx context.Context, id, name, town string, lat, lng float64) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE vendors SET name=$2, town=$3, lat=$4, lng=$5 WHERE id=$1`, id, name, town, lat, lng)
 	return err
 }
 

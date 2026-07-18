@@ -51,6 +51,31 @@ export interface TeamResponse {
   invites: TeamInvite[];
 }
 
+/** A time-limited PIN grant giving a manager temporary Business Profile
+ * edit access — see server/internal/http/vendor_grants.go. */
+export interface VendorProfileGrant {
+  id: string;
+  vendorId: string;
+  granteeId: string;
+  createdBy: string;
+  durationMins: number;
+  createdAt: string;
+  pinExpiresAt: string;
+  redeemedAt?: string;
+  accessExpiresAt?: string;
+  revokedAt?: string;
+  revokedBy?: string;
+}
+
+/** Joined, display-ready row for the platform admin's cross-vendor grant
+ * list — GET /admin/vendor-grants. */
+export interface AdminVendorProfileGrant extends VendorProfileGrant {
+  vendorName: string;
+  granteeName: string;
+  ownerName: string;
+  status: 'active' | 'pending' | 'expired' | 'revoked';
+}
+
 export interface AuthResponse {
   token: string;
   user: User;
@@ -117,6 +142,7 @@ export interface VendorProfile {
   hours?: { open: string; close: string };
   amenities?: string[];
   blurb?: string;
+  contact?: { phone?: string; website?: string; instagram?: string; facebook?: string };
 }
 
 export interface MenuItem {

@@ -16,7 +16,7 @@ import {
 import { useState } from 'react';
 
 import type { GrowthBlob } from '@spotto/shared';
-import Shell from '../../components/shell';
+import Shell, { RoleLockedCard, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
 
 const CLIP_ICONS: Record<string, LucideIcon> = { Coffee, Flame, Sparkles };
@@ -25,9 +25,12 @@ const DISCOUNTS = [20, 30, 50];
 
 export default function GrowthPage() {
   const qc = useQueryClient();
+  const { data: me } = useMe();
+  const isStaff = me?.vendorRole === 'staff';
   const { data: g } = useQuery<GrowthBlob>({
     queryKey: ['growth'],
     queryFn: () => api.get<GrowthBlob>('/vendor/growth'),
+    enabled: !isStaff,
   });
   const [boostTier, setBoostTier] = useState('category');
   const [discountPct, setDiscountPct] = useState(g?.flash?.discountPct ?? 20);
@@ -40,6 +43,17 @@ export default function GrowthPage() {
   });
 
   const flashDisabled = sendFlashSale.isPending || (g?.flash?.lastSentMins ?? Infinity) < 180;
+
+  if (isStaff) {
+    return (
+      <Shell>
+        <div className="mb-5">
+          <h1 className="text-2xl font-extrabold font-display">Growth tools</h1>
+        </div>
+        <RoleLockedCard what="Growth tools" />
+      </Shell>
+    );
+  }
 
   return (
     <Shell>

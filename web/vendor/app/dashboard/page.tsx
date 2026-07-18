@@ -12,7 +12,7 @@ import { useState } from 'react';
 
 import { Donut, TrafficChart } from '@spotto/charts';
 import { timeAgo, type Claim, type DashboardBlob, type Offer, type OfferStatus } from '@spotto/shared';
-import Shell, { useBusiness } from '../../components/shell';
+import Shell, { useBusiness, useMe } from '../../components/shell';
 import OfferDetailDrawer from '../../components/offer-detail-drawer';
 import { api } from '../../lib/api';
 
@@ -44,6 +44,8 @@ function initial(name: string) {
 
 export default function DashboardPage() {
   const qc = useQueryClient();
+  const { data: me } = useMe();
+  const isStaff = me?.vendorRole === 'staff';
   const { data: business } = useBusiness();
   const { data: dash } = useQuery<DashboardBlob>({
     queryKey: ['dashboard'],
@@ -209,8 +211,8 @@ export default function DashboardPage() {
         </div>
       </div>
       <OfferDetailDrawer offer={detailOffer} onClose={() => setDetailOfferId(null)}
-        onSetStatus={(status) => detailOfferId && setStatus.mutate({ id: detailOfferId, status })}
-        onDelete={() => { if (detailOfferId) remove.mutate(detailOfferId); setDetailOfferId(null); }} />
+        onSetStatus={isStaff ? undefined : (status) => detailOfferId && setStatus.mutate({ id: detailOfferId, status })}
+        onDelete={isStaff ? undefined : () => { if (detailOfferId) remove.mutate(detailOfferId); setDetailOfferId(null); }} />
     </Shell>
   );
 }

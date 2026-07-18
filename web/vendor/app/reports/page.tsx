@@ -12,7 +12,7 @@ import { Award, Clock, Download, Eye, Sparkles, Ticket, LucideIcon } from 'lucid
 
 import { PopularTimes, TrafficChart, TrendChart } from '@spotto/charts';
 import type { DashboardBlob } from '@spotto/shared';
-import Shell, { useBusiness } from '../../components/shell';
+import Shell, { RoleLockedCard, useBusiness, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
 
 const ACCENT = '#0b6f86';
@@ -31,11 +31,25 @@ function dateRangeLabel() {
 }
 
 export default function ReportsPage() {
+  const { data: me } = useMe();
+  const isStaff = me?.vendorRole === 'staff';
   const { data: business } = useBusiness();
   const { data: r } = useQuery<DashboardBlob>({
     queryKey: ['reports'],
     queryFn: () => api.get<DashboardBlob>('/vendor/reports'),
+    enabled: !isStaff,
   });
+
+  if (isStaff) {
+    return (
+      <Shell>
+        <div className="mb-5">
+          <h1 className="text-2xl font-extrabold font-display">Weekly report</h1>
+        </div>
+        <RoleLockedCard what="Reports" />
+      </Shell>
+    );
+  }
 
   const totalViews = (r?.week ?? []).reduce((a, d) => a + d.views, 0);
   const totalRedemptions = (r?.week ?? []).reduce((a, d) => a + d.redemptions, 0);

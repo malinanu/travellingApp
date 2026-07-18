@@ -274,3 +274,18 @@ func RequireVendorOwner(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// RequireVendorManagerOrAbove further restricts a vendor-role route to
+// owner and manager tiers, blocking staff — for endpoints staff has zero
+// access to (offer/menu mutations, growth, reports). Same denylist shape
+// as RequireVendorOwner so legacy empty-VendorRole rows still pass.
+func RequireVendorManagerOrAbove(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c := FromContext(r.Context())
+		if c == nil || c.VendorRole == domain.VendorRoleStaff {
+			writeErr(w, http.StatusForbidden, "manager or owner only")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}

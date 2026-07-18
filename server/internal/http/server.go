@@ -34,10 +34,11 @@ type Server struct {
 	// than panicking on a nil config.
 	GoogleOAuth *oauth2.Config
 
-	loginLimit *loginLimiter // guards /auth/login (key: ip+email)
-	totpLimit  *loginLimiter // guards /auth/2fa/login-verify (key: ip+userID)
-	resetLimit *loginLimiter // guards /auth/forgot-password (key: ip+email)
-	oauthCodes *authCodeStore
+	loginLimit    *loginLimiter // guards /auth/login (key: ip+email)
+	totpLimit     *loginLimiter // guards /auth/2fa/login-verify (key: ip+userID)
+	resetLimit    *loginLimiter // guards /auth/forgot-password (key: ip+email)
+	grantPinLimit *loginLimiter // guards /vendor/profile-grants/{id}/redeem (key: ip+userID) — a 6-digit PIN only has 10^6 possibilities
+	oauthCodes    *authCodeStore
 }
 
 func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server {
@@ -48,12 +49,13 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		Mail: mail.New(mail.Config{
 			Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.EmailFrom,
 		}),
-		Jobs:         jobs.NewQueue(4, 256),
-		VendorAppURL: cfg.VendorAppURL,
-		loginLimit:   newLoginLimiter(5, 15*time.Minute),
-		totpLimit:    newLoginLimiter(5, 15*time.Minute),
-		resetLimit:   newLoginLimiter(5, 15*time.Minute),
-		oauthCodes:   newAuthCodeStore(),
+		Jobs:          jobs.NewQueue(4, 256),
+		VendorAppURL:  cfg.VendorAppURL,
+		loginLimit:    newLoginLimiter(5, 15*time.Minute),
+		totpLimit:     newLoginLimiter(5, 15*time.Minute),
+		resetLimit:    newLoginLimiter(5, 15*time.Minute),
+		grantPinLimit: newLoginLimiter(5, 15*time.Minute),
+		oauthCodes:    newAuthCodeStore(),
 	}
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
 		s.GoogleOAuth = &oauth2.Config{
@@ -155,33 +157,50 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	// Vendor (approved vendors only, checked in handlers where relevant).
 	r.Group(func(r chi.Router) {
 		r.Use(s.Authenticated, auth.RequireRole(domain.RoleVendor))
+		// Business Profile writes are gated by requireBusinessProfileAccess
+		// inside the handlers themselves (owner, or a manager with an active
+		// temporary grant) rather than by role-tier middleware — see
+		// vendor_grants.go.
 		r.Get("/vendor/business", s.handleVendorBusiness)
 		r.Put("/vendor/business", s.handleUpdateVendorBusiness)
 		r.Patch("/vendor/business/category", s.handleUpdateVendorCategory)
+		r.Patch("/vendor/business/identity", s.handleUpdateVendorIdentity)
 		r.Get("/vendor/menu", s.handleVendorMenu)
-		r.Put("/vendor/menu", s.handleUpdateVendorMenu)
 		r.Get("/vendor/offers", s.handleVendorOffers)
-		r.Post("/vendor/offers", s.handleCreateOffer)
-		r.Put("/vendor/offers/{id}", s.handleUpdateOffer)
-		r.Patch("/vendor/offers/{id}/status", s.handleOfferStatus)
-		r.Delete("/vendor/offers/{id}", s.handleDeleteOffer)
 		r.Get("/vendor/offers/{id}/claims", s.handleOfferClaims)
 		r.Post("/vendor/validate", s.handleValidate)
 		r.Get("/vendor/dashboard", s.handleVendorDashboard)
 		r.Get("/vendor/redemptions", s.handleVendorRedemptions)
 		r.Get("/vendor/notifications", s.handleVendorNotifications)
 		r.Post("/vendor/notifications/read", s.handleVendorNotificationsRead)
-		r.Get("/vendor/growth", s.handleVendorGrowth)
-		r.Post("/vendor/growth/flash-sale", s.handleVendorFlashSale)
-		r.Get("/vendor/reports", s.handleVendorReports)
 		r.Get("/vendor/team", s.handleVendorTeam)
+		r.Get("/vendor/profile-grants/mine", s.handleMyVendorProfileGrant)
+		r.Post("/vendor/profile-grants/{id}/redeem", s.handleRedeemVendorProfileGrant)
 
-		// Team management — the account's own owner only, not invited staff.
+		// Offers/menu mutations, growth, and reports — staff has zero
+		// access (scan/validate only per the account page's own copy).
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireVendorManagerOrAbove)
+			r.Put("/vendor/menu", s.handleUpdateVendorMenu)
+			r.Post("/vendor/offers", s.handleCreateOffer)
+			r.Put("/vendor/offers/{id}", s.handleUpdateOffer)
+			r.Patch("/vendor/offers/{id}/status", s.handleOfferStatus)
+			r.Delete("/vendor/offers/{id}", s.handleDeleteOffer)
+			r.Get("/vendor/growth", s.handleVendorGrowth)
+			r.Post("/vendor/growth/flash-sale", s.handleVendorFlashSale)
+			r.Get("/vendor/reports", s.handleVendorReports)
+		})
+
+		// Team management — the account's own owner only, not invited staff
+		// or managers.
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireVendorOwner)
 			r.Post("/vendor/team/invite", s.handleCreateVendorInvite)
 			r.Delete("/vendor/team/members/{userId}", s.handleRemoveVendorTeamMember)
 			r.Delete("/vendor/team/invites/{id}", s.handleRevokeVendorInvite)
+			r.Post("/vendor/profile-grants", s.handleCreateVendorProfileGrant)
+			r.Get("/vendor/profile-grants", s.handleListVendorProfileGrants)
+			r.Delete("/vendor/profile-grants/{id}", s.handleRevokeVendorProfileGrant)
 		})
 	})
 
@@ -208,6 +227,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/audio-guides", s.handleAudioGuides)
 		r.Post("/admin/audio-guides", s.handleCreateAudioGuide)
 		r.Patch("/admin/audio-guides/{id}/publish", s.handlePublishAudioGuide)
+		r.Get("/admin/vendor-grants", s.handleAdminVendorGrants)
+		r.Post("/admin/vendor-grants/{id}/extend", s.handleExtendVendorGrant)
+		r.Post("/admin/vendor-grants/{id}/revoke", s.handleRevokeVendorGrantAdmin)
 	})
 
 	return r

@@ -12,7 +12,7 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 
 import type { Offer, OfferStatus } from '@spotto/shared';
-import Shell, { useBusiness } from '../../components/shell';
+import Shell, { useBusiness, useMe } from '../../components/shell';
 import OfferDetailDrawer from '../../components/offer-detail-drawer';
 import { api } from '../../lib/api';
 import { StatusPill, TYPE_ICON } from '../../lib/offer-ui';
@@ -87,6 +87,8 @@ function OffersPageInner() {
   const qc = useQueryClient();
   const searchParams = useSearchParams();
   const q = (searchParams.get('q') ?? '').trim().toLowerCase();
+  const { data: me } = useMe();
+  const isStaff = me?.vendorRole === 'staff';
   const { data: business } = useBusiness();
   const { data: offers = [] } = useQuery<Offer[]>({
     queryKey: ['offers'],
@@ -203,6 +205,7 @@ function OffersPageInner() {
 
   return (
     <Shell>
+      {!isStaff && (
       <div className="grid lg:grid-cols-[1fr_320px] gap-5 items-start mb-8">
         <div className="card p-6">
           <label className="block text-[13px] font-extrabold mb-2">Discount type</label>
@@ -339,6 +342,7 @@ function OffersPageInner() {
           </p>
         </div>
       </div>
+      )}
 
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-lg font-extrabold flex items-center gap-2">
@@ -364,26 +368,27 @@ function OffersPageInner() {
 
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
         {visible.map((o) => (
-          <OfferCard key={o.id} offer={o} onEdit={() => startEdit(o)}
+          <OfferCard key={o.id} offer={o} onEdit={() => startEdit(o)} readOnly={isStaff}
             onSetStatus={(status) => setStatus.mutate({ id: o.id, status })}
             onDelete={() => remove.mutate(o.id)} onOpenDetail={() => setDetailOfferId(o.id)} />
         ))}
       </div>
       <OfferDetailDrawer offer={detailOffer} onClose={() => setDetailOfferId(null)}
-        onSetStatus={(status) => detailOfferId && setStatus.mutate({ id: detailOfferId, status })}
-        onDelete={() => { if (detailOfferId) remove.mutate(detailOfferId); setDetailOfferId(null); }} />
+        onSetStatus={isStaff ? undefined : (status) => detailOfferId && setStatus.mutate({ id: detailOfferId, status })}
+        onDelete={isStaff ? undefined : () => { if (detailOfferId) remove.mutate(detailOfferId); setDetailOfferId(null); }} />
     </Shell>
   );
 }
 
 function OfferCard({
-  offer, onEdit, onSetStatus, onDelete, onOpenDetail,
+  offer, onEdit, onSetStatus, onDelete, onOpenDetail, readOnly,
 }: {
   offer: Offer;
   onEdit: () => void;
   onSetStatus: (status: OfferStatus) => void;
   onDelete: () => void;
   onOpenDetail: () => void;
+  readOnly?: boolean;
 }) {
   const Icon = TYPE_ICON[offer.type] ?? Tag;
   const pct = offer.limit > 0 ? Math.min(100, Math.round((offer.claimed / offer.limit) * 100)) : 0;
@@ -428,6 +433,7 @@ function OfferCard({
         <Calendar size={12} /> {offer.status === 'draft' ? 'Schedule set on publish' : `${offer.start} → ${offer.end}`}
       </p>
 
+      {!readOnly && (
       <div className="grid grid-cols-3 gap-1.5" onClick={(e) => e.stopPropagation()}>
         <button className="rounded-lg border border-line py-1.5 text-[12px] font-extrabold flex items-center justify-center gap-1 hover:border-accent hover:text-accent transition-colors" onClick={onEdit}>
           <Pencil size={13} /> Edit
@@ -451,6 +457,7 @@ function OfferCard({
           <Trash2 size={13} /> Delete
         </button>
       </div>
+      )}
     </div>
   );
 }

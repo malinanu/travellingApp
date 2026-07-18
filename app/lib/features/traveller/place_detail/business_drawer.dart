@@ -195,6 +195,11 @@ class BusinessDrawerBody extends ConsumerWidget {
               const SizedBox(height: 18),
               _ReviewsSection(place: place),
 
+              if (!place.contact.isEmpty) ...[
+                const SizedBox(height: 18),
+                _ContactLinks(contact: place.contact),
+              ],
+
               // bottom actions
               const SizedBox(height: 18),
               Row(
@@ -499,6 +504,58 @@ class _DealCardState extends ConsumerState<_DealCard> {
               ],
             ),
     );
+  }
+}
+
+/// Tappable phone/website/social row — only the fields the vendor actually
+/// filled in are shown, so this renders nothing for the many businesses
+/// that haven't set any contact info yet (see !place.contact.isEmpty guard
+/// at the call site).
+class _ContactLinks extends StatelessWidget {
+  final ContactInfo contact;
+  const _ContactLinks({required this.contact});
+
+  Future<void> _open(String url) =>
+      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final chips = <Widget>[];
+
+    void addChip(String? value, IconData icon, String label, String Function(String) toUrl) {
+      if (value == null || value.isEmpty) return;
+      chips.add(PressScale(
+        scale: 0.96,
+        onTap: () => _open(toUrl(value)),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: SpottoColors.sand,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: SpottoColors.ink),
+              const SizedBox(width: 6),
+              Text(label, style: text.labelMedium?.copyWith(color: SpottoColors.ink)),
+            ],
+          ),
+        ),
+      ));
+    }
+
+    addChip(contact.phone, Icons.call_outlined, 'Call', (v) => 'tel:$v');
+    addChip(contact.website, Icons.language, 'Website',
+        (v) => v.startsWith('http') ? v : 'https://$v');
+    addChip(contact.instagram, Icons.camera_alt_outlined, 'Instagram',
+        (v) => v.startsWith('http') ? v : 'https://instagram.com/${v.replaceAll('@', '')}');
+    addChip(contact.facebook, Icons.groups_outlined, 'Facebook',
+        (v) => v.startsWith('http') ? v : 'https://facebook.com/$v');
+
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Wrap(spacing: 8, runSpacing: 8, children: chips);
   }
 }
 

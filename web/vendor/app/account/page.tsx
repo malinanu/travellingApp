@@ -445,6 +445,12 @@ function TeamSection({ isOwner }: { isOwner: boolean }) {
   const [newInviteLink, setNewInviteLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const [grantingFor, setGrantingFor] = useState<string | null>(null);
+  const [grantDuration, setGrantDuration] = useState<15 | 30 | 60>(15);
+  const [grantDeliver, setGrantDeliver] = useState<'email' | 'copy'>('copy');
+  const [grantResult, setGrantResult] = useState<{ pin: string; durationMins: number } | null>(null);
+  const [grantPinCopied, setGrantPinCopied] = useState(false);
+
   const { data: team } = useQuery<TeamResponse>({
     queryKey: ['vendor-team'],
     queryFn: () => api.get<TeamResponse>('/vendor/team'),
@@ -465,6 +471,12 @@ function TeamSection({ isOwner }: { isOwner: boolean }) {
   const revokeInvite = useMutation({
     mutationFn: (id: string) => api.del(`/vendor/team/invites/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['vendor-team'] }),
+  });
+  const createGrant = useMutation({
+    mutationFn: (granteeId: string) => api.post<{ pin: string; durationMins: number }>('/vendor/profile-grants', {
+      granteeId, durationMins: grantDuration, deliver: grantDeliver,
+    }),
+    onSuccess: (res) => setGrantResult(res),
   });
 
   const members = team?.members ?? [];
@@ -499,20 +511,82 @@ function TeamSection({ isOwner }: { isOwner: boolean }) {
         <div className="mt-4 pt-4 border-t border-line">
           <div className="space-y-2 mb-3">
             {members.map((m) => (
-              <div key={m.id} className="flex items-center justify-between rounded-xl bg-sand px-3 py-2.5">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-8 h-8 rounded-full text-white text-[11px] font-extrabold flex items-center justify-center" style={{ background: '#0B6F86' }}>
-                    {initialsOf(m.name)}
-                  </span>
-                  <div>
-                    <p className="font-extrabold text-[13px]">{m.name} <span className="text-muted font-semibold">· {roleLabel(m.vendorRole)}</span></p>
-                    <p className="text-[11.5px] text-muted font-semibold">{m.email}</p>
+              <div key={m.id} className="rounded-xl bg-sand px-3 py-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-8 h-8 rounded-full text-white text-[11px] font-extrabold flex items-center justify-center" style={{ background: '#0B6F86' }}>
+                      {initialsOf(m.name)}
+                    </span>
+                    <div>
+                      <p className="font-extrabold text-[13px]">{m.name} <span className="text-muted font-semibold">· {roleLabel(m.vendorRole)}</span></p>
+                      <p className="text-[11.5px] text-muted font-semibold">{m.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {isOwner && m.vendorRole === 'manager' && (
+                      <button className="text-accent font-extrabold text-[11.5px] flex items-center gap-1"
+                        onClick={() => { setGrantingFor(grantingFor === m.id ? null : m.id); setGrantResult(null); }}>
+                        <KeyRound size={13} /> Profile access
+                      </button>
+                    )}
+                    {isOwner && m.vendorRole !== 'owner' && (
+                      <button className="text-coral" title="Remove" onClick={() => removeMember.mutate(m.id)} disabled={removeMember.isPending}>
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 </div>
-                {isOwner && m.vendorRole !== 'owner' && (
-                  <button className="text-coral" title="Remove" onClick={() => removeMember.mutate(m.id)} disabled={removeMember.isPending}>
-                    <Trash2 size={16} />
-                  </button>
+
+                {grantingFor === m.id && (
+                  <div className="mt-2.5 pt-2.5 border-t border-line/60">
+                    <p className="text-[11.5px] text-muted font-semibold mb-2">
+                      Generate a one-time PIN giving {m.name.split(/\s+/)[0]} temporary edit access to Business Profile.
+                    </p>
+                    <div className="grid grid-cols-3 gap-1.5 mb-2">
+                      {([15, 30, 60] as const).map((d) => (
+                        <button key={d} type="button" onClick={() => setGrantDuration(d)}
+                          className={`rounded-lg py-1.5 text-[12px] font-extrabold border transition-colors ${
+                            grantDuration === d ? 'border-accent bg-accent-tint text-accent' : 'border-line bg-white'
+                          }`}>
+                          {d} min
+                        </button>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 mb-2.5">
+                      {(['copy', 'email'] as const).map((d) => (
+                        <button key={d} type="button" onClick={() => setGrantDeliver(d)}
+                          className={`rounded-lg py-1.5 text-[12px] font-extrabold border transition-colors ${
+                            grantDeliver === d ? 'border-accent bg-accent-tint text-accent' : 'border-line bg-white'
+                          }`}>
+                          {d === 'copy' ? 'Copy PIN' : 'Email it'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {grantResult ? (
+                      <div className="rounded-lg bg-white border border-line p-2.5 flex items-center justify-between gap-2">
+                        <div>
+                          <code className="text-[16px] font-mono font-extrabold tracking-[0.2em]">{grantResult.pin}</code>
+                          <p className="text-[11px] text-muted font-semibold mt-0.5">Valid {grantResult.durationMins} min once entered — expires in 10 min if unused.</p>
+                        </div>
+                        <button
+                          className="shrink-0 rounded-lg bg-sand border border-line px-2.5 py-1.5 text-[12px] font-extrabold flex items-center gap-1"
+                          onClick={() => {
+                            navigator.clipboard.writeText(grantResult.pin);
+                            setGrantPinCopied(true);
+                            setTimeout(() => setGrantPinCopied(false), 1500);
+                          }}
+                        >
+                          {grantPinCopied ? <Check size={13} /> : <Copy size={13} />} {grantPinCopied ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button className="btn-accent w-full px-4 py-2 text-[12.5px] flex items-center justify-center gap-2"
+                        disabled={createGrant.isPending} onClick={() => createGrant.mutate(m.id)}>
+                        <Send size={14} /> {createGrant.isPending ? 'Generating…' : 'Generate PIN'}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             ))}

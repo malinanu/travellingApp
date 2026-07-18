@@ -5,7 +5,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import {
-  Activity, Bell, CreditCard, Headphones, Map, Moon, Radio, Search, Sun, UserCheck, LucideIcon,
+  Activity, Bell, CreditCard, Headphones, KeyRound, Map, Moon, Radio, Search, Sun, UserCheck, LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -20,6 +20,7 @@ const NAV: { href: string; label: string; icon: LucideIcon; live?: boolean }[] =
   { href: '/geo', label: 'Geo-analytics', icon: Map },
   { href: '/subscriptions', label: 'Subscriptions', icon: CreditCard },
   { href: '/audio', label: 'Audio guides', icon: Headphones },
+  { href: '/access-grants', label: 'Access grants', icon: KeyRound },
 ];
 
 export function useMe() {

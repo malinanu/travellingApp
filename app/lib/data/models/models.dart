@@ -14,6 +14,28 @@ class WifiInfo {
       );
 }
 
+class ContactInfo {
+  final String? phone;
+  final String? website;
+  final String? instagram;
+  final String? facebook;
+  const ContactInfo({this.phone, this.website, this.instagram, this.facebook});
+  static const none = ContactInfo();
+
+  bool get isEmpty =>
+      (phone == null || phone!.isEmpty) &&
+      (website == null || website!.isEmpty) &&
+      (instagram == null || instagram!.isEmpty) &&
+      (facebook == null || facebook!.isEmpty);
+
+  factory ContactInfo.fromJson(Map<String, dynamic> json) => ContactInfo(
+        phone: json['phone'] as String?,
+        website: json['website'] as String?,
+        instagram: json['instagram'] as String?,
+        facebook: json['facebook'] as String?,
+      );
+}
+
 class Deal {
   final String? id;
   final bool active;
@@ -90,6 +112,7 @@ class Place {
   final Deal deal;
   final List<String> tags;
   final String blurb;
+  final ContactInfo contact;
   final bool seaView;
   final bool indoor;
   final bool artisan;
@@ -127,6 +150,7 @@ class Place {
     required this.deal,
     required this.tags,
     required this.blurb,
+    this.contact = ContactInfo.none,
     required this.seaView,
     this.indoor = false,
     this.artisan = false,
@@ -166,6 +190,9 @@ class Place {
             : Deal.none,
         tags: [for (final t in (json['tags'] as List? ?? const [])) t as String],
         blurb: json['blurb'] as String? ?? '',
+        contact: json['contact'] is Map
+            ? ContactInfo.fromJson((json['contact'] as Map).cast<String, dynamic>())
+            : ContactInfo.none,
         seaView: json['seaView'] as bool? ?? false,
         indoor: json['indoor'] as bool? ?? false,
         artisan: json['artisan'] as bool? ?? false,

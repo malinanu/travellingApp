@@ -448,7 +448,11 @@ func newResetToken() string {
 	return hex.EncodeToString(b)
 }
 
-func hashResetToken(raw string) string {
+func hashResetToken(raw string) string { return sha256Hex(raw) }
+
+// sha256Hex hashes a secret (reset token, profile-grant PIN, ...) for
+// at-rest storage — callers compare by hash, never store the raw value.
+func sha256Hex(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
 }

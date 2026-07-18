@@ -281,3 +281,24 @@ type VendorInvite struct {
 	AcceptedUserID *string    `json:"acceptedUserId,omitempty"`
 	Revoked        bool       `json:"revoked"`
 }
+
+// VendorProfileGrant is a time-limited exception letting a normally-locked-out
+// manager edit Business Profile: the owner picks a duration (15/30/60 min)
+// and a PIN is generated. PinExpiresAt bounds how long the PIN itself is
+// redeemable (fixed, short — independent of DurationMins, so a grant doesn't
+// silently burn down unread in an inbox); AccessExpiresAt is set only once
+// redeemed, to RedeemedAt+DurationMins, and is what actually gates writes.
+type VendorProfileGrant struct {
+	ID              string     `json:"id"`
+	VendorID        string     `json:"vendorId"`
+	GranteeID       string     `json:"granteeId"`
+	CreatedBy       string     `json:"createdBy"`
+	PinHash         string     `json:"-"`
+	DurationMins    int        `json:"durationMins"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	PinExpiresAt    time.Time  `json:"pinExpiresAt"`
+	RedeemedAt      *time.Time `json:"redeemedAt,omitempty"`
+	AccessExpiresAt *time.Time `json:"accessExpiresAt,omitempty"`
+	RevokedAt       *time.Time `json:"revokedAt,omitempty"`
+	RevokedBy       string     `json:"revokedBy,omitempty"`
+}

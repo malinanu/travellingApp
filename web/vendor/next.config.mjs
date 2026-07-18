@@ -3,6 +3,7 @@ import path from 'node:path';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  reactStrictMode: false,
   // Pin the trace root to the workspace root (web/) so the standalone
   // output has a predictable layout for the Dockerfile to copy — otherwise
   // Next.js's monorepo auto-detection can vary the nesting. (Top-level as

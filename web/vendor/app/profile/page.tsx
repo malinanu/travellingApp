@@ -9,17 +9,26 @@
 // PATCH endpoint immediately on click; everything else batches into the
 // profile document and saves via the header's "Save changes" button.
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Camera, Check, Clock, Coffee, FileText, ImagePlus, Laptop, Plus, Save, Star,
-  Store, Sun, Sunrise, Sunset, UtensilsCrossed, Waves, Wifi, X, LucideIcon,
+  Camera, Check, Clock, Coffee, Facebook, FileText, Globe, ImagePlus, Instagram,
+  KeyRound, Laptop, Lock, MapPin, Phone, Plus, Save, ShieldCheck, Star, Store, Sun,
+  Sunrise, Sunset, UtensilsCrossed, Waves, Wifi, X, LucideIcon,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 
-import type { Vendor, VendorProfile } from '@spotto/shared';
-import Shell, { isFoodCategory, useBusiness } from '../../components/shell';
+import type { Vendor, VendorProfile, VendorProfileGrant } from '@spotto/shared';
+import Shell, { isFoodCategory, useBusiness, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
 import { BUSINESS_CATEGORIES, isSelectedCategory } from '../../lib/business-categories';
+
+// Leaflet touches `window` at import time, so the map must not be part of
+// the server-rendered bundle.
+const LocationPicker = dynamic(() => import('../../components/location-picker'), {
+  ssr: false,
+  loading: () => <div className="h-full flex items-center justify-center text-muted font-semibold text-[13px]">Loading map…</div>,
+});
 
 const TIME_SLOTS = [
   { id: 'morning', label: 'Morning', icon: Sunrise },
@@ -52,18 +61,98 @@ function CardHeader({ icon: Icon, title, sub }: { icon: LucideIcon; title: strin
   );
 }
 
+// useCountdown returns a "12m" / "45s" style label for a future ISO
+// timestamp, ticking every second, or null once it's passed.
+function useCountdown(target?: string) {
+  const [label, setLabel] = useState<string | null>(null);
+  useEffect(() => {
+    if (!target) { setLabel(null); return; }
+    const tick = () => {
+      const ms = new Date(target).getTime() - Date.now();
+      if (ms <= 0) { setLabel(null); return; }
+      const mins = Math.floor(ms / 60000);
+      const secs = Math.floor((ms % 60000) / 1000);
+      setLabel(mins > 0 ? `${mins}m ${secs}s` : `${secs}s`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [target]);
+  return label;
+}
+
+function LockedProfileCard({ grantId }: { grantId?: string }) {
+  const qc = useQueryClient();
+  const [pin, setPin] = useState('');
+  const redeem = useMutation({
+    mutationFn: () => api.post(`/vendor/profile-grants/${grantId}/redeem`, { pin }),
+    onSuccess: () => {
+      setPin('');
+      qc.invalidateQueries({ queryKey: ['profile-grant-mine'] });
+    },
+  });
+
+  return (
+    <div className="card p-8 max-w-md mx-auto text-center">
+      <span className="mx-auto w-14 h-14 rounded-2xl bg-accent-tint text-accent flex items-center justify-center mb-4">
+        <Lock size={26} />
+      </span>
+      <h2 className="font-extrabold text-[16px] font-display mb-1.5">Business Profile is locked</h2>
+      {grantId ? (
+        <>
+          <p className="text-muted font-semibold text-[13.5px] mb-4">
+            An owner sent you a temporary access PIN. Enter it below to unlock editing.
+          </p>
+          <div className="flex items-center gap-2">
+            <input className="input text-center tracking-[0.3em] font-extrabold" maxLength={6}
+              placeholder="000000" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} />
+            <button className="btn-accent px-4 py-2.5 shrink-0" disabled={pin.length !== 6 || redeem.isPending}
+              onClick={() => redeem.mutate()}>
+              <KeyRound size={16} />
+            </button>
+          </div>
+          {redeem.isError && (
+            <p className="text-[12.5px] font-bold mt-2" style={{ color: 'var(--coral)' }}>Invalid or expired PIN.</p>
+          )}
+        </>
+      ) : (
+        <p className="text-muted font-semibold text-[13.5px]">
+          Only managers can be granted temporary edit access — ask an owner to send you a PIN from the Account page.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const qc = useQueryClient();
+  const { data: me } = useMe();
   const { data: business } = useBusiness();
+  const { data: grant } = useQuery<VendorProfileGrant | null>({
+    queryKey: ['profile-grant-mine'],
+    queryFn: () => api.get<VendorProfileGrant | null>('/vendor/profile-grants/mine'),
+    enabled: me?.vendorRole === 'manager',
+    refetchInterval: 15000,
+  });
   const [p, setP] = useState<VendorProfile>({});
   const [dirty, setDirty] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [newAmenity, setNewAmenity] = useState('');
   const [addingAmenity, setAddingAmenity] = useState(false);
 
+  const [identity, setIdentity] = useState({ name: '', town: '', lat: 0, lng: 0 });
+  const [identityDirty, setIdentityDirty] = useState(false);
+  const [identitySaved, setIdentitySaved] = useState(false);
+
   useEffect(() => {
     if (business?.profile && !dirty) setP(business.profile);
   }, [business, dirty]);
+
+  useEffect(() => {
+    if (business && !identityDirty) {
+      setIdentity({ name: business.name, town: business.town, lat: business.lat, lng: business.lng });
+    }
+  }, [business, identityDirty]);
 
   const save = useMutation({
     mutationFn: () => api.put('/vendor/business', p),
@@ -80,12 +169,32 @@ export default function ProfilePage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['business'] }),
   });
 
+  const saveIdentity = useMutation({
+    mutationFn: () => api.patch<Vendor>('/vendor/business/identity', identity),
+    onSuccess: () => {
+      setIdentityDirty(false);
+      setIdentitySaved(true);
+      setTimeout(() => setIdentitySaved(false), 2400);
+      qc.invalidateQueries({ queryKey: ['business'] });
+    },
+  });
+  const setIdentityField = (patch: Partial<typeof identity>) => {
+    setIdentity((prev) => ({ ...prev, ...patch }));
+    setIdentityDirty(true);
+  };
+
   const set = (patch: Partial<VendorProfile>) => {
     setP((prev) => ({ ...prev, ...patch }));
     setDirty(true);
   };
   const setWifi = (patch: Partial<NonNullable<VendorProfile['wifi']>>) => {
     set({ wifi: { enabled: p.wifi?.enabled ?? false, score: p.wifi?.score ?? 0, speed: p.wifi?.speed ?? 0, ...patch } });
+  };
+  const setHours = (patch: Partial<NonNullable<VendorProfile['hours']>>) => {
+    set({ hours: { open: p.hours?.open ?? '', close: p.hours?.close ?? '', ...patch } });
+  };
+  const setContact = (patch: Partial<NonNullable<VendorProfile['contact']>>) => {
+    set({ contact: { ...p.contact, ...patch } });
   };
 
   const amenities = p.amenities ?? [];
@@ -99,6 +208,13 @@ export default function ProfilePage() {
     setNewAmenity('');
   };
 
+  const isOwner = !me?.vendorRole || me.vendorRole === 'owner';
+  const isStaff = me?.vendorRole === 'staff';
+  const accessActive = !!grant?.accessExpiresAt && new Date(grant.accessExpiresAt).getTime() > Date.now();
+  const pendingGrantId = grant && !grant.redeemedAt ? grant.id : undefined;
+  const hasAccess = isOwner || accessActive;
+  const accessCountdown = useCountdown(accessActive ? grant?.accessExpiresAt : undefined);
+
   return (
     <Shell>
       <div>
@@ -107,13 +223,56 @@ export default function ProfilePage() {
             <h1 className="text-2xl font-extrabold font-display">Business profile</h1>
             <p className="text-muted font-semibold mt-0.5">This is what travelers see on the Spotto map.</p>
           </div>
-          <button className="btn-accent flex items-center gap-2 px-4 py-2.5 shrink-0 whitespace-nowrap"
-            disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
-            <Save size={16} /> {save.isPending ? 'Saving…' : justSaved ? 'Saved' : 'Save changes'}
-          </button>
+          {hasAccess && (
+            <button className="btn-accent flex items-center gap-2 px-4 py-2.5 shrink-0 whitespace-nowrap"
+              disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+              <Save size={16} /> {save.isPending ? 'Saving…' : justSaved ? 'Saved' : 'Save changes'}
+            </button>
+          )}
         </div>
 
+        {!isOwner && accessActive && accessCountdown && (
+          <div className="flex items-center gap-2 rounded-xl bg-accent-tint text-accent px-4 py-2.5 mb-5 font-extrabold text-[13px]">
+            <ShieldCheck size={16} /> Temporary edit access expires in {accessCountdown}
+          </div>
+        )}
+
+        {isStaff && <LockedProfileCard />}
+        {!isOwner && !isStaff && !hasAccess && <LockedProfileCard grantId={pendingGrantId} />}
+
+        {hasAccess && (
         <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(330px, 100%), 1fr))' }}>
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <CardHeader icon={MapPin} title="Business identity & location" sub="Your name, town, and map pin" />
+              <button className="btn-accent flex items-center gap-2 px-3.5 py-2 text-[13px] shrink-0"
+                disabled={!identityDirty || saveIdentity.isPending} onClick={() => saveIdentity.mutate()}>
+                <Save size={14} /> {saveIdentity.isPending ? 'Saving…' : identitySaved ? 'Saved' : 'Save'}
+              </button>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3 mb-3">
+              <label className="block">
+                <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Business name</span>
+                <input className="input" value={identity.name} onChange={(e) => setIdentityField({ name: e.target.value })} />
+              </label>
+              <label className="block">
+                <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Town</span>
+                <input className="input" value={identity.town} onChange={(e) => setIdentityField({ town: e.target.value })} />
+              </label>
+            </div>
+            <p className="text-[12px] text-muted font-semibold mb-2">
+              Click anywhere on the map to move your pin — this is where travelers get directions to.
+            </p>
+            <div className="h-[220px] rounded-xl overflow-hidden border border-line">
+              {business ? (
+                <LocationPicker lat={identity.lat} lng={identity.lng}
+                  onChange={(lat, lng) => setIdentityField({ lat, lng })} />
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted font-semibold text-[13px]">Loading map…</div>
+              )}
+            </div>
+          </div>
+
           <div className="card p-6">
             <CardHeader icon={Store} title="Business type" sub="What kind of spot are you?" />
             <div className="grid grid-cols-3 gap-2 mb-4">
@@ -240,6 +399,65 @@ export default function ProfilePage() {
           </div>
 
           <div className="card p-6">
+            <CardHeader icon={Clock} title="Hours" sub="When travelers can expect you to be open" />
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Opens</span>
+                <input type="time" className="input" value={p.hours?.open ?? ''}
+                  onChange={(e) => setHours({ open: e.target.value })} />
+              </label>
+              <label className="block">
+                <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Closes</span>
+                <input type="time" className="input" value={p.hours?.close ?? ''}
+                  onChange={(e) => setHours({ close: e.target.value })} />
+              </label>
+            </div>
+            <p className="text-[12px] text-muted font-semibold mt-3">
+              Shown to travelers as your open/closed status on the map.
+            </p>
+          </div>
+
+          <div className="card p-6">
+            <CardHeader icon={Phone} title="Contact & links" sub="How travelers can reach or follow you" />
+            <div className="space-y-3">
+              <label className="block">
+                <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Phone</span>
+                <div className="relative">
+                  <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                  <input className="input pl-9" placeholder="+94 …" value={p.contact?.phone ?? ''}
+                    onChange={(e) => setContact({ phone: e.target.value })} />
+                </div>
+              </label>
+              <label className="block">
+                <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Website</span>
+                <div className="relative">
+                  <Globe size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                  <input className="input pl-9" placeholder="https://…" value={p.contact?.website ?? ''}
+                    onChange={(e) => setContact({ website: e.target.value })} />
+                </div>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Instagram</span>
+                  <div className="relative">
+                    <Instagram size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                    <input className="input pl-9" placeholder="@yourbusiness" value={p.contact?.instagram ?? ''}
+                      onChange={(e) => setContact({ instagram: e.target.value })} />
+                  </div>
+                </label>
+                <label className="block">
+                  <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Facebook</span>
+                  <div className="relative">
+                    <Facebook size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                    <input className="input pl-9" placeholder="facebook.com/…" value={p.contact?.facebook ?? ''}
+                      onChange={(e) => setContact({ facebook: e.target.value })} />
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-6">
             <CardHeader icon={FileText} title="About & amenities" sub="A short, honest pitch" />
             <textarea className="input min-h-[90px] resize-y mb-4" rows={3} value={p.blurb ?? ''}
               onChange={(e) => set({ blurb: e.target.value })} />
@@ -284,6 +502,7 @@ export default function ProfilePage() {
             )}
           </div>
         </div>
+        )}
       </div>
     </Shell>
   );
