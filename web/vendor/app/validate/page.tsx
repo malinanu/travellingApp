@@ -43,7 +43,7 @@ export default function ValidatePage() {
   return (
     <Shell>
       <div className="mb-5">
-        <h1 className="text-2xl font-extrabold">Validate a redemption</h1>
+        <h1 className="text-2xl font-extrabold font-display">Validate a redemption</h1>
         <p className="text-muted font-semibold mt-0.5">
           Scan the traveler&rsquo;s Spotto code, or type it in. Confirm in one tap.
         </p>

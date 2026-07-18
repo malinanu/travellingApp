@@ -446,12 +446,15 @@ class ClaimsNotifier extends Notifier<Map<String, String>> {
   }
 
   /// Claims a place's deal on the server → unique single-use code.
-  /// Throws on network failure (callers show an error state).
-  Future<String> claim(String placeId, {String offerLabel = '', String offerValue = ''}) async {
+  /// Throws on network failure (callers show an error state). offerId
+  /// links the claim back to the specific vendor Offer (when the deal
+  /// came from one) so the vendor sees real claimed/redeemed stats for it.
+  Future<String> claim(String placeId, {String? offerId, String offerLabel = '', String offerValue = ''}) async {
     final existing = state[placeId];
     if (existing != null) return existing;
     final res = await ref.read(apiProvider).dio.post('/claims', data: {
       'placeId': placeId,
+      if (offerId != null) 'offerId': offerId,
       'offerLabel': offerLabel,
       'offerValue': offerValue,
     });

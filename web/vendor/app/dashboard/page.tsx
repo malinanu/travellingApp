@@ -8,10 +8,12 @@ import {
   ArrowRight, Eye, Plus, Tag, Ticket, TrendingDown, TrendingUp, LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useState } from 'react';
 
 import { Donut, TrafficChart } from '@spotto/charts';
 import { timeAgo, type Claim, type DashboardBlob, type Offer } from '@spotto/shared';
 import Shell, { useBusiness } from '../../components/shell';
+import OfferDetailDrawer from '../../components/offer-detail-drawer';
 import { api } from '../../lib/api';
 
 const ACCENT = '#0b6f86';
@@ -55,6 +57,7 @@ export default function DashboardPage() {
     queryKey: ['offers'],
     queryFn: () => api.get<Offer[]>('/vendor/offers'),
   });
+  const [detailOffer, setDetailOffer] = useState<Offer | null>(null);
 
   const activeOffers = offers.filter((o) => o.status === 'live' || o.status === 'ending');
 
@@ -174,7 +177,8 @@ export default function DashboardPage() {
           {activeOffers.map((o) => {
             const ending = o.status === 'ending';
             return (
-              <div key={o.id} className="flex items-center gap-4 py-3.5 border-t border-line">
+              <div key={o.id} className="flex items-center gap-4 py-3.5 border-t border-line cursor-pointer"
+                onClick={() => setDetailOffer(o)}>
                 <Donut value={o.claimed} max={o.limit} accent={ending ? '#f0682f' : ACCENT} size={50} stroke={7} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -193,6 +197,7 @@ export default function DashboardPage() {
           })}
         </div>
       </div>
+      <OfferDetailDrawer offer={detailOffer} onClose={() => setDetailOffer(null)} />
     </Shell>
   );
 }

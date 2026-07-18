@@ -653,29 +653,67 @@ func (s *Store) VendorBlob(ctx context.Context, vendorID, kind string) (json.Raw
 
 // ---- offers ----
 
-const offerCols = `id, vendor_id, title, type, value, status, start_at, end_at, lim, claimed, redeemed`
+const offerCols = `id, vendor_id, title, type, value, status, start_at, end_at, lim, views, updated_at`
 
+// scanOffer does NOT populate Claimed/Redeemed — those are live-computed
+// from the claims table (see ClaimCountsByOfferIDs) and merged in by
+// OffersByVendor/OfferByID after scanning.
 func scanOffer(row pgx.Row) (domain.Offer, error) {
 	var o domain.Offer
 	err := row.Scan(&o.ID, &o.VendorID, &o.Title, &o.Type, &o.Value, &o.Status,
-		&o.StartAt, &o.EndAt, &o.Limit, &o.Claimed, &o.Redeemed)
+		&o.StartAt, &o.EndAt, &o.Limit, &o.Views, &o.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return o, ErrNotFound
 	}
 	return o, err
 }
 
+// UpsertOffer never writes Claimed/Redeemed (live-computed, not stored) or
+// Views (only IncrementOfferViews touches that column, so an edit doesn't
+// reset a offer's real view count).
 func (s *Store) UpsertOffer(ctx context.Context, o domain.Offer) error {
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO offers (id, vendor_id, title, type, value, status, start_at, end_at, lim, claimed, redeemed)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		INSERT INTO offers (id, vendor_id, title, type, value, status, start_at, end_at, lim, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
 		ON CONFLICT (id) DO UPDATE SET
 			title=EXCLUDED.title, type=EXCLUDED.type, value=EXCLUDED.value,
 			status=EXCLUDED.status, start_at=EXCLUDED.start_at, end_at=EXCLUDED.end_at,
-			lim=EXCLUDED.lim, claimed=EXCLUDED.claimed, redeemed=EXCLUDED.redeemed`,
-		o.ID, o.VendorID, o.Title, o.Type, o.Value, o.Status, o.StartAt, o.EndAt,
-		o.Limit, o.Claimed, o.Redeemed)
+			lim=EXCLUDED.lim, updated_at=now()`,
+		o.ID, o.VendorID, o.Title, o.Type, o.Value, o.Status, o.StartAt, o.EndAt, o.Limit)
 	return err
+}
+
+// OfferCounts holds live claimed/redeemed totals for one offer.
+type OfferCounts struct {
+	Claimed  int
+	Redeemed int
+}
+
+// ClaimCountsByOfferIDs computes claimed/redeemed directly from the claims
+// table (grouped by offer_id) rather than trusting a stored counter,
+// avoiding drift/double-counting. Call once per vendor with all of that
+// vendor's offer IDs, not once per offer.
+func (s *Store) ClaimCountsByOfferIDs(ctx context.Context, offerIDs []string) (map[string]OfferCounts, error) {
+	if len(offerIDs) == 0 {
+		return map[string]OfferCounts{}, nil
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT offer_id, count(*), count(*) FILTER (WHERE status='redeemed')
+		FROM claims WHERE offer_id = ANY($1) GROUP BY offer_id`, offerIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]OfferCounts{}
+	for rows.Next() {
+		var id string
+		var c OfferCounts
+		if err := rows.Scan(&id, &c.Claimed, &c.Redeemed); err != nil {
+			return nil, err
+		}
+		out[id] = c
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) OffersByVendor(ctx context.Context, vendorID string) ([]domain.Offer, error) {
@@ -693,16 +731,50 @@ func (s *Store) OffersByVendor(ctx context.Context, vendorID string) ([]domain.O
 		}
 		out = append(out, o)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(out))
+	for i, o := range out {
+		ids[i] = o.ID
+	}
+	counts, err := s.ClaimCountsByOfferIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		c := counts[out[i].ID]
+		out[i].Claimed, out[i].Redeemed = c.Claimed, c.Redeemed
+	}
+	return out, nil
 }
 
 func (s *Store) OfferByID(ctx context.Context, id string) (domain.Offer, error) {
-	return scanOffer(s.Pool.QueryRow(ctx, `SELECT `+offerCols+` FROM offers WHERE id=$1`, id))
+	o, err := scanOffer(s.Pool.QueryRow(ctx, `SELECT `+offerCols+` FROM offers WHERE id=$1`, id))
+	if err != nil {
+		return o, err
+	}
+	counts, err := s.ClaimCountsByOfferIDs(ctx, []string{id})
+	if err != nil {
+		return o, err
+	}
+	c := counts[id]
+	o.Claimed, o.Redeemed = c.Claimed, c.Redeemed
+	return o, nil
+}
+
+// IncrementOfferViews records one real traveller impression.
+func (s *Store) IncrementOfferViews(ctx context.Context, offerID string) error {
+	tag, err := s.Pool.Exec(ctx, `UPDATE offers SET views = views + 1 WHERE id=$1`, offerID)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
 }
 
 func (s *Store) SetOfferStatus(ctx context.Context, id, vendorID string, status domain.OfferStatus) error {
 	tag, err := s.Pool.Exec(ctx,
-		`UPDATE offers SET status=$3 WHERE id=$1 AND vendor_id=$2`, id, vendorID, status)
+		`UPDATE offers SET status=$3, updated_at=now() WHERE id=$1 AND vendor_id=$2`, id, vendorID, status)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
@@ -755,16 +827,30 @@ func (s *Store) PlaceByID(ctx context.Context, id string) (domain.Place, error) 
 	return p, err
 }
 
+// PlaceByVendorID looks up the (at most one, enforced by a partial unique
+// index) Place row for a vendor — used by syncVendorPlace to find or
+// lazily create the vendor's traveller-facing listing.
+func (s *Store) PlaceByVendorID(ctx context.Context, vendorID string) (domain.Place, error) {
+	var p domain.Place
+	err := s.Pool.QueryRow(ctx,
+		`SELECT id, name, vendor_id, data FROM places WHERE vendor_id=$1`, vendorID).
+		Scan(&p.ID, &p.Name, &p.VendorID, &p.Data)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, ErrNotFound
+	}
+	return p, err
+}
+
 // ---- claims ----
 
 // claimCols joins traveller display fields for vendor-facing views.
-const claimCols = `c.id, c.code, c.place_id, c.offer_label, c.offer_value, c.vendor_id, c.traveller_id, c.status, c.claimed_at, c.redeemed_at,
+const claimCols = `c.id, c.code, c.place_id, c.offer_id, c.offer_label, c.offer_value, c.vendor_id, c.traveller_id, c.status, c.claimed_at, c.redeemed_at,
 	COALESCE(u.name,''), COALESCE(u.country,''), COALESCE(u.travel_style,'')`
 const claimFrom = ` FROM claims c LEFT JOIN users u ON u.id = c.traveller_id `
 
 func scanClaim(row pgx.Row) (domain.Claim, error) {
 	var c domain.Claim
-	err := row.Scan(&c.ID, &c.Code, &c.PlaceID, &c.OfferLabel, &c.OfferValue,
+	err := row.Scan(&c.ID, &c.Code, &c.PlaceID, &c.OfferID, &c.OfferLabel, &c.OfferValue,
 		&c.VendorID, &c.TravellerID, &c.Status, &c.ClaimedAt, &c.RedeemedAt,
 		&c.TravellerName, &c.TravellerCountry, &c.TravellerStyle)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -775,11 +861,20 @@ func scanClaim(row pgx.Row) (domain.Claim, error) {
 
 func (s *Store) CreateClaim(ctx context.Context, c domain.Claim) error {
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO claims (id, code, place_id, offer_label, offer_value, vendor_id, traveller_id, status, claimed_at, redeemed_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-		c.ID, c.Code, c.PlaceID, c.OfferLabel, c.OfferValue, c.VendorID, c.TravellerID,
+		INSERT INTO claims (id, code, place_id, offer_id, offer_label, offer_value, vendor_id, traveller_id, status, claimed_at, redeemed_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		c.ID, c.Code, c.PlaceID, c.OfferID, c.OfferLabel, c.OfferValue, c.VendorID, c.TravellerID,
 		c.Status, c.ClaimedAt, c.RedeemedAt)
 	return err
+}
+
+// ClaimsByOfferID lists claims linked to one vendor Offer, most recent
+// first — drives the vendor portal's offer detail drawer. Claims made
+// before the offer_id column existed (or where the submitted offerId
+// didn't resolve) never match here, by design.
+func (s *Store) ClaimsByOfferID(ctx context.Context, offerID string) ([]domain.Claim, error) {
+	return s.claimList(ctx,
+		`SELECT `+claimCols+claimFrom+`WHERE c.offer_id=$1 ORDER BY c.claimed_at DESC`, offerID)
 }
 
 func (s *Store) ClaimByCode(ctx context.Context, code string) (domain.Claim, error) {

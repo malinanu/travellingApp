@@ -13,7 +13,9 @@ import { Suspense, useState } from 'react';
 
 import type { Offer, OfferStatus } from '@spotto/shared';
 import Shell, { useBusiness } from '../../components/shell';
+import OfferDetailDrawer from '../../components/offer-detail-drawer';
 import { api } from '../../lib/api';
+import { StatusPill, TYPE_ICON } from '../../lib/offer-ui';
 
 const DISCOUNT_TYPES: { id: string; apiType: string; label: string; icon: LucideIcon }[] = [
   { id: 'pct', apiType: 'Percentage', label: 'Percentage off', icon: Percent },
@@ -21,13 +23,6 @@ const DISCOUNT_TYPES: { id: string; apiType: string; label: string; icon: Lucide
   { id: 'freebie', apiType: 'Freebie', label: 'Freebie', icon: Gift },
   { id: 'bundle', apiType: 'Bundle', label: 'Bundle', icon: Package },
 ];
-
-const TYPE_ICON: Record<string, LucideIcon> = {
-  Percentage: Percent,
-  Amount: BadgeDollarSign,
-  Freebie: Gift,
-  Bundle: Package,
-};
 
 const DURATIONS = [
   { id: 'next2h', label: 'Next 2 hours' },
@@ -97,6 +92,7 @@ function OffersPageInner() {
     queryKey: ['offers'],
     queryFn: () => api.get<Offer[]>('/vendor/offers'),
   });
+  const [detailOffer, setDetailOffer] = useState<Offer | null>(null);
 
   const [filter, setFilter] = useState<FilterId>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -369,27 +365,29 @@ function OffersPageInner() {
         {visible.map((o) => (
           <OfferCard key={o.id} offer={o} onEdit={() => startEdit(o)}
             onSetStatus={(status) => setStatus.mutate({ id: o.id, status })}
-            onDelete={() => remove.mutate(o.id)} />
+            onDelete={() => remove.mutate(o.id)} onOpenDetail={() => setDetailOffer(o)} />
         ))}
       </div>
+      <OfferDetailDrawer offer={detailOffer} onClose={() => setDetailOffer(null)} />
     </Shell>
   );
 }
 
 function OfferCard({
-  offer, onEdit, onSetStatus, onDelete,
+  offer, onEdit, onSetStatus, onDelete, onOpenDetail,
 }: {
   offer: Offer;
   onEdit: () => void;
   onSetStatus: (status: OfferStatus) => void;
   onDelete: () => void;
+  onOpenDetail: () => void;
 }) {
   const Icon = TYPE_ICON[offer.type] ?? Tag;
   const pct = offer.limit > 0 ? Math.min(100, Math.round((offer.claimed / offer.limit) * 100)) : 0;
   const barColor = offer.status === 'ending' ? '#eaa200' : offer.status === 'live' ? undefined : '#cbd5d3';
 
   return (
-    <div className="card p-4">
+    <div className="card p-4 cursor-pointer" onClick={onOpenDetail}>
       <div className="flex items-start gap-3 mb-2.5">
         <span className="w-9 h-9 rounded-xl bg-accent-tint text-accent flex items-center justify-center shrink-0">
           <Icon size={17} />
@@ -427,7 +425,7 @@ function OfferCard({
         <Calendar size={12} /> {offer.status === 'draft' ? 'Schedule set on publish' : `${offer.start} → ${offer.end}`}
       </p>
 
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className="grid grid-cols-3 gap-1.5" onClick={(e) => e.stopPropagation()}>
         <button className="rounded-lg border border-line py-1.5 text-[12px] font-extrabold flex items-center justify-center gap-1 hover:border-accent hover:text-accent transition-colors" onClick={onEdit}>
           <Pencil size={13} /> Edit
         </button>
@@ -454,23 +452,3 @@ function OfferCard({
   );
 }
 
-function StatusPill({ status }: { status: OfferStatus }) {
-  if (status === 'live') {
-    return (
-      <span className="text-[11px] font-extrabold uppercase flex items-center gap-1 text-[#16803c]">
-        <span className="w-1.5 h-1.5 rounded-full bg-[#16803c]" /> Live
-      </span>
-    );
-  }
-  if (status === 'ending') {
-    return <span className="text-[11px] font-extrabold uppercase rounded-full px-2 py-0.5 bg-[#fdf0cd] text-[#a97b00]">Ending soon</span>;
-  }
-  if (status === 'draft') {
-    return (
-      <span className="text-[11px] font-extrabold uppercase rounded-full px-2 py-0.5 bg-sand text-muted flex items-center gap-1">
-        <Pencil size={9} /> Draft
-      </span>
-    );
-  }
-  return <span className="text-[11px] font-extrabold uppercase text-muted">Ended</span>;
-}

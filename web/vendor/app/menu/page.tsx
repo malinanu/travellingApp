@@ -85,7 +85,7 @@ export default function MenuPage() {
         <div>
           <div className="flex items-start justify-between mb-5">
             <div>
-              <h1 className="text-2xl font-extrabold">Your menu</h1>
+              <h1 className="text-2xl font-extrabold font-display">Your menu</h1>
               <p className="text-muted font-semibold mt-0.5">
                 {sections.length} sections · {totalItems} items — travelers see this on your spot&rsquo;s page.
               </p>

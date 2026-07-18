@@ -91,7 +91,7 @@ export default function AccountPage() {
       <div>
         <div className="flex items-end justify-between gap-4 mb-5">
           <div>
-            <h1 className="text-2xl font-extrabold">My account</h1>
+            <h1 className="text-2xl font-extrabold font-display">My account</h1>
             <p className="text-muted font-semibold mt-0.5">Your personal login, security and alerts.</p>
           </div>
           <button className="btn-accent flex items-center gap-2 px-4 py-2.5 shrink-0 whitespace-nowrap" disabled={saveContact.isPending}

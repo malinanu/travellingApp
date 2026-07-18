@@ -133,6 +133,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/places", s.handlePlaces)
 		r.Get("/places/{id}", s.handlePlace)
 		r.Get("/places/{id}/reviews", s.handlePlaceReviews)
+		r.Post("/offers/{id}/view", s.handleOfferView)
 	})
 
 	// Traveller.
@@ -164,6 +165,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Put("/vendor/offers/{id}", s.handleUpdateOffer)
 		r.Patch("/vendor/offers/{id}/status", s.handleOfferStatus)
 		r.Delete("/vendor/offers/{id}", s.handleDeleteOffer)
+		r.Get("/vendor/offers/{id}/claims", s.handleOfferClaims)
 		r.Post("/vendor/validate", s.handleValidate)
 		r.Get("/vendor/dashboard", s.handleVendorDashboard)
 		r.Get("/vendor/redemptions", s.handleVendorRedemptions)

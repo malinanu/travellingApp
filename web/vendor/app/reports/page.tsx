@@ -59,7 +59,7 @@ export default function ReportsPage() {
     <Shell>
       <div className="flex items-start justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-extrabold">Weekly report</h1>
+          <h1 className="text-2xl font-extrabold font-display">Weekly report</h1>
           <p className="text-muted font-semibold mt-0.5">
             {dateRangeLabel()} · {town} {category.toLowerCase()} category
           </p>

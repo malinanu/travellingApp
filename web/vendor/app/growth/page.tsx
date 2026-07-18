@@ -44,7 +44,7 @@ export default function GrowthPage() {
   return (
     <Shell>
       <div className="mb-5">
-        <h1 className="text-2xl font-extrabold">Growth tools</h1>
+        <h1 className="text-2xl font-extrabold font-display">Growth tools</h1>
         <p className="text-muted font-semibold mt-0.5">
           Fill slow hours, reward regulars, and get discovered — in a couple of taps.
         </p>

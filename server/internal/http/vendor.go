@@ -1,10 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -132,11 +134,11 @@ func (s *Server) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 	if o.Status == "" {
 		o.Status = domain.OfferDraft
 	}
-	o.Claimed, o.Redeemed = 0, 0
 	if err := s.Store.UpsertOffer(r.Context(), o); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	s.syncVendorPlaceBestEffort(r.Context(), v)
 	writeJSON(w, http.StatusCreated, o)
 }
 
@@ -160,6 +162,7 @@ func (s *Server) handleUpdateOffer(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	s.syncVendorPlaceBestEffort(r.Context(), v)
 	writeJSON(w, http.StatusOK, o)
 }
 
@@ -178,6 +181,7 @@ func (s *Server) handleOfferStatus(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
+	s.syncVendorPlaceBestEffort(r.Context(), v)
 	writeJSON(w, http.StatusOK, map[string]string{"status": string(req.Status)})
 }
 
@@ -190,7 +194,118 @@ func (s *Server) handleDeleteOffer(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
+	s.syncVendorPlaceBestEffort(r.Context(), v)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// handleOfferClaims lists the claim/redemption activity for one of the
+// caller's own offers — drives the vendor portal's offer detail drawer.
+func (s *Server) handleOfferClaims(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	offer, err := s.Store.OfferByID(r.Context(), id)
+	if err != nil || offer.VendorID != v.ID {
+		writeErr(w, http.StatusNotFound, "offer not found")
+		return
+	}
+	claims, err := s.Store.ClaimsByOfferID(r.Context(), id)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if claims == nil {
+		claims = []domain.Claim{}
+	}
+	writeJSON(w, http.StatusOK, claims)
+}
+
+// syncVendorPlaceBestEffort keeps the traveller-facing Place row's headline
+// "deal" in sync with vendor v's most relevant live/ending offer, logging
+// (not failing the request) on error — the primary offer CRUD operation
+// already succeeded by the time this runs, and a sync hiccup shouldn't
+// undo it from the caller's perspective.
+func (s *Server) syncVendorPlaceBestEffort(ctx context.Context, v domain.Vendor) {
+	if err := s.syncVendorPlace(ctx, v); err != nil {
+		log.Printf("syncVendorPlace vendor=%s: %v", v.ID, err)
+	}
+}
+
+// syncVendorPlace mirrors vendor v's current headline offer into the
+// traveller-facing Place.Data.deal (with a real offer id, so a resulting
+// claim can be linked back to the offer), lazily creating a minimal Place
+// if v doesn't have one yet — real (non-seeded) vendors otherwise have no
+// map presence at all. Deliberately does not sync the rest of Vendor.Profile
+// (wifi/amenities/photos/hours) into Place.Data — a separate, pre-existing
+// gap out of scope here.
+func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
+	offers, err := s.Store.OffersByVendor(ctx, v.ID)
+	if err != nil {
+		return err
+	}
+	headline := pickHeadlineOffer(offers)
+
+	place, err := s.Store.PlaceByVendorID(ctx, v.ID)
+	if errors.Is(err, postgres.ErrNotFound) {
+		place = domain.Place{ID: newID("plc"), Name: v.Name, VendorID: &v.ID, Data: json.RawMessage(`{}`)}
+	} else if err != nil {
+		return err
+	}
+
+	var data map[string]any
+	_ = json.Unmarshal(orEmpty(place.Data), &data)
+	if data == nil {
+		data = map[string]any{}
+	}
+	// Minimal base fields for a lazily-created Place only — never overwrite
+	// hand-curated data on an existing Place.
+	if _, ok := data["lat"]; !ok {
+		data["lat"] = v.Lat
+	}
+	if _, ok := data["lng"]; !ok {
+		data["lng"] = v.Lng
+	}
+	if _, ok := data["type"]; !ok {
+		data["type"] = v.Category
+	}
+	if headline != nil {
+		data["deal"] = map[string]any{
+			"id": headline.ID, "active": true,
+			"label": headline.Title, "tag": headline.Value,
+		}
+	} else {
+		data["deal"] = map[string]any{"id": nil, "active": false, "label": "", "tag": ""}
+	}
+	place.Data, err = json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	return s.Store.UpsertPlace(ctx, place)
+}
+
+// pickHeadlineOffer picks the single offer synced into Place.Data.deal —
+// live beats ending, ties broken by most-recently-updated (offer IDs are
+// random hex, not chronological). Returns nil if the vendor has no
+// live/ending offer.
+func pickHeadlineOffer(offers []domain.Offer) *domain.Offer {
+	var best *domain.Offer
+	for i := range offers {
+		o := &offers[i]
+		if o.Status != domain.OfferLive && o.Status != domain.OfferEnding {
+			continue
+		}
+		switch {
+		case best == nil:
+			best = o
+		case o.Status == domain.OfferLive && best.Status == domain.OfferEnding:
+			best = o
+		case o.Status == best.Status && o.UpdatedAt.After(best.UpdatedAt):
+			best = o
+		}
+	}
+	return best
 }
 
 // handleValidate marks a claim redeemed. Responses mirror the prototype's

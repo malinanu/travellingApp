@@ -15,13 +15,15 @@ class WifiInfo {
 }
 
 class Deal {
+  final String? id;
   final bool active;
   final String? label;
   final String? tag;
-  const Deal({required this.active, this.label, this.tag});
+  const Deal({this.id, required this.active, this.label, this.tag});
   static const none = Deal(active: false);
 
   factory Deal.fromJson(Map<String, dynamic> json) => Deal(
+        id: json['id'] as String?,
         active: json['active'] as bool? ?? false,
         label: json['label'] as String?,
         tag: json['tag'] as String?,

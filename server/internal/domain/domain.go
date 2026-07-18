@@ -115,8 +115,16 @@ type Offer struct {
 	StartAt  string      `json:"start"` // display strings kept from prototype
 	EndAt    string      `json:"end"`
 	Limit    int         `json:"limit"`
-	Claimed  int         `json:"claimed"`
-	Redeemed int         `json:"redeemed"`
+	// Claimed/Redeemed are live-computed from the claims table (see
+	// Store.ClaimCountsByOfferIDs), not stored columns — never set these
+	// directly when writing an Offer.
+	Claimed  int `json:"claimed"`
+	Redeemed int `json:"redeemed"`
+	// Views counts real traveller impressions (POST /offers/{id}/view).
+	Views int `json:"views"`
+	// UpdatedAt is used to pick a vendor's "headline" offer to sync into
+	// their Place's traveller-facing deal (see syncVendorPlace).
+	UpdatedAt time.Time `json:"updatedAt,omitempty"`
 }
 
 type ClaimStatus string
@@ -127,9 +135,13 @@ const (
 )
 
 type Claim struct {
-	ID          string      `json:"id"`
-	Code        string      `json:"code"` // SPOTTO-XXXX, unique
-	PlaceID     string      `json:"placeId"`
+	ID      string `json:"id"`
+	Code    string `json:"code"` // SPOTTO-XXXX, unique
+	PlaceID string `json:"placeId"`
+	// OfferID links back to the specific vendor Offer this was claimed
+	// from — nil for claims made before this field existed, or where the
+	// submitted offerId didn't resolve to a real offer for that vendor.
+	OfferID     *string     `json:"offerId,omitempty"`
 	OfferLabel  string      `json:"offerLabel"`
 	OfferValue  string      `json:"offerValue"`
 	VendorID    *string     `json:"vendorId,omitempty"` // vendor allowed to redeem
@@ -255,9 +267,9 @@ type VendorNotification struct {
 // the owner, so the invite still works as a copy-link if email delivery
 // isn't configured or bounces.
 type VendorInvite struct {
-	ID        string `json:"id"`
-	VendorID  string `json:"vendorId"`
-	Code      string `json:"code"`
+	ID       string `json:"id"`
+	VendorID string `json:"vendorId"`
+	Code     string `json:"code"`
 	// Email is who the invite was addressed to (informational — anyone
 	// with the code can still redeem it, same as before this field existed).
 	Email          string     `json:"email,omitempty"`

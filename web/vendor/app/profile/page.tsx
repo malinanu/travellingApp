@@ -104,7 +104,7 @@ export default function ProfilePage() {
       <div>
         <div className="flex items-start justify-between mb-5 gap-4">
           <div>
-            <h1 className="text-2xl font-extrabold">Business profile</h1>
+            <h1 className="text-2xl font-extrabold font-display">Business profile</h1>
             <p className="text-muted font-semibold mt-0.5">This is what travelers see on the Spotto map.</p>
           </div>
           <button className="btn-accent flex items-center gap-2 px-4 py-2.5 shrink-0 whitespace-nowrap"

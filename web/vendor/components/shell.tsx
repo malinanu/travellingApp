@@ -298,7 +298,7 @@ function PendingGate({ status }: { status: string }) {
         <span className="mx-auto w-14 h-14 rounded-2xl bg-sun/20 text-sun flex items-center justify-center mb-4">
           <Clock size={28} className="text-[#a97b00]" />
         </span>
-        <h1 className="text-xl font-extrabold mb-2">
+        <h1 className="text-xl font-extrabold font-display mb-2">
           {status === 'rejected' ? 'Application not approved' : 'Pending review'}
         </h1>
         <p className="text-muted font-semibold text-[14px] leading-relaxed">

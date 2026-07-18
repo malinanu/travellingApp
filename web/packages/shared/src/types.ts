@@ -144,14 +144,21 @@ export interface Offer {
   start: string;
   end: string;
   limit: number;
+  /** Live-computed from real claims, not a stored counter. */
   claimed: number;
+  /** Live-computed from real claims, not a stored counter. */
   redeemed: number;
+  /** Real traveller impressions, via POST /offers/:id/view. */
+  views: number;
+  updatedAt?: string;
 }
 
 export interface Claim {
   id: string;
   code: string;
   placeId: string;
+  /** Links back to the specific vendor Offer, when resolvable. */
+  offerId?: string;
   offerLabel: string;
   offerValue: string;
   vendorId?: string;

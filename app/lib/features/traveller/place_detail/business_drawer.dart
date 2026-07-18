@@ -402,13 +402,38 @@ class _CheckInButton extends ConsumerWidget {
   }
 }
 
-class _DealCard extends ConsumerWidget {
+class _DealCard extends ConsumerStatefulWidget {
   final Place place;
   final String? claimedCode;
   const _DealCard({required this.place, required this.claimedCode});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_DealCard> createState() => _DealCardState();
+}
+
+class _DealCardState extends ConsumerState<_DealCard> {
+  @override
+  void initState() {
+    super.initState();
+    // Real traveller impression, once per time this card is actually shown
+    // (initState runs once per widget instance, not on every rebuild) —
+    // lets the vendor portal show a genuine "Views" count per offer.
+    final offerId = widget.place.deal.id;
+    if (offerId != null) _trackView(offerId);
+  }
+
+  Future<void> _trackView(String offerId) async {
+    try {
+      await ref.read(apiProvider).dio.post('/offers/$offerId/view');
+    } catch (_) {
+      // Fire-and-forget — a failed view ping shouldn't affect the UI.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final place = widget.place;
+    final claimedCode = widget.claimedCode;
     final text = Theme.of(context).textTheme;
     final claimed = claimedCode != null;
 
@@ -428,7 +453,7 @@ class _DealCard extends ConsumerWidget {
                 Text('Show at counter',
                     style: text.labelMedium?.copyWith(color: SpottoColors.paleTeal)),
                 const SizedBox(height: 4),
-                Text(claimedCode!,
+                Text(claimedCode,
                     style: text.headlineSmall
                         ?.copyWith(color: Colors.white, letterSpacing: 2)),
                 const SizedBox(height: 4),
@@ -460,6 +485,7 @@ class _DealCard extends ConsumerWidget {
                     try {
                       await ref.read(claimsProvider.notifier).claim(
                             place.id,
+                            offerId: place.deal.id,
                             offerLabel: place.deal.label ?? '',
                             offerValue: place.deal.tag ?? '',
                           );

@@ -54,6 +54,16 @@ func (s *Server) handlePlace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.placeJSON(r.Context(), p))
 }
 
+// handleOfferView records one real traveller impression of an offer's deal
+// card — called once per render (not per rebuild) from the Flutter app.
+func (s *Server) handleOfferView(w http.ResponseWriter, r *http.Request) {
+	if err := s.Store.IncrementOfferViews(r.Context(), chi.URLParam(r, "id")); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) handleVibeVote(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	placeID := chi.URLParam(r, "id")
@@ -144,6 +154,7 @@ func (s *Server) handleCreateClaim(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	var req struct {
 		PlaceID    string `json:"placeId"`
+		OfferID    string `json:"offerId,omitempty"`
 		OfferLabel string `json:"offerLabel"`
 		OfferValue string `json:"offerValue"`
 	}
@@ -176,6 +187,15 @@ func (s *Server) handleCreateClaim(w http.ResponseWriter, r *http.Request) {
 		TravellerID: c.Subject,
 		Status:      domain.ClaimClaimed,
 		ClaimedAt:   time.Now(),
+	}
+	// Resolve offerId defensively — never fail the claim over a bad/stale
+	// id; offerLabel/offerValue keep working exactly as before this field
+	// existed either way.
+	if req.OfferID != "" {
+		if o, err := s.Store.OfferByID(r.Context(), req.OfferID); err == nil &&
+			place.VendorID != nil && o.VendorID == *place.VendorID {
+			claim.OfferID = &o.ID
+		}
 	}
 	// Retry on the rare code collision (unique index on code).
 	for range 5 {
