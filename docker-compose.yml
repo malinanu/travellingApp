@@ -11,6 +11,21 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
+      # Everything below is optional — internal/config/config.go treats an
+      # empty value as "feature not configured," never a startup failure.
+      # These were already documented in .env.example but never actually
+      # forwarded here, so Google sign-in/transactional email/live holiday
+      # lookups have silently no-op'd on this deployment until now.
+      VENDOR_APP_URL: ${VENDOR_APP_URL}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      EMAIL_FROM: ${EMAIL_FROM}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL}
+      GOOGLE_CALENDAR_API_KEY: ${GOOGLE_CALENDAR_API_KEY}
     networks: [spotto]
 
   vendor:
@@ -19,6 +34,7 @@ services:
       dockerfile: vendor/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
     restart: unless-stopped
     ports:
       - "3000:3000"

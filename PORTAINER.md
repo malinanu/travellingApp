@@ -41,16 +41,29 @@ JWT_SECRET=<a long random string>
 TOTP_ENCRYPTION_KEY=<output of: openssl rand -base64 32>
 CORS_ORIGINS=https://spotto-vendor.yourdomain.com,https://spotto-admin.yourdomain.com
 NEXT_PUBLIC_API_URL=https://spotto-api.yourdomain.com
+
+# Optional — see .env.example for the full list (SMTP, Google OAuth, and
+# the two vars below). Blank is fine; each feature just no-ops until filled in.
+GOOGLE_CALENDAR_API_KEY=<your Google Cloud API key, Calendar API enabled>
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=<same key works, with Maps JS API + Places API also enabled>
 ```
 
 `TOTP_ENCRYPTION_KEY` must be exactly 32 raw bytes, base64-encoded — the api
 container refuses to start without one (used to encrypt 2FA secrets at
 rest).
 
-`NEXT_PUBLIC_API_URL` is baked into the vendor/admin webapps **at build
-time** (Next.js public env vars aren't runtime-configurable) — if this
-value ever changes, the stack needs a rebuild, not just a restart (see the
-"Updating" section below).
+Two different kinds of "optional" here, by how they take effect:
+- **Build-time** (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`):
+  baked into the vendor/admin webapps' JS bundle when the image is built
+  (Next.js public env vars aren't runtime-configurable) — if either value
+  is added or changes, the stack needs a **rebuild** of that image, not just
+  a restart (see the "Updating" section below). Forgetting this is exactly
+  why adding a Maps key to Portainer's environment editor alone doesn't
+  make the map picker work — the vendor image needs an actual rebuild to
+  pick it up.
+- **Runtime** (everything else — `GOOGLE_CALENDAR_API_KEY`, the SMTP vars,
+  the Google OAuth vars, `VENDOR_APP_URL`): read by the `api` container each
+  time it starts — a plain restart after changing these is enough.
 
 If your Postgres runs as another container on the same Docker host (not via
 Portainer's own network), `<postgres-host>` can usually be that container's
@@ -140,11 +153,12 @@ container or in the reverse proxy.)
 
 - **Code change**: re-deploy the stack from Portainer (pulls latest `main`,
   rebuilds).
-- **`NEXT_PUBLIC_API_URL` or any build-time value changed**: rebuild the
-  affected service images, not just restart —
+- **`NEXT_PUBLIC_API_URL` or `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` changed**:
+  rebuild the affected service images, not just restart —
   `docker compose build vendor admin && docker compose up -d`.
-- **`DATABASE_URL`/`JWT_SECRET`/`CORS_ORIGINS` changed**: these are
-  runtime env vars for `api` only — a restart is enough.
+- **`DATABASE_URL`/`JWT_SECRET`/`CORS_ORIGINS`/`GOOGLE_CALENDAR_API_KEY`/
+  SMTP/Google-OAuth vars changed**: these are runtime env vars for `api`
+  only — a restart is enough, e.g. `docker compose up -d` (no `build`).
 
 ## Notes / limitations
 
