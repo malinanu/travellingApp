@@ -10,24 +10,16 @@
 
 import { API_URL, isTwoFactorRequired, type AuthResponse, type TwoFactorRequiredResponse } from '@spotto/shared';
 import {
-  ArrowLeft, ArrowRight, Check, Clock, Coffee, Eye, EyeOff, Lock, Mail, MapPin,
-  Martini, MailCheck, Palette, PartyPopper, Phone, QrCode, Send, Store, Tag,
-  TrendingUp, User as UserIcon, Users, Utensils, Waves, LucideIcon,
+  ArrowLeft, ArrowRight, Check, Clock, Eye, EyeOff, Lock, Mail, MapPin,
+  MailCheck, PartyPopper, Phone, QrCode, Send, Store, Tag,
+  TrendingUp, User as UserIcon, Users, LucideIcon,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
 import { SpottoMark } from '../../components/shell';
 import { api } from '../../lib/api';
-
-const BUSINESS_TYPES: { id: string; label: string; icon: LucideIcon }[] = [
-  { id: 'restaurant', label: 'Restaurant', icon: Utensils },
-  { id: 'cafe', label: 'Café', icon: Coffee },
-  { id: 'bar', label: 'Bar & Sunset', icon: Martini },
-  { id: 'surf', label: 'Surf & Water', icon: Waves },
-  { id: 'craft', label: 'Craft & Studio', icon: Palette },
-  { id: 'shop', label: 'Shop', icon: Store },
-];
+import { BUSINESS_CATEGORIES } from '../../lib/business-categories';
 
 const REGISTER_STEPS = ['Your account', 'Your business', 'A few details'];
 
@@ -396,7 +388,7 @@ function LoginPageInner() {
             <div>
               <span className="block text-[12.5px] font-extrabold mb-2 text-ink-soft">Category</span>
               <div className="grid grid-cols-2 gap-2.5">
-                {BUSINESS_TYPES.map((t) => {
+                {BUSINESS_CATEGORIES.map((t) => {
                   const Icon = t.icon;
                   const on = category === t.id;
                   return (

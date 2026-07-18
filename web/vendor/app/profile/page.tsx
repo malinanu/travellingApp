@@ -11,29 +11,15 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Camera, Check, Clock, Coffee, FileText, ImagePlus, Laptop, Martini, Palette,
-  Plus, Save, Star, Sun, Sunrise, Sunset, Store, Utensils, UtensilsCrossed,
-  Waves, Wifi, X, LucideIcon,
+  Camera, Check, Clock, Coffee, FileText, ImagePlus, Laptop, Plus, Save, Star,
+  Store, Sun, Sunrise, Sunset, UtensilsCrossed, Waves, Wifi, X, LucideIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import type { Vendor, VendorProfile } from '@spotto/shared';
 import Shell, { isFoodCategory, useBusiness } from '../../components/shell';
 import { api } from '../../lib/api';
-
-const CATEGORIES: { id: string; label: string; icon: LucideIcon }[] = [
-  { id: 'restaurant', label: 'Restaurant', icon: Utensils },
-  { id: 'cafe', label: 'Café', icon: Coffee },
-  { id: 'bar', label: 'Bar & Sunset', icon: Martini },
-  { id: 'surf', label: 'Surf & Water', icon: Waves },
-  { id: 'craft', label: 'Craft & Studio', icon: Palette },
-  { id: 'shop', label: 'Shop', icon: Store },
-];
-
-function isSelectedCategory(current: string | undefined, t: { id: string; label: string }) {
-  const c = (current ?? '').toLowerCase().trim();
-  return c === t.id || c === t.label.toLowerCase();
-}
+import { BUSINESS_CATEGORIES, isSelectedCategory } from '../../lib/business-categories';
 
 const TIME_SLOTS = [
   { id: 'morning', label: 'Morning', icon: Sunrise },
@@ -131,13 +117,13 @@ export default function ProfilePage() {
           <div className="card p-6">
             <CardHeader icon={Store} title="Business type" sub="What kind of spot are you?" />
             <div className="grid grid-cols-3 gap-2 mb-4">
-              {CATEGORIES.map((t) => {
+              {BUSINESS_CATEGORIES.map((t) => {
                 const Icon = t.icon;
                 const on = isSelectedCategory(business?.category, t);
                 return (
                   <button type="button" key={t.id} disabled={updateCategory.isPending}
                     onClick={() => updateCategory.mutate(t.id)}
-                    className={`rounded-xl border px-2 py-2.5 flex flex-col items-center gap-1 text-[12px] font-extrabold transition-colors disabled:opacity-60 ${
+                    className={`rounded-xl border px-2 py-2.5 flex flex-col items-center gap-1 text-[12px] font-extrabold text-center leading-tight transition-colors disabled:opacity-60 ${
                       on ? 'border-accent bg-accent-tint text-accent' : 'border-line bg-sand hover:border-accent'
                     }`}>
                     <Icon size={17} />
