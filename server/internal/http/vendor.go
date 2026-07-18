@@ -461,11 +461,84 @@ type holidayOverrideDoc struct {
 	Closed bool   `json:"closed"`
 }
 
-// vendorMenuDoc mirrors the {sections: [...]} shape Vendor.Menu is stored
-// as — the traveller-facing Place.Data.menu is a bare array, not wrapped
-// in an object, so syncVendorPlace unwraps one from the other.
-type vendorMenuDoc struct {
+// vendorMenuPresetDoc mirrors one MenuPreset from
+// web/packages/shared/src/types.ts — a whole named menu the vendor can
+// toggle live via vendorMenuDoc.ActivePresetID.
+type vendorMenuPresetDoc struct {
+	ID       string           `json:"id"`
+	Name     string           `json:"name"`
 	Sections []map[string]any `json:"sections"`
+}
+
+// vendorMenuDoc mirrors StoredMenuDoc — either the legacy bare
+// {sections: [...]} shape any vendor who hasn't resaved since presets
+// shipped may still have, or {presets: [...], activePresetId} once they
+// have. Presets wins whenever non-empty; see effectiveMenuSections. The
+// traveller-facing Place.Data.menu is always a bare array of the
+// resolved/filtered sections, never this wrapped document.
+type vendorMenuDoc struct {
+	Sections       []map[string]any      `json:"sections"` // legacy-only, ignored once Presets is non-empty
+	Presets        []vendorMenuPresetDoc `json:"presets"`
+	ActivePresetID string                `json:"activePresetId"`
+}
+
+// availableToday implements MenuItem/MenuSection.availableDays' whitelist
+// semantics: an absent or nil "availableDays" means unrestricted (always
+// available); once present, only an explicit `true` for today's weekday
+// key counts — an absent or `false` entry excludes it.
+func availableToday(m map[string]any, today string) bool {
+	raw, ok := m["availableDays"]
+	if !ok || raw == nil {
+		return true
+	}
+	days, ok := raw.(map[string]any)
+	if !ok {
+		return true
+	}
+	v, _ := days[today].(bool)
+	return v
+}
+
+// effectiveMenuSections picks the preset travellers should currently see
+// (the one matching ActivePresetID, falling back to the first preset if
+// it matches none, or to the legacy bare Sections wrapped as an implicit
+// single preset if there are no Presets at all), then filters out any
+// section/item not available today, dropping a section left with zero
+// items. Returns the same []map[string]any shape data["menu"] has always
+// held in syncVendorPlace.
+func effectiveMenuSections(doc vendorMenuDoc, now time.Time) []map[string]any {
+	sections := doc.Sections
+	if len(doc.Presets) > 0 {
+		active := doc.Presets[0]
+		for _, p := range doc.Presets {
+			if p.ID == doc.ActivePresetID {
+				active = p
+				break
+			}
+		}
+		sections = active.Sections
+	}
+
+	today := weekdayKey(now)
+	out := make([]map[string]any, 0, len(sections))
+	for _, sec := range sections {
+		if !availableToday(sec, today) {
+			continue
+		}
+		rawItems, _ := sec["items"].([]any)
+		kept := make([]any, 0, len(rawItems))
+		for _, ri := range rawItems {
+			if item, ok := ri.(map[string]any); ok && availableToday(item, today) {
+				kept = append(kept, item)
+			}
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		sec["items"] = kept
+		out = append(out, sec)
+	}
+	return out
 }
 
 // wifiSpeedLabel derives the two display strings the traveller app expects
@@ -640,11 +713,7 @@ func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
 
 	var menuDoc vendorMenuDoc
 	_ = json.Unmarshal(orEmpty(v.Menu), &menuDoc)
-	sections := menuDoc.Sections
-	if sections == nil {
-		sections = []map[string]any{}
-	}
-	data["menu"] = sections
+	data["menu"] = effectiveMenuSections(menuDoc, time.Now())
 
 	place.Data, err = json.Marshal(data)
 	if err != nil {
