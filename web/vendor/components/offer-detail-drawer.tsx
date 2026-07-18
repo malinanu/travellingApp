@@ -39,28 +39,28 @@ export default function OfferDetailDrawer({ offer, onClose }: { offer: Offer | n
   const redemptionRate = offer.claimed > 0 ? Math.round((offer.redeemed / offer.claimed) * 100) : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
-      <div className="w-full max-w-md h-full bg-white flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start gap-3 p-5 border-b border-line">
-          <span className="w-10 h-10 rounded-xl bg-accent-tint text-accent flex items-center justify-center shrink-0">
-            <Icon size={19} />
-          </span>
-          <div className="flex-1 min-w-0">
-            <p className="font-extrabold text-[16px] truncate">{offer.title}</p>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className="text-[11px] font-extrabold rounded-full px-2 py-0.5 bg-sand flex items-center gap-1">
-                <Tag size={10} /> {offer.value}
-              </span>
-              <StatusPill status={offer.status} />
-            </div>
+    <div className="fixed inset-0 z-50 bg-white flex flex-col">
+      <div className="flex items-start gap-3 p-5 border-b border-line">
+        <span className="w-10 h-10 rounded-xl bg-accent-tint text-accent flex items-center justify-center shrink-0">
+          <Icon size={19} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="font-extrabold text-[16px] truncate">{offer.title}</p>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <span className="text-[11px] font-extrabold rounded-full px-2 py-0.5 bg-sand flex items-center gap-1">
+              <Tag size={10} /> {offer.value}
+            </span>
+            <StatusPill status={offer.status} />
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:bg-sand shrink-0">
-            <X size={18} />
-          </button>
         </div>
+        <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:bg-sand shrink-0">
+          <X size={18} />
+        </button>
+      </div>
 
-        <div className="flex-1 overflow-y-auto p-5">
-          <div className="grid grid-cols-2 gap-2.5 mb-2.5">
+      <div className="flex-1 overflow-y-auto p-5">
+        <div className="max-w-2xl mx-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-2.5">
             <Stat label="Total redemptions" value={offer.redeemed} />
             <Stat label="Views" value={offer.views} />
             <Stat label={offer.limit > 0 ? `Claimed of ${offer.limit}` : 'Claimed (unlimited)'} value={offer.claimed} />
