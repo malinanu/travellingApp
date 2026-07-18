@@ -1,19 +1,31 @@
 'use client';
 
 // Admin auth — split layout, login then a real TOTP verification step
-// (only shown when the account actually has 2FA enabled). Port of
+// (only shown when the account actually has 2FA enabled), plus a
+// forgot/reset-password flow (same global /auth/forgot-password and
+// /auth/reset-password routes the vendor portal's login page uses — see
+// web/vendor/app/login/page.tsx for the reference implementation). Port of
 // AdminAuth.jsx, now backed by /auth/2fa/login-verify instead of accepting
 // any 6 digits.
 
-import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
 import { isTwoFactorRequired, type AuthResponse, type TwoFactorRequiredResponse } from '@spotto/shared';
 import { api } from '../../lib/api';
 
 export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminLoginPageInner />
+    </Suspense>
+  );
+}
+
+function AdminLoginPageInner() {
   const router = useRouter();
-  const [step, setStep] = useState<'creds' | 'otp'>('creds');
+  const searchParams = useSearchParams();
+  const [mode, setMode] = useState<'creds' | 'otp' | 'forgot'>('creds');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -21,6 +33,24 @@ export default function AdminLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotSent, setForgotSent] = useState(false);
+  const [resetToken, setResetToken] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [resetDone, setResetDone] = useState(false);
+
+  // A password-reset email always links back here with ?resetToken=... —
+  // jump straight into the "set a new password" view.
+  useEffect(() => {
+    const rToken = searchParams.get('resetToken');
+    if (rToken) {
+      setResetToken(rToken);
+      setMode('forgot');
+      router.replace('/login');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const finishSession = (res: AuthResponse) => {
     if (res.user.role !== 'admin') {
@@ -40,7 +70,7 @@ export default function AdminLoginPage() {
       const res = await api.post<AuthResponse | TwoFactorRequiredResponse>('/auth/login', { email, password });
       if (isTwoFactorRequired(res)) {
         setTwoFactorToken(res.twoFactorToken);
-        setStep('otp');
+        setMode('otp');
         setTimeout(() => otpRefs.current[0]?.focus(), 50);
         return;
       }
@@ -79,6 +109,33 @@ export default function AdminLoginPage() {
     }
   };
 
+  const submitForgot = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post('/auth/forgot-password', { email: forgotEmail });
+      setForgotSent(true);
+    } catch {
+      // handleForgotPassword always 200s — this only fails on network error.
+      setError('Something went wrong — try again in a moment.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitReset = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post('/auth/reset-password', { token: resetToken, newPassword });
+      setResetDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reset password');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen grid lg:grid-cols-2" style={{ background: 'var(--bg)' }}>
       <div className="hidden lg:flex flex-col justify-between p-12 text-white" style={{ background: '#103d3a' }}>
@@ -101,18 +158,24 @@ export default function AdminLoginPage() {
       </div>
 
       <div className="flex items-center justify-center p-8">
-        {step === 'creds' ? (
+        {mode === 'creds' && (
           <form onSubmit={submitCreds} className="w-full max-w-md">
             <h2 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Admin sign in</h2>
             <p className="text-muted font-medium mt-1 mb-6">Restricted to Spotto staff accounts.</p>
             <label className="block text-[13px] font-bold mb-1.5">Email</label>
-            <input className="input mb-4" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <input className="input mb-4" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required suppressHydrationWarning />
             <label className="block text-[13px] font-bold mb-1.5">Password</label>
-            <input className="input mb-4" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+            <input className="input mb-2" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} suppressHydrationWarning />
+            <button type="button" onClick={() => { setError(null); setForgotSent(false); setMode('forgot'); }}
+              className="block text-[12.5px] font-bold mb-4" style={{ color: 'var(--accent)' }}>
+              Forgot password?
+            </button>
             {error && <p className="text-[13.5px] font-bold mb-3" style={{ color: '#e11d48' }}>{error}</p>}
             <button className="btn btn-primary w-full py-3" disabled={busy}>{busy ? 'Please wait…' : 'Continue'}</button>
           </form>
-        ) : (
+        )}
+
+        {mode === 'otp' && (
           <div className="w-full max-w-md">
             <h2 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Two-factor verification</h2>
             <p className="text-muted font-medium mt-1 mb-6">Enter the 6-digit code from your authenticator app.</p>
@@ -133,6 +196,60 @@ export default function AdminLoginPage() {
             <button className="btn btn-primary w-full py-3" disabled={otp.join('').length !== 6 || busy} onClick={submitOtp}>
               {busy ? 'Verifying…' : 'Verify & continue'}
             </button>
+          </div>
+        )}
+
+        {mode === 'forgot' && !resetToken && (
+          <div className="w-full max-w-md">
+            <h2 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Reset password</h2>
+            <p className="text-muted font-medium mt-1 mb-6">We&rsquo;ll email you a secure reset link.</p>
+            {forgotSent ? (
+              <p className="text-[13.5px] font-bold mb-5" style={{ color: 'var(--accent)' }}>
+                Check your inbox — the reset link is on its way.
+              </p>
+            ) : (
+              <>
+                <label className="block text-[13px] font-bold mb-1.5">Email</label>
+                <input className="input mb-4" type="email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} required autoFocus />
+              </>
+            )}
+            {error && <p className="text-[13.5px] font-bold mb-3" style={{ color: '#e11d48' }}>{error}</p>}
+            {!forgotSent && (
+              <button className="btn btn-primary w-full py-3 mb-3" disabled={!forgotEmail || busy} onClick={submitForgot}>
+                {busy ? 'Sending…' : 'Send reset link'}
+              </button>
+            )}
+            <button type="button" onClick={() => { setForgotSent(false); setMode('creds'); }} className="w-full text-center text-[13px] font-bold text-muted">
+              ← Back to sign in
+            </button>
+          </div>
+        )}
+
+        {mode === 'forgot' && resetToken && (
+          <div className="w-full max-w-md">
+            <h2 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Set a new password</h2>
+            <p className="text-muted font-medium mt-1 mb-6">Choose a new password for your account.</p>
+            {resetDone ? (
+              <p className="text-[13.5px] font-bold mb-5" style={{ color: 'var(--accent)' }}>
+                Password updated — sign in with your new password.
+              </p>
+            ) : (
+              <>
+                <label className="block text-[13px] font-bold mb-1.5">New password</label>
+                <input className="input mb-4" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Min 10 characters" autoFocus />
+              </>
+            )}
+            {error && <p className="text-[13.5px] font-bold mb-3" style={{ color: '#e11d48' }}>{error}</p>}
+            {resetDone ? (
+              <button className="btn btn-primary w-full py-3" onClick={() => { setMode('creds'); setResetToken(null); setResetDone(false); }}>
+                Back to sign in
+              </button>
+            ) : (
+              <button className="btn btn-primary w-full py-3" disabled={newPassword.length < 10 || busy} onClick={submitReset}>
+                {busy ? 'Saving…' : 'Save new password'}
+              </button>
+            )}
           </div>
         )}
       </div>

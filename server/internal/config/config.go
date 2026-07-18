@@ -40,6 +40,15 @@ type Config struct {
 	// VendorAppURL is the base URL of the vendor Next.js app, used to build
 	// links embedded in emails (invite accept, password reset).
 	VendorAppURL string
+	// AdminAppURL is the base URL of the admin Next.js app — used the same
+	// way as VendorAppURL, but for admin-role accounts (e.g. the
+	// forgot-password reset link must point at the admin app, not vendor's).
+	AdminAppURL string
+	// SuperAdminEmails lists admin accounts (by email, case-insensitive)
+	// granted the "super-admin" tier — e.g. viewing the cross-admin audit
+	// log. Deliberately env-var-driven rather than a DB role/invite system:
+	// there's no need yet for admin accounts to be self-service provisioned.
+	SuperAdminEmails []string
 }
 
 // minSecretLen guards against trivially short/guessable secrets — anyone
@@ -76,7 +85,25 @@ func Load() Config {
 		GoogleRedirectURL:    getenv("GOOGLE_REDIRECT_URL", ""),
 		GoogleCalendarAPIKey: getenv("GOOGLE_CALENDAR_API_KEY", ""),
 		VendorAppURL:         getenv("VENDOR_APP_URL", "http://localhost:3000"),
+		AdminAppURL:          getenv("ADMIN_APP_URL", "http://localhost:3001"),
+		SuperAdminEmails:     splitNonEmpty(getenv("SUPER_ADMIN_EMAILS", "")),
 	}
+}
+
+// splitNonEmpty splits a comma-separated env value, trimming whitespace and
+// dropping empty segments — so a trailing comma or extra spaces don't
+// silently produce a spurious empty-string entry.
+func splitNonEmpty(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func decodeTOTPKey(b64 string) ([]byte, error) {

@@ -29,6 +29,11 @@ type Server struct {
 	// see internal/jobs for why this is best-effort, not durable.
 	Jobs         *jobs.Queue
 	VendorAppURL string
+	AdminAppURL  string
+	// SuperAdminEmails holds lowercased, trimmed emails from
+	// config.Config.SuperAdminEmails for O(1) membership checks — see
+	// isSuperAdmin in superadmin.go.
+	SuperAdminEmails map[string]bool
 	// GoogleCalendarAPIKey enables live public-holiday lookups (see
 	// internal/holidays and holiday_scheduler.go) — empty means the
 	// scheduler falls back to a bundled static list instead.
@@ -55,6 +60,8 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		}),
 		Jobs:                 jobs.NewQueue(4, 256),
 		VendorAppURL:         cfg.VendorAppURL,
+		AdminAppURL:          cfg.AdminAppURL,
+		SuperAdminEmails:     superAdminSet(cfg.SuperAdminEmails),
 		GoogleCalendarAPIKey: cfg.GoogleCalendarAPIKey,
 		loginLimit:           newLoginLimiter(5, 15*time.Minute),
 		totpLimit:            newLoginLimiter(5, 15*time.Minute),
@@ -218,12 +225,13 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(s.Authenticated, auth.RequireRole(domain.RoleAdmin))
 		r.Get("/admin/kpis", s.handleAdminKPIs)
+		r.Get("/admin/search", s.handleAdminSearch)
 		r.Get("/admin/vendors", s.handleAdminVendors)
-		r.Post("/admin/vendors/{id}/approve", s.vendorStatusHandler(domain.VendorApproved))
-		r.Post("/admin/vendors/{id}/reject", s.vendorStatusHandler(domain.VendorRejected))
-		r.Post("/admin/vendors/{id}/request-edits", s.vendorStatusHandler(domain.VendorEdits))
-		r.Post("/admin/vendors/{id}/suspend", s.vendorStatusHandler(domain.VendorSuspended))
-		r.Post("/admin/vendors/{id}/reinstate", s.vendorStatusHandler(domain.VendorApproved))
+		r.Post("/admin/vendors/{id}/approve", s.vendorStatusHandler(domain.VendorApproved, "vendor.approve"))
+		r.Post("/admin/vendors/{id}/reject", s.vendorStatusHandler(domain.VendorRejected, "vendor.reject"))
+		r.Post("/admin/vendors/{id}/request-edits", s.vendorStatusHandler(domain.VendorEdits, "vendor.request_edits"))
+		r.Post("/admin/vendors/{id}/suspend", s.vendorStatusHandler(domain.VendorSuspended, "vendor.suspend"))
+		r.Post("/admin/vendors/{id}/reinstate", s.vendorStatusHandler(domain.VendorApproved, "vendor.reinstate"))
 		r.Get("/admin/vendors/map", s.handleAdminVendorsMap)
 		r.Get("/admin/vendors/near", s.handleAdminVendorsNear)
 		r.Get("/admin/vendors/{id}/reviews", s.handleAdminVendorReviews)
@@ -237,9 +245,18 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/audio-guides", s.handleAudioGuides)
 		r.Post("/admin/audio-guides", s.handleCreateAudioGuide)
 		r.Patch("/admin/audio-guides/{id}/publish", s.handlePublishAudioGuide)
+		r.Get("/admin/notifications", s.handleAdminNotifications)
+		r.Post("/admin/notifications/read", s.handleAdminNotificationsRead)
 		r.Get("/admin/vendor-grants", s.handleAdminVendorGrants)
 		r.Post("/admin/vendor-grants/{id}/extend", s.handleExtendVendorGrant)
 		r.Post("/admin/vendor-grants/{id}/revoke", s.handleRevokeVendorGrantAdmin)
+
+		// Cross-admin history of destructive actions — restricted further
+		// to super-admins, since it names which specific admin did what.
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireSuperAdmin)
+			r.Get("/admin/audit-log", s.handleAdminAuditLog)
+		})
 	})
 
 	return r

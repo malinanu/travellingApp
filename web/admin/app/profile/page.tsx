@@ -1,7 +1,7 @@
 'use client';
 
-// Admin profile — identity, real 2FA setup/disable, sessions stub, sign out.
-// Port of AdminProfile.jsx.
+// Admin profile — identity, change password, real 2FA setup/disable, sign
+// out. Port of AdminProfile.jsx.
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, LogOut, Mail, Shield, ShieldCheck, User as UserIcon } from 'lucide-react';
@@ -36,12 +36,14 @@ export default function AdminProfilePage() {
 
         <div className="panel p-6">
           <h3 className="font-bold text-[15px] mb-3 flex items-center gap-2"><Shield size={16} /> Security</h3>
-          <button className="btn">Change password</button>
+          <ChangePasswordSection />
         </div>
 
         <div className="panel p-6">
           <h3 className="font-bold text-[15px] mb-3 flex items-center gap-2"><UserIcon size={16} /> Role</h3>
-          <p className="text-[13.5px] text-muted font-medium">Super-admin — full platform access.</p>
+          <p className="text-[13.5px] text-muted font-medium">
+            {me?.isSuperAdmin ? 'Super-admin — full platform access, including the cross-admin audit log.' : 'Admin — approval, moderation, and platform-management access.'}
+          </p>
         </div>
 
         <button
@@ -55,6 +57,53 @@ export default function AdminProfilePage() {
         </button>
       </div>
     </Shell>
+  );
+}
+
+function ChangePasswordSection() {
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const change = useMutation({
+    mutationFn: () => api.put<{ token: string }>('/auth/password', { currentPassword: current, newPassword: next }),
+    onSuccess: (res) => {
+      api.setToken(res.token);
+      setCurrent('');
+      setNext('');
+      setOpen(false);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 2500);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : 'Could not change password'),
+  });
+
+  if (!open) {
+    return (
+      <div className="flex items-center justify-between">
+        <p className="text-[13.5px] text-muted font-medium">{success ? 'Password changed just now.' : 'Keep this up to date.'}</p>
+        <button className="btn" onClick={() => setOpen(true)}>Change password</button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <input className="input mb-2.5" type="password" placeholder="Current password" value={current}
+        onChange={(e) => { setCurrent(e.target.value); setError(null); }} />
+      <input className="input mb-2.5" type="password" placeholder="New password (min 10 characters)" value={next}
+        onChange={(e) => { setNext(e.target.value); setError(null); }} />
+      {error && <p className="text-[13px] font-bold mb-2.5" style={{ color: '#e11d48' }}>{error}</p>}
+      <div className="flex gap-2">
+        <button className="btn btn-primary" disabled={!current || next.length < 10 || change.isPending}
+          onClick={() => change.mutate()}>
+          {change.isPending ? 'Updating…' : 'Update password'}
+        </button>
+        <button className="btn" onClick={() => { setOpen(false); setError(null); }}>Cancel</button>
+      </div>
+    </div>
   );
 }
 

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { Vendor } from '@spotto/shared';
 import Shell from '../../components/shell';
+import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
 
 type Action = 'approve' | 'reject' | 'edits';
@@ -32,7 +33,7 @@ interface PendingUndo {
 
 export default function QueuePage() {
   const qc = useQueryClient();
-  const { data: vendors = [] } = useQuery<Vendor[]>({
+  const { data: vendors = [], isError } = useQuery<Vendor[]>({
     queryKey: ['admin-vendors', 'pending'],
     queryFn: () => api.get<Vendor[]>('/admin/vendors?status=pending'),
   });
@@ -101,6 +102,7 @@ export default function QueuePage() {
 
   return (
     <Shell>
+      {isError && <InlineErrorBanner message="Couldn't load the approval queue — try refreshing." />}
       <div className="grid grid-cols-[340px_1fr] gap-5 items-start">
         <div className="panel overflow-hidden">
           <div className="px-4 py-3 border-b border-line flex items-center justify-between">

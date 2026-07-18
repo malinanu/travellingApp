@@ -9,6 +9,7 @@ import { useState } from 'react';
 
 import type { Subscription } from '@spotto/shared';
 import Shell from '../../components/shell';
+import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
 
 const STATE_TABS = ['all', 'active', 'soon', 'overdue', 'trial', 'free'] as const;
@@ -19,7 +20,7 @@ const STATE_STYLE: Record<string, string> = {
 export default function SubscriptionsPage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<(typeof STATE_TABS)[number]>('all');
-  const { data: subs = [] } = useQuery<Subscription[]>({
+  const { data: subs = [], isError } = useQuery<Subscription[]>({
     queryKey: ['admin-subs'],
     queryFn: () => api.get<Subscription[]>('/admin/subscriptions'),
   });
@@ -38,6 +39,7 @@ export default function SubscriptionsPage() {
 
   return (
     <Shell>
+      {isError && <InlineErrorBanner message="Couldn't load subscriptions — try refreshing." />}
       <div className="grid grid-cols-4 gap-4 mb-5">
         <Tile label="Platform MRR" value={`$${mrr.toLocaleString()}`} />
         <Tile label="Premium vendors" value={`${premium.length}`} />

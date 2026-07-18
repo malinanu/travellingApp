@@ -3,10 +3,13 @@ package httpapi
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
+	"github.com/spotto/server/internal/store/postgres"
 )
 
 // handleAdminKPIs mixes live counts with prototype-style topline numbers.
@@ -97,13 +100,17 @@ func (s *Server) handleAdminVendorReviews(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, reviews)
 }
 
-func (s *Server) vendorStatusHandler(status domain.VendorStatus) http.HandlerFunc {
+// vendorStatusHandler is shared by approve/reject/request-edits/suspend/
+// reinstate — action is a distinct audit-log label per call site even
+// though approve and reinstate both resolve to VendorApproved (server.go).
+func (s *Server) vendorStatusHandler(status domain.VendorStatus, action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		if err := s.Store.SetVendorStatus(r.Context(), id, status); err != nil {
 			storeErr(w, err)
 			return
 		}
+		s.logAdminAction(r.Context(), action, "vendor", id, nil)
 		writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": string(status)})
 	}
 }
@@ -132,6 +139,7 @@ func (s *Server) feedResolveHandler(resolved string) http.HandlerFunc {
 			storeErr(w, err)
 			return
 		}
+		s.logAdminAction(r.Context(), "feed."+resolved, "feed_item", strconv.FormatInt(id, 10), nil)
 		writeJSON(w, http.StatusOK, map[string]any{"id": id, "resolved": resolved})
 	}
 }
@@ -170,10 +178,12 @@ func (s *Server) handleUpgradeSubscription(w http.ResponseWriter, r *http.Reques
 	if req.MRR <= 0 {
 		req.MRR = 49 // Premium price in USD, matching the seeded subscriptions
 	}
-	if err := s.Store.UpgradeSubscription(r.Context(), chi.URLParam(r, "id"), req.MRR); err != nil {
+	id := chi.URLParam(r, "id")
+	if err := s.Store.UpgradeSubscription(r.Context(), id, req.MRR); err != nil {
 		storeErr(w, err)
 		return
 	}
+	s.logAdminAction(r.Context(), "subscription.upgrade", "subscription", id, map[string]any{"mrr": req.MRR})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "upgraded"})
 }
 
@@ -204,6 +214,45 @@ func (s *Server) handleCreateAudioGuide(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusCreated, g)
+}
+
+// handleAdminSearch powers the command bar's ⌘K search — see
+// Store.AdminSearch for the query shape.
+func (s *Server) handleAdminSearch(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		writeJSON(w, http.StatusOK, postgres.AdminSearchResults{
+			Vendors: []domain.Vendor{}, FeedItems: []domain.FeedItem{}, Subscriptions: []domain.Subscription{},
+		})
+		return
+	}
+	results, err := s.Store.AdminSearch(r.Context(), q, 8)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, results)
+}
+
+// handleAdminNotifications powers the command-center bell — see
+// Store.AdminNotifications for how buckets are derived and marked unread.
+func (s *Server) handleAdminNotifications(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	notifs, err := s.Store.AdminNotifications(r.Context(), c.Subject)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, notifs)
+}
+
+func (s *Server) handleAdminNotificationsRead(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	if err := s.Store.MarkAdminNotificationsRead(r.Context(), c.Subject); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handlePublishAudioGuide(w http.ResponseWriter, r *http.Request) {

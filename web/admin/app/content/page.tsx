@@ -9,6 +9,7 @@ import { useState } from 'react';
 
 import { timeAgo, type FeedItem, type FeedStatus } from '@spotto/shared';
 import Shell from '../../components/shell';
+import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
 
 const TABS: { id: FeedStatus | 'all'; label: string }[] = [
@@ -29,7 +30,7 @@ export default function ContentPage() {
   const [live, setLive] = useState(true);
   const [tab, setTab] = useState<FeedStatus | 'all'>('all');
 
-  const { data: items = [] } = useQuery<FeedItem[]>({
+  const { data: items = [], isError } = useQuery<FeedItem[]>({
     queryKey: ['admin-feed'],
     queryFn: () => api.get<FeedItem[]>('/admin/feed?after=0'),
     refetchInterval: live ? 3000 : false,
@@ -53,6 +54,7 @@ export default function ContentPage() {
 
   return (
     <Shell>
+      {isError && <InlineErrorBanner message="Couldn't load the content feed — try refreshing." />}
       <div className="flex items-center justify-between mb-4">
         <div className="flex gap-1.5">
           {TABS.map((t) => (

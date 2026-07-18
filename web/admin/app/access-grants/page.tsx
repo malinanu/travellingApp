@@ -11,6 +11,7 @@ import { useState } from 'react';
 
 import type { AdminVendorProfileGrant } from '@spotto/shared';
 import Shell from '../../components/shell';
+import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
 
 const STATE_TABS = ['all', 'active', 'pending', 'expired', 'revoked'] as const;
@@ -27,7 +28,7 @@ function expiryLabel(g: AdminVendorProfileGrant) {
 export default function AccessGrantsPage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<(typeof STATE_TABS)[number]>('all');
-  const { data: grants = [] } = useQuery<AdminVendorProfileGrant[]>({
+  const { data: grants = [], isError } = useQuery<AdminVendorProfileGrant[]>({
     queryKey: ['admin-vendor-grants', tab],
     queryFn: () => api.get<AdminVendorProfileGrant[]>(`/admin/vendor-grants${tab === 'all' ? '' : `?status=${tab}`}`),
   });
@@ -47,6 +48,7 @@ export default function AccessGrantsPage() {
 
   return (
     <Shell>
+      {isError && <InlineErrorBanner message="Couldn't load access grants — try refreshing." />}
       <div className="grid grid-cols-2 gap-4 mb-5">
         <Tile label="Active grants" value={`${active}`} tone="#16a34a" />
         <Tile label="Pending PINs" value={`${pending}`} tone="#d97706" />

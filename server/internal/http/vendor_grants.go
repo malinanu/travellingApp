@@ -215,10 +215,12 @@ func (s *Server) handleExtendVendorGrant(w http.ResponseWriter, r *http.Request)
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if err := s.Store.AdminAdjustVendorProfileGrant(r.Context(), chi.URLParam(r, "id"), req.Minutes); err != nil {
+	id := chi.URLParam(r, "id")
+	if err := s.Store.AdminAdjustVendorProfileGrant(r.Context(), id, req.Minutes); err != nil {
 		storeErr(w, err)
 		return
 	}
+	s.logAdminAction(r.Context(), "vendor_grant.adjust", "vendor_grant", id, map[string]any{"minutesDelta": req.Minutes})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "adjusted"})
 }
 
@@ -230,9 +232,11 @@ func (s *Server) handleRevokeVendorGrantAdmin(w http.ResponseWriter, r *http.Req
 		storeErr(w, err)
 		return
 	}
-	if err := s.Store.RevokeVendorProfileGrant(r.Context(), g.ID, g.VendorID, "admin"); err != nil {
+	c := auth.FromContext(r.Context())
+	if err := s.Store.RevokeVendorProfileGrant(r.Context(), g.ID, g.VendorID, c.Subject); err != nil {
 		storeErr(w, err)
 		return
 	}
+	s.logAdminAction(r.Context(), "vendor_grant.revoke", "vendor_grant", g.ID, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }

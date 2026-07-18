@@ -20,6 +20,8 @@ export interface User {
   vendorRole?: VendorRole;
   createdAt: string;
   vendorStatus?: VendorStatus; // present on GET /me for vendor users
+  /** True only for admin accounts listed in the server's SUPER_ADMIN_EMAILS. */
+  isSuperAdmin?: boolean;
   totpEnabled: boolean;
   phone: string;
   shareLocation: boolean;
@@ -117,7 +119,7 @@ export interface Vendor {
   note: string;
   tier: string;
   profile: VendorProfile;
-  menu: { sections?: MenuSection[] } | null;
+  menu: StoredMenuDoc | null;
   submittedAt: string;
   lat: number;
   lng: number;
@@ -181,12 +183,40 @@ export interface MenuItem {
   desc: string;
   img?: string | null;
   icon: string;
+  /** Whitelist, not a blacklist: absent = available every day (the default,
+   * and the state of every item that predates this field). Once present,
+   * only days explicitly mapped to `true` are shown to travellers — an
+   * unlisted or `false` day is excluded. Only ever create this map when the
+   * vendor deliberately restricts to specific days. */
+  availableDays?: Partial<Record<Weekday, boolean>>;
 }
 
 export interface MenuSection {
   id: string;
   name: string;
   items: MenuItem[];
+  /** Same whitelist semantics as MenuItem.availableDays. */
+  availableDays?: Partial<Record<Weekday, boolean>>;
+}
+
+/** A whole named menu the vendor can create and manually toggle live — see
+ * StoredMenuDoc.activePresetId. Only one preset is served to travellers at
+ * a time, chosen by the owner, independent of which one they're editing. */
+export interface MenuPreset {
+  id: string;
+  name: string;
+  sections: MenuSection[];
+}
+
+/** Wire/storage shape for Vendor.menu and GET/PUT /vendor/menu. May still be
+ * the pre-preset legacy shape ({} or {sections:[...]}) for any vendor who
+ * hasn't resaved since presets shipped — the vendor portal normalizes this
+ * into an implicit single preset on load (see menu/page.tsx), never assume
+ * `presets` is populated. */
+export interface StoredMenuDoc {
+  sections?: MenuSection[]; // legacy-only, ignored once `presets` is non-empty
+  presets?: MenuPreset[];
+  activePresetId?: string;
 }
 
 export interface Offer {
@@ -313,6 +343,43 @@ export interface AudioGuide {
   plays: number;
   depths: string[];
   duration: Record<string, string>;
+}
+
+/** GET /admin/search?q=... — grouped results across the entities the
+ * command bar's search box can match by name (vendors, subscriptions) or
+ * by name/exact ID (feed items). */
+export interface AdminSearchResults {
+  vendors: Vendor[];
+  feedItems: FeedItem[];
+  subscriptions: Subscription[];
+}
+
+/** GET /admin/notifications — derived live from current pending/flagged/
+ * bad-review data, same shape as VendorNotification (see server's
+ * domain.AdminNotification doc comment). */
+export interface AdminNotification {
+  id: string;
+  icon: string;
+  tone: string;
+  title: string;
+  sub: string;
+  time: string;
+  unread: boolean;
+}
+
+/** A single entry from GET /admin/audit-log — one destructive action a
+ * platform admin took, with a denormalized actor identity so entries stay
+ * readable even if that admin account is later deleted. */
+export interface AdminAuditLogEntry {
+  id: number;
+  actorId: string;
+  actorEmail: string;
+  actorName: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  metadata?: unknown;
+  createdAt: string;
 }
 
 export interface AdminKPIs {

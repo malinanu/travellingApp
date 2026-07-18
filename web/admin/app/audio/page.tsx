@@ -9,6 +9,7 @@ import { useState } from 'react';
 
 import type { AudioGuide } from '@spotto/shared';
 import Shell from '../../components/shell';
+import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
 
 const DEPTHS = ['Quick', 'Standard', 'In-depth'] as const;
@@ -21,7 +22,7 @@ const DEPTH_INFO: Record<string, string> = {
 export default function AudioPage() {
   const qc = useQueryClient();
   const [drawer, setDrawer] = useState(false);
-  const { data: guides = [] } = useQuery<AudioGuide[]>({
+  const { data: guides = [], isError } = useQuery<AudioGuide[]>({
     queryKey: ['admin-audio'],
     queryFn: () => api.get<AudioGuide[]>('/admin/audio-guides'),
   });
@@ -34,6 +35,7 @@ export default function AudioPage() {
 
   return (
     <Shell>
+      {isError && <InlineErrorBanner message="Couldn't load audio guides — try refreshing." />}
       <div className="flex items-center justify-between mb-5">
         <p className="text-muted font-semibold text-[13.5px]">{guides.length} guides · {guides.filter((g) => g.published).length} published</p>
         <button className="btn btn-primary flex items-center gap-2" onClick={() => setDrawer(true)}>

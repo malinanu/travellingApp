@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { timeAgo, type Region, type Review, type Vendor } from '@spotto/shared';
 import Shell from '../../components/shell';
 import { regionTone } from '../../components/region-tone';
+import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
 
 // Leaflet touches `window` at import time, so the map must not be part of
@@ -23,11 +24,11 @@ const VendorMap = dynamic(() => import('../../components/vendor-map'), {
 
 export default function GeoPage() {
   const qc = useQueryClient();
-  const { data: regions = [] } = useQuery<Region[]>({
+  const { data: regions = [], isError: regionsError } = useQuery<Region[]>({
     queryKey: ['admin-regions'],
     queryFn: () => api.get<Region[]>('/admin/regions'),
   });
-  const { data: vendors = [] } = useQuery<Vendor[]>({
+  const { data: vendors = [], isError: vendorsError } = useQuery<Vendor[]>({
     queryKey: ['admin-vendors-map'],
     queryFn: () => api.get<Vendor[]>('/admin/vendors/map'),
     refetchInterval: 15000,
@@ -73,6 +74,7 @@ export default function GeoPage() {
 
   return (
     <Shell>
+      {(regionsError || vendorsError) && <InlineErrorBanner message="Couldn't load geo-analytics data — try refreshing." />}
       <div className="grid grid-cols-[1fr_360px] gap-5 items-start">
         <div className="panel p-1 overflow-hidden" style={{ height: 640 }}>
           <VendorMap

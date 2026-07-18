@@ -1,26 +1,28 @@
 'use client';
 
-// Admin command-center shell — 232px dark rail + command bar with KPI strip,
-// theme toggle (light/dark CSS vars), and search stub. Port of AdminApp.jsx.
+// Admin command-center shell — 232px dark rail + command bar with KPI
+// strip, theme toggle (light/dark CSS vars), real ⌘K search, and a real
+// notification bell. Port of AdminApp.jsx.
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Bell, CreditCard, Headphones, KeyRound, Map, Moon, Radio, Search, Sun, UserCheck, LucideIcon,
+  Activity, Bell, CreditCard, Flag, Headphones, History, KeyRound, Map, Moon, Radio, Search, ShieldAlert, Sun, UserCheck, LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import type { AdminKPIs, User } from '@spotto/shared';
+import type { AdminKPIs, AdminNotification, AdminSearchResults, User } from '@spotto/shared';
 import { api } from '../lib/api';
 
-const NAV: { href: string; label: string; icon: LucideIcon; live?: boolean }[] = [
+const NAV: { href: string; label: string; icon: LucideIcon; live?: boolean; superAdminOnly?: boolean }[] = [
   { href: '/queue', label: 'Approval queue', icon: UserCheck },
   { href: '/content', label: 'Content monitor', icon: Radio, live: true },
   { href: '/geo', label: 'Geo-analytics', icon: Map },
   { href: '/subscriptions', label: 'Subscriptions', icon: CreditCard },
   { href: '/audio', label: 'Audio guides', icon: Headphones },
   { href: '/access-grants', label: 'Access grants', icon: KeyRound },
+  { href: '/audit-log', label: 'Audit log', icon: History, superAdminOnly: true },
 ];
 
 export function useMe() {
@@ -37,6 +39,96 @@ function useKpis() {
     queryFn: () => api.get<AdminKPIs>('/admin/kpis'),
     refetchInterval: 10000,
   });
+}
+
+const NOTIF_ICONS: Record<string, LucideIcon> = { UserCheck, Flag, ShieldAlert };
+// Each bucket id from Store.AdminNotifications routes to the page where an
+// admin actually resolves it.
+const NOTIF_TARGET: Record<string, string> = {
+  'pending-vendors': '/queue',
+  'flagged-content': '/content',
+  'bad-review-vendors': '/geo',
+};
+
+function toneStyle(tone: string) {
+  if (tone === 'sun') return { background: 'rgba(246,184,30,0.16)', color: '#c98a00' };
+  if (tone === 'muted') return { background: 'rgba(255,255,255,0.06)', color: 'var(--muted)' };
+  return { background: 'var(--accent-tint)', color: 'var(--accent)' };
+}
+
+function AdminNotificationBell() {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
+  const { data: notifs = [] } = useQuery<AdminNotification[]>({
+    queryKey: ['admin-notifications'],
+    queryFn: () => api.get<AdminNotification[]>('/admin/notifications'),
+    refetchInterval: 15000,
+  });
+  const unread = notifs.filter((n) => n.unread).length;
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const markAll = async () => {
+    await api.post('/admin/notifications/read');
+    qc.invalidateQueries({ queryKey: ['admin-notifications'] });
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        aria-label="Notifications"
+        onClick={() => setOpen((o) => !o)}
+        className="relative w-9 h-9 rounded-lg flex items-center justify-center border border-line bg-bg text-ink-soft"
+      >
+        <Bell size={16} />
+        {unread > 0 && (
+          <span className="absolute top-1.5 right-2 w-2 h-2 rounded-full" style={{ background: 'var(--accent)', boxShadow: '0 0 0 2px var(--bg)' }} />
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-[340px] rounded-xl overflow-hidden z-40"
+          style={{ background: 'var(--surface)', border: '1px solid var(--line)', boxShadow: '0 24px 50px -20px rgba(0,0,0,0.35)' }}>
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-line">
+            <span className="font-bold text-[13.5px]">Notifications</span>
+            {unread > 0 && (
+              <button onClick={markAll} className="ml-auto text-[12px] font-bold" style={{ color: 'var(--accent)' }}>Mark all read</button>
+            )}
+          </div>
+          <div className="max-h-[360px] overflow-y-auto">
+            {notifs.length === 0 && (
+              <p className="px-4 py-6 text-[13px] text-muted font-semibold">Nothing needs attention right now.</p>
+            )}
+            {notifs.map((n, i) => {
+              const NIcon = NOTIF_ICONS[n.icon] ?? Bell;
+              return (
+                <button key={n.id} onClick={() => { setOpen(false); router.push(NOTIF_TARGET[n.id] ?? '/queue'); }}
+                  className="w-full flex items-start gap-3 px-4 py-3 text-left transition-colors"
+                  style={{ borderTop: i ? '1px solid var(--line)' : 'none' }}>
+                  <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={toneStyle(n.tone)}>
+                    <NIcon size={16} />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[13px] font-bold leading-snug">{n.title}</span>
+                    <span className="block text-[12px] text-muted font-medium mt-0.5">{n.sub}</span>
+                    <span className="block text-[10.5px] text-muted font-semibold mt-1">{n.time}</span>
+                  </span>
+                  {n.unread && <span className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ background: 'var(--accent)' }} />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function useTheme() {
@@ -56,6 +148,8 @@ function useTheme() {
 
 function Rail({ pending }: { pending: number }) {
   const pathname = usePathname();
+  const { data: me } = useMe();
+  const visibleNav = NAV.filter((n) => !n.superAdminOnly || me?.isSuperAdmin);
   return (
     <aside className="w-[232px] shrink-0 flex flex-col" style={{ background: '#103d3a', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
       <div className="flex items-center gap-2.5 px-5 h-[58px]" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
@@ -75,7 +169,7 @@ function Rail({ pending }: { pending: number }) {
         <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.15em]" style={{ color: 'rgba(255,255,255,0.3)' }}>
           Operations
         </p>
-        {NAV.map((n) => {
+        {visibleNav.map((n) => {
           const on = pathname.startsWith(n.href);
           const Icon = n.icon;
           return (
@@ -118,9 +212,132 @@ function Rail({ pending }: { pending: number }) {
   );
 }
 
+function resultRoute(kind: 'vendor' | 'feedItem' | 'subscription', status?: string): string {
+  if (kind === 'vendor') return status === 'pending' ? '/queue' : '/geo';
+  if (kind === 'feedItem') return '/content';
+  return '/subscriptions';
+}
+
+function CommandSearch() {
+  const router = useRouter();
+  const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const enabled = debouncedQ.trim().length >= 2;
+  const { data: results } = useQuery<AdminSearchResults>({
+    queryKey: ['admin-search', debouncedQ],
+    queryFn: () => api.get<AdminSearchResults>(`/admin/search?q=${encodeURIComponent(debouncedQ)}`),
+    enabled,
+  });
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        inputRef.current?.focus();
+        setOpen(true);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
+  const go = (path: string) => {
+    setOpen(false);
+    router.push(path);
+  };
+
+  const showDropdown = open && enabled;
+  const hasResults = !!results && (results.vendors.length + results.feedItems.length + results.subscriptions.length) > 0;
+
+  return (
+    <div className="relative" ref={ref}>
+      <div className="flex items-center gap-2 rounded-lg px-3 py-1.5 w-[280px]" style={{ background: 'var(--bg)', border: '1px solid var(--line)' }}>
+        <Search size={16} className="text-muted" />
+        <input
+          ref={inputRef}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onFocus={() => setOpen(true)}
+          placeholder="Search vendors, content, IDs…"
+          className="bg-transparent outline-none text-[13px] font-medium w-full"
+        />
+        <kbd className="text-[10px] font-mono rounded px-1 py-0.5" style={{ background: 'var(--surface)', border: '1px solid var(--line)', color: 'var(--muted)' }}>
+          ⌘K
+        </kbd>
+      </div>
+      {showDropdown && (
+        <div className="absolute left-0 top-full mt-2 w-[380px] rounded-xl overflow-hidden z-40"
+          style={{ background: 'var(--surface)', border: '1px solid var(--line)', boxShadow: '0 24px 50px -20px rgba(0,0,0,0.35)' }}>
+          {!hasResults && (
+            <p className="px-4 py-5 text-[13px] text-muted font-semibold">
+              {results ? 'No matches.' : 'Searching…'}
+            </p>
+          )}
+          {results && results.vendors.length > 0 && (
+            <ResultGroup label="Vendors">
+              {results.vendors.map((v) => (
+                <ResultRow key={v.id} title={v.name} sub={`${v.category} · ${v.town}`} onClick={() => go(resultRoute('vendor', v.status))} />
+              ))}
+            </ResultGroup>
+          )}
+          {results && results.feedItems.length > 0 && (
+            <ResultGroup label="Feed items">
+              {results.feedItems.map((f) => (
+                <ResultRow key={f.id} title={f.vendor || `#${f.id}`} sub={f.text} onClick={() => go(resultRoute('feedItem'))} />
+              ))}
+            </ResultGroup>
+          )}
+          {results && results.subscriptions.length > 0 && (
+            <ResultGroup label="Subscriptions">
+              {results.subscriptions.map((s) => (
+                <ResultRow key={s.id} title={s.vendor} sub={`${s.tier} · ${s.state}`} onClick={() => go(resultRoute('subscription'))} />
+              ))}
+            </ResultGroup>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResultGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="border-b border-line last:border-0">
+      <p className="px-4 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-muted">{label}</p>
+      {children}
+    </div>
+  );
+}
+
+function ResultRow({ title, sub, onClick }: { title: string; sub?: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="w-full text-left px-4 py-2 transition-colors hover:bg-[color:var(--bg)]">
+      <span className="block text-[13px] font-bold truncate">{title}</span>
+      {sub && <span className="block text-[11.5px] text-muted font-medium truncate">{sub}</span>}
+    </button>
+  );
+}
+
 function CommandBar({ title }: { title: string }) {
   const router = useRouter();
   const { data: kpis } = useKpis();
+  const { data: me } = useMe();
   const { theme, toggle } = useTheme();
 
   const strip = [
@@ -133,13 +350,7 @@ function CommandBar({ title }: { title: string }) {
   return (
     <header className="flex items-center gap-4 px-5 h-[58px] shrink-0" style={{ background: 'var(--surface)', borderBottom: '1px solid var(--line)' }}>
       <h1 className="font-bold text-[15px] w-[180px] shrink-0">{title}</h1>
-      <div className="flex items-center gap-2 rounded-lg px-3 py-1.5 w-[280px]" style={{ background: 'var(--bg)', border: '1px solid var(--line)' }}>
-        <Search size={16} className="text-muted" />
-        <input placeholder="Search vendors, content, IDs…" className="bg-transparent outline-none text-[13px] font-medium w-full" />
-        <kbd className="text-[10px] font-mono rounded px-1 py-0.5" style={{ background: 'var(--surface)', border: '1px solid var(--line)', color: 'var(--muted)' }}>
-          ⌘K
-        </kbd>
-      </div>
+      <CommandSearch />
 
       <div className="flex-1 flex items-center justify-end gap-6">
         {strip.map((k) => (
@@ -152,9 +363,7 @@ function CommandBar({ title }: { title: string }) {
           className="w-9 h-9 rounded-lg flex items-center justify-center border border-line bg-bg text-ink-soft">
           {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
         </button>
-        <button aria-label="Notifications" className="w-9 h-9 rounded-lg flex items-center justify-center border border-line bg-bg text-ink-soft">
-          <Bell size={16} />
-        </button>
+        <AdminNotificationBell />
         <button
           onClick={() => router.push('/profile')}
           className="flex items-center gap-2 rounded-lg px-2 py-1.5 border border-line bg-bg"
@@ -162,7 +371,7 @@ function CommandBar({ title }: { title: string }) {
           <span className="w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center text-[11px] font-bold">A</span>
           <span className="text-left leading-tight">
             <span className="block font-bold text-[12px]">Admin</span>
-            <span className="block text-[10px] font-semibold text-muted">Super-admin</span>
+            <span className="block text-[10px] font-semibold text-muted">{me?.isSuperAdmin ? 'Super-admin' : 'Admin'}</span>
           </span>
         </button>
       </div>

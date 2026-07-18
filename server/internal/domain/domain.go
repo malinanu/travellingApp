@@ -266,6 +266,36 @@ type VendorNotification struct {
 	Unread bool   `json:"unread"`
 }
 
+// AdminNotification mirrors VendorNotification's shape but is never stored
+// as a discrete row — see Store.AdminNotifications, which derives these
+// live from current pending/flagged/bad-review counts each request.
+type AdminNotification struct {
+	ID     string `json:"id"`
+	Icon   string `json:"icon"`
+	Tone   string `json:"tone"`
+	Title  string `json:"title"`
+	Sub    string `json:"sub"`
+	Time   string `json:"time"`
+	Unread bool   `json:"unread"`
+}
+
+// AdminAuditLog records a single destructive action a platform admin took
+// (approve/reject/suspend a vendor, resolve a feed item, revoke a vendor
+// grant, upgrade a subscription) — see httpapi.(*Server).logAdminAction.
+// ActorEmail/ActorName are denormalized at write time so entries stay
+// readable even if the acting admin's account is later deleted.
+type AdminAuditLog struct {
+	ID         int64           `json:"id"`
+	ActorID    string          `json:"actorId"`
+	ActorEmail string          `json:"actorEmail"`
+	ActorName  string          `json:"actorName"`
+	Action     string          `json:"action"`
+	TargetType string          `json:"targetType"`
+	TargetID   string          `json:"targetId"`
+	Metadata   json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt  time.Time       `json:"createdAt"`
+}
+
 // VendorInvite is an expiring, single-use code an owner generates to bring
 // a staff or manager member onto their vendor account. It's emailed to the
 // invitee (see mail.Mailer) but the code/link is also always returned to

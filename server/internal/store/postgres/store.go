@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -1487,6 +1488,217 @@ func (s *Store) MarkVendorNotificationsRead(ctx context.Context, vendorID string
 	return err
 }
 
+// ---- admin audit log ----
+
+func (s *Store) InsertAdminAuditLog(ctx context.Context, e domain.AdminAuditLog) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO admin_audit_log (actor_id, actor_email, actor_name, action, target_type, target_id, metadata, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		e.ActorID, e.ActorEmail, e.ActorName, e.Action, e.TargetType, e.TargetID, e.Metadata, e.CreatedAt)
+	return err
+}
+
+// AdminAuditLogs lists entries most-recent-first, optionally filtered by
+// targetType and/or actorID, cursor-paginated the same way FeedItems is
+// (beforeID=0 starts from the newest row).
+func (s *Store) AdminAuditLogs(ctx context.Context, beforeID int64, targetType, actorID string, limit int) ([]domain.AdminAuditLog, error) {
+	q := `SELECT id, actor_id, actor_email, actor_name, action, target_type, target_id, metadata, created_at
+		FROM admin_audit_log WHERE ($1 = 0 OR id < $1)`
+	args := []any{beforeID}
+	if targetType != "" {
+		args = append(args, targetType)
+		q += fmt.Sprintf(` AND target_type=$%d`, len(args))
+	}
+	if actorID != "" {
+		args = append(args, actorID)
+		q += fmt.Sprintf(` AND actor_id=$%d`, len(args))
+	}
+	q += fmt.Sprintf(` ORDER BY id DESC LIMIT %d`, limit)
+	rows, err := s.Pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.AdminAuditLog
+	for rows.Next() {
+		var e domain.AdminAuditLog
+		if err := rows.Scan(&e.ID, &e.ActorID, &e.ActorEmail, &e.ActorName, &e.Action,
+			&e.TargetType, &e.TargetID, &e.Metadata, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// ---- admin search ----
+
+// AdminSearchResults is a query-response shape (not a persisted entity),
+// so it lives here rather than in package domain.
+type AdminSearchResults struct {
+	Vendors       []domain.Vendor       `json:"vendors"`
+	FeedItems     []domain.FeedItem     `json:"feedItems"`
+	Subscriptions []domain.Subscription `json:"subscriptions"`
+}
+
+// AdminSearch runs three independent ILIKE lookups (vendor/feed-item/
+// subscription name) plus an exact feed-item-ID match so pasting a numeric
+// ID still works — data volumes here don't warrant full-text-search infra.
+func (s *Store) AdminSearch(ctx context.Context, q string, limit int) (AdminSearchResults, error) {
+	out := AdminSearchResults{Vendors: []domain.Vendor{}, FeedItems: []domain.FeedItem{}, Subscriptions: []domain.Subscription{}}
+	pattern := "%" + q + "%"
+
+	vendorRows, err := s.Pool.Query(ctx,
+		`SELECT `+vendorCols+` FROM vendors WHERE name ILIKE $1 ORDER BY name LIMIT $2`, pattern, limit)
+	if err != nil {
+		return out, err
+	}
+	for vendorRows.Next() {
+		v, err := scanVendor(vendorRows)
+		if err != nil {
+			vendorRows.Close()
+			return out, err
+		}
+		out.Vendors = append(out.Vendors, v)
+	}
+	vendorRows.Close()
+	if err := vendorRows.Err(); err != nil {
+		return out, err
+	}
+
+	feedIDMatch, _ := strconv.ParseInt(q, 10, 64)
+	feedRows, err := s.Pool.Query(ctx, `
+		SELECT id, vendor, town, type, text, status, reason, resolved, created_at FROM feed_items
+		WHERE vendor ILIKE $1 OR id = $2 ORDER BY id DESC LIMIT $3`, pattern, feedIDMatch, limit)
+	if err != nil {
+		return out, err
+	}
+	for feedRows.Next() {
+		var f domain.FeedItem
+		if err := feedRows.Scan(&f.ID, &f.Vendor, &f.Town, &f.Type, &f.Text, &f.Status,
+			&f.Reason, &f.Resolved, &f.CreatedAt); err != nil {
+			feedRows.Close()
+			return out, err
+		}
+		out.FeedItems = append(out.FeedItems, f)
+	}
+	feedRows.Close()
+	if err := feedRows.Err(); err != nil {
+		return out, err
+	}
+
+	subRows, err := s.Pool.Query(ctx,
+		`SELECT id, vendor_id, vendor, town, tier, mrr, renews_at, state, since FROM subscriptions
+		WHERE vendor ILIKE $1 ORDER BY vendor LIMIT $2`, pattern, limit)
+	if err != nil {
+		return out, err
+	}
+	defer subRows.Close()
+	for subRows.Next() {
+		var sub domain.Subscription
+		if err := subRows.Scan(&sub.ID, &sub.VendorID, &sub.Vendor, &sub.Town, &sub.Tier,
+			&sub.MRR, &sub.RenewsAt, &sub.State, &sub.Since); err != nil {
+			return out, err
+		}
+		out.Subscriptions = append(out.Subscriptions, sub)
+	}
+	return out, subRows.Err()
+}
+
+// ---- admin notifications ----
+
+func (s *Store) MarkAdminNotificationsRead(ctx context.Context, adminID string) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO admin_notification_reads (admin_id, last_read_at) VALUES ($1, now())
+		ON CONFLICT (admin_id) DO UPDATE SET last_read_at = EXCLUDED.last_read_at`, adminID)
+	return err
+}
+
+// pluralSuffix is a tiny English-only helper for the notification copy
+// below — "1 vendor" vs "2 vendors".
+func pluralSuffix(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// AdminNotifications derives up to 3 buckets — pending-approval vendors,
+// flagged content, bad-review-flagged vendors — live from current data
+// rather than from stored discrete rows, so they can never drift out of
+// sync with the underlying state (matches how CountAdminKPIBase already
+// works). Each bucket is marked unread if its latest-activity timestamp is
+// after adminID's last read (see MarkAdminNotificationsRead).
+func (s *Store) AdminNotifications(ctx context.Context, adminID string) ([]domain.AdminNotification, error) {
+	var lastRead time.Time
+	if err := s.Pool.QueryRow(ctx,
+		`SELECT COALESCE((SELECT last_read_at FROM admin_notification_reads WHERE admin_id=$1), '1970-01-01')`, adminID,
+	).Scan(&lastRead); err != nil {
+		return nil, err
+	}
+
+	out := []domain.AdminNotification{}
+
+	var pendingCount int
+	var pendingLatest time.Time
+	if err := s.Pool.QueryRow(ctx,
+		`SELECT count(*), COALESCE(max(submitted_at), '1970-01-01') FROM vendors WHERE status='pending'`,
+	).Scan(&pendingCount, &pendingLatest); err != nil {
+		return nil, err
+	}
+	if pendingCount > 0 {
+		out = append(out, domain.AdminNotification{
+			ID: "pending-vendors", Icon: "UserCheck", Tone: "sun",
+			Title:  fmt.Sprintf("%d vendor%s awaiting approval", pendingCount, pluralSuffix(pendingCount)),
+			Sub:    "Review new listings in the approval queue.",
+			Time:   pendingLatest.Format("Jan 2, 3:04 PM"),
+			Unread: pendingLatest.After(lastRead),
+		})
+	}
+
+	var flagCount int
+	var flagLatest time.Time
+	if err := s.Pool.QueryRow(ctx,
+		`SELECT count(*), COALESCE(max(created_at), '1970-01-01') FROM feed_items WHERE status='flag'`,
+	).Scan(&flagCount, &flagLatest); err != nil {
+		return nil, err
+	}
+	if flagCount > 0 {
+		out = append(out, domain.AdminNotification{
+			ID: "flagged-content", Icon: "Flag", Tone: "accent",
+			Title:  fmt.Sprintf("%d flagged content item%s", flagCount, pluralSuffix(flagCount)),
+			Sub:    "Moderate flagged posts in the content monitor.",
+			Time:   flagLatest.Format("Jan 2, 3:04 PM"),
+			Unread: flagLatest.After(lastRead),
+		})
+	}
+
+	var badVendorCount int
+	var badLatest time.Time
+	if err := s.Pool.QueryRow(ctx, `
+		SELECT count(*), COALESCE(max(r.max_created), '1970-01-01') FROM (
+			SELECT vendor_id, max(created_at) AS max_created
+			FROM reviews
+			WHERE vendor_id IS NOT NULL AND rating <= 2
+			GROUP BY vendor_id
+			HAVING count(*) >= $1
+		) r`, BadReviewFlagThreshold,
+	).Scan(&badVendorCount, &badLatest); err != nil {
+		return nil, err
+	}
+	if badVendorCount > 0 {
+		out = append(out, domain.AdminNotification{
+			ID: "bad-review-vendors", Icon: "ShieldAlert", Tone: "muted",
+			Title:  fmt.Sprintf("%d vendor%s flagged for bad reviews", badVendorCount, pluralSuffix(badVendorCount)),
+			Sub:    "Check red-flagged pins on geo-analytics.",
+			Time:   badLatest.Format("Jan 2, 3:04 PM"),
+			Unread: badLatest.After(lastRead),
+		})
+	}
+
+	return out, nil
+}
+
 // ---- misc ----
 
 // Wipe truncates all data tables (used by cmd/seed for idempotent reloads).
@@ -1494,7 +1706,8 @@ func (s *Store) Wipe(ctx context.Context) error {
 	_, err := s.Pool.Exec(ctx, `
 		TRUNCATE users, vendors, offers, places, claims, trips, groups, feed_items,
 			regions, subscriptions, audio_guides, vibe_votes, checkins,
-			vendor_notifications, vendor_blobs, reviews, vendor_invites`)
+			vendor_notifications, vendor_blobs, reviews, vendor_invites, admin_audit_log,
+			admin_notification_reads`)
 	return err
 }
 

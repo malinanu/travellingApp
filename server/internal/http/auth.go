@@ -294,6 +294,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 type meResp struct {
 	domain.User
 	VendorStatus *domain.VendorStatus `json:"vendorStatus,omitempty"`
+	// IsSuperAdmin is only ever true for RoleAdmin accounts listed in
+	// SUPER_ADMIN_EMAILS — see superadmin.go.
+	IsSuperAdmin bool `json:"isSuperAdmin,omitempty"`
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -309,6 +312,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 			resp.VendorStatus = &v.Status
 		}
 	}
+	resp.IsSuperAdmin = u.Role == domain.RoleAdmin && s.isSuperAdmin(u.Email)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -495,8 +499,9 @@ func sha256Hex(raw string) string {
 // email matches an account, to avoid account enumeration via response
 // differences. If it does match, a reset email is queued (see
 // internal/jobs) rather than sent inline, so this handler doesn't block
-// on SMTP latency. Only wires up the vendor app's reset screen today
-// (VendorAppURL) — traveller/admin reset UIs don't exist yet.
+// on SMTP latency. The emailed link's host is picked by the matched
+// user's role (VendorAppURL vs AdminAppURL) — travellers don't have a
+// reset UI yet, so they fall back to the vendor app's like before.
 func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email string `json:"email"`
@@ -515,7 +520,11 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	if u, err := s.Store.UserByEmail(r.Context(), email); err == nil {
 		raw := newResetToken()
 		if err := s.Store.CreatePasswordResetToken(r.Context(), newID("prt"), u.ID, hashResetToken(raw), time.Now().Add(1*time.Hour)); err == nil {
-			link := s.VendorAppURL + "/login?resetToken=" + raw
+			appURL := s.VendorAppURL
+			if u.Role == domain.RoleAdmin {
+				appURL = s.AdminAppURL
+			}
+			link := appURL + "/login?resetToken=" + raw
 			to, body := u.Email, resetEmailHTML(link)
 			s.Jobs.Enqueue(func() { s.Mail.Send(to, "Reset your Spotto password", body) })
 		}
