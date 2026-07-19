@@ -125,20 +125,17 @@ correctly disappeared from the real `/places` response on a Sunday).
 
 ## What's still open
 
-1. **Push the Validate redemption work** (item 5 above) — waiting on your
-   go-ahead, per your own git-safety preferences.
+1. ~~Push the Validate redemption work (item 5 above)~~ — **done**,
+   committed (`305f418`) and pushed with your go-ahead.
 2. **Production Google Places check** — after your next vendor-app
    redeploy, confirm the "must use an API key" error is actually gone; if
    not, check "Places API (New)" is allowed under the key's API
    restrictions in Google Cloud Console.
-3. **Old Issue 1, still open — suspended vendors see the wrong message.**
-   `web/vendor/components/shell.tsx`'s `PendingGate` handles `'rejected'`
-   and `'edits'` vendor statuses explicitly but not `'suspended'` (a real,
-   admin-triggered status) — it falls through to generic "Pending review…
-   usually within a day" copy, which is actively misleading for a
-   suspended account. Suggested fix unchanged from the original audit: add
-   a third branch mirroring the `'rejected'` branch's contact-support
-   pattern.
+3. ~~Old Issue 1 (suspended vendors see the wrong message)~~ — **fixed**:
+   `PendingGate` in `web/vendor/components/shell.tsx` now has a
+   `'suspended'` branch ("Account suspended" + contact-support copy,
+   mirroring the `'rejected'` branch) instead of falling through to the
+   misleading "Pending review… usually within a day" text.
 4. **Old minor note 3, still applicable — `web/vendor/app/account/page.tsx`'s**
    "Verified" badge check (`business?.status === 'approved'`) is
    unreachable-but-fragile: `Shell` already gates non-approved vendors away

@@ -322,14 +322,20 @@ function PendingGate({ status }: { status: string }) {
           <Clock size={28} className="text-[#a97b00]" />
         </span>
         <h1 className="text-xl font-extrabold font-display mb-2">
-          {status === 'rejected' ? 'Application not approved' : 'Pending review'}
+          {status === 'suspended'
+            ? 'Account suspended'
+            : status === 'rejected'
+              ? 'Application not approved'
+              : 'Pending review'}
         </h1>
         <p className="text-muted font-semibold text-[14px] leading-relaxed">
-          {status === 'rejected'
-            ? 'Your application was not approved. Contact partners@spotto.dev for details.'
-            : status === 'edits'
-              ? 'Our team requested edits to your application. Check your email for details, then resubmit.'
-              : 'Our team is reviewing your business. You will get access to the full portal as soon as an admin approves it — usually within a day.'}
+          {status === 'suspended'
+            ? 'Your account has been suspended after an admin review. Contact partners@spotto.dev if you believe this is a mistake.'
+            : status === 'rejected'
+              ? 'Your application was not approved. Contact partners@spotto.dev for details.'
+              : status === 'edits'
+                ? 'Our team requested edits to your application. Check your email for details, then resubmit.'
+                : 'Our team is reviewing your business. You will get access to the full portal as soon as an admin approves it — usually within a day.'}
         </p>
         <button
           onClick={() => {
