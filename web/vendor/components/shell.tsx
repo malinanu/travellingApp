@@ -226,7 +226,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         style={{ opacity: navOpen ? 1 : 0, pointerEvents: navOpen ? 'auto' : 'none' }}
       />
       <aside
-        className="w-[248px] shrink-0 border-r border-line bg-white flex flex-col fixed lg:sticky top-0 left-0 h-screen z-40 transition-transform lg:translate-x-0"
+        className="w-[248px] shrink-0 border-r border-line bg-white flex flex-col fixed lg:sticky top-0 left-0 h-screen z-40 transition-transform -translate-x-full lg:translate-x-0"
         style={{ transform: navOpen ? 'translateX(0)' : undefined, transitionTimingFunction: 'cubic-bezier(0.22,1,0.36,1)' }}
       >
         <div className="h-16 px-5 flex items-center gap-2.5 border-b border-line shrink-0">

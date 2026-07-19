@@ -1,19 +1,19 @@
 'use client';
 
-// Validate — manual SPOTTO-code entry with the QRValidator.jsx result states:
+// Validate — real device-camera QR scanning (see components/qr-scanner.tsx)
+// plus manual SPOTTO-code entry, with the QRValidator.jsx result states:
 // valid / already redeemed / wrong vendor / unknown. Port of the Validate
-// mockup — a camera-viewfinder visual plus "Simulate scan" (this is a
-// desktop web portal with no real device camera integration, matching the
-// mockup's own "simulate" wording) alongside the manual entry form.
+// mockup.
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  CheckCircle2, CircleSlash, QrCode, RotateCcw, ScanLine, ShieldCheck, XCircle,
+  CheckCircle2, CircleSlash, RotateCcw, ShieldCheck, XCircle,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { timeAgo, type ValidateResponse } from '@spotto/shared';
 import Shell from '../../components/shell';
+import QrScanner from '../../components/qr-scanner';
 import { api } from '../../lib/api';
 
 const DEMO_CODES = ['SPOTTO-DRIF', 'SPOTTO-X4K9', 'SPOTTO-88Q2'];
@@ -22,6 +22,10 @@ export default function ValidatePage() {
   const qc = useQueryClient();
   const [code, setCode] = useState('SPOTTO-');
   const [result, setResult] = useState<ValidateResponse | null>(null);
+  // Guards the scanner's onDecode against re-firing on every animation
+  // frame while the same code is still in view — resets whenever the
+  // vendor moves on to validate another code.
+  const lastDecodedRef = useRef<string | null>(null);
 
   const validate = useMutation({
     mutationFn: (c: string) => api.post<ValidateResponse>('/vendor/validate', { code: c }),
@@ -34,10 +38,17 @@ export default function ValidatePage() {
   const reset = () => {
     setResult(null);
     setCode('SPOTTO-');
+    lastDecodedRef.current = null;
   };
 
   const submitCode = (c: string) => {
     if (c.trim().length > 7) validate.mutate(c.trim());
+  };
+
+  const handleDecode = (text: string) => {
+    if (result || validate.isPending || lastDecodedRef.current === text) return;
+    lastDecodedRef.current = text;
+    submitCode(text);
   };
 
   return (
@@ -51,29 +62,13 @@ export default function ValidatePage() {
 
       <div className="grid lg:grid-cols-[1fr_340px] gap-5 items-start">
         <div>
-          <div className="rounded-2xl overflow-hidden aspect-[4/3] flex items-center justify-center relative"
+          <div className="rounded-2xl overflow-hidden aspect-[4/3] relative"
             style={{ background: 'linear-gradient(160deg, #0b1f22 0%, #0e2b2e 100%)' }}>
-            <div className="relative w-40 h-40 flex items-center justify-center">
-              <span className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-accent rounded-tl-xl" />
-              <span className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-accent rounded-tr-xl" />
-              <span className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-accent rounded-bl-xl" />
-              <span className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-accent rounded-br-xl" />
-              <div className="text-center text-white/70">
-                <QrCode size={40} className="mx-auto mb-2" />
-                <p className="text-[12.5px] font-semibold">Point at traveler&rsquo;s code</p>
-              </div>
-            </div>
-            <span className="absolute bottom-4 rounded-full bg-black/40 text-white text-[12px] font-bold px-3 py-1.5 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#3ec97a]" /> Camera ready
-            </span>
+            <QrScanner onDecode={handleDecode} />
           </div>
-          <button
-            className="btn-accent w-full py-3 mt-3 flex items-center justify-center gap-2"
-            disabled={validate.isPending}
-            onClick={() => submitCode(DEMO_CODES[Math.floor(Math.random() * DEMO_CODES.length)])}
-          >
-            <ScanLine size={16} /> Simulate scan
-          </button>
+          <p className="text-[12.5px] text-muted font-semibold text-center mt-3">
+            Point the camera at the traveler&rsquo;s code — it validates automatically.
+          </p>
         </div>
 
         <div className="space-y-4">

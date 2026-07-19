@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_client.dart';
@@ -452,18 +453,40 @@ class _DealCardState extends ConsumerState<_DealCard> {
             color: claimed ? SpottoColors.ink : const Color(0xFFF2DCA0), width: 1.5),
       ),
       child: claimed
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text('Show at counter',
-                    style: text.labelMedium?.copyWith(color: SpottoColors.paleTeal)),
-                const SizedBox(height: 4),
-                Text(claimedCode,
-                    style: text.headlineSmall
-                        ?.copyWith(color: Colors.white, letterSpacing: 2)),
-                const SizedBox(height: 4),
-                Text(place.deal.label ?? '',
-                    style: text.bodySmall?.copyWith(color: SpottoColors.paleTeal)),
+                // White backing is required for the QR to actually scan —
+                // this card's background is SpottoColors.ink (dark), and a
+                // QR rendered directly on a dark background has no contrast.
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: QrImageView(data: claimedCode, size: 64, gapless: false),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Show at counter',
+                          style: text.labelMedium
+                              ?.copyWith(color: SpottoColors.paleTeal)),
+                      const SizedBox(height: 4),
+                      Text(claimedCode,
+                          style: text.headlineSmall
+                              ?.copyWith(color: Colors.white, letterSpacing: 2)),
+                      const SizedBox(height: 4),
+                      Text(place.deal.label ?? '',
+                          style: text.bodySmall
+                              ?.copyWith(color: SpottoColors.paleTeal)),
+                    ],
+                  ),
+                ),
               ],
             )
           : Row(
