@@ -73,6 +73,7 @@ func TestMediaUploads(t *testing.T) {
 	must(t, store.UpsertVendor(ctx, v2))
 	must(t, store.CreateUser(ctx, domain.User{ID: "usr_media_owner1", Email: "owner1@mediatest.dev", PasswordHash: pw, Role: domain.RoleVendor, VendorID: &v1.ID, VendorRole: domain.VendorRoleOwner, CreatedAt: now}))
 	must(t, store.CreateUser(ctx, domain.User{ID: "usr_media_traveller", Email: "traveller@mediatest.dev", PasswordHash: pw, Role: domain.RoleTraveller, CreatedAt: now}))
+	must(t, store.UpsertPlace(ctx, domain.Place{ID: "plc_media_curated", Name: "Contrib Spot", Data: []byte("{}")}))
 
 	srv, up := newMediaTestServer(t, store, true)
 	defer srv.Close()
@@ -145,6 +146,22 @@ func TestMediaUploads(t *testing.T) {
 		}
 	})
 
+	t.Run("traveller can contribute a place photo", func(t *testing.T) {
+		code, out := presign(travellerToken, map[string]any{"ownerType": "place", "ownerId": "plc_media_curated", "role": "contrib", "contentType": "image/jpeg", "size": 800})
+		if code != http.StatusOK {
+			t.Fatalf("contrib presign: want 200, got %d", code)
+		}
+		key, _ := out["key"].(string)
+		if got := doReq(t, srv, http.MethodPost, "/media/confirm", travellerToken, map[string]any{"key": key, "ownerType": "place", "ownerId": "plc_media_curated", "role": "contrib"}); got != http.StatusOK {
+			t.Fatalf("contrib confirm: want 200, got %d", got)
+		}
+		var photos []domain.Media
+		doReqJSON(t, srv, http.MethodGet, "/places/plc_media_curated/photos", travellerToken, nil, &photos)
+		if len(photos) != 1 || photos[0].Role != "contrib" {
+			t.Errorf("place photos: want 1 contrib, got %+v", photos)
+		}
+	})
+
 	t.Run("delete removes the row and the R2 object", func(t *testing.T) {
 		var vm []domain.Media
 		doReqJSON(t, srv, http.MethodGet, "/vendor/media", ownerToken, nil, &vm)
@@ -184,8 +201,8 @@ func TestMediaUploads(t *testing.T) {
 func purgeMediaTestData(t *testing.T, store *postgres.Store, ctx context.Context) {
 	t.Helper()
 	for _, q := range []string{
-		`DELETE FROM media WHERE owner_id LIKE 'ven_media_%' OR owner_id LIKE 'usr_media_%'`,
-		`DELETE FROM places WHERE vendor_id LIKE 'ven_media_%'`,
+		`DELETE FROM media WHERE owner_id LIKE 'ven_media_%' OR owner_id LIKE 'usr_media_%' OR owner_id = 'plc_media_curated'`,
+		`DELETE FROM places WHERE vendor_id LIKE 'ven_media_%' OR id = 'plc_media_curated'`,
 		`DELETE FROM users WHERE id LIKE 'usr_media_%'`,
 		`DELETE FROM vendors WHERE id LIKE 'ven_media_%'`,
 	} {

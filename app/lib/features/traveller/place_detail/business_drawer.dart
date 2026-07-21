@@ -3,10 +3,12 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/api/upload_service.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../core/widgets/pill.dart';
@@ -213,6 +215,10 @@ class BusinessDrawerBody extends ConsumerWidget {
               ),
               const SizedBox(height: 14),
               Text(place.blurb, style: text.bodyLarge),
+
+              // traveller-contributed photos
+              const SizedBox(height: 18),
+              _TravellerPhotos(place: place),
 
               // menu
               if (place.menu.isNotEmpty) ...[
@@ -813,6 +819,112 @@ class _ReviewTile extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Traveller-contributed photos for a spot: a horizontal strip of uploaded
+/// photos plus an "Add" tile that picks and uploads one to R2 (role contrib).
+class _TravellerPhotos extends ConsumerStatefulWidget {
+  final Place place;
+  const _TravellerPhotos({required this.place});
+
+  @override
+  ConsumerState<_TravellerPhotos> createState() => _TravellerPhotosState();
+}
+
+class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
+  bool _uploading = false;
+
+  Future<void> _add() async {
+    if (_uploading) return;
+    final XFile? file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      imageQuality: 85,
+    );
+    if (file == null) return;
+    final contentType = mimeForUpload(file.mimeType, file.name);
+    if (contentType == null) {
+      _snack('Unsupported image type.');
+      return;
+    }
+    setState(() => _uploading = true);
+    try {
+      final bytes = await file.readAsBytes();
+      await ref.read(uploadServiceProvider).upload(
+            bytes: bytes,
+            contentType: contentType,
+            ownerType: 'place',
+            ownerId: widget.place.id,
+            role: 'contrib',
+          );
+      ref.invalidate(placePhotosProvider(widget.place.id));
+    } catch (_) {
+      _snack('Upload failed — try again.');
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final photos = ref.watch(placePhotosProvider(widget.place.id)).valueOrNull ?? const <String>[];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Traveller photos', style: text.titleMedium),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 84,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              PressScale(
+                onTap: _add,
+                child: Container(
+                  width: 84,
+                  height: 84,
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: SpottoColors.accentTint,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Center(
+                    child: _uploading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2.5, color: SpottoColors.accent),
+                          )
+                        : const Icon(Icons.add_a_photo_outlined,
+                            color: SpottoColors.accent, size: 24),
+                  ),
+                ),
+              ),
+              for (final url in photos)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.network(url,
+                        width: 84,
+                        height: 84,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox(width: 84, height: 84)),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

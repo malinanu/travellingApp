@@ -154,6 +154,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/places", s.handlePlaces)
 		r.Get("/places/{id}", s.handlePlace)
 		r.Get("/places/{id}/reviews", s.handlePlaceReviews)
+		r.Get("/places/{id}/photos", s.handlePlacePhotos)
 		r.Post("/offers/{id}/view", s.handleOfferView)
 
 		// Media uploads (R2) — any authenticated role; per-owner authorisation

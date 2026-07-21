@@ -54,6 +54,24 @@ func (s *Server) handlePlace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.placeJSON(r.Context(), p))
 }
 
+// handlePlacePhotos returns the traveller-contributed photos for a place
+// (media owned by the place with role "contrib") — kept off the main /places
+// payload to avoid an N+1, fetched lazily by the place detail sheet.
+func (s *Server) handlePlacePhotos(w http.ResponseWriter, r *http.Request) {
+	all, err := s.Store.MediaByOwner(r.Context(), "place", chi.URLParam(r, "id"))
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	out := []domain.Media{}
+	for _, m := range all {
+		if m.Role == "contrib" {
+			out = append(out, m)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // handleOfferView records one real traveller impression of an offer's deal
 // card — called once per render (not per rebuild) from the Flutter app.
 func (s *Server) handleOfferView(w http.ResponseWriter, r *http.Request) {

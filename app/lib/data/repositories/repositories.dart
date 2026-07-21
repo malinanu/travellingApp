@@ -536,6 +536,14 @@ final placeReviewsProvider =
   return [for (final r in (res.data as List)) Review.fromJson((r as Map).cast<String, dynamic>())];
 });
 
+/// Traveller-contributed photo URLs for a place (media role "contrib").
+/// Invalidate after uploading to refresh the place detail's photo strip.
+final placePhotosProvider =
+    FutureProvider.family<List<String>, String>((ref, placeId) async {
+  final res = await ref.read(apiProvider).dio.get('/places/$placeId/photos');
+  return [for (final m in (res.data as List)) (m as Map)['url'] as String];
+});
+
 /// Submits (or edits) the current traveller's review for a place, then
 /// refreshes [placeReviewsProvider] for that place.
 Future<void> submitReview(WidgetRef ref, String placeId, int rating, String text) async {
