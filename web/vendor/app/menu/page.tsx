@@ -8,12 +8,12 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Coffee, Cookie, EggFried, Fish, GlassWater, Martini, Pencil, Plus, Save,
+  Coffee, Cookie, EggFried, Fish, GlassWater, ImagePlus, Loader2, Martini, Pencil, Plus, Save,
   Sandwich, Smartphone, Soup, Trash2, UtensilsCrossed, Wine, X, LucideIcon,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { WEEKDAYS, type MenuPreset, type MenuSection, type StoredMenuDoc, type Weekday } from '@spotto/shared';
+import { uploadMedia, validateFile, WEEKDAYS, type MenuPreset, type MenuSection, type StoredMenuDoc, type Weekday } from '@spotto/shared';
 import Shell, { RoleLockedCard, useBusiness, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
 
@@ -152,6 +152,36 @@ export default function MenuPage() {
             },
       ),
     );
+
+  const setItemImg = (sid: string, iid: string, img: string | null) =>
+    mutateSections((secs) =>
+      secs.map((s) =>
+        s.id !== sid ? s : { ...s, items: s.items.map((i) => (i.id !== iid ? i : { ...i, img })) },
+      ),
+    );
+
+  // Per-item photo upload straight to R2; on success the public URL becomes
+  // the item's img (persisted with the next menu save).
+  const [uploadingItem, setUploadingItem] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const uploadItemPhoto = async (sid: string, iid: string, file: File | undefined) => {
+    if (!file || !business?.id) return;
+    const invalid = validateFile(file, 'image');
+    if (invalid) {
+      setUploadError(invalid);
+      return;
+    }
+    setUploadError(null);
+    setUploadingItem(iid);
+    try {
+      const m = await uploadMedia(api, file, { ownerType: 'vendor', ownerId: business.id, role: 'menu_item' });
+      setItemImg(sid, iid, m.url);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : 'Upload failed — try again.');
+    } finally {
+      setUploadingItem(null);
+    }
+  };
 
   const setItemAvailableDays = (sid: string, iid: string, days: Partial<Record<Weekday, boolean>> | undefined) =>
     mutateSections((secs) =>
@@ -338,9 +368,14 @@ export default function MenuPage() {
                     return (
                       <div key={i.id} className="px-2 py-2.5 border-b border-line last:border-0">
                         <div className="flex items-center gap-3">
-                          <span className="w-9 h-9 rounded-xl bg-accent-tint text-accent flex items-center justify-center shrink-0">
-                            <Icon size={17} />
-                          </span>
+                          <MenuItemThumb
+                            img={i.img}
+                            Icon={Icon}
+                            editable={editing}
+                            busy={uploadingItem === i.id}
+                            onPick={(f) => uploadItemPhoto(s.id, i.id, f)}
+                            onRemove={() => setItemImg(s.id, i.id, null)}
+                          />
                           {editing ? (
                             <div className="flex-1 grid grid-cols-[1fr_2fr] gap-2">
                               <input className="input !py-1.5 text-[13.5px]" value={i.name}
@@ -424,7 +459,7 @@ export default function MenuPage() {
             </button>
           </div>
 
-          {saveError && <p className="text-[13.5px] font-bold text-coral mt-4">{saveError}</p>}
+          {(saveError || uploadError) && <p className="text-[13.5px] font-bold text-coral mt-4">{saveError || uploadError}</p>}
 
           {dirty && (
             <div className="flex justify-end mt-4">
@@ -455,12 +490,17 @@ export default function MenuPage() {
                 <p className="text-[11.5px] font-extrabold text-accent uppercase mb-1.5">{s.name}</p>
                 {s.items.map((i) => (
                   <div key={i.id} className="flex items-center gap-2 mb-2">
-                    <span className="w-8 h-8 rounded-lg bg-accent-tint text-accent flex items-center justify-center shrink-0">
-                      {(() => {
-                        const Icon = ITEM_ICONS[i.icon] ?? UtensilsCrossed;
-                        return <Icon size={14} />;
-                      })()}
-                    </span>
+                    {i.img ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={i.img} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                    ) : (
+                      <span className="w-8 h-8 rounded-lg bg-accent-tint text-accent flex items-center justify-center shrink-0">
+                        {(() => {
+                          const Icon = ITEM_ICONS[i.icon] ?? UtensilsCrossed;
+                          return <Icon size={14} />;
+                        })()}
+                      </span>
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="text-[12.5px] font-extrabold truncate">{i.name || 'Untitled item'}</p>
                       <p className="text-[11px] text-muted font-semibold truncate">{i.desc}</p>
@@ -477,5 +517,47 @@ export default function MenuPage() {
         </div>
       </div>
     </Shell>
+  );
+}
+
+// MenuItemThumb shows a dish photo when set, otherwise the item's icon. While
+// the row is being edited it doubles as an uploader (click to pick, with a
+// remove affordance once a photo exists).
+function MenuItemThumb({
+  img, Icon, editable, busy, onPick, onRemove,
+}: {
+  img?: string | null; Icon: LucideIcon; editable: boolean; busy: boolean;
+  onPick: (f?: File) => void; onRemove: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <div className="relative w-9 h-9 shrink-0 group">
+      {img ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={img} alt="" className="w-9 h-9 rounded-xl object-cover" />
+      ) : (
+        <span className="w-9 h-9 rounded-xl bg-accent-tint text-accent flex items-center justify-center">
+          <Icon size={17} />
+        </span>
+      )}
+      {editable && (
+        <>
+          <button type="button" disabled={busy} onClick={() => ref.current?.click()}
+            className="absolute inset-0 rounded-xl flex items-center justify-center bg-black/45 text-white opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-100"
+            aria-label="Upload item photo">
+            {busy ? <Loader2 size={15} className="animate-spin" /> : <ImagePlus size={15} />}
+          </button>
+          {img && !busy && (
+            <button type="button" onClick={onRemove}
+              className="absolute -right-1.5 -top-1.5 rounded-full p-0.5 bg-coral text-white opacity-0 group-hover:opacity-100 transition-opacity"
+              aria-label="Remove item photo">
+              <X size={11} />
+            </button>
+          )}
+          <input ref={ref} type="file" accept="image/*" className="hidden"
+            onChange={(e) => { onPick(e.target.files?.[0]); e.target.value = ''; }} />
+        </>
+      )}
+    </div>
   );
 }
