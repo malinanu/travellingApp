@@ -4,7 +4,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../../../core/api/upload_service.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/spotto_icons.dart';
@@ -25,6 +27,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   String? _sub; // security | payment | privacy | help
+  bool _uploadingAvatar = false;
   final _name = TextEditingController(text: 'Lena Müller');
   final _email = TextEditingController(text: 'lena@email.com');
   late String _style;
@@ -60,6 +63,44 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     });
   }
 
+  Future<void> _pickAvatar() async {
+    if (_uploadingAvatar) return;
+    final userId = ref.read(meProvider)?['id'] as String? ?? '';
+    if (userId.isEmpty) return;
+    final XFile? file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1024,
+      imageQuality: 85,
+    );
+    if (file == null) return;
+    final contentType = mimeForUpload(file.mimeType, file.name);
+    if (contentType == null) {
+      _snack('Unsupported image type.');
+      return;
+    }
+    setState(() => _uploadingAvatar = true);
+    try {
+      final bytes = await file.readAsBytes();
+      await ref.read(uploadServiceProvider).upload(
+            bytes: bytes,
+            contentType: contentType,
+            ownerType: 'user',
+            ownerId: userId,
+            role: 'avatar',
+          );
+      await ref.read(meProvider.notifier).refresh();
+    } catch (_) {
+      _snack('Upload failed — try again.');
+    } finally {
+      if (mounted) setState(() => _uploadingAvatar = false);
+    }
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     switch (_sub) {
@@ -74,6 +115,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
 
     final text = Theme.of(context).textTheme;
+    final avatarUrl = ref.watch(meProvider)?['avatarUrl'] as String? ?? '';
     final name = _name.text.trim();
     final initials = name
         .split(' ')
@@ -135,7 +177,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   // hero
                   Column(
                     children: [
-                      SizedBox(
+                      PressScale(
+                        scale: 0.97,
+                        onTap: _pickAvatar,
+                        child: SizedBox(
                         width: 100,
                         height: 96,
                         child: Stack(
@@ -144,6 +189,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               width: 92,
                               height: 92,
                               alignment: Alignment.center,
+                              clipBehavior: Clip.antiAlias,
                               decoration: const BoxDecoration(
                                 shape: BoxShape.circle,
                                 gradient: LinearGradient(
@@ -159,12 +205,38 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                       spreadRadius: -12)
                                 ],
                               ),
-                              child: Text(initials.isEmpty ? 'LM' : initials,
-                                  style: const TextStyle(
-                                      fontSize: 32,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white)),
+                              child: avatarUrl.isNotEmpty
+                                  ? Image.network(avatarUrl,
+                                      width: 92,
+                                      height: 92,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Text(
+                                          initials.isEmpty ? 'LM' : initials,
+                                          style: const TextStyle(
+                                              fontSize: 32,
+                                              fontWeight: FontWeight.w800,
+                                              color: Colors.white)))
+                                  : Text(initials.isEmpty ? 'LM' : initials,
+                                      style: const TextStyle(
+                                          fontSize: 32,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white)),
                             ),
+                            if (_uploadingAvatar)
+                              Container(
+                                width: 92,
+                                height: 92,
+                                decoration: const BoxDecoration(
+                                    shape: BoxShape.circle, color: Colors.black38),
+                                child: const Center(
+                                  child: SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2.5, color: Colors.white),
+                                  ),
+                                ),
+                              ),
                             Positioned(
                               right: 0,
                               bottom: 0,
@@ -189,6 +261,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             ),
                           ],
                         ),
+                      ),
                       ),
                       const SizedBox(height: 12),
                       Text(name.isEmpty ? 'Traveller' : name,
