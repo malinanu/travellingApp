@@ -1628,6 +1628,44 @@ func scanReview(row pgx.Row) (domain.Review, error) {
 	return rv, err
 }
 
+// ReviewIDForTravellerPlace returns the stored review id for a traveller's
+// review of a place — used after UpsertReview (whose ON CONFLICT keeps the
+// original id) so callers get the real id to attach photos to.
+func (s *Store) ReviewIDForTravellerPlace(ctx context.Context, travellerID, placeID string) (string, error) {
+	var id string
+	err := s.Pool.QueryRow(ctx,
+		`SELECT id FROM reviews WHERE place_id=$1 AND traveller_id=$2`, placeID, travellerID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return id, err
+}
+
+// ReviewPhotos batch-loads the attached photo URLs for a set of reviews,
+// keyed by review id — one query for a whole reviews list (no N+1).
+func (s *Store) ReviewPhotos(ctx context.Context, reviewIDs []string) (map[string][]string, error) {
+	out := map[string][]string{}
+	if len(reviewIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.Pool.Query(ctx,
+		`SELECT owner_id, url FROM media
+		 WHERE owner_type='review' AND role='review' AND status='ready' AND owner_id = ANY($1)
+		 ORDER BY created_at ASC`, reviewIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ownerID, url string
+		if err := rows.Scan(&ownerID, &url); err != nil {
+			return nil, err
+		}
+		out[ownerID] = append(out[ownerID], url)
+	}
+	return out, rows.Err()
+}
+
 // UpsertReview is idempotent per traveller+place (one review each, editable).
 func (s *Store) UpsertReview(ctx context.Context, rv domain.Review) error {
 	_, err := s.Pool.Exec(ctx, `

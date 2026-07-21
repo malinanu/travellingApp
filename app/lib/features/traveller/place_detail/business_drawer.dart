@@ -1,6 +1,8 @@
 // Spot detail bottom sheet — port of BusinessDrawer.jsx: illustration
 // header, stats, deal claim, vibe voting, artisan check-in, menu, actions.
 
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -666,6 +668,7 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
   int _draftRating = 0;
   final _textController = TextEditingController();
   bool _submitting = false;
+  final List<_PickedImage> _photos = [];
 
   @override
   void dispose() {
@@ -673,14 +676,45 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
     super.dispose();
   }
 
+  Future<void> _pickPhoto() async {
+    final f = await ImagePicker().pickImage(
+        source: ImageSource.gallery, maxWidth: 1600, imageQuality: 85);
+    if (f == null) return;
+    final contentType = mimeForUpload(f.mimeType, f.name);
+    if (contentType == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Unsupported image type.')));
+      }
+      return;
+    }
+    final bytes = await f.readAsBytes();
+    setState(() => _photos.add(_PickedImage(bytes, contentType)));
+  }
+
   Future<void> _submit() async {
     if (_draftRating == 0 || _submitting) return;
     setState(() => _submitting = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await submitReview(ref, widget.place.id, _draftRating, _textController.text.trim());
+      final reviewId =
+          await submitReview(ref, widget.place.id, _draftRating, _textController.text.trim());
+      // Attach any picked photos to the review just created/edited.
+      for (final photo in _photos) {
+        await ref.read(uploadServiceProvider).upload(
+              bytes: photo.bytes,
+              contentType: photo.contentType,
+              ownerType: 'review',
+              ownerId: reviewId,
+              role: 'review',
+            );
+      }
+      if (_photos.isNotEmpty) ref.invalidate(placeReviewsProvider(widget.place.id));
       _textController.clear();
-      setState(() => _draftRating = 0);
+      setState(() {
+        _draftRating = 0;
+        _photos.clear();
+      });
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
     } finally {
@@ -734,6 +768,56 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
                   hintText: 'Share how it went (optional)',
                   filled: true,
                   fillColor: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 56,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    PressScale(
+                      onTap: _pickPhoto,
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: SpottoColors.accentTint, width: 1.5),
+                        ),
+                        child: const Icon(Icons.add_a_photo_outlined,
+                            color: SpottoColors.accent, size: 20),
+                      ),
+                    ),
+                    for (var i = 0; i < _photos.length; i++)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.memory(_photos[i].bytes,
+                                  width: 56, height: 56, fit: BoxFit.cover),
+                            ),
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: PressScale(
+                                onTap: () => setState(() => _photos.removeAt(i)),
+                                child: Container(
+                                  decoration: const BoxDecoration(
+                                      color: Colors.black54, shape: BoxShape.circle),
+                                  padding: const EdgeInsets.all(2),
+                                  child: const Icon(Icons.close, size: 12, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(height: 10),
@@ -816,6 +900,29 @@ class _ReviewTile extends StatelessWidget {
           if (review.text.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(review.text, style: text.bodySmall),
+          ],
+          if (review.photos.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 64,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (final url in review.photos)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.network(url,
+                            width: 64,
+                            height: 64,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const SizedBox(width: 64, height: 64)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ],
         ],
       ),
@@ -946,4 +1053,12 @@ class _MenuIconTile extends StatelessWidget {
       child: Icon(spottoIcon(icon), size: 20, color: SpottoColors.accent),
     );
   }
+}
+
+/// A photo the traveller picked for a review, held in memory (with its MIME
+/// type) until the review is posted and the bytes are uploaded to R2.
+class _PickedImage {
+  final Uint8List bytes;
+  final String contentType;
+  const _PickedImage(this.bytes, this.contentType);
 }

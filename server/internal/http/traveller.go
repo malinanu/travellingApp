@@ -106,6 +106,16 @@ func (s *Server) handlePlaceReviews(w http.ResponseWriter, r *http.Request) {
 	if reviews == nil {
 		reviews = []domain.Review{}
 	}
+	// Attach each review's photos in one batch query.
+	ids := make([]string, len(reviews))
+	for i, rv := range reviews {
+		ids[i] = rv.ID
+	}
+	if photos, err := s.Store.ReviewPhotos(r.Context(), ids); err == nil {
+		for i := range reviews {
+			reviews[i].Photos = photos[reviews[i].ID]
+		}
+	}
 	writeJSON(w, http.StatusOK, reviews)
 }
 
@@ -143,6 +153,11 @@ func (s *Server) handleCreateReview(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.UpsertReview(r.Context(), review); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
+	}
+	// On edit, ON CONFLICT kept the original row's id — return the real
+	// stored id so the client attaches photos to the right review.
+	if id, err := s.Store.ReviewIDForTravellerPlace(r.Context(), c.Subject, placeID); err == nil {
+		review.ID = id
 	}
 	writeJSON(w, http.StatusCreated, review)
 }

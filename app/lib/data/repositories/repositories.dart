@@ -546,10 +546,11 @@ final placePhotosProvider =
 
 /// Submits (or edits) the current traveller's review for a place, then
 /// refreshes [placeReviewsProvider] for that place.
-Future<void> submitReview(WidgetRef ref, String placeId, int rating, String text) async {
-  await ref.read(apiProvider).dio.post('/places/$placeId/reviews', data: {
+Future<String> submitReview(WidgetRef ref, String placeId, int rating, String text) async {
+  final res = await ref.read(apiProvider).dio.post('/places/$placeId/reviews', data: {
     'rating': rating,
     'text': text,
   });
   ref.invalidate(placeReviewsProvider(placeId));
+  return (res.data as Map)['id'] as String? ?? '';
 }

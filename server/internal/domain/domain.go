@@ -253,6 +253,9 @@ type Review struct {
 	CreatedAt   time.Time `json:"createdAt"`
 	// Joined display field (not a column).
 	TravellerName string `json:"travellerName,omitempty"`
+	// Photos are the review's attached image URLs (media role "review"),
+	// filled in by handlePlaceReviews — not a column on reviews.
+	Photos []string `json:"photos,omitempty"`
 }
 
 type Subscription struct {

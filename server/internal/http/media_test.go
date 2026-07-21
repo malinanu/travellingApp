@@ -162,6 +162,33 @@ func TestMediaUploads(t *testing.T) {
 		}
 	})
 
+	t.Run("review photos attach and show in the reviews list", func(t *testing.T) {
+		var review map[string]any
+		if got := doReqJSON(t, srv, http.MethodPost, "/places/plc_media_curated/reviews", travellerToken, map[string]any{"rating": 5, "text": "nice"}, &review); got != http.StatusCreated {
+			t.Fatalf("create review: %d", got)
+		}
+		reviewID, _ := review["id"].(string)
+		code, out := presign(travellerToken, map[string]any{"ownerType": "review", "ownerId": reviewID, "role": "review", "contentType": "image/jpeg", "size": 500})
+		if code != http.StatusOK {
+			t.Fatalf("review photo presign: %d", code)
+		}
+		key, _ := out["key"].(string)
+		if got := doReq(t, srv, http.MethodPost, "/media/confirm", travellerToken, map[string]any{"key": key, "ownerType": "review", "ownerId": reviewID, "role": "review"}); got != http.StatusOK {
+			t.Fatalf("review photo confirm: %d", got)
+		}
+		var reviews []domain.Review
+		doReqJSON(t, srv, http.MethodGet, "/places/plc_media_curated/reviews", travellerToken, nil, &reviews)
+		found := false
+		for _, rv := range reviews {
+			if rv.ID == reviewID {
+				found = len(rv.Photos) == 1
+			}
+		}
+		if !found {
+			t.Error("review photo did not appear on GET reviews")
+		}
+	})
+
 	t.Run("delete removes the row and the R2 object", func(t *testing.T) {
 		var vm []domain.Media
 		doReqJSON(t, srv, http.MethodGet, "/vendor/media", ownerToken, nil, &vm)
@@ -201,7 +228,8 @@ func TestMediaUploads(t *testing.T) {
 func purgeMediaTestData(t *testing.T, store *postgres.Store, ctx context.Context) {
 	t.Helper()
 	for _, q := range []string{
-		`DELETE FROM media WHERE owner_id LIKE 'ven_media_%' OR owner_id LIKE 'usr_media_%' OR owner_id = 'plc_media_curated'`,
+		`DELETE FROM media WHERE owner_id LIKE 'ven_media_%' OR owner_id LIKE 'usr_media_%' OR owner_id = 'plc_media_curated' OR uploaded_by LIKE 'usr_media_%'`,
+		`DELETE FROM reviews WHERE place_id = 'plc_media_curated'`,
 		`DELETE FROM places WHERE vendor_id LIKE 'ven_media_%' OR id = 'plc_media_curated'`,
 		`DELETE FROM users WHERE id LIKE 'usr_media_%'`,
 		`DELETE FROM vendors WHERE id LIKE 'ven_media_%'`,

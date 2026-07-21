@@ -351,6 +351,7 @@ class Review {
   final String text;
   final String createdAt;
   final String? travellerName;
+  final List<String> photos;
 
   const Review({
     required this.id,
@@ -359,6 +360,7 @@ class Review {
     required this.text,
     required this.createdAt,
     this.travellerName,
+    this.photos = const [],
   });
 
   factory Review.fromJson(Map<String, dynamic> json) => Review(
@@ -368,6 +370,7 @@ class Review {
         text: json['text'] as String? ?? '',
         createdAt: json['createdAt'] as String? ?? '',
         travellerName: json['travellerName'] as String?,
+        photos: [for (final p in (json['photos'] as List? ?? const [])) p as String],
       );
 }
 
