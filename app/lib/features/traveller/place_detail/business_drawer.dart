@@ -60,7 +60,28 @@ class BusinessDrawerBody extends ConsumerWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Illustration(kind: place.photo),
+                  // Real uploaded cover photo when the vendor has one, else
+                  // fall back to the illustration.
+                  if (place.cover.isNotEmpty)
+                    Image.network(
+                      place.cover,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Illustration(kind: place.photo),
+                    )
+                  else
+                    Illustration(kind: place.photo),
+                  // Bottom scrim so the white name/subtitle stays readable
+                  // over a photographic cover.
+                  if (place.cover.isNotEmpty)
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.transparent, Colors.black54],
+                        ),
+                      ),
+                    ),
                   Positioned(
                     left: 16,
                     bottom: 12,
@@ -100,6 +121,48 @@ class BusinessDrawerBody extends ConsumerWidget {
             ),
           ),
         ),
+        // Uploaded gallery photos + a tappable promo-video thumbnail.
+        if (place.gallery.isNotEmpty || place.promoVideo.isNotEmpty)
+          SizedBox(
+            height: 88,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              children: [
+                if (place.promoVideo.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: PressScale(
+                      onTap: () => launchUrl(Uri.parse(place.promoVideo),
+                          mode: LaunchMode.externalApplication),
+                      child: Container(
+                        width: 118,
+                        height: 88,
+                        decoration: BoxDecoration(
+                          color: Colors.black87,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.play_circle_fill, color: Colors.white, size: 34),
+                        ),
+                      ),
+                    ),
+                  ),
+                for (final url in place.gallery)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(url,
+                          width: 118,
+                          height: 88,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const SizedBox(width: 118, height: 88)),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -165,15 +228,15 @@ class BusinessDrawerBody extends ConsumerWidget {
                       padding: const EdgeInsets.only(bottom: 10),
                       child: Row(
                         children: [
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: SpottoColors.accentTint,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(spottoIcon(item.icon),
-                                size: 20, color: SpottoColors.accent),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: item.img.isNotEmpty
+                                ? Image.network(item.img,
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => _MenuIconTile(icon: item.icon))
+                                : _MenuIconTile(icon: item.icon),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -750,6 +813,25 @@ class _ReviewTile extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Fallback icon tile shown for a menu item that has no uploaded photo.
+class _MenuIconTile extends StatelessWidget {
+  final String icon;
+  const _MenuIconTile({required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: SpottoColors.accentTint,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(spottoIcon(icon), size: 20, color: SpottoColors.accent),
     );
   }
 }

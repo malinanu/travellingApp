@@ -58,12 +58,14 @@ class MenuItem {
   final int price; // Rs
   final String desc;
   final String icon;
+  final String img; // public R2 photo URL, or '' to show the icon
   const MenuItem({
     required this.id,
     required this.name,
     required this.price,
     required this.desc,
     required this.icon,
+    this.img = '',
   });
 
   factory MenuItem.fromJson(Map<String, dynamic> json) => MenuItem(
@@ -72,6 +74,7 @@ class MenuItem {
         price: (json['price'] as num?)?.toInt() ?? 0,
         desc: json['desc'] as String? ?? '',
         icon: json['icon'] as String? ?? '',
+        img: json['img'] as String? ?? '',
       );
 }
 
@@ -118,6 +121,9 @@ class Place {
   final bool artisan;
   final bool popularEvening;
   final String photo; // illustration kind: cowork/surf/sunset/clay/batik
+  final String cover; // uploaded cover photo URL (R2), '' = use illustration
+  final List<String> gallery; // uploaded gallery photo URLs (R2)
+  final String promoVideo; // uploaded promo video URL (R2), '' = none
   final List<MenuSection> menu;
   final Map<String, int> vibes; // vibeId -> vote count, from the server
   // Trip-planner fields — only meaningful for stops surfaced in the trip
@@ -156,6 +162,9 @@ class Place {
     this.artisan = false,
     this.popularEvening = false,
     required this.photo,
+    this.cover = '',
+    this.gallery = const [],
+    this.promoVideo = '',
     this.menu = const [],
     this.vibes = const {},
     this.cost = 0,
@@ -198,6 +207,9 @@ class Place {
         artisan: json['artisan'] as bool? ?? false,
         popularEvening: json['popularEvening'] as bool? ?? false,
         photo: json['photo'] as String? ?? 'cowork',
+        cover: json['cover'] as String? ?? '',
+        gallery: [for (final g in (json['gallery'] as List? ?? const [])) g as String],
+        promoVideo: json['promoVideo'] as String? ?? '',
         menu: [
           for (final s in (json['menu'] as List? ?? const []))
             MenuSection.fromJson(s as Map<String, dynamic>)
