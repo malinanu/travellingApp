@@ -232,6 +232,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Post("/admin/vendors/{id}/request-edits", s.vendorStatusHandler(domain.VendorEdits, "vendor.request_edits"))
 		r.Post("/admin/vendors/{id}/suspend", s.vendorStatusHandler(domain.VendorSuspended, "vendor.suspend"))
 		r.Post("/admin/vendors/{id}/reinstate", s.vendorStatusHandler(domain.VendorApproved, "vendor.reinstate"))
+		r.Get("/admin/vendors/summary", s.handleAdminVendorSummary)
 		r.Get("/admin/vendors/map", s.handleAdminVendorsMap)
 		r.Get("/admin/vendors/near", s.handleAdminVendorsNear)
 		r.Get("/admin/vendors/{id}/reviews", s.handleAdminVendorReviews)

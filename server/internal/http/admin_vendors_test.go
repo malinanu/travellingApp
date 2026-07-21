@@ -193,6 +193,57 @@ func TestAdminVendorDirectoryAndStats(t *testing.T) {
 			t.Errorf("want 404, got %d", got)
 		}
 	})
+
+	t.Run("summary aggregates network-wide vendor activity", func(t *testing.T) {
+		// The shared local DB holds vendors beyond this test's seeds, so every
+		// assertion is a lower bound: the seeded rows must be *included*.
+		var sm struct {
+			Total      int     `json:"total"`
+			Pending    int     `json:"pending"`
+			Approved   int     `json:"approved"`
+			Suspended  int     `json:"suspended"`
+			Flagged    int     `json:"flagged"`
+			Redeemed   int     `json:"redeemed"`
+			Checkins   int     `json:"checkins"`
+			Reviews    int     `json:"reviews"`
+			AvgRating  float64 `json:"avgRating"`
+			BadReviews int     `json:"badReviews"`
+			Offers     int     `json:"offers"`
+			OffersLive int     `json:"offersLive"`
+			ActiveSubs int     `json:"activeSubs"`
+			MRR        int     `json:"mrr"`
+		}
+		if got := doReqJSON(t, srv, http.MethodGet, "/admin/vendors/summary", adminToken, nil, &sm); got != http.StatusOK {
+			t.Fatalf("want 200, got %d", got)
+		}
+		// 3 seeded vendors (approved/suspended/pending) with 2 redemptions,
+		// 2 check-ins, 3 reviews (1 bad), 3 offers (2 live), 1 active $49 sub.
+		checks := []struct {
+			name       string
+			got, floor int
+		}{
+			{"total", sm.Total, 3},
+			{"pending", sm.Pending, 1},
+			{"approved", sm.Approved, 1},
+			{"suspended", sm.Suspended, 1},
+			{"redeemed", sm.Redeemed, 2},
+			{"checkins", sm.Checkins, 2},
+			{"reviews", sm.Reviews, 3},
+			{"badReviews", sm.BadReviews, 1},
+			{"offers", sm.Offers, 3},
+			{"offersLive", sm.OffersLive, 2},
+			{"activeSubs", sm.ActiveSubs, 1},
+			{"mrr", sm.MRR, 49},
+		}
+		for _, c := range checks {
+			if c.got < c.floor {
+				t.Errorf("%s: want >= %d, got %d", c.name, c.floor, c.got)
+			}
+		}
+		if sm.AvgRating < 1 || sm.AvgRating > 5 {
+			t.Errorf("avgRating out of range: %v", sm.AvgRating)
+		}
+	})
 }
 
 // purgeVendorStatsTestData removes every row this test seeds, keyed by the

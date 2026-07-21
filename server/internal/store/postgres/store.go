@@ -880,6 +880,82 @@ func (s *Store) VendorStats(ctx context.Context, vendorID string) (AdminVendorSt
 	return st, nil
 }
 
+// AdminVendorSummary is the network-wide vendor roll-up behind the Vendors
+// page's aggregate band — the same activity metrics as AdminVendorStats but
+// summed across every vendor, plus a status breakdown. Derived on read; no
+// stats table.
+type AdminVendorSummary struct {
+	// Vendor counts: Total plus one field per status the directory shows.
+	Total     int `json:"total"`
+	Pending   int `json:"pending"`
+	Approved  int `json:"approved"`
+	Edits     int `json:"edits"`
+	Suspended int `json:"suspended"`
+	Rejected  int `json:"rejected"`
+	// Flagged counts vendors (not reviews) at/over BadReviewFlagThreshold,
+	// matching the geo map's red-flag rule.
+	Flagged     int     `json:"flagged"`
+	Redeemed    int     `json:"redeemed"`
+	Redeemed30d int     `json:"redeemed30d"`
+	Checkins    int     `json:"checkins"`
+	Checkins30d int     `json:"checkins30d"`
+	Reviews     int     `json:"reviews"`
+	AvgRating   float64 `json:"avgRating"`
+	BadReviews  int     `json:"badReviews"`
+	Offers      int     `json:"offers"`
+	OffersLive  int     `json:"offersLive"`
+	OffersDraft int     `json:"offersDraft"`
+	ActiveSubs  int     `json:"activeSubs"`
+	MRR         int     `json:"mrr"`
+}
+
+// VendorSummary rolls up every vendor's activity for the Vendors page's
+// aggregate band. Like VendorStats it's a single round trip of scalar
+// subqueries, but un-scoped (no per-vendor filter). Check-ins reach a vendor
+// through places.vendor_id, same as the per-vendor query. Flagged reuses the
+// bad-review-count-per-vendor shape from AdminNotifications (store.go ~1768).
+func (s *Store) VendorSummary(ctx context.Context) (AdminVendorSummary, error) {
+	var sm AdminVendorSummary
+	err := s.Pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM vendors),
+			(SELECT count(*) FROM vendors WHERE status = 'pending'),
+			(SELECT count(*) FROM vendors WHERE status = 'approved'),
+			(SELECT count(*) FROM vendors WHERE status = 'edits'),
+			(SELECT count(*) FROM vendors WHERE status = 'suspended'),
+			(SELECT count(*) FROM vendors WHERE status = 'rejected'),
+			(SELECT count(*) FROM (
+				SELECT vendor_id FROM reviews
+				WHERE vendor_id IS NOT NULL AND rating <= 2
+				GROUP BY vendor_id HAVING count(*) >= $1
+			) f),
+			(SELECT count(*) FROM claims WHERE vendor_id IS NOT NULL AND redeemed_at IS NOT NULL),
+			(SELECT count(*) FROM claims WHERE vendor_id IS NOT NULL AND redeemed_at >= now() - interval '30 days'),
+			(SELECT count(*) FROM checkins c JOIN places p ON p.id = c.place_id WHERE p.vendor_id IS NOT NULL),
+			(SELECT count(*) FROM checkins c JOIN places p ON p.id = c.place_id
+				WHERE p.vendor_id IS NOT NULL AND c.created_at >= now() - interval '30 days'),
+			(SELECT count(*) FROM reviews WHERE vendor_id IS NOT NULL),
+			(SELECT COALESCE(avg(rating), 0) FROM reviews WHERE vendor_id IS NOT NULL),
+			(SELECT count(*) FROM reviews WHERE vendor_id IS NOT NULL AND rating <= 2),
+			(SELECT count(*) FROM offers),
+			(SELECT count(*) FROM offers WHERE status = 'live'),
+			(SELECT count(*) FROM offers WHERE status = 'draft'),
+			(SELECT count(*) FROM subscriptions WHERE state = 'active'),
+			(SELECT COALESCE(sum(mrr), 0) FROM subscriptions WHERE state = 'active')`,
+		BadReviewFlagThreshold).Scan(
+		&sm.Total, &sm.Pending, &sm.Approved, &sm.Edits, &sm.Suspended, &sm.Rejected,
+		&sm.Flagged,
+		&sm.Redeemed, &sm.Redeemed30d,
+		&sm.Checkins, &sm.Checkins30d,
+		&sm.Reviews, &sm.AvgRating, &sm.BadReviews,
+		&sm.Offers, &sm.OffersLive, &sm.OffersDraft,
+		&sm.ActiveSubs, &sm.MRR)
+	if err != nil {
+		return sm, err
+	}
+	return sm, nil
+}
+
 func (s *Store) SetVendorStatus(ctx context.Context, id string, status domain.VendorStatus) error {
 	tag, err := s.Pool.Exec(ctx, `UPDATE vendors SET status=$2 WHERE id=$1`, id, status)
 	if err == nil && tag.RowsAffected() == 0 {

@@ -418,6 +418,31 @@ export interface AdminVendorStats {
   subRenewsAt?: string;
 }
 
+/** Network-wide vendor roll-up behind the Vendors page's aggregate band —
+ * the same activity metrics as AdminVendorStats summed across every vendor,
+ * plus a status breakdown. `flagged` counts vendors, not reviews. */
+export interface AdminVendorSummary {
+  total: number;
+  pending: number;
+  approved: number;
+  edits: number;
+  suspended: number;
+  rejected: number;
+  flagged: number;
+  redeemed: number;
+  redeemed30d: number;
+  checkins: number;
+  checkins30d: number;
+  reviews: number;
+  avgRating: number;
+  badReviews: number;
+  offers: number;
+  offersLive: number;
+  offersDraft: number;
+  activeSubs: number;
+  mrr: number;
+}
+
 /** "12 min ago" style rendering for server timestamps. */
 export function timeAgo(iso: string | undefined): string {
   if (!iso) return '';

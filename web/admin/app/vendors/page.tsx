@@ -9,11 +9,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle, CheckCircle2, CreditCard, Edit3, MapPin,
-  Radio, ShieldAlert, Star, Ticket, Users, XCircle,
+  Radio, ShieldAlert, Star, Store, Ticket, Users, XCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
-import { timeAgo, type AdminVendorStats, type Vendor, type VendorStatus } from '@spotto/shared';
+import { timeAgo, type AdminVendorStats, type AdminVendorSummary, type Vendor, type VendorStatus } from '@spotto/shared';
 import Shell from '../../components/shell';
 import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
@@ -44,6 +44,12 @@ export default function VendorsPage() {
   const { data: vendors = [], isError } = useQuery<Vendor[]>({
     queryKey: ['admin-vendors', 'all'],
     queryFn: () => api.get<Vendor[]>('/admin/vendors'),
+  });
+
+  // Network-wide roll-up for the aggregate band above the directory.
+  const { data: summary } = useQuery<AdminVendorSummary>({
+    queryKey: ['admin-vendor-summary'],
+    queryFn: () => api.get<AdminVendorSummary>('/admin/vendors/summary'),
   });
 
   const [query, setQuery] = useState('');
@@ -85,6 +91,7 @@ export default function VendorsPage() {
     // Refreshes this list, the approval queue, and the KPI strip's pending count.
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-vendors'] });
+      qc.invalidateQueries({ queryKey: ['admin-vendor-summary'] });
       qc.invalidateQueries({ queryKey: ['admin-kpis'] });
     },
   });
@@ -92,6 +99,34 @@ export default function VendorsPage() {
   return (
     <Shell>
       {isError && <InlineErrorBanner message="Couldn't load the vendor directory — try refreshing." />}
+
+      <div className="mb-4">
+        <p className="text-[11.5px] font-bold text-muted uppercase tracking-wide mb-2">Vendor stats · network-wide</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
+          <StatTile icon={Store} label="Vendors"
+            value={summary ? `${summary.total}` : '—'}
+            sub={summary ? `${summary.pending} pending · ${summary.approved} live · ${summary.suspended} susp.` : undefined} />
+          <StatTile icon={Star} label="Avg rating"
+            value={summary && summary.reviews > 0 ? summary.avgRating.toFixed(1) : '—'}
+            sub={summary ? `${summary.reviews} reviews · ${summary.badReviews} bad` : undefined} />
+          <StatTile icon={ShieldAlert} label="Flagged"
+            value={summary ? `${summary.flagged}` : '—'}
+            sub={summary ? 'vendors over threshold' : undefined}
+            warn={!!summary && summary.flagged > 0} />
+          <StatTile icon={Ticket} label="Redemptions"
+            value={summary ? `${summary.redeemed}` : '—'}
+            sub={summary ? `${summary.redeemed30d} in 30d` : undefined} />
+          <StatTile icon={Users} label="Check-ins"
+            value={summary ? `${summary.checkins}` : '—'}
+            sub={summary ? `${summary.checkins30d} in 30d` : undefined} />
+          <StatTile icon={Radio} label="Offers"
+            value={summary ? `${summary.offersLive}` : '—'}
+            sub={summary ? `live · ${summary.offersDraft} draft · ${summary.offers} total` : undefined} />
+          <StatTile icon={CreditCard} label="Subscriptions"
+            value={summary ? `${summary.activeSubs}` : '—'}
+            sub={summary ? `$${summary.mrr}/mo MRR` : undefined} />
+        </div>
+      </div>
 
       <div className="panel px-4 py-3 mb-4 flex items-center gap-4 flex-wrap">
         <p className="font-bold text-[13.5px]">

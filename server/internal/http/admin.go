@@ -112,6 +112,18 @@ func (s *Server) handleAdminVendorStats(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// handleAdminVendorSummary powers the Vendors page's aggregate band — the
+// network-wide roll-up across every vendor (status breakdown, redemptions,
+// check-ins, rating, offers, subscriptions).
+func (s *Server) handleAdminVendorSummary(w http.ResponseWriter, r *http.Request) {
+	summary, err := s.Store.VendorSummary(r.Context())
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
 // vendorStatusHandler is shared by approve/reject/request-edits/suspend/
 // reinstate — action is a distinct audit-log label per call site even
 // though approve and reinstate both resolve to VendorApproved (server.go).
