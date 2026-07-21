@@ -29,6 +29,28 @@ export interface User {
   notifyReviews: boolean;
   notifyPayouts: boolean;
   notifyGrowthTips: boolean;
+  /** Public R2 URL of the profile picture, or "" to fall back to initials. */
+  avatarUrl: string;
+}
+
+/** One uploaded object in Cloudflare R2 — GET /vendor/media,
+ * /admin/vendors/{id}/media. role is cover|gallery|promo|doc|avatar|... */
+export interface Media {
+  id: string;
+  ownerType: string;
+  ownerId: string;
+  kind: 'image' | 'video' | 'doc';
+  role: string;
+  objectKey: string;
+  url: string;
+  contentType: string;
+  size: number;
+  width: number;
+  height: number;
+  uploadedBy: string;
+  status: string;
+  sort: number;
+  createdAt: string;
 }
 
 export interface TeamMember {

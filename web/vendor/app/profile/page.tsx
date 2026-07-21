@@ -11,8 +11,8 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Camera, Check, Clock, Coffee, Facebook, FileText, Globe, ImagePlus, Instagram,
-  KeyRound, Laptop, Lock, MapPin, Phone, Plus, Save, ShieldCheck, Star, Store, Sun,
+  Check, Clock, Facebook, FileText, Globe, Instagram,
+  KeyRound, Lock, MapPin, Phone, Plus, Save, ShieldCheck, Store, Sun,
   Sunrise, Sunset, UtensilsCrossed, Waves, Wifi, X, LucideIcon,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react';
 import type { DayHours, UpcomingHoliday, Vendor, VendorProfile, VendorProfileGrant, Weekday } from '@spotto/shared';
 import { WEEKDAYS } from '@spotto/shared';
 import Shell, { isFoodCategory, useBusiness, useMe } from '../../components/shell';
+import VendorPhotos from '../../components/vendor-photos';
 import { api } from '../../lib/api';
 import { BUSINESS_CATEGORIES, isSelectedCategory } from '../../lib/business-categories';
 
@@ -47,12 +48,6 @@ const TIME_SLOTS = [
 const ALL_AMENITIES = [
   'Power outlets', 'Standing desks', 'Air-con loft', 'Specialty coffee', 'Quiet zone',
   'Sea-view deck', 'Board storage', 'Outdoor shower', 'Live music', 'Parking',
-];
-
-const PHOTO_SLOTS = [
-  { id: 'p1', label: 'Sea View', gradient: 'linear-gradient(135deg, #2bb6c4, #0b6f86)', icon: Waves },
-  { id: 'p2', label: 'Co-work loft', gradient: 'linear-gradient(135deg, #0e8c8a, #0a5f6e)', icon: Laptop },
-  { id: 'p3', label: 'Coffee bar', gradient: 'linear-gradient(135deg, #c98a3c, #8a5a23)', icon: Coffee },
 ];
 
 function CardHeader({ icon: Icon, title, sub }: { icon: LucideIcon; title: string; sub: string }) {
@@ -363,32 +358,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          <div className="card p-6">
-            <CardHeader icon={Camera} title="Photos" sub="Show off your sea view & space" />
-            <div className="grid grid-cols-2 gap-2.5">
-              {PHOTO_SLOTS.map((slot, i) => {
-                const Icon = slot.icon;
-                return (
-                  <div key={slot.id} className="relative rounded-xl overflow-hidden aspect-[4/3]" style={{ background: slot.gradient }}>
-                    <Icon size={52} className="absolute -right-1 -bottom-2 text-white/25" />
-                    <div className="absolute left-2 bottom-2 rounded-md px-2 py-0.5 text-[11px] font-extrabold text-white bg-black/30">
-                      {slot.label}
-                    </div>
-                    {i === 0 && (
-                      <div className="absolute right-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-extrabold flex items-center gap-1 bg-[var(--sun)] text-[#5a3b00]">
-                        <Star size={10} className="fill-current" /> Cover
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              <button type="button"
-                className="aspect-[4/3] rounded-xl border-2 border-dashed border-line flex flex-col items-center justify-center gap-1 text-muted hover:opacity-80 transition-opacity">
-                <ImagePlus size={24} />
-                <span className="text-[12px] font-bold">Add photo</span>
-              </button>
-            </div>
-          </div>
+          {business?.id && <VendorPhotos vendorId={business.id} />}
 
           <div className="card p-6">
             <CardHeader icon={Wifi} title="Connectivity & vibe" sub="What digital nomads check first" />
