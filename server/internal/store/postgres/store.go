@@ -504,7 +504,10 @@ func (s *Store) AdminListVendorProfileGrants(ctx context.Context, status string)
 		return nil, err
 	}
 	defer rows.Close()
-	var out []AdminVendorGrantView
+	// Initialised (not nil) so an empty result serialises to JSON [] rather
+	// than null — the admin Access-grants page does grants.filter() and a
+	// null crashes it. Matches AdminSearch/AdminNotifications.
+	out := []AdminVendorGrantView{}
 	for rows.Next() {
 		var v AdminVendorGrantView
 		var revokedBy *string

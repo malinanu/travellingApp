@@ -9,8 +9,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +44,46 @@ func doReqJSON(t *testing.T, srv *httptest.Server, method, path, token string, b
 		json.NewDecoder(res.Body).Decode(out)
 	}
 	return res.StatusCode
+}
+
+// TestAdminVendorGrantsNeverNull guards the /access-grants crash: an empty
+// grant list must serialise to [] (not null), or the admin page's
+// grants.filter() throws "Cannot read properties of null".
+func TestAdminVendorGrantsNeverNull(t *testing.T) {
+	store := mustConnect(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	tokens := auth.NewTokens("test-secret-" + t.Name())
+	cfg := config.Config{CORSOrigins: []string{"http://localhost:3000"}, TOTPEncryptionKey: make([]byte, 32), VendorAppURL: "http://localhost:3000"}
+	srv := httptest.NewServer(httpapi.New(store, tokens, cfg).Router(cfg))
+	defer srv.Close()
+
+	now := time.Now()
+	pw, _ := auth.HashPassword("testpass123")
+	must(t, store.CreateUser(ctx, domain.User{ID: "usr_grantsnull_admin", Email: "admin@grantsnull.dev", PasswordHash: pw, Role: domain.RoleAdmin, CreatedAt: now}))
+	t.Cleanup(func() { store.Pool.Exec(ctx, `DELETE FROM users WHERE id = 'usr_grantsnull_admin'`) })
+	adminToken := loginAs(t, srv, "admin@grantsnull.dev", "testpass123")
+
+	// A status value no grant ever computes to keeps the result empty
+	// regardless of what the shared DB holds, so this exercises the empty
+	// path specifically.
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/admin/vendor-grants?status=__none__", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	res, err := http.DefaultClient.Do(req)
+	must(t, err)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", res.StatusCode)
+	}
+	body, _ := io.ReadAll(res.Body)
+	got := strings.TrimSpace(string(body))
+	if got == "null" {
+		t.Fatal("empty grant list serialised to null — this crashes the /access-grants page")
+	}
+	if got != "[]" {
+		t.Errorf("want [], got %s", got)
+	}
 }
 
 func TestVendorProfileGrants(t *testing.T) {
