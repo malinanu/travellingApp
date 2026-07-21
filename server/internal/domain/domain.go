@@ -53,6 +53,30 @@ type User struct {
 	// GoogleID links this account to a Google identity for OAuth sign-in;
 	// nil for accounts that have never signed in with Google.
 	GoogleID *string `json:"-"`
+	// AvatarURL is the public R2 URL of the account's profile picture, or
+	// "" to fall back to initials.
+	AvatarURL string `json:"avatarUrl"`
+}
+
+// Media is one uploaded object stored in Cloudflare R2 — see internal/media
+// and internal/http/media.go. Kind is image|video|doc; Role distinguishes
+// cover/gallery/promo/doc/avatar/review/contrib/menu_item.
+type Media struct {
+	ID          string    `json:"id"`
+	OwnerType   string    `json:"ownerType"`
+	OwnerID     string    `json:"ownerId"`
+	Kind        string    `json:"kind"`
+	Role        string    `json:"role"`
+	ObjectKey   string    `json:"objectKey"`
+	URL         string    `json:"url"`
+	ContentType string    `json:"contentType"`
+	Size        int64     `json:"size"`
+	Width       int       `json:"width"`
+	Height      int       `json:"height"`
+	UploadedBy  string    `json:"uploadedBy"`
+	Status      string    `json:"status"`
+	Sort        int       `json:"sort"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 const (

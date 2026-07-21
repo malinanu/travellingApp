@@ -16,6 +16,7 @@ import (
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/jobs"
 	"github.com/spotto/server/internal/mail"
+	"github.com/spotto/server/internal/media"
 	"github.com/spotto/server/internal/store/postgres"
 )
 
@@ -42,6 +43,9 @@ type Server struct {
 	// handleGoogleLogin/handleGoogleCallback report 501 in that case rather
 	// than panicking on a nil config.
 	GoogleOAuth *oauth2.Config
+	// Media uploads to Cloudflare R2; nil when R2 isn't configured, in which
+	// case the /media endpoints report 501 instead of failing startup.
+	Media media.Uploader
 
 	loginLimit    *loginLimiter // guards /auth/login (key: ip+email)
 	totpLimit     *loginLimiter // guards /auth/2fa/login-verify (key: ip+userID)
@@ -80,6 +84,9 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 			},
 			Endpoint: google.Endpoint,
 		}
+	}
+	if cfg.R2Configured() {
+		s.Media = media.NewR2(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket, cfg.R2PublicBaseURL)
 	}
 	return s
 }
@@ -148,6 +155,12 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/places/{id}", s.handlePlace)
 		r.Get("/places/{id}/reviews", s.handlePlaceReviews)
 		r.Post("/offers/{id}/view", s.handleOfferView)
+
+		// Media uploads (R2) — any authenticated role; per-owner authorisation
+		// is enforced inside the handlers (see canUploadFor).
+		r.Post("/media/presign", s.handleMediaPresign)
+		r.Post("/media/confirm", s.handleMediaConfirm)
+		r.Delete("/media/{id}", s.handleMediaDelete)
 	})
 
 	// Traveller.
@@ -186,6 +199,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/vendor/notifications", s.handleVendorNotifications)
 		r.Post("/vendor/notifications/read", s.handleVendorNotificationsRead)
 		r.Get("/vendor/team", s.handleVendorTeam)
+		r.Get("/vendor/media", s.handleVendorOwnMedia)
 		r.Get("/vendor/profile-grants/mine", s.handleMyVendorProfileGrant)
 		r.Post("/vendor/profile-grants/{id}/redeem", s.handleRedeemVendorProfileGrant)
 
@@ -241,6 +255,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/vendors/{id}/redemptions", s.handleAdminVendorRedemptions)
 		r.Get("/admin/vendors/{id}/team", s.handleAdminVendorTeam)
 		r.Get("/admin/vendors/{id}/audit", s.handleAdminVendorAudit)
+		r.Get("/admin/vendors/{id}/media", s.handleVendorMedia)
 		r.Patch("/admin/vendors/{id}", s.handleAdminVendorEdit)
 		r.Post("/admin/vendors/{id}/takedown", s.handleAdminVendorTakedown)
 		r.Get("/admin/feed", s.handleAdminFeed)

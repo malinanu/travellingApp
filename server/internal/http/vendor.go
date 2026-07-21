@@ -715,6 +715,29 @@ func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
 	_ = json.Unmarshal(orEmpty(v.Menu), &menuDoc)
 	data["menu"] = effectiveMenuSections(menuDoc, time.Now())
 
+	// Mirror the vendor's uploaded media into the traveller listing: a cover
+	// image, the gallery, and a promo video (all public R2 URLs).
+	if mediaRows, mErr := s.Store.MediaByOwner(ctx, "vendor", v.ID); mErr == nil {
+		gallery := []string{}
+		cover, promo := "", ""
+		for _, m := range mediaRows {
+			switch m.Role {
+			case "cover":
+				cover = m.URL
+			case "promo":
+				promo = m.URL
+			case "gallery":
+				gallery = append(gallery, m.URL)
+			}
+		}
+		if cover == "" && len(gallery) > 0 {
+			cover = gallery[0]
+		}
+		data["cover"] = cover
+		data["gallery"] = gallery
+		data["promoVideo"] = promo
+	}
+
 	place.Data, err = json.Marshal(data)
 	if err != nil {
 		return err

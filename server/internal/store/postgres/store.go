@@ -118,7 +118,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled, &u.TokenVersion,
 		&u.ShareLocation, &u.Lat, &u.Lng, &u.LocationUpdatedAt,
 		&u.Phone, &u.VendorRole, &u.NotifyRedemptions, &u.NotifyReviews, &u.NotifyPayouts, &u.NotifyGrowthTips,
-		&u.GoogleID)
+		&u.GoogleID, &u.AvatarURL)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -129,7 +129,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -994,6 +994,91 @@ func (s *Store) UpdateVendorMenu(ctx context.Context, id string, menu json.RawMe
 	return err
 }
 
+// ---- media (R2 uploads) ----
+
+const mediaCols = `id, owner_type, owner_id, kind, role, object_key, url, content_type, size, width, height, uploaded_by, status, sort, created_at`
+
+func scanMedia(row pgx.Row) (domain.Media, error) {
+	var m domain.Media
+	err := row.Scan(&m.ID, &m.OwnerType, &m.OwnerID, &m.Kind, &m.Role, &m.ObjectKey, &m.URL,
+		&m.ContentType, &m.Size, &m.Width, &m.Height, &m.UploadedBy, &m.Status, &m.Sort, &m.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return m, ErrNotFound
+	}
+	return m, err
+}
+
+func (s *Store) InsertMedia(ctx context.Context, m domain.Media) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO media (`+mediaCols+`)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		m.ID, m.OwnerType, m.OwnerID, m.Kind, m.Role, m.ObjectKey, m.URL,
+		m.ContentType, m.Size, m.Width, m.Height, m.UploadedBy, m.Status, m.Sort, m.CreatedAt)
+	return err
+}
+
+func (s *Store) MediaByID(ctx context.Context, id string) (domain.Media, error) {
+	return scanMedia(s.Pool.QueryRow(ctx, `SELECT `+mediaCols+` FROM media WHERE id=$1`, id))
+}
+
+// MediaByOwner lists an owner's media, cover first then by sort/newest — the
+// order galleries render in.
+func (s *Store) MediaByOwner(ctx context.Context, ownerType, ownerID string) ([]domain.Media, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+mediaCols+` FROM media
+		WHERE owner_type=$1 AND owner_id=$2 AND status='ready'
+		ORDER BY (role='cover') DESC, sort ASC, created_at DESC`, ownerType, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.Media{}
+	for rows.Next() {
+		m, err := scanMedia(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteMedia(ctx context.Context, id string) error {
+	tag, err := s.Pool.Exec(ctx, `DELETE FROM media WHERE id=$1`, id)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// ClearOwnerRole removes existing media for an owner+role, used to enforce
+// single-value roles (a vendor has one cover, one promo video; a user one
+// avatar). Returns the removed rows so the caller can delete their R2
+// objects.
+func (s *Store) ClearOwnerRole(ctx context.Context, ownerType, ownerID, role string) ([]domain.Media, error) {
+	rows, err := s.Pool.Query(ctx,
+		`DELETE FROM media WHERE owner_type=$1 AND owner_id=$2 AND role=$3 RETURNING `+mediaCols,
+		ownerType, ownerID, role)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.Media{}
+	for rows.Next() {
+		m, err := scanMedia(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SetUserAvatar(ctx context.Context, userID, url string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE users SET avatar_url=$2 WHERE id=$1`, userID, url)
+	return err
+}
+
 // ---- vendor blobs (dashboard/growth/reports documents) ----
 
 func (s *Store) UpsertVendorBlob(ctx context.Context, vendorID, kind string, data json.RawMessage) error {
@@ -1590,6 +1675,12 @@ func (s *Store) ReviewsByVendorBad(ctx context.Context, vendorID string) ([]doma
 		out = append(out, rv)
 	}
 	return out, rows.Err()
+}
+
+// ReviewByID fetches one review — used to verify the author before letting a
+// traveller attach photos to it.
+func (s *Store) ReviewByID(ctx context.Context, id string) (domain.Review, error) {
+	return scanReview(s.Pool.QueryRow(ctx, `SELECT `+reviewCols+reviewFrom+`WHERE r.id=$1`, id))
 }
 
 // ReviewsByVendor lists every review for a vendor (all ratings), newest
