@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -86,10 +87,18 @@ func (s *Server) handleAdminVendorsNear(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, vendors)
 }
 
-// handleAdminVendorReviews lists the bad (<=2 star) reviews behind a
-// vendor's flag, for the admin detail panel.
+// handleAdminVendorReviews lists a vendor's reviews. Default is the bad
+// (<=2 star) reviews behind the geo map's flag; ?all=1 returns every review
+// for the vendor-detail Reviews tab.
 func (s *Server) handleAdminVendorReviews(w http.ResponseWriter, r *http.Request) {
-	reviews, err := s.Store.ReviewsByVendorBad(r.Context(), chi.URLParam(r, "id"))
+	id := chi.URLParam(r, "id")
+	var reviews []domain.Review
+	var err error
+	if r.URL.Query().Get("all") == "1" {
+		reviews, err = s.Store.ReviewsByVendor(r.Context(), id)
+	} else {
+		reviews, err = s.Store.ReviewsByVendorBad(r.Context(), id)
+	}
 	if err != nil {
 		storeErr(w, err)
 		return
@@ -122,6 +131,178 @@ func (s *Server) handleAdminVendorSummary(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, summary)
+}
+
+// handleAdminVendorOffers lists a vendor's offers with live claimed/
+// redeemed/views counts, for the vendor-detail Offers tab.
+func (s *Server) handleAdminVendorOffers(w http.ResponseWriter, r *http.Request) {
+	offers, err := s.Store.OffersByVendor(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if offers == nil {
+		offers = []domain.Offer{}
+	}
+	writeJSON(w, http.StatusOK, offers)
+}
+
+// handleAdminVendorRedemptions lists a vendor's recent redeemed claims
+// (traveller, offer, timestamp) for the vendor-detail Activity tab.
+func (s *Server) handleAdminVendorRedemptions(w http.ResponseWriter, r *http.Request) {
+	claims, err := s.Store.RedemptionsByVendor(r.Context(), chi.URLParam(r, "id"), nil)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if claims == nil {
+		claims = []domain.Claim{}
+	}
+	writeJSON(w, http.StatusOK, claims)
+}
+
+// adminVendorTeamResponse is the vendor-detail Team tab payload: staff roster,
+// still-pending invites, and any active/pending profile-access grants.
+type adminVendorTeamResponse struct {
+	Members []domain.User                   `json:"members"`
+	Invites []domain.VendorInvite           `json:"invites"`
+	Grants  []postgres.AdminVendorGrantView `json:"grants"`
+}
+
+func (s *Server) handleAdminVendorTeam(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	members, err := s.Store.VendorTeamMembers(r.Context(), id)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	invites, err := s.Store.VendorInvites(r.Context(), id)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	allGrants, err := s.Store.AdminListVendorProfileGrants(r.Context(), "")
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	resp := adminVendorTeamResponse{
+		Members: members,
+		Invites: invites,
+		Grants:  []postgres.AdminVendorGrantView{},
+	}
+	if resp.Members == nil {
+		resp.Members = []domain.User{}
+	}
+	if resp.Invites == nil {
+		resp.Invites = []domain.VendorInvite{}
+	}
+	for _, g := range allGrants {
+		if g.VendorID == id {
+			resp.Grants = append(resp.Grants, g)
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleAdminVendorAudit returns the admin-action history for one vendor —
+// the vendor-detail History tab.
+func (s *Server) handleAdminVendorAudit(w http.ResponseWriter, r *http.Request) {
+	entries, err := s.Store.AuditLogsByTarget(r.Context(), "vendor", chi.URLParam(r, "id"), 100)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, entries)
+}
+
+// handleAdminVendorEdit is the admin override-edit path: it patches any
+// provided vendor field (identity, internal note/flags/priority, the profile
+// blob, and the menu) regardless of the vendor's status, then re-syncs the
+// traveller-facing place so corrections show immediately.
+func (s *Server) handleAdminVendorEdit(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Name     *string         `json:"name"`
+		Category *string         `json:"category"`
+		Town     *string         `json:"town"`
+		Country  *string         `json:"country"`
+		Priority *string         `json:"priority"`
+		Note     *string         `json:"note"`
+		Flags    *[]string       `json:"flags"`
+		Profile  json.RawMessage `json:"profile"`
+		Menu     json.RawMessage `json:"menu"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	v, err := s.Store.VendorByID(r.Context(), id)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	changed := []string{}
+	if req.Name != nil {
+		v.Name, changed = *req.Name, append(changed, "name")
+	}
+	if req.Category != nil {
+		v.Category, changed = *req.Category, append(changed, "category")
+	}
+	if req.Town != nil {
+		v.Town, changed = *req.Town, append(changed, "town")
+	}
+	if req.Country != nil {
+		v.Country, changed = *req.Country, append(changed, "country")
+	}
+	if req.Priority != nil {
+		v.Priority, changed = *req.Priority, append(changed, "priority")
+	}
+	if req.Note != nil {
+		v.Note, changed = *req.Note, append(changed, "note")
+	}
+	if req.Flags != nil {
+		v.Flags, changed = *req.Flags, append(changed, "flags")
+	}
+	if len(req.Profile) > 0 {
+		v.Profile, changed = req.Profile, append(changed, "profile")
+	}
+	if len(req.Menu) > 0 {
+		v.Menu, changed = req.Menu, append(changed, "menu")
+	}
+	if len(changed) == 0 {
+		writeErr(w, http.StatusBadRequest, "no editable fields provided")
+		return
+	}
+	if err := s.Store.UpsertVendor(r.Context(), v); err != nil {
+		storeErr(w, err)
+		return
+	}
+	s.syncVendorPlaceBestEffort(r.Context(), v)
+	s.logAdminAction(r.Context(), "vendor.admin_edit", "vendor", id, map[string]any{"changed": changed})
+	writeJSON(w, http.StatusOK, v)
+}
+
+// handleAdminVendorTakedown is the emergency control: it suspends the vendor
+// (which pulls its place from the traveller feed via placeVisibleWhere) and
+// records the mandatory reason in the audit log.
+func (s *Server) handleAdminVendorTakedown(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		writeErr(w, http.StatusBadRequest, "a takedown reason is required")
+		return
+	}
+	if err := s.Store.SetVendorStatus(r.Context(), id, domain.VendorSuspended); err != nil {
+		storeErr(w, err)
+		return
+	}
+	s.logAdminAction(r.Context(), "vendor.takedown", "vendor", id, map[string]any{"reason": req.Reason})
+	writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": string(domain.VendorSuspended)})
 }
 
 // vendorStatusHandler is shared by approve/reject/request-edits/suspend/

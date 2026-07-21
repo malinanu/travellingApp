@@ -443,6 +443,26 @@ export interface AdminVendorSummary {
   mrr: number;
 }
 
+/** A still-pending team invite an owner generated — GET
+ * /admin/vendors/{id}/team (and the vendor-side team endpoint). */
+export interface VendorInvite {
+  id: string;
+  vendorId: string;
+  code: string;
+  email?: string;
+  role: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** Team tab payload for the admin vendor detail: staff roster, pending
+ * invites, and any profile-access PIN grants for this vendor. */
+export interface AdminVendorTeam {
+  members: User[];
+  invites: VendorInvite[];
+  grants: AdminVendorProfileGrant[];
+}
+
 /** "12 min ago" style rendering for server timestamps. */
 export function timeAgo(iso: string | undefined): string {
   if (!iso) return '';

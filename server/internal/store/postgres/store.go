@@ -1162,8 +1162,16 @@ func (s *Store) UpsertPlace(ctx context.Context, p domain.Place) error {
 	return err
 }
 
+// placeVisibleWhere hides a vendor's traveller-facing place while that vendor
+// is not approved (suspended/rejected/pending/edits) — this is what an
+// admin emergency takedown, and an ordinary suspend, rely on to pull a
+// listing from the feed. Curated places (no vendor_id) always show.
+const placeVisibleWhere = `(p.vendor_id IS NULL OR EXISTS (
+	SELECT 1 FROM vendors v WHERE v.id = p.vendor_id AND v.status = 'approved'))`
+
 func (s *Store) Places(ctx context.Context) ([]domain.Place, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id, name, vendor_id, data FROM places ORDER BY id`)
+	rows, err := s.Pool.Query(ctx,
+		`SELECT p.id, p.name, p.vendor_id, p.data FROM places p WHERE `+placeVisibleWhere+` ORDER BY p.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -1182,7 +1190,7 @@ func (s *Store) Places(ctx context.Context) ([]domain.Place, error) {
 func (s *Store) PlaceByID(ctx context.Context, id string) (domain.Place, error) {
 	var p domain.Place
 	err := s.Pool.QueryRow(ctx,
-		`SELECT id, name, vendor_id, data FROM places WHERE id=$1`, id).
+		`SELECT p.id, p.name, p.vendor_id, p.data FROM places p WHERE p.id=$1 AND `+placeVisibleWhere, id).
 		Scan(&p.ID, &p.Name, &p.VendorID, &p.Data)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
@@ -1584,6 +1592,27 @@ func (s *Store) ReviewsByVendorBad(ctx context.Context, vendorID string) ([]doma
 	return out, rows.Err()
 }
 
+// ReviewsByVendor lists every review for a vendor (all ratings), newest
+// first — the admin vendor-detail Reviews tab. ReviewsByVendorBad stays the
+// geo map's flag source.
+func (s *Store) ReviewsByVendor(ctx context.Context, vendorID string) ([]domain.Review, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT `+reviewCols+reviewFrom+`WHERE r.vendor_id=$1 ORDER BY r.created_at DESC`, vendorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Review
+	for rows.Next() {
+		rv, err := scanReview(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rv)
+	}
+	return out, rows.Err()
+}
+
 // ---- vibes / checkins ----
 
 func (s *Store) AddVibeVote(ctx context.Context, placeID, vibeID, travellerID string) error {
@@ -1687,6 +1716,31 @@ func (s *Store) AdminAuditLogs(ctx context.Context, beforeID int64, targetType, 
 	}
 	defer rows.Close()
 	var out []domain.AdminAuditLog
+	for rows.Next() {
+		var e domain.AdminAuditLog
+		if err := rows.Scan(&e.ID, &e.ActorID, &e.ActorEmail, &e.ActorName, &e.Action,
+			&e.TargetType, &e.TargetID, &e.Metadata, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// AuditLogsByTarget returns the admin-action history for one specific entity
+// (e.g. a single vendor), newest first — powers the vendor-detail History
+// tab. AdminAuditLogs filters by target *type* and actor, not target id.
+func (s *Store) AuditLogsByTarget(ctx context.Context, targetType, targetID string, limit int) ([]domain.AdminAuditLog, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT id, actor_id, actor_email, actor_name, action, target_type, target_id, metadata, created_at
+		FROM admin_audit_log
+		WHERE target_type=$1 AND target_id=$2
+		ORDER BY id DESC LIMIT $3`, targetType, targetID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.AdminAuditLog{}
 	for rows.Next() {
 		var e domain.AdminAuditLog
 		if err := rows.Scan(&e.ID, &e.ActorID, &e.ActorEmail, &e.ActorName, &e.Action,
