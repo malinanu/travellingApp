@@ -100,6 +100,18 @@ func (s *Server) handleAdminVendorReviews(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, reviews)
 }
 
+// handleAdminVendorStats powers the Vendors page monitor pane — one
+// vendor's live activity roll-up (redemptions, check-ins, reviews, offers,
+// content, subscription, team).
+func (s *Server) handleAdminVendorStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.Store.VendorStats(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
 // vendorStatusHandler is shared by approve/reject/request-edits/suspend/
 // reinstate — action is a distinct audit-log label per call site even
 // though approve and reinstate both resolve to VendorApproved (server.go).

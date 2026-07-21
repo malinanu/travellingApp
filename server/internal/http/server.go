@@ -235,6 +235,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/vendors/map", s.handleAdminVendorsMap)
 		r.Get("/admin/vendors/near", s.handleAdminVendorsNear)
 		r.Get("/admin/vendors/{id}/reviews", s.handleAdminVendorReviews)
+		r.Get("/admin/vendors/{id}/stats", s.handleAdminVendorStats)
 		r.Get("/admin/feed", s.handleAdminFeed)
 		r.Post("/admin/feed/{id}/approve", s.feedResolveHandler("approved"))
 		r.Post("/admin/feed/{id}/remove", s.feedResolveHandler("removed"))

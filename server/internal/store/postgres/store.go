@@ -792,6 +792,94 @@ func (s *Store) Vendors(ctx context.Context, status string) ([]domain.Vendor, er
 	return out, rows.Err()
 }
 
+// AdminVendorStats is the per-vendor activity roll-up behind the admin
+// Vendors page's monitor pane. Everything here is derived on read — there
+// is no stats table — so it always reflects live data, unlike the
+// vendor-facing dashboard/growth/reports blobs (see VendorBlob).
+type AdminVendorStats struct {
+	// Redemptions come from claims: Claimed is every claim raised against
+	// the vendor, Redeemed only those actually validated at the counter.
+	Claimed     int     `json:"claimed"`
+	Redeemed    int     `json:"redeemed"`
+	Redeemed30d int     `json:"redeemed30d"`
+	Checkins    int     `json:"checkins"`
+	Checkins30d int     `json:"checkins30d"`
+	Reviews     int     `json:"reviews"`
+	AvgRating   float64 `json:"avgRating"`
+	BadReviews  int     `json:"badReviews"`
+	Flagged     bool    `json:"flagged"`
+	Offers      int     `json:"offers"`
+	OffersLive  int     `json:"offersLive"`
+	OffersDraft int     `json:"offersDraft"`
+	// NOTE: feed_items are deliberately not counted here. That table has no
+	// vendor_id — only a free-text `vendor` display label that does not
+	// reliably equal vendors.name (the seed set pairs "Driftwood Coffee"
+	// with a vendor actually named "Driftwood Coffee & Co-Work"), so a
+	// per-vendor count would read 0 for almost everyone and look broken
+	// rather than empty. Doing this properly needs a feed_items.vendor_id.
+	TeamTotal      int `json:"teamTotal"`
+	TeamManagers   int `json:"teamManagers"`
+	TeamStaff      int `json:"teamStaff"`
+	PendingInvites int `json:"pendingInvites"`
+	// Subscription fields are nil for a vendor that has never had a
+	// subscriptions row (the common case for Free-tier vendors).
+	SubTier     *string    `json:"subTier,omitempty"`
+	SubMRR      *int       `json:"subMrr,omitempty"`
+	SubState    *string    `json:"subState,omitempty"`
+	SubRenewsAt *time.Time `json:"subRenewsAt,omitempty"`
+}
+
+// VendorStats rolls up one vendor's activity for the admin monitor pane.
+// Written as scalar subqueries against a single vendors row so the whole
+// pane costs one round trip; every source table is already indexed on
+// vendor_id (claims_vendor_idx, reviews_vendor_idx, and the offers FK).
+//
+// One join is not by vendor_id: checkins carry only a place_id, so they
+// reach the vendor through places.vendor_id.
+func (s *Store) VendorStats(ctx context.Context, vendorID string) (AdminVendorStats, error) {
+	var st AdminVendorStats
+	err := s.Pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM claims WHERE vendor_id = v.id),
+			(SELECT count(*) FROM claims WHERE vendor_id = v.id AND redeemed_at IS NOT NULL),
+			(SELECT count(*) FROM claims WHERE vendor_id = v.id AND redeemed_at >= now() - interval '30 days'),
+			(SELECT count(*) FROM checkins c JOIN places p ON p.id = c.place_id WHERE p.vendor_id = v.id),
+			(SELECT count(*) FROM checkins c JOIN places p ON p.id = c.place_id
+				WHERE p.vendor_id = v.id AND c.created_at >= now() - interval '30 days'),
+			(SELECT count(*) FROM reviews WHERE vendor_id = v.id),
+			(SELECT COALESCE(avg(rating), 0) FROM reviews WHERE vendor_id = v.id),
+			(SELECT count(*) FROM reviews WHERE vendor_id = v.id AND rating <= 2),
+			(SELECT count(*) FROM offers WHERE vendor_id = v.id),
+			(SELECT count(*) FROM offers WHERE vendor_id = v.id AND status = 'live'),
+			(SELECT count(*) FROM offers WHERE vendor_id = v.id AND status = 'draft'),
+			(SELECT count(*) FROM users WHERE vendor_id = v.id),
+			(SELECT count(*) FROM users WHERE vendor_id = v.id AND vendor_role = 'manager'),
+			(SELECT count(*) FROM users WHERE vendor_id = v.id AND vendor_role = 'staff'),
+			(SELECT count(*) FROM vendor_invites WHERE vendor_id = v.id
+				AND accepted_at IS NULL AND NOT revoked AND expires_at > now()),
+			sub.tier, sub.mrr, sub.state, sub.renews_at
+		FROM vendors v
+		LEFT JOIN LATERAL (
+			SELECT tier, mrr, state, renews_at FROM subscriptions WHERE vendor_id = v.id LIMIT 1
+		) sub ON true
+		WHERE v.id = $1`, vendorID).Scan(
+		&st.Claimed, &st.Redeemed, &st.Redeemed30d,
+		&st.Checkins, &st.Checkins30d,
+		&st.Reviews, &st.AvgRating, &st.BadReviews,
+		&st.Offers, &st.OffersLive, &st.OffersDraft,
+		&st.TeamTotal, &st.TeamManagers, &st.TeamStaff, &st.PendingInvites,
+		&st.SubTier, &st.SubMRR, &st.SubState, &st.SubRenewsAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return st, ErrNotFound
+	}
+	if err != nil {
+		return st, err
+	}
+	// Same threshold the geo map flags on, so the two views agree.
+	st.Flagged = st.BadReviews >= BadReviewFlagThreshold
+	return st, nil
+}
+
 func (s *Store) SetVendorStatus(ctx context.Context, id string, status domain.VendorStatus) error {
 	tag, err := s.Pool.Exec(ctx, `UPDATE vendors SET status=$2 WHERE id=$1`, id, status)
 	if err == nil && tag.RowsAffected() == 0 {

@@ -389,6 +389,35 @@ export interface AdminKPIs {
   activeSubs: number;
 }
 
+/** One vendor's live activity roll-up, for the admin Vendors monitor pane.
+ * Derived on read from claims/checkins/reviews/offers/feed_items — not a
+ * stored snapshot, so it never goes stale. */
+export interface AdminVendorStats {
+  claimed: number;
+  redeemed: number;
+  redeemed30d: number;
+  checkins: number;
+  checkins30d: number;
+  reviews: number;
+  avgRating: number;
+  badReviews: number;
+  flagged: boolean;
+  offers: number;
+  offersLive: number;
+  offersDraft: number;
+  // No feed-item counts: feed_items has no vendor_id, only a free-text
+  // vendor label that doesn't reliably match vendors.name.
+  teamTotal: number;
+  teamManagers: number;
+  teamStaff: number;
+  pendingInvites: number;
+  /** Absent for vendors with no subscriptions row (typical for Free tier). */
+  subTier?: string;
+  subMrr?: number;
+  subState?: string;
+  subRenewsAt?: string;
+}
+
 /** "12 min ago" style rendering for server timestamps. */
 export function timeAgo(iso: string | undefined): string {
   if (!iso) return '';
