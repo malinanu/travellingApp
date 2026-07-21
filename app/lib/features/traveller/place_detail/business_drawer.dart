@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/upload_service.dart';
@@ -137,8 +138,10 @@ class BusinessDrawerBody extends ConsumerWidget {
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: PressScale(
-                      onTap: () => launchUrl(Uri.parse(place.promoVideo),
-                          mode: LaunchMode.externalApplication),
+                      onTap: () => showDialog<void>(
+                        context: context,
+                        builder: (_) => _PromoVideoDialog(url: place.promoVideo),
+                      ),
                       child: Container(
                         width: 118,
                         height: 88,
@@ -1061,4 +1064,91 @@ class _PickedImage {
   final Uint8List bytes;
   final String contentType;
   const _PickedImage(this.bytes, this.contentType);
+}
+
+/// Plays a vendor's promo video (an R2 URL) in-app in a dialog.
+class _PromoVideoDialog extends StatefulWidget {
+  final String url;
+  const _PromoVideoDialog({required this.url});
+
+  @override
+  State<_PromoVideoDialog> createState() => _PromoVideoDialogState();
+}
+
+class _PromoVideoDialogState extends State<_PromoVideoDialog> {
+  late final VideoPlayerController _controller;
+  bool _ready = false;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..initialize().then((_) {
+        if (!mounted) return;
+        setState(() => _ready = true);
+        _controller.play();
+      }).catchError((_) {
+        if (mounted) setState(() => _failed = true);
+      });
+    _controller.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: const EdgeInsets.all(16),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (_failed)
+            const Padding(
+              padding: EdgeInsets.all(40),
+              child: Text("Couldn't play this video.",
+                  style: TextStyle(color: Colors.white)),
+            )
+          else if (_ready)
+            AspectRatio(
+              aspectRatio: _controller.value.aspectRatio == 0
+                  ? 16 / 9
+                  : _controller.value.aspectRatio,
+              child: GestureDetector(
+                onTap: () => setState(() =>
+                    _controller.value.isPlaying ? _controller.pause() : _controller.play()),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    VideoPlayer(_controller),
+                    if (!_controller.value.isPlaying)
+                      const Icon(Icons.play_circle_fill, color: Colors.white70, size: 56),
+                  ],
+                ),
+              ),
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.all(40),
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+          Positioned(
+            right: 4,
+            top: 4,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
