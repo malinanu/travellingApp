@@ -8,16 +8,16 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle, CheckCircle2, Clock, CreditCard, Edit3, Eye, Globe, History,
-  MapPin, Pencil, Phone, Power, Radio, Save, ShieldAlert, Star, Store, Tag,
-  Ticket, Users, Wifi, XCircle,
+  AlertTriangle, CheckCircle2, Clock, CreditCard, Edit3, Eye, FileText, Film, Globe, History,
+  ImagePlus, Loader2, MapPin, Pencil, Phone, Power, Radio, Save, ShieldAlert, Star, Store, Tag,
+  Ticket, Trash2, Users, Wifi, XCircle,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  timeAgo, type AdminAuditLogEntry, type AdminVendorProfileGrant, type AdminVendorStats,
-  type AdminVendorSummary, type AdminVendorTeam, type Claim, type Offer, type Review,
-  type Vendor, type VendorProfile, type VendorStatus,
+  timeAgo, uploadMedia, validateFile, type AdminAuditLogEntry, type AdminVendorProfileGrant,
+  type AdminVendorStats, type AdminVendorSummary, type AdminVendorTeam, type Claim, type Media,
+  type MediaRole, type Offer, type Review, type Vendor, type VendorProfile, type VendorStatus,
 } from '@spotto/shared';
 import Shell from '../../components/shell';
 import { InlineErrorBanner } from '../../components/route-status';
@@ -459,6 +459,8 @@ function OverviewTab({ vendor, stats }: { vendor: Vendor; stats?: AdminVendorSta
         </p>
       </div>
 
+      <VendorMediaPanel vendorId={vendor.id} />
+
       {vendor.flags && vendor.flags.length > 0 && (
         <div className="rounded-xl p-4 mt-3" style={{ background: '#fdf0cd4d', border: '1px solid #f6b81e55' }}>
           <p className="font-bold text-[13px]" style={{ color: '#a97b00' }}>Flags</p>
@@ -825,6 +827,98 @@ function Field({ label, children, className }: { label: string; children: React.
 
 function TabEmpty({ label }: { label: string }) {
   return <p className="px-4 py-8 text-center text-muted font-semibold text-[13px]">{label}</p>;
+}
+
+// VendorMediaPanel lets an admin view, add, and remove a vendor's uploaded
+// media (cover / gallery / promo video / verification docs) — the override
+// path, so it works regardless of vendor status.
+function VendorMediaPanel({ vendorId }: { vendorId: string }) {
+  const qc = useQueryClient();
+  const { data: media = [] } = useQuery<Media[]>({
+    queryKey: ['admin-vendor-media', vendorId],
+    queryFn: () => api.get<Media[]>(`/admin/vendors/${vendorId}/media`),
+  });
+  const [busy, setBusy] = useState<MediaRole | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const cover = media.find((m) => m.role === 'cover');
+  const gallery = media.filter((m) => m.role === 'gallery');
+  const promo = media.find((m) => m.role === 'promo');
+  const docs = media.filter((m) => m.role === 'doc');
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['admin-vendor-media', vendorId] });
+  const add = async (file: File | undefined, role: MediaRole, kind: 'image' | 'video' | 'doc') => {
+    if (!file) return;
+    const invalid = validateFile(file, kind);
+    if (invalid) { setError(invalid); return; }
+    setError(null);
+    setBusy(role);
+    try {
+      await uploadMedia(api, file, { ownerType: 'vendor', ownerId: vendorId, role });
+      invalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Upload failed.');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del(`/media/${id}`),
+    onSuccess: invalidate,
+  });
+
+  return (
+    <div className="rounded-xl p-4 mt-3" style={{ background: 'var(--bg)', border: '1px solid var(--line)' }}>
+      <p className="text-[11.5px] font-bold text-muted uppercase mb-2">Media</p>
+      {error && <p className="text-[12.5px] font-bold text-coral mb-2">{error}</p>}
+      <div className="flex flex-wrap gap-2 items-start">
+        {cover && <MediaThumb m={cover} label="Cover" onDelete={() => remove.mutate(cover.id)} />}
+        {gallery.map((m) => <MediaThumb key={m.id} m={m} onDelete={() => remove.mutate(m.id)} />)}
+        {promo && <MediaThumb m={promo} label="Promo" video onDelete={() => remove.mutate(promo.id)} />}
+        {docs.map((m) => <MediaThumb key={m.id} m={m} label="Doc" doc onDelete={() => remove.mutate(m.id)} />)}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <AdminUploadBtn label="Cover" icon={ImagePlus} busy={busy === 'cover'} accept="image/*" onPick={(f) => add(f, 'cover', 'image')} />
+        <AdminUploadBtn label="Photo" icon={ImagePlus} busy={busy === 'gallery'} accept="image/*" onPick={(f) => add(f, 'gallery', 'image')} />
+        <AdminUploadBtn label="Video" icon={Film} busy={busy === 'promo'} accept="video/*" onPick={(f) => add(f, 'promo', 'video')} />
+        <AdminUploadBtn label="Doc" icon={FileText} busy={busy === 'doc'} accept="application/pdf,image/*" onPick={(f) => add(f, 'doc', 'doc')} />
+      </div>
+    </div>
+  );
+}
+
+function MediaThumb({ m, label, video, doc, onDelete }: { m: Media; label?: string; video?: boolean; doc?: boolean; onDelete: () => void }) {
+  return (
+    <div className="relative w-16 h-16 rounded-lg overflow-hidden group" style={{ border: '1px solid var(--line)' }}>
+      {video ? (
+        <video src={m.url} className="w-full h-full object-cover" />
+      ) : doc ? (
+        <a href={m.url} target="_blank" rel="noreferrer" className="w-full h-full flex items-center justify-center" style={{ background: 'var(--surface)' }}>
+          <FileText size={22} className="text-muted" />
+        </a>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={m.url} alt="" className="w-full h-full object-cover" />
+      )}
+      {label && <span className="absolute left-1 bottom-1 text-[9px] font-bold px-1 rounded bg-black/50 text-white">{label}</span>}
+      <button onClick={onDelete} aria-label="Delete"
+        className="absolute right-0.5 top-0.5 rounded-full p-0.5 bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+        <Trash2 size={11} />
+      </button>
+    </div>
+  );
+}
+
+function AdminUploadBtn({ label, icon: Icon, busy, accept, onPick }: { label: string; icon: typeof ImagePlus; busy: boolean; accept: string; onPick: (f?: File) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <button type="button" disabled={busy} onClick={() => ref.current?.click()}
+      className="btn !py-1.5 flex items-center gap-1.5 text-[12px]">
+      {busy ? <Loader2 size={13} className="animate-spin" /> : <Icon size={13} />} {label}
+      <input ref={ref} type="file" accept={accept} className="hidden"
+        onChange={(e) => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
+    </button>
+  );
 }
 
 function StatTile({
