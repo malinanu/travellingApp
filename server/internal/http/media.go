@@ -156,6 +156,9 @@ func (s *Server) handleMediaConfirm(w http.ResponseWriter, r *http.Request) {
 	if req.Role == "avatar" {
 		_ = s.Store.SetUserAvatar(r.Context(), req.OwnerID, m.URL)
 	}
+	if req.OwnerType == "vendor" && req.Role == "doc" {
+		_ = s.Store.SetVendorDocs(r.Context(), req.OwnerID, true)
+	}
 	s.resyncVendorMediaBestEffort(r.Context(), req.OwnerType, req.OwnerID)
 	writeJSON(w, http.StatusOK, m)
 }
@@ -183,6 +186,18 @@ func (s *Server) handleMediaDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	if m.Role == "avatar" {
 		_ = s.Store.SetUserAvatar(r.Context(), m.OwnerID, "")
+	}
+	if m.OwnerType == "vendor" && m.Role == "doc" {
+		// Recompute the docs flag from whatever remains.
+		remaining, _ := s.Store.MediaByOwner(r.Context(), "vendor", m.OwnerID)
+		hasDoc := false
+		for _, x := range remaining {
+			if x.Role == "doc" {
+				hasDoc = true
+				break
+			}
+		}
+		_ = s.Store.SetVendorDocs(r.Context(), m.OwnerID, hasDoc)
 	}
 	s.resyncVendorMediaBestEffort(r.Context(), m.OwnerType, m.OwnerID)
 	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})

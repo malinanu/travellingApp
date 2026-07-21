@@ -189,6 +189,34 @@ func TestMediaUploads(t *testing.T) {
 		}
 	})
 
+	t.Run("uploading a doc flips the vendor docs flag, deleting clears it", func(t *testing.T) {
+		code, out := presign(ownerToken, map[string]any{"ownerType": "vendor", "ownerId": v1.ID, "role": "doc", "contentType": "application/pdf", "size": 2000})
+		if code != http.StatusOK {
+			t.Fatalf("doc presign: %d", code)
+		}
+		key, _ := out["key"].(string)
+		if got := doReq(t, srv, http.MethodPost, "/media/confirm", ownerToken, map[string]any{"key": key, "ownerType": "vendor", "ownerId": v1.ID, "role": "doc"}); got != http.StatusOK {
+			t.Fatalf("doc confirm: %d", got)
+		}
+		if v, _ := store.VendorByID(ctx, v1.ID); !v.Docs {
+			t.Error("docs flag not set after upload")
+		}
+		var vm []domain.Media
+		doReqJSON(t, srv, http.MethodGet, "/vendor/media", ownerToken, nil, &vm)
+		var docID string
+		for _, m := range vm {
+			if m.Role == "doc" {
+				docID = m.ID
+			}
+		}
+		if got := doReq(t, srv, http.MethodDelete, "/media/"+docID, ownerToken, nil); got != http.StatusOK {
+			t.Fatalf("doc delete: %d", got)
+		}
+		if v, _ := store.VendorByID(ctx, v1.ID); v.Docs {
+			t.Error("docs flag not cleared after deleting the only doc")
+		}
+	})
+
 	t.Run("delete removes the row and the R2 object", func(t *testing.T) {
 		var vm []domain.Media
 		doReqJSON(t, srv, http.MethodGet, "/vendor/media", ownerToken, nil, &vm)

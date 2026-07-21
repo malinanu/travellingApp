@@ -22,6 +22,7 @@ import type { DayHours, UpcomingHoliday, Vendor, VendorProfile, VendorProfileGra
 import { WEEKDAYS } from '@spotto/shared';
 import Shell, { isFoodCategory, useBusiness, useMe } from '../../components/shell';
 import VendorPhotos from '../../components/vendor-photos';
+import VendorDocs from '../../components/vendor-docs';
 import { api } from '../../lib/api';
 import { BUSINESS_CATEGORIES, isSelectedCategory } from '../../lib/business-categories';
 
@@ -359,6 +360,7 @@ export default function ProfilePage() {
           </div>
 
           {business?.id && <VendorPhotos vendorId={business.id} />}
+          {business?.id && <VendorDocs vendorId={business.id} />}
 
           <div className="card p-6">
             <CardHeader icon={Wifi} title="Connectivity & vibe" sub="What digital nomads check first" />

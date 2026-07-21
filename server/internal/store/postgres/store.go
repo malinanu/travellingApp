@@ -1079,6 +1079,13 @@ func (s *Store) SetUserAvatar(ctx context.Context, userID, url string) error {
 	return err
 }
 
+// SetVendorDocs flips the vendor's "has verification documents" flag, kept in
+// sync as docs are uploaded/removed so the admin's docs indicator is honest.
+func (s *Store) SetVendorDocs(ctx context.Context, vendorID string, has bool) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE vendors SET docs=$2 WHERE id=$1`, vendorID, has)
+	return err
+}
+
 // ---- vendor blobs (dashboard/growth/reports documents) ----
 
 func (s *Store) UpsertVendorBlob(ctx context.Context, vendorID, kind string, data json.RawMessage) error {
