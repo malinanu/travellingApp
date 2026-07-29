@@ -4,6 +4,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -72,6 +73,7 @@ class AuthNotifier extends Notifier<bool> {
     ref.invalidate(claimsProvider);
     ref.invalidate(tripProvider);
     ref.invalidate(groupProvider);
+    ref.invalidate(placesProvider);
   }
 
   void signOut() {
@@ -177,8 +179,11 @@ class PlacesNotifier extends Notifier<List<Place>> {
       state = places;
       _syncTripCatalog(places);
       await ref.read(localStoreProvider).setJsonList(StoreKeys.places, list);
-    } catch (_) {
-      // Offline — keep the cached/seed state.
+    } catch (e) {
+      // Offline or unauthenticated — keep the cached/seed state, but log so
+      // a real failure (bad API_URL, server error) isn't indistinguishable
+      // from "not logged in yet".
+      debugPrint('placesProvider refresh failed: $e');
     }
   }
 }
