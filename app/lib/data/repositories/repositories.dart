@@ -172,7 +172,9 @@ class PlacesNotifier extends Notifier<List<Place>> {
 
   Future<void> refresh() async {
     try {
-      final res = await ref.read(apiProvider).dio.get('/places');
+      final pos = await _currentPosition();
+      final res = await ref.read(apiProvider).dio.get('/places',
+          queryParameters: pos == null ? null : {'lat': pos.latitude, 'lng': pos.longitude});
       final list = res.data as List;
       if (list.isEmpty) return;
       final places = [for (final p in list) Place.fromJson((p as Map).cast<String, dynamic>())];
@@ -184,6 +186,27 @@ class PlacesNotifier extends Notifier<List<Place>> {
       // a real failure (bad API_URL, server error) isn't indistinguishable
       // from "not logged in yet".
       debugPrint('placesProvider refresh failed: $e');
+    }
+  }
+
+  /// Best-effort device position for nearest-first sorting — returns null
+  /// (never throws) on denied/disabled location, so /places still loads
+  /// unsorted rather than failing when location isn't available.
+  Future<Position?> _currentPosition() async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        return null;
+      }
+      if (!await Geolocator.isLocationServiceEnabled()) return null;
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
+      );
+    } catch (_) {
+      return null;
     }
   }
 }

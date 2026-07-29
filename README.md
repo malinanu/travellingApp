@@ -52,11 +52,17 @@ flutter run               # API defaults to http://10.0.2.2:8080; override with 
 ### Google Maps setup (Discover tab)
 
 The Discover tab shows a real Google Map of Weligama Bay. It needs a Maps SDK
-for Android API key:
+key — Android and iOS each need their platform's SDK enabled on the same (or
+separate) Cloud project; enabling only one won't make the other platform's
+map render.
 
+**Android:**
 1. Create/select a project at https://console.cloud.google.com/, enable
    **Maps SDK for Android**, and enable billing (Google's free tier covers
-   normal dev/demo usage).
+   normal dev/demo usage). Also double-check any key restrictions (Android
+   app restriction) match this app's package name `com.spotto.spotto` and
+   the build's signing SHA-1 — a restricted key that doesn't match silently
+   fails the same way as no key at all.
 2. Add one line to `app/android/local.properties` (already gitignored, so
    the key is never committed):
    ```
@@ -65,6 +71,16 @@ for Android API key:
 3. Rebuild the app. Without a key the map shows a grey background with a
    Google logo, but nothing crashes — everything else (weather bar, quest
    chip, filters) still works.
+
+**iOS:**
+1. In the same (or a separate) Cloud project, enable **Maps SDK for iOS**.
+2. Copy `app/ios/Flutter/Secrets.xcconfig.example` to
+   `app/ios/Flutter/Secrets.xcconfig` (gitignored) and fill in
+   `MAPS_API_KEY=your-key-here`.
+3. Rebuild. `AppDelegate.swift` reads the key from `Info.plist`'s
+   `GMSApiKey` (populated from `$(MAPS_API_KEY)` via the xcconfig) and calls
+   `GMSServices.provideAPIKey` at launch — same empty-is-fine fallback as
+   Android.
 
 The same Cloud project/key (with Calendar API, Maps JavaScript API, and
 Places API also enabled) additionally powers the vendor portal's automatic
