@@ -151,7 +151,7 @@ final prefsProvider = NotifierProvider<PrefsNotifier, UserPrefs?>(PrefsNotifier.
 class PlacesNotifier extends Notifier<List<Place>> {
   @override
   List<Place> build() {
-    Future.microtask(_refresh);
+    Future.microtask(refresh);
     final cached = ref.read(localStoreProvider).getJsonList(StoreKeys.places);
     if (cached != null && cached.isNotEmpty) {
       try {
@@ -170,7 +170,7 @@ class PlacesNotifier extends Notifier<List<Place>> {
     tripCatalog = [for (final p in places) TripCatalogItem.fromPlace(p)];
   }
 
-  Future<void> _refresh() async {
+  Future<void> refresh() async {
     try {
       final res = await ref.read(apiProvider).dio.get('/places');
       final list = res.data as List;

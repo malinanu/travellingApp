@@ -6,7 +6,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Bell, CreditCard, Flag, Headphones, History, KeyRound, Map, Moon, Radio, Search, ShieldAlert, Store, Sun, UserCheck, LucideIcon,
+  Activity, Bell, CreditCard, Flag, Headphones, History, KeyRound, Map, MapPin, Moon, Radio, Search, ShieldAlert, Store, Sun, UserCheck, LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -18,6 +18,7 @@ import { api } from '../lib/api';
 const NAV: { href: string; label: string; icon: LucideIcon; live?: boolean; superAdminOnly?: boolean }[] = [
   { href: '/queue', label: 'Approval queue', icon: UserCheck },
   { href: '/vendors', label: 'Vendors', icon: Store },
+  { href: '/spots', label: 'Spots', icon: MapPin },
   { href: '/content', label: 'Content monitor', icon: Radio, live: true },
   { href: '/geo', label: 'Geo-analytics', icon: Map },
   { href: '/subscriptions', label: 'Subscriptions', icon: CreditCard },
