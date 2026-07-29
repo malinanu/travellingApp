@@ -35,7 +35,16 @@ class LocalStore {
   static Future<LocalStore> init() async {
     final prefs = await SharedPreferences.getInstance();
     const secure = FlutterSecureStorage();
-    var token = await secure.read(key: StoreKeys.token);
+    String? token;
+    try {
+      token = await secure.read(key: StoreKeys.token);
+    } catch (_) {
+      // Corrupted/undecryptable secure storage (e.g. the Android Keystore
+      // key changed since this value was written, such as after a debug
+      // reinstall) — can't be recovered, so drop it and continue logged-out
+      // instead of throwing here and crashing before runApp() ever runs.
+      await secure.delete(key: StoreKeys.token);
+    }
     // One-time migration for installs from before secure storage: move a
     // plaintext token left over in SharedPreferences into secure storage.
     final legacy = prefs.getString(StoreKeys.token);
