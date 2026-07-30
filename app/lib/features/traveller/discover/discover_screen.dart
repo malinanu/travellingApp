@@ -18,11 +18,11 @@ import '../group/group_sheet.dart';
 import '../place_detail/business_drawer.dart';
 import '../weather/activity_rules.dart';
 
-/// Weligama Bay — the map's synchronous construction-time default (a
-/// GoogleMap needs some initial target immediately); overridden by an
-/// animateCamera to the user's real device position as soon as it resolves
-/// (see _maybeCenterOnDevice), same fallback coordinates as
-/// devicePositionProvider/kFallbackLat/kFallbackLng in repositories.dart.
+/// Weligama Bay — defensive fallback for the (normally unreachable, since
+/// bestEffortPosition() never throws) case where devicePositionProvider
+/// itself errors. The real "location denied/unavailable" fallback already
+/// flows through as a normal resolved value with these same coordinates
+/// (see kFallbackLat/kFallbackLng in repositories.dart), not through here.
 const _weligamaBay = LatLng(kFallbackLat, kFallbackLng);
 
 /// Real user's initial for the "you" avatar bubble, falling back to '?'
@@ -45,23 +45,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   String? _builtForTime;
   bool _builtForGroupMode = false;
 
-  // One-time recenter onto the user's real device position once it's
-  // available — the map starts at the Weligama fallback (initialCameraPosition
-  // requires some value synchronously) and glides to the real location as
-  // soon as both the controller and position are ready, in whichever order
-  // they resolve. Only fires once so it never fights the user's own panning
-  // (the myLocationButton covers manual recenter after that).
+  // Still needed post-construction for the search "fly to result" feature
+  // (_selectSearchResult) — the map itself no longer needs to be recentered
+  // after building, since it's now only ever built once devicePositionProvider
+  // has resolved (see build()), so its initialCameraPosition is already the
+  // real target.
   GoogleMapController? _mapController;
-  LatLngAt? _resolvedPosition;
-  bool _centeredOnDevice = false;
-
-  void _maybeCenterOnDevice() {
-    if (_centeredOnDevice || _mapController == null || _resolvedPosition == null) return;
-    _centeredOnDevice = true;
-    _mapController!.animateCamera(
-      CameraUpdate.newLatLngZoom(LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng), 16),
-    );
-  }
 
   final _searchController = TextEditingController();
   String _searchQuery = '';
@@ -148,6 +137,19 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     setState(() => _markers = next);
   }
 
+  Widget _map(LatLng target, bool hasLocationPermission) {
+    return GoogleMap(
+      initialCameraPosition: CameraPosition(target: target, zoom: 16),
+      markers: _markers,
+      myLocationEnabled: hasLocationPermission,
+      myLocationButtonEnabled: hasLocationPermission,
+      zoomControlsEnabled: false,
+      mapToolbarEnabled: false,
+      compassEnabled: false,
+      onMapCreated: (controller) => _mapController = controller,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final time = ref.watch(timeFilterProvider);
@@ -163,10 +165,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     // used for markers directly (no exact position for non-group members),
     // but keeps group_sheet's "invite nearby travellers" list fresh.
     ref.watch(nearbyTravellersProvider);
+    final devicePosition = ref.watch(devicePositionProvider);
     ref.listen<AsyncValue<LatLngAt>>(devicePositionProvider, (_, next) {
-      _resolvedPosition = next.valueOrNull;
-      _maybeCenterOnDevice();
+      // The lookup may have just prompted for (and secured) location
+      // permission — re-check so myLocationEnabled below can flip on
+      // reactively instead of staying stuck at whatever it read on first
+      // build.
+      if (next.hasValue) ref.invalidate(locationPermissionProvider);
     });
+    final hasLocationPermission = ref.watch(locationPermissionProvider).valueOrNull ?? false;
 
     if (_builtForTime != time || _builtForGroupMode != groupMode) {
       _builtForTime = time;
@@ -183,19 +190,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // base map
-        GoogleMap(
-          initialCameraPosition: const CameraPosition(target: _weligamaBay, zoom: 16),
-          markers: _markers,
-          myLocationEnabled: true,
-          myLocationButtonEnabled: true,
-          zoomControlsEnabled: false,
-          mapToolbarEnabled: false,
-          compassEnabled: false,
-          onMapCreated: (controller) {
-            _mapController = controller;
-            _maybeCenterOnDevice();
-          },
+        // base map — built only once devicePositionProvider resolves, so
+        // its initialCameraPosition is the user's real location from the
+        // very first frame rather than flashing Weligama and animating
+        // away from it. Weligama only ever appears if location is truly
+        // unavailable (denied, disabled) — a fallback, not a flash.
+        devicePosition.when(
+          loading: () => const ColoredBox(color: SpottoColors.sand),
+          error: (_, __) => _map(_weligamaBay, hasLocationPermission),
+          data: (pos) => _map(LatLng(pos.lat, pos.lng), hasLocationPermission),
         ),
 
         // time-of-day lighting overlay (700ms like the prototype)

@@ -98,6 +98,23 @@ final devicePositionProvider = FutureProvider<LatLngAt>((ref) async {
   return (lat: pos.latitude, lng: pos.longitude);
 });
 
+/// Whether location permission is already granted right now — a plain
+/// Geolocator.checkPermission() read, never requestPermission(), so
+/// watching this can't itself pop an OS prompt. GoogleMap's
+/// myLocationEnabled must not be set to true before permission is
+/// actually confirmed granted: on Android the map's tile layer can fail
+/// to initialize at all (not just skip the blue dot) if it's told to show
+/// a location layer it doesn't have permission for yet.
+final locationPermissionProvider = FutureProvider<bool>((ref) async {
+  try {
+    final permission = await Geolocator.checkPermission()
+        .timeout(const Duration(seconds: 5), onTimeout: () => LocationPermission.denied);
+    return permission == LocationPermission.always || permission == LocationPermission.whileInUse;
+  } catch (_) {
+    return false;
+  }
+});
+
 /// Overridden in main() with the initialized instance.
 final localStoreProvider = Provider<LocalStore>((ref) => throw UnimplementedError());
 
