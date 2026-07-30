@@ -639,6 +639,36 @@ final weatherConditionProvider = Provider<String>((ref) {
       );
 });
 
+/// Locations the traveller has pinned on the Weather screen to swipe
+/// between — e.g. checking Arugam Bay's surf weather while in Colombo.
+/// Capped at 3 so the swipe deck stays quick to page through.
+const kMaxWeatherPins = 3;
+
+class WeatherPinsNotifier extends Notifier<List<PinnedLocation>> {
+  @override
+  List<PinnedLocation> build() {
+    final raw = ref.read(localStoreProvider).getJsonList(StoreKeys.weatherPins) ?? const [];
+    return [for (final p in raw) PinnedLocation.fromJson((p as Map).cast<String, dynamic>())];
+  }
+
+  void _persist(List<PinnedLocation> pins) {
+    state = pins;
+    ref.read(localStoreProvider).setJsonList(StoreKeys.weatherPins, [for (final p in pins) p.toJson()]);
+  }
+
+  /// No-ops past kMaxWeatherPins or on a duplicate id — callers should
+  /// check `canAddMore`/existing ids first to give the user a clear reason
+  /// rather than a silent no-op.
+  void add(PinnedLocation pin) {
+    if (state.length >= kMaxWeatherPins || state.any((p) => p.id == pin.id)) return;
+    _persist([...state, pin]);
+  }
+
+  void remove(String id) => _persist(state.where((p) => p.id != id).toList());
+}
+
+final weatherPinsProvider = NotifierProvider<WeatherPinsNotifier, List<PinnedLocation>>(WeatherPinsNotifier.new);
+
 // ── session-only traveller state (matches prototype useState) ─────
 
 /// Active time-of-day filter: morning | afternoon | evening.

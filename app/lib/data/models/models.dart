@@ -611,6 +611,27 @@ class WeatherSnapshot {
       );
 }
 
+/// A location the traveller has pinned on the Weather screen to swipe to —
+/// e.g. checking Arugam Bay's surf weather while physically in Colombo.
+/// Persisted locally as spotto_weather_pins; lat/lng come from a real
+/// place's own coordinates (see weather_screen.dart's region search), not
+/// a separate geocoding step.
+class PinnedLocation {
+  final String id;
+  final String name;
+  final double lat;
+  final double lng;
+  const PinnedLocation({required this.id, required this.name, required this.lat, required this.lng});
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'lat': lat, 'lng': lng};
+  factory PinnedLocation.fromJson(Map<String, dynamic> json) => PinnedLocation(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        lat: (json['lat'] as num?)?.toDouble() ?? 0,
+        lng: (json['lng'] as num?)?.toDouble() ?? 0,
+      );
+}
+
 class TimeSlot {
   final String id; // morning/afternoon/evening
   final String label;

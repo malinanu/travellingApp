@@ -18,6 +18,7 @@ abstract final class StoreKeys {
   static const trip = 'spotto_trip';
   static const claims = 'spotto_claims'; // placeId -> claimed deal code
   static const places = 'spotto_places'; // last good /places response
+  static const weatherPins = 'spotto_weather_pins'; // saved Weather-screen locations
 }
 
 class LocalStore {

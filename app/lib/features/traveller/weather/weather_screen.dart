@@ -22,30 +22,188 @@ import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import 'activity_rules.dart';
 
-class WeatherScreen extends ConsumerWidget {
+class WeatherScreen extends ConsumerStatefulWidget {
   const WeatherScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final weather = ref.watch(currentWeatherProvider);
+  ConsumerState<WeatherScreen> createState() => _WeatherScreenState();
+}
+
+class _WeatherScreenState extends ConsumerState<WeatherScreen> {
+  final _pageController = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _addPin() async {
+    final pins = ref.read(weatherPinsProvider);
+    if (pins.length >= kMaxWeatherPins) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You can pin up to 3 locations — remove one to add another.')),
+      );
+      return;
+    }
+    final picked = await showModalBottomSheet<PinnedLocation>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => _LocationSearchSheet(
+        places: ref.read(placesProvider),
+        excludeIds: pins.map((p) => p.id).toSet(),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    ref.read(weatherPinsProvider.notifier).add(picked);
+    final target = ref.read(weatherPinsProvider).length; // index of the page just added
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_pageController.hasClients) {
+        _pageController.animateToPage(target,
+            duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
+      }
+    });
+  }
+
+  void _removePin(String id) {
+    ref.read(weatherPinsProvider.notifier).remove(id);
+    final maxPage = ref.read(weatherPinsProvider).length;
+    if (_page > maxPage) {
+      setState(() => _page = maxPage);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_pageController.hasClients) _pageController.jumpToPage(maxPage);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pins = ref.watch(weatherPinsProvider);
+    final pageCount = 1 + pins.length;
+
     return Scaffold(
       backgroundColor: SpottoColors.sand,
-      body: weather.when(
-        loading: () => const _WeatherLoading(),
-        error: (e, _) => _WeatherError(
-          message: ApiClient.errorMessage(e),
-          onRetry: () => ref.invalidate(currentWeatherProvider),
-        ),
-        data: (snapshot) => _WeatherBody(snapshot: snapshot),
+      body: Stack(
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            itemCount: pageCount,
+            onPageChanged: (i) => setState(() => _page = i),
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return _WeatherPage(
+                  weather: ref.watch(currentWeatherProvider),
+                  locationName: 'Nearby',
+                  isPinned: false,
+                  onRetry: () => ref.invalidate(currentWeatherProvider),
+                  onLocationTap: _addPin,
+                );
+              }
+              final pin = pins[index - 1];
+              final at = (lat: pin.lat, lng: pin.lng);
+              return _WeatherPage(
+                weather: ref.watch(weatherSnapshotProvider(at)),
+                locationName: pin.name,
+                isPinned: true,
+                onRetry: () => ref.invalidate(weatherSnapshotProvider(at)),
+                onLocationTap: () => _removePin(pin.id),
+              );
+            },
+          ),
+          if (pageCount > 1)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _PageDots(count: pageCount, index: _page),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
+/// One page of the swipeable weather deck — "My Location" or a pinned spot.
+class _WeatherPage extends StatelessWidget {
+  const _WeatherPage({
+    required this.weather,
+    required this.locationName,
+    required this.isPinned,
+    required this.onRetry,
+    required this.onLocationTap,
+  });
+
+  final AsyncValue<WeatherSnapshot> weather;
+  final String locationName;
+  final bool isPinned;
+  final VoidCallback onRetry;
+  final VoidCallback onLocationTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return weather.when(
+      loading: () => const _WeatherLoading(),
+      error: (e, _) => _WeatherError(message: ApiClient.errorMessage(e), onRetry: onRetry),
+      data: (snapshot) => _WeatherBody(
+        snapshot: snapshot,
+        locationName: locationName,
+        isPinned: isPinned,
+        onRefresh: () async => onRetry(),
+        onLocationTap: onLocationTap,
+      ),
+    );
+  }
+}
+
+class _PageDots extends StatelessWidget {
+  const _PageDots({required this.count, required this.index});
+
+  final int count;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var i = 0; i < count; i++)
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            width: i == index ? 18 : 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: i == index ? SpottoColors.accent : SpottoColors.line,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _WeatherBody extends ConsumerWidget {
-  const _WeatherBody({required this.snapshot});
+  const _WeatherBody({
+    required this.snapshot,
+    required this.locationName,
+    required this.isPinned,
+    required this.onRefresh,
+    required this.onLocationTap,
+  });
 
   final WeatherSnapshot snapshot;
+  final String locationName;
+  final bool isPinned;
+  final Future<void> Function() onRefresh;
+  final VoidCallback onLocationTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -58,10 +216,7 @@ class _WeatherBody extends ConsumerWidget {
     return RefreshIndicator(
       color: SpottoColors.accent,
       backgroundColor: Colors.white,
-      onRefresh: () async {
-        ref.invalidate(currentWeatherProvider);
-        await ref.read(currentWeatherProvider.future);
-      },
+      onRefresh: onRefresh,
       child: CustomScrollView(
         slivers: [
           SliverAppBar(
@@ -83,7 +238,15 @@ class _WeatherBody extends ConsumerWidget {
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white)),
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsetsDirectional.fromSTEB(56, 0, 16, 14),
-              background: _Hero(snapshot: snapshot, mood: mood, category: category, ratings: ratings),
+              background: _Hero(
+                snapshot: snapshot,
+                mood: mood,
+                category: category,
+                ratings: ratings,
+                locationName: locationName,
+                isPinned: isPinned,
+                onLocationTap: onLocationTap,
+              ),
             ),
           ),
           SliverPadding(
@@ -194,12 +357,23 @@ String _relativeTime(DateTime t) {
 }
 
 class _Hero extends StatelessWidget {
-  const _Hero({required this.snapshot, required this.mood, required this.category, required this.ratings});
+  const _Hero({
+    required this.snapshot,
+    required this.mood,
+    required this.category,
+    required this.ratings,
+    required this.locationName,
+    required this.isPinned,
+    required this.onLocationTap,
+  });
 
   final WeatherSnapshot snapshot;
   final SpottoMood mood;
   final ActivityCategory category;
   final List<HourRating> ratings;
+  final String locationName;
+  final bool isPinned;
+  final VoidCallback onLocationTap;
 
   @override
   Widget build(BuildContext context) {
@@ -227,19 +401,28 @@ class _Hero extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.14),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
                       borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.place, size: 13, color: Colors.white),
-                        const SizedBox(width: 5),
-                        Text('Nearby', style: text.labelMedium?.copyWith(color: Colors.white)),
-                      ],
+                      onTap: onLocationTap,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.place, size: 13, color: Colors.white),
+                            const SizedBox(width: 5),
+                            Text(locationName, style: text.labelMedium?.copyWith(color: Colors.white)),
+                            const SizedBox(width: 5),
+                            Icon(isPinned ? Icons.close : Icons.add, size: 14, color: Colors.white),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -736,6 +919,96 @@ class _WeatherError extends StatelessWidget {
             Text(message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: 16),
             FilledButton(onPressed: onRetry, child: const Text('Try again')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Search sheet for pinning a new weather location — searches the distinct
+/// regions present in the already-loaded places list (same derivation as
+/// the Spots screen's region filter), not individual spots: weather is
+/// regional, and every place within a region already rounds to the same
+/// server-side cache cell, so any one of them is an equally accurate query
+/// point.
+class _LocationSearchSheet extends StatefulWidget {
+  const _LocationSearchSheet({required this.places, required this.excludeIds});
+
+  final List<Place> places;
+  final Set<String> excludeIds;
+
+  @override
+  State<_LocationSearchSheet> createState() => _LocationSearchSheetState();
+}
+
+class _LocationSearchSheetState extends State<_LocationSearchSheet> {
+  final _controller = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  List<PinnedLocation> get _regions {
+    final seen = <String>{};
+    final out = <PinnedLocation>[];
+    for (final p in widget.places) {
+      if (p.regionId.isEmpty || !seen.add(p.regionId) || widget.excludeIds.contains(p.regionId)) continue;
+      out.add(PinnedLocation(id: p.regionId, name: p.region, lat: p.lat, lng: p.lng));
+    }
+    out.sort((a, b) => a.name.compareTo(b.name));
+    return out;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final q = _query.trim().toLowerCase();
+    final regions = _regions;
+    final results = q.isEmpty ? regions : regions.where((r) => r.name.toLowerCase().contains(q)).toList();
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: TextField(
+                controller: _controller,
+                autofocus: true,
+                onChanged: (v) => setState(() => _query = v),
+                decoration: const InputDecoration(
+                  hintText: 'Search a region — Arugam Bay, Ella…',
+                  prefixIcon: Icon(Icons.search, size: 18, color: SpottoColors.muted),
+                ),
+              ),
+            ),
+            Flexible(
+              child: results.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        regions.isEmpty ? 'No other regions to pin yet.' : 'No matching region.',
+                        style: text.bodyMedium?.copyWith(color: SpottoColors.muted),
+                      ),
+                    )
+                  : ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final r in results)
+                          ListTile(
+                            leading: const Icon(Icons.place_outlined, color: SpottoColors.accent),
+                            title: Text(r.name),
+                            onTap: () => Navigator.pop(context, r),
+                          ),
+                      ],
+                    ),
+            ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
