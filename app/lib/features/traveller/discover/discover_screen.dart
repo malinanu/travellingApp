@@ -2,8 +2,12 @@
 // markers, weather bar and time-of-day filter — port of MapView.jsx +
 // SatelliteMap.jsx, upgraded from the illustrated SVG to google_maps_flutter.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -17,6 +21,14 @@ import '../../../data/repositories/repositories.dart';
 import '../group/group_sheet.dart';
 import '../place_detail/business_drawer.dart';
 import '../weather/activity_rules.dart';
+
+/// Tap cycle of the custom location/compass button: idle (map untouched,
+/// or the user panned away) -> following (centered, north-up, tracking
+/// device position) -> heading (also rotating to match device compass
+/// bearing) -> back to following. Only reachable states via tap; idle is
+/// only re-entered by the user manually panning the map (see
+/// onCameraMoveStarted).
+enum _LocationMode { idle, following, heading }
 
 /// Weligama Bay — the map's synchronous construction-time default (a
 /// GoogleMap needs some initial target immediately, before any async
@@ -66,12 +78,116 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     );
   }
 
+  // Custom location/compass button state — replaces the native
+  // myLocationButton (which the SDK pins to a fixed corner, not
+  // necessarily thumb-reachable, and has no heading-mode toggle at all).
+  _LocationMode _locationMode = _LocationMode.idle;
+  StreamSubscription<Position>? _positionSub;
+  StreamSubscription<CompassEvent>? _compassSub;
+  LatLng? _lastKnownLatLng;
+  double _currentBearing = 0;
+  DateTime _lastHeadingApply = DateTime.fromMillisecondsSinceEpoch(0);
+  // Sidesteps GoogleMap's onCameraMoveStarted firing for our own
+  // animateCamera calls just as much as for the user's finger — set right
+  // before we move the camera ourselves so that callback can tell the two
+  // apart and only treat a real user pan as "stop following".
+  bool _programmaticMove = false;
+
+  Future<void> _moveCamera(CameraUpdate update) async {
+    _programmaticMove = true;
+    await _mapController?.animateCamera(update);
+    _programmaticMove = false;
+  }
+
+  void _updateCamera() {
+    if (_lastKnownLatLng == null) return;
+    final bearing = _locationMode == _LocationMode.heading ? _currentBearing : 0.0;
+    _moveCamera(CameraUpdate.newCameraPosition(
+      CameraPosition(target: _lastKnownLatLng!, zoom: 16, bearing: bearing),
+    ));
+  }
+
+  void _startPositionStream() {
+    _positionSub?.cancel();
+    _positionSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
+    ).listen((pos) {
+      _lastKnownLatLng = LatLng(pos.latitude, pos.longitude);
+      if (_locationMode != _LocationMode.idle) _updateCamera();
+    });
+  }
+
+  void _startCompassStream() {
+    _compassSub?.cancel();
+    _compassSub = FlutterCompass.events?.listen((event) {
+      final heading = event.heading;
+      if (heading == null) return;
+      final now = DateTime.now();
+      // Compass events can fire many times a second — throttle so we're
+      // not calling animateCamera constantly for a change nobody can
+      // actually perceive.
+      if (now.difference(_lastHeadingApply) < const Duration(milliseconds: 150) &&
+          (heading - _currentBearing).abs() < 3) {
+        return;
+      }
+      _lastHeadingApply = now;
+      _currentBearing = heading;
+      if (_locationMode == _LocationMode.heading) _updateCamera();
+    });
+  }
+
+  /// The button's tap cycle: idle -> following -> heading -> following ...
+  /// Idle is only re-entered by panning the map manually.
+  Future<void> _onLocationButtonTap() async {
+    if (_locationMode == _LocationMode.idle) {
+      final (pos, result) = await bestEffortPosition();
+      if (!mounted) return;
+      if (pos == null) {
+        if (result == DeviceLocationResult.deniedForever) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location is off — enable it in Settings to center the map on you.')),
+          );
+        }
+        return;
+      }
+      ref.invalidate(locationPermissionProvider);
+      _lastKnownLatLng = LatLng(pos.latitude, pos.longitude);
+      setState(() => _locationMode = _LocationMode.following);
+      _updateCamera();
+      _startPositionStream();
+    } else if (_locationMode == _LocationMode.following) {
+      setState(() => _locationMode = _LocationMode.heading);
+      _updateCamera();
+      _startCompassStream();
+    } else {
+      _compassSub?.cancel();
+      _compassSub = null;
+      setState(() => _locationMode = _LocationMode.following);
+      _updateCamera();
+    }
+  }
+
+  /// Fires when the user manually drags the map — stop following/heading
+  /// rather than fight their gesture on the very next location update.
+  void _onCameraMoveStarted() {
+    if (_programmaticMove) return;
+    _positionSub?.cancel();
+    _positionSub = null;
+    _compassSub?.cancel();
+    _compassSub = null;
+    if (_locationMode != _LocationMode.idle && mounted) {
+      setState(() => _locationMode = _LocationMode.idle);
+    }
+  }
+
   final _searchController = TextEditingController();
   String _searchQuery = '';
 
   @override
   void dispose() {
     _searchController.dispose();
+    _positionSub?.cancel();
+    _compassSub?.cancel();
     super.dispose();
   }
 
@@ -200,10 +316,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           initialCameraPosition: const CameraPosition(target: _weligamaBay, zoom: 16),
           markers: _markers,
           myLocationEnabled: hasLocationPermission,
-          myLocationButtonEnabled: hasLocationPermission,
+          // Replaced by the custom _LocationCompassButton below — the native
+          // button is fixed to a corner by the SDK and can't support the
+          // north-up/heading toggle.
+          myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
           mapToolbarEnabled: false,
           compassEnabled: false,
+          onCameraMoveStarted: _onCameraMoveStarted,
           onMapCreated: (controller) {
             _mapController = controller;
             _maybeCenterOnDevice();
@@ -435,6 +555,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           ),
         ),
 
+        // Location/compass button — right-thumb reachable: bottom-right,
+        // clear of the quest chip + time filter block below it.
+        Positioned(
+          right: 16,
+          bottom: 150,
+          child: _LocationCompassButton(mode: _locationMode, onTap: _onLocationButtonTap),
+        ),
+
         // bottom: daily quest chip + time filter pills (above the nav bar)
         Positioned(
           left: 16,
@@ -518,6 +646,44 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             ],
           ),
       };
+}
+
+/// Google-Maps-style location button — tap cycles idle -> centered
+/// (north-up, tracking) -> heading (rotates with device compass) -> back
+/// to centered. Icon/color communicate which state is active; see
+/// _LocationMode and _DiscoverScreenState's _onLocationButtonTap.
+class _LocationCompassButton extends StatelessWidget {
+  const _LocationCompassButton({required this.mode, required this.onTap});
+
+  final _LocationMode mode;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = mode != _LocationMode.idle;
+    final icon = switch (mode) {
+      _LocationMode.idle => Icons.near_me_outlined,
+      _LocationMode.following => Icons.my_location,
+      _LocationMode.heading => Icons.explore,
+    };
+    return PressScale(
+      scale: 0.9,
+      onTap: onTap,
+      child: Container(
+        width: 46,
+        height: 46,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? SpottoColors.accent : Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: const [
+            BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4)),
+          ],
+        ),
+        child: Icon(icon, size: 22, color: active ? Colors.white : SpottoColors.ink),
+      ),
+    );
+  }
 }
 
 /// Daily quest progress: check in at [goal] artisan spots for a free tea.
