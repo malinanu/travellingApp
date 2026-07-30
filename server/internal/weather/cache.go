@@ -9,10 +9,14 @@ import (
 
 // Cache is a small in-memory (no Redis — single-instance deployment, same
 // philosophy as internal/http/ratelimit.go's loginLimiter) TTL cache keyed
-// by a coarse ~55km (0.5°) grid cell rather than exact coordinates. Sri
-// Lanka spans roughly 10-15 such cells, so even with every cell cold this
-// stays well under Tomorrow.io's free-tier limits (25 req/hour, 500/day)
-// at a 60-minute TTL.
+// by a coarse ~55km (0.5°) grid cell rather than exact coordinates. The
+// vendor dataset spans roughly 25 such cells (every imported spot becomes
+// its own vendor with real coordinates — see importsrilanka), and the
+// background scheduler (internal/http/weather_scheduler.go) re-warms every
+// cell roughly once per TTL window. At 25 cells, the TTL has to be long
+// enough that cells/TTL stays comfortably under Tomorrow.io's free-tier
+// cap (25 req/hour, 500/day) with headroom left for live traveller
+// requests in the same hour — a 60-minute TTL leaves none at all.
 type Cache struct {
 	mu      sync.RWMutex
 	entries map[string]cacheEntry
@@ -24,11 +28,12 @@ type cacheEntry struct {
 }
 
 // TTL is how long a cached snapshot is served before a fresh Tomorrow.io
-// call is made for that cell. Weather doesn't change fast enough hour-to-
-// hour to need anything shorter, and a shorter TTL risks the free-tier cap
-// under concurrent use across many cells. Exported so the Postgres-backed
-// persistence layer (internal/http/weather.go) can stamp the same expiry.
-const TTL = 60 * time.Minute
+// call is made for that cell. Weather doesn't change fast enough over a
+// few hours to need anything shorter, and a shorter TTL risks the
+// free-tier cap under concurrent use across ~25 cells (see Cache's doc
+// comment). Exported so the Postgres-backed persistence layer
+// (internal/http/weather.go) can stamp the same expiry.
+const TTL = 3 * time.Hour
 
 func NewCache() *Cache {
 	return &Cache{entries: make(map[string]cacheEntry)}

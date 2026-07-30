@@ -9,22 +9,30 @@ package httpapi
 // (e.g. pulling a new image in Portainer, which restarts the whole
 // container) repopulates the cache right away rather than waiting on the
 // first traveller to hit each cell — then on a recurring tick.
+//
+// Every sweep goes through getOrFetchWeather (weather.go), the same
+// cache-then-fetch path handleWeather uses, so a cell whose cache is still
+// fresh is skipped rather than re-fetched — the sweep only spends real
+// Tomorrow.io calls on cells that actually need it. This matters because
+// the dataset spans ~25 distinct cells today (every imported spot becomes
+// its own vendor with real coordinates — see importsrilanka), not the
+// ~12-15 this scheduler originally assumed: an unconditional sweep of 25
+// cells alone would exhaust the entire 25-req/hour free tier in one pass,
+// leaving nothing for live traveller requests. See weather.TTL for the
+// other half of the fix — the TTL controls the steady-state call rate
+// once cells are warm.
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"time"
-
-	"github.com/spotto/server/internal/weather"
 )
 
-// weatherSchedulerInterval is kept comfortably under weather.TTL (60 min)
-// so a cell is always refreshed before it goes stale. At the dataset's
-// ~12-15 distinct location cells, a sweep every 45 min costs roughly
-// 16-20 calls/hour and under 400/day — well inside Tomorrow.io's
-// free-tier limits (25/hour, 500/day), leaving headroom for the rare
-// on-demand fetch from a cell this sweep hasn't covered yet.
+// weatherSchedulerInterval is kept comfortably under weather.TTL so a cell
+// is always checked well before it goes stale. Since getOrFetchWeather
+// skips cells whose cache is still fresh, running this more often than
+// strictly needed is cheap — it just means most cells are no-ops most of
+// the time, cells only cost a real call once per TTL window.
 const weatherSchedulerInterval = 45 * time.Minute
 
 // weatherCallSpacing paces requests within one sweep so a larger vendor
@@ -56,25 +64,22 @@ func (s *Server) runWeatherWarm(ctx context.Context) {
 		return
 	}
 
-	warmed, failed := 0, 0
+	fetched, skipped, failed := 0, 0, 0
 	for i, c := range cells {
 		if i > 0 {
 			time.Sleep(weatherCallSpacing)
 		}
-		key := weather.CellKey(c.Lat, c.Lng)
-		snap, err := weather.Fetch(ctx, s.TomorrowIOAPIKey, c.Lat, c.Lng)
+		_, fromCache, err := s.getOrFetchWeather(ctx, c.Lat, c.Lng)
 		if err != nil {
-			log.Printf("weather scheduler: fetch cell=%s: %v", key, err)
 			failed++
 			continue
 		}
-		s.WeatherCache.Set(key, snap)
-		if raw, err := json.Marshal(snap); err != nil {
-			log.Printf("weather scheduler: marshal cell=%s: %v", key, err)
-		} else if err := s.Store.SetWeatherCache(ctx, key, raw, time.Now().Add(weather.TTL)); err != nil {
-			log.Printf("weather scheduler: persist cell=%s: %v", key, err)
+		if fromCache {
+			skipped++
+		} else {
+			fetched++
 		}
-		warmed++
 	}
-	log.Printf("weather scheduler: warmed %d/%d location cells", warmed, warmed+failed)
+	log.Printf("weather scheduler: %d/%d cells already warm, %d fetched, %d failed",
+		skipped, len(cells), fetched, failed)
 }
