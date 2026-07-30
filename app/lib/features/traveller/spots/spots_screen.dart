@@ -28,6 +28,31 @@ const _categoryFilters = [
   ('wildlife', 'Wildlife & Parks', {'wildlife', 'park'}),
 ];
 
+/// A recognizable icon per real Place.type value, for the spot card's
+/// category badge — landmark gets a distinct monument icon rather than a
+/// generic pin, cafe a coffee cup, etc., so the category reads at a glance
+/// before the type label text is even legible.
+IconData _categoryIcon(String type) {
+  switch (type) {
+    case 'cafe':
+      return Icons.local_cafe;
+    case 'food':
+      return Icons.restaurant;
+    case 'landmark':
+      return Icons.account_balance;
+    case 'temple':
+      return Icons.temple_buddhist;
+    case 'wildlife':
+      return Icons.pets;
+    case 'park':
+      return Icons.park;
+    case 'attraction':
+      return Icons.attractions;
+    default:
+      return Icons.place;
+  }
+}
+
 class SpotsScreen extends ConsumerStatefulWidget {
   const SpotsScreen({super.key});
 
@@ -438,6 +463,23 @@ class _SpotCard extends StatelessWidget {
                             style: text.labelSmall?.copyWith(color: SpottoColors.ink)),
                       ),
                     ),
+                  Positioned(
+                    right: 12,
+                    top: 12,
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        shape: BoxShape.circle,
+                        boxShadow: const [
+                          BoxShadow(color: SpottoColors.inkShadow, blurRadius: 6, offset: Offset(0, 2)),
+                        ],
+                      ),
+                      child: Icon(_categoryIcon(place.type), size: 16, color: SpottoColors.accent),
+                    ),
+                  ),
                   Positioned(
                     left: 14,
                     right: 12,
