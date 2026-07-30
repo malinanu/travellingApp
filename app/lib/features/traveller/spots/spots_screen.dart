@@ -424,7 +424,29 @@ class _SpotCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Illustration(kind: place.photo),
+                  // Real uploaded cover photo when the vendor has one, else
+                  // fall back to the illustration — see business_drawer.dart
+                  // for the same pattern.
+                  if (place.cover.isNotEmpty)
+                    Image.network(
+                      place.cover,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Illustration(kind: place.photo),
+                    )
+                  else
+                    Illustration(kind: place.photo),
+                  // Bottom scrim so the white name/subtitle stays readable
+                  // over a photographic cover.
+                  if (place.cover.isNotEmpty)
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.transparent, Colors.black54],
+                        ),
+                      ),
+                    ),
                   if (place.deal.active)
                     Positioned(
                       left: 12,
