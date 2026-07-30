@@ -26,6 +26,21 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL}
       GOOGLE_CALENDAR_API_KEY: ${GOOGLE_CALENDAR_API_KEY}
+      # Also documented in .env.example but never forwarded here until now —
+      # same silent-no-op story as the block above: super-admin access,
+      # admin-app password-reset links, live weather, and every R2 media
+      # upload (vendor photos, avatars, review photos) have had no way to
+      # actually receive their config on this deployment, regardless of
+      # what's set in Portainer's stack environment editor, since Compose
+      # only injects a var into the container if it's listed here.
+      ADMIN_APP_URL: ${ADMIN_APP_URL}
+      SUPER_ADMIN_EMAILS: ${SUPER_ADMIN_EMAILS}
+      TOMORROW_IO_API_KEY: ${TOMORROW_IO_API_KEY}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      R2_BUCKET: ${R2_BUCKET}
+      R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL}
     networks: [spotto]
 
   vendor:
