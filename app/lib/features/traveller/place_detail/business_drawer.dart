@@ -23,6 +23,17 @@ import '../../../data/mock/places.dart' as data;
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 
+/// Google Maps search query for a place — lat/lng is unambiguous and needs
+/// no town/region data, unlike the old hardcoded "place name + Weligama"
+/// string that broke for every place outside that one town.
+String _mapsQuery(Place place) {
+  if (place.lat != 0 || place.lng != 0) {
+    return '${place.lat},${place.lng}';
+  }
+  final locality = place.region.isNotEmpty ? place.region : 'Sri Lanka';
+  return Uri.encodeComponent('${place.name}, $locality');
+}
+
 Future<void> showBusinessDrawer(BuildContext context, Place place) {
   return showModalBottomSheet(
     context: context,
@@ -288,7 +299,8 @@ class BusinessDrawerBody extends ConsumerWidget {
                       ),
                       onPressed: () => launchUrl(
                         Uri.parse(
-                            'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent('${place.name} Weligama')}'),
+                          'https://www.google.com/maps/search/?api=1&query=${_mapsQuery(place)}',
+                        ),
                         mode: LaunchMode.externalApplication,
                       ),
                       icon: const Icon(Icons.near_me, size: 17),

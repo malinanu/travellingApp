@@ -21,7 +21,7 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   int step = 0;
-  String? style;
+  final Set<String> styles = {};
   final Set<String> picked = {};
 
   @override
@@ -56,14 +56,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('How do you travel?', style: text.headlineSmall),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 4),
+                  Text('Pick as many as fit.', style: text.bodyMedium),
+                  const SizedBox(height: 12),
                   Expanded(
                     child: ListView(
                       children: [
                         for (final s in data.travelStyles) ...[
                           SpottoCard(
-                            onTap: () => setState(() => style = s.id),
-                            color: style == s.id ? SpottoColors.accentTint : Colors.white,
+                            onTap: () => setState(() {
+                              styles.contains(s.id) ? styles.remove(s.id) : styles.add(s.id);
+                            }),
+                            color: styles.contains(s.id) ? SpottoColors.accentTint : Colors.white,
                             child: Row(
                               children: [
                                 Icon(spottoIcon(s.icon), color: SpottoColors.accent),
@@ -77,7 +81,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                                     ],
                                   ),
                                 ),
-                                if (style == s.id)
+                                if (styles.contains(s.id))
                                   const Icon(Icons.check_circle, color: SpottoColors.accent),
                               ],
                             ),
@@ -90,7 +94,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: style == null ? null : () => setState(() => step = 2),
+                      onPressed: styles.isEmpty ? null : () => setState(() => step = 2),
                       child: const Text('Next'),
                     ),
                   ),
@@ -126,7 +130,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                           ? null
                           : () {
                               ref.read(prefsProvider.notifier).save(
-                                  UserPrefs(style: style!, interests: picked.toList()));
+                                  UserPrefs(styles: styles.toList(), interests: picked.toList()));
                               context.go('/t');
                             },
                       child: const Text('Start exploring'),

@@ -105,7 +105,7 @@ type registerReq struct {
 	InviteCode string `json:"inviteCode,omitempty"`
 	// Traveller extras
 	Country     string   `json:"country,omitempty"`
-	TravelStyle string   `json:"travelStyle,omitempty"`
+	TravelStyle []string `json:"travelStyle,omitempty"`
 	Interests   []string `json:"interests,omitempty"`
 }
 
@@ -326,7 +326,7 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        *string   `json:"name"`
 		Country     *string   `json:"country"`
-		TravelStyle *string   `json:"travelStyle"`
+		TravelStyle *[]string `json:"travelStyle"`
 		Interests   *[]string `json:"interests"`
 	}
 	if !readJSON(w, r, &req) {

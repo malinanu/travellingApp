@@ -40,7 +40,7 @@ class _AddStopSheetState extends ConsumerState<_AddStopSheet> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final trip = ref.watch(tripProvider);
-    final styleId = ref.watch(prefsProvider)?.style ?? '';
+    final styleIds = ref.watch(prefsProvider)?.styles ?? const [];
     final usedIds = trip.days[widget.dayIx].stops.map((s) => s.placeId).toSet();
 
     final query = _query.trim().toLowerCase();
@@ -50,7 +50,7 @@ class _AddStopSheetState extends ConsumerState<_AddStopSheet> {
             .where((p) => '${p.name} ${p.type}'.toLowerCase().contains(query))
             .toList();
     final suggested = tripCatalog
-        .where((p) => p.styles.contains(styleId) && !usedIds.contains(p.id))
+        .where((p) => p.styles.any(styleIds.contains) && !usedIds.contains(p.id))
         .take(5)
         .toList();
     final list = query.isNotEmpty ? results : suggested;

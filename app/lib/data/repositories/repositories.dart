@@ -14,6 +14,77 @@ import '../mock/places.dart' as seed;
 import '../mock/trip_catalog.dart';
 import '../models/models.dart';
 
+// ── device location (shared best-effort helper) ────────────────────
+
+/// Weligama Bay — the app's home base, used as a fallback location when
+/// device position is denied/unavailable (never a forced default — just
+/// what the map/weather show when we truly can't get the user's own
+/// position).
+const kFallbackLat = 5.9724;
+const kFallbackLng = 80.4292;
+
+typedef LatLngAt = ({double lat, double lng});
+
+enum DeviceLocationResult { granted, deniedForever, unavailable }
+
+// bestEffortPosition has 4 independent callers (devicePositionProvider,
+// weatherLocationProvider, PlacesNotifier._currentPosition,
+// NearbyTravellersNotifier._tick) that can all fire within the same frame
+// at cold start. Geolocator.requestPermission() has no Dart-side timeout,
+// and on Android the plugin stores the pending native callback in a single
+// field — if two requests race, the second silently overwrites the first,
+// and the first caller's Future never resolves and never throws (looks
+// exactly like an infinite spinner with nothing in the logs). Memoizing
+// the in-flight call here means concurrent callers share one real
+// permission request instead of racing separate ones.
+Future<(Position?, DeviceLocationResult)>? _inFlightPosition;
+
+Future<(Position?, DeviceLocationResult)> bestEffortPosition() {
+  return _inFlightPosition ??= _resolvePosition().whenComplete(() => _inFlightPosition = null);
+}
+
+Future<(Position?, DeviceLocationResult)> _resolvePosition() async {
+  try {
+    var permission = await Geolocator.checkPermission()
+        .timeout(const Duration(seconds: 5), onTimeout: () => LocationPermission.denied);
+    if (permission == LocationPermission.denied) {
+      // Belt-and-suspenders alongside the single-flight de-dup above: even
+      // a single, non-racing request could in principle hang on some
+      // device, so this still can't be allowed to wait forever.
+      permission = await Geolocator.requestPermission()
+          .timeout(const Duration(seconds: 20), onTimeout: () => LocationPermission.denied);
+    }
+    if (permission == LocationPermission.deniedForever) {
+      return (null, DeviceLocationResult.deniedForever);
+    }
+    if (permission == LocationPermission.denied) {
+      return (null, DeviceLocationResult.unavailable);
+    }
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      return (null, DeviceLocationResult.unavailable);
+    }
+    // timeLimit is essential here too — without it, getCurrentPosition can
+    // hang indefinitely on a device/emulator that can't get a fresh GPS fix
+    // (no mock location set, weak signal indoors).
+    final pos = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 8)),
+    );
+    return (pos, DeviceLocationResult.granted);
+  } catch (_) {
+    return (null, DeviceLocationResult.unavailable);
+  }
+}
+
+/// Guaranteed lat/lng — the user's real position, or Weligama Bay when
+/// denied/unavailable. Used wherever a nullable Position is awkward (map
+/// centering, weather) rather than every caller re-applying its own
+/// fallback.
+final devicePositionProvider = FutureProvider<LatLngAt>((ref) async {
+  final (pos, _) = await bestEffortPosition();
+  if (pos == null) return (lat: kFallbackLat, lng: kFallbackLng);
+  return (lat: pos.latitude, lng: pos.longitude);
+});
+
 /// Overridden in main() with the initialized instance.
 final localStoreProvider = Provider<LocalStore>((ref) => throw UnimplementedError());
 
@@ -62,10 +133,10 @@ class AuthNotifier extends Notifier<bool> {
 
     // Adopt server-side prefs so a returning user skips onboarding.
     final user = data['user'] as Map<String, dynamic>? ?? const {};
-    final style = user['travelStyle'] as String? ?? '';
-    if (style.isNotEmpty) {
+    final styles = [for (final s in (user['travelStyle'] as List? ?? const [])) s as String];
+    if (styles.isNotEmpty) {
       ref.read(prefsProvider.notifier).saveLocal(UserPrefs(
-            style: style,
+            styles: styles,
             interests: [for (final i in (user['interests'] as List? ?? const [])) i as String],
           ));
     }
@@ -109,8 +180,18 @@ class MeNotifier extends Notifier<Map<String, dynamic>?> {
     if (!ref.read(authProvider)) return;
     try {
       final res = await ref.read(apiProvider).dio.get('/me');
-      state = (res.data as Map).cast<String, dynamic>();
-      seed.me = Traveler.fromMe(state);
+      final data = (res.data as Map).cast<String, dynamic>();
+      state = data;
+      seed.me = Traveler.fromMe(data);
+      // prefsProvider is otherwise local-storage-only until the user
+      // explicitly saves — hydrate it from the server's real values here so
+      // a fresh install/login shows the traveller's actual saved
+      // style/interests instead of blank/default onboarding state.
+      final styles = (data['travelStyle'] as List?)?.cast<String>() ?? const [];
+      if (styles.isNotEmpty) {
+        final interests = (data['interests'] as List?)?.cast<String>() ?? const [];
+        ref.read(prefsProvider.notifier).saveLocal(UserPrefs(styles: styles, interests: interests));
+      }
     } catch (_) {
       // Offline — leave the previous state (or null) as-is.
     }
@@ -139,7 +220,7 @@ class PrefsNotifier extends Notifier<UserPrefs?> {
     ref
         .read(apiProvider)
         .dio
-        .put('/me', data: {'travelStyle': prefs.style, 'interests': prefs.interests})
+        .put('/me', data: {'travelStyle': prefs.styles, 'interests': prefs.interests})
         .ignore();
   }
 }
@@ -147,6 +228,14 @@ class PrefsNotifier extends Notifier<UserPrefs?> {
 final prefsProvider = NotifierProvider<PrefsNotifier, UserPrefs?>(PrefsNotifier.new);
 
 // ── places (server-owned, seed as offline fallback) ───────────────
+
+/// Whether the last places fetch was sorted by device location, and why not
+/// when it wasn't — lets the UI tell the user instead of silently showing
+/// an unsorted list that looks identical to "the feature is broken".
+enum PlacesLocationStatus { unknown, sorted, deniedForever, unavailable }
+
+final placesLocationStatusProvider =
+    StateProvider<PlacesLocationStatus>((ref) => PlacesLocationStatus.unknown);
 
 class PlacesNotifier extends Notifier<List<Place>> {
   @override
@@ -184,30 +273,26 @@ class PlacesNotifier extends Notifier<List<Place>> {
     } catch (e) {
       // Offline or unauthenticated — keep the cached/seed state, but log so
       // a real failure (bad API_URL, server error) isn't indistinguishable
-      // from "not logged in yet".
+      // from "not logged in yet". _currentPosition() may have already set
+      // status to sorted before this request failed, which would leave the
+      // UI treating stale cached places as freshly location-sorted.
+      ref.read(placesLocationStatusProvider.notifier).state = PlacesLocationStatus.unavailable;
       debugPrint('placesProvider refresh failed: $e');
     }
   }
 
-  /// Best-effort device position for nearest-first sorting — returns null
-  /// (never throws) on denied/disabled location, so /places still loads
-  /// unsorted rather than failing when location isn't available.
+  /// Best-effort device position for nearest-first sorting — delegates to
+  /// the shared bestEffortPosition() helper, then records why into
+  /// placesLocationStatusProvider so the UI can surface it instead of
+  /// silently looking unsorted.
   Future<Position?> _currentPosition() async {
-    try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-        return null;
-      }
-      if (!await Geolocator.isLocationServiceEnabled()) return null;
-      return await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
-      );
-    } catch (_) {
-      return null;
-    }
+    final (pos, result) = await bestEffortPosition();
+    ref.read(placesLocationStatusProvider.notifier).state = switch (result) {
+      DeviceLocationResult.granted => PlacesLocationStatus.sorted,
+      DeviceLocationResult.deniedForever => PlacesLocationStatus.deniedForever,
+      DeviceLocationResult.unavailable => PlacesLocationStatus.unavailable,
+    };
+    return pos;
   }
 }
 
@@ -286,17 +371,8 @@ class NearbyTravellersNotifier extends Notifier<List<NearbyTraveller>> {
 
   Future<void> _tick() async {
     try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-        return;
-      }
-      if (!await Geolocator.isLocationServiceEnabled()) return;
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
-      );
+      final (pos, _) = await bestEffortPosition();
+      if (pos == null) return;
       await ref
           .read(apiProvider)
           .dio
@@ -497,10 +573,43 @@ class ClaimsNotifier extends Notifier<Map<String, String>> {
 
 final claimsProvider = NotifierProvider<ClaimsNotifier, Map<String, String>>(ClaimsNotifier.new);
 
-// ── session-only traveller state (matches prototype useState) ─────
+// ── weather (server-owned, real via Tomorrow.io) ───────────────────
 
-/// Current weather: sunny | cloudy | rainy.
-final weatherProvider = StateProvider<String>((ref) => 'sunny');
+/// Best-effort device position for weather, rounded to 2dp (~1.1km) so
+/// small GPS jitter doesn't spawn a fresh /weather fetch every refresh —
+/// delegates to the shared bestEffortPosition() helper, falling back to
+/// Weligama Bay on denied/disabled location.
+final weatherLocationProvider = FutureProvider<LatLngAt>((ref) async {
+  final (pos, _) = await bestEffortPosition();
+  if (pos == null) return (lat: kFallbackLat, lng: kFallbackLng);
+  double round(double v) => double.parse(v.toStringAsFixed(2));
+  return (lat: round(pos.latitude), lng: round(pos.longitude));
+});
+
+/// Raw GET /weather for one location.
+final weatherSnapshotProvider = FutureProvider.family<WeatherSnapshot, LatLngAt>((ref, at) async {
+  final res = await ref.read(apiProvider).dio.get('/weather', queryParameters: {'lat': at.lat, 'lng': at.lng});
+  return WeatherSnapshot.fromJson((res.data as Map).cast<String, dynamic>());
+});
+
+/// The provider screens actually watch — chains device location to the
+/// weather fetch. Not autoDispose: keeps the snapshot warm for the session.
+final currentWeatherProvider = FutureProvider<WeatherSnapshot>((ref) async {
+  final at = await ref.watch(weatherLocationProvider.future);
+  return ref.watch(weatherSnapshotProvider(at).future);
+});
+
+/// Legacy sunny|cloudy|rainy string derived from live data — keeps
+/// guide_screen.dart/guide_engine.dart's weather-flavored replies working
+/// with no changes beyond pointing at this provider.
+final weatherConditionProvider = Provider<String>((ref) {
+  return ref.watch(currentWeatherProvider).maybeWhen(
+        data: (s) => s.now.condition,
+        orElse: () => 'sunny',
+      );
+});
+
+// ── session-only traveller state (matches prototype useState) ─────
 
 /// Active time-of-day filter: morning | afternoon | evening.
 final timeFilterProvider = StateProvider<String>((ref) => 'afternoon');

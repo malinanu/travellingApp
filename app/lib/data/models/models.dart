@@ -98,6 +98,8 @@ class Place {
   final String id;
   final String name;
   final String type;
+  final String region; // display name, e.g. "Galle" — '' for older/seed data
+  final String regionId; // e.g. "galle" — matches server/internal/geo.Regions
   final String icon; // Lucide icon name from the prototype
   final String color; // pin tone key: teal/coral/sun/clay/plum
   final double x; // map position, percent 0-100
@@ -107,6 +109,7 @@ class Place {
   final double rating;
   final int reviews;
   final String distance;
+  final double? distanceKm; // real straight-line km, null unless the fetch was location-sorted
   final String priceLevel;
   final WifiInfo wifi;
   final String hours;
@@ -139,6 +142,8 @@ class Place {
     required this.id,
     required this.name,
     required this.type,
+    this.region = '',
+    this.regionId = '',
     required this.icon,
     required this.color,
     required this.x,
@@ -148,6 +153,7 @@ class Place {
     required this.rating,
     required this.reviews,
     required this.distance,
+    this.distanceKm,
     required this.priceLevel,
     required this.wifi,
     required this.hours,
@@ -178,6 +184,8 @@ class Place {
         id: json['id'] as String? ?? '',
         name: json['name'] as String? ?? '',
         type: json['type'] as String? ?? '',
+        region: json['region'] as String? ?? '',
+        regionId: json['regionId'] as String? ?? '',
         icon: json['icon'] as String? ?? 'MapPin',
         color: json['color'] as String? ?? 'teal',
         x: (json['x'] as num?)?.toDouble() ?? 50,
@@ -187,6 +195,7 @@ class Place {
         rating: (json['rating'] as num?)?.toDouble() ?? 0,
         reviews: (json['reviews'] as num?)?.toInt() ?? 0,
         distance: json['distance'] as String? ?? '',
+        distanceKm: (json['distanceKm'] as num?)?.toDouble(),
         priceLevel: json['priceLevel'] as String? ?? '',
         wifi: json['wifi'] is Map
             ? WifiInfo.fromJson((json['wifi'] as Map).cast<String, dynamic>())
@@ -300,7 +309,7 @@ class Traveler {
         at: t.distanceKm < 1
             ? '${(t.distanceKm * 1000).round()} m away'
             : '${t.distanceKm.toStringAsFixed(1)} km away',
-        sub: t.travelStyle,
+        sub: t.travelStyle.join(', '),
         hasPosition: false,
       );
 
@@ -325,7 +334,7 @@ class Traveler {
 class NearbyTraveller {
   final String id;
   final String name;
-  final String travelStyle;
+  final List<String> travelStyle;
   final double distanceKm;
   const NearbyTraveller({
     required this.id,
@@ -337,7 +346,7 @@ class NearbyTraveller {
   factory NearbyTraveller.fromJson(Map<String, dynamic> json) => NearbyTraveller(
         id: json['id'] as String,
         name: json['name'] as String,
-        travelStyle: json['travelStyle'] as String? ?? '',
+        travelStyle: (json['travelStyle'] as List? ?? const []).cast<String>(),
         distanceKm: (json['distanceKm'] as num).toDouble(),
       );
 }
@@ -452,6 +461,145 @@ class WeatherInfo {
   });
 }
 
+/// One hour of forecast from GET /weather — see server/internal/weather
+/// for the Tomorrow.io fetch and unit conversion (icon is already reduced
+/// to the app's existing Sun/CloudSun/CloudRain vocabulary server-side).
+class HourlyPoint {
+  final DateTime time;
+  final double temp;
+  final String condition; // sunny | cloudy | rainy
+  final String conditionLabel;
+  final String icon;
+  final int precipProbability;
+  final double precipMm;
+  final double windSpeed; // km/h
+  final double uvIndex;
+  final int cloudCover;
+  const HourlyPoint({
+    required this.time,
+    required this.temp,
+    required this.condition,
+    required this.conditionLabel,
+    required this.icon,
+    required this.precipProbability,
+    required this.precipMm,
+    required this.windSpeed,
+    required this.uvIndex,
+    required this.cloudCover,
+  });
+
+  factory HourlyPoint.fromJson(Map<String, dynamic> json) => HourlyPoint(
+        time: DateTime.tryParse(json['time'] as String? ?? '')?.toLocal() ?? DateTime.now(),
+        temp: (json['temp'] as num?)?.toDouble() ?? 0,
+        condition: json['condition'] as String? ?? 'sunny',
+        conditionLabel: json['conditionLabel'] as String? ?? '',
+        icon: json['icon'] as String? ?? 'Sun',
+        precipProbability: (json['precipProbability'] as num?)?.toInt() ?? 0,
+        precipMm: (json['precipMm'] as num?)?.toDouble() ?? 0,
+        windSpeed: (json['windSpeed'] as num?)?.toDouble() ?? 0,
+        uvIndex: (json['uvIndex'] as num?)?.toDouble() ?? 0,
+        cloudCover: (json['cloudCover'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// Current conditions — the "now" slice of GET /weather.
+class WeatherNow {
+  final double temp;
+  final double feelsLike;
+  final int humidity;
+  final double windSpeed; // km/h
+  final int windDirection; // degrees
+  final double uvIndex;
+  final double visibility; // km
+  final double pressure; // hPa
+  final int precipProbability;
+  final int cloudCover;
+  final String condition;
+  final String conditionLabel;
+  final String icon;
+  const WeatherNow({
+    required this.temp,
+    required this.feelsLike,
+    required this.humidity,
+    required this.windSpeed,
+    required this.windDirection,
+    required this.uvIndex,
+    required this.visibility,
+    required this.pressure,
+    required this.precipProbability,
+    required this.cloudCover,
+    required this.condition,
+    required this.conditionLabel,
+    required this.icon,
+  });
+
+  factory WeatherNow.fromJson(Map<String, dynamic> json) => WeatherNow(
+        temp: (json['temp'] as num?)?.toDouble() ?? 0,
+        feelsLike: (json['feelsLike'] as num?)?.toDouble() ?? 0,
+        humidity: (json['humidity'] as num?)?.toInt() ?? 0,
+        windSpeed: (json['windSpeed'] as num?)?.toDouble() ?? 0,
+        windDirection: (json['windDirection'] as num?)?.toInt() ?? 0,
+        uvIndex: (json['uvIndex'] as num?)?.toDouble() ?? 0,
+        visibility: (json['visibility'] as num?)?.toDouble() ?? 0,
+        pressure: (json['pressure'] as num?)?.toDouble() ?? 0,
+        precipProbability: (json['precipProbability'] as num?)?.toInt() ?? 0,
+        cloudCover: (json['cloudCover'] as num?)?.toInt() ?? 0,
+        condition: json['condition'] as String? ?? 'sunny',
+        conditionLabel: json['conditionLabel'] as String? ?? '',
+        icon: json['icon'] as String? ?? 'Sun',
+      );
+}
+
+/// Full GET /weather response — real conditions for the Weather screen and
+/// the Discover-tab bar, replacing the old hardcoded weatherKinds lookup.
+class WeatherSnapshot {
+  final WeatherNow now;
+  final List<HourlyPoint> hourly;
+  final double high;
+  final double low;
+  final DateTime sunrise;
+  final DateTime sunset;
+  final DateTime fetchedAt;
+  const WeatherSnapshot({
+    required this.now,
+    required this.hourly,
+    required this.high,
+    required this.low,
+    required this.sunrise,
+    required this.sunset,
+    required this.fetchedAt,
+  });
+
+  factory WeatherSnapshot.fromJson(Map<String, dynamic> json) => WeatherSnapshot(
+        now: json['now'] is Map
+            ? WeatherNow.fromJson((json['now'] as Map).cast<String, dynamic>())
+            : const WeatherNow(
+                temp: 0,
+                feelsLike: 0,
+                humidity: 0,
+                windSpeed: 0,
+                windDirection: 0,
+                uvIndex: 0,
+                visibility: 0,
+                pressure: 0,
+                precipProbability: 0,
+                cloudCover: 0,
+                condition: 'sunny',
+                conditionLabel: '',
+                icon: 'Sun',
+              ),
+        hourly: [
+          for (final h in (json['hourly'] as List? ?? const []))
+            HourlyPoint.fromJson((h as Map).cast<String, dynamic>())
+        ],
+        high: (json['high'] as num?)?.toDouble() ?? 0,
+        low: (json['low'] as num?)?.toDouble() ?? 0,
+        sunrise: DateTime.tryParse(json['sunrise'] as String? ?? '')?.toLocal() ?? DateTime.now(),
+        sunset: DateTime.tryParse(json['sunset'] as String? ?? '')?.toLocal() ?? DateTime.now(),
+        fetchedAt: DateTime.tryParse(json['fetchedAt'] as String? ?? '')?.toLocal() ?? DateTime.now(),
+      );
+}
+
 class TimeSlot {
   final String id; // morning/afternoon/evening
   final String label;
@@ -460,15 +608,25 @@ class TimeSlot {
   const TimeSlot({required this.id, required this.label, required this.icon, required this.range});
 }
 
-/// Onboarding result: travel style + interests. Persisted as spotto_prefs.
+/// Onboarding result: travel styles (multi-select) + interests. Persisted
+/// as spotto_prefs.
 class UserPrefs {
-  final String style;
+  final List<String> styles;
   final List<String> interests;
-  const UserPrefs({required this.style, required this.interests});
+  const UserPrefs({required this.styles, required this.interests});
 
-  Map<String, dynamic> toJson() => {'style': style, 'interests': interests};
+  Map<String, dynamic> toJson() => {'styles': styles, 'interests': interests};
+
+  /// Reads the current {'styles': [...]} shape, but falls back to the old
+  /// single {'style': '...'} shape so a cached spotto_prefs from before
+  /// multi-select still loads instead of throwing.
   factory UserPrefs.fromJson(Map<String, dynamic> json) => UserPrefs(
-        style: json['style'] as String,
-        interests: (json['interests'] as List).cast<String>(),
+        styles: json['styles'] is List
+            ? (json['styles'] as List).cast<String>()
+            : [
+                if (json['style'] is String && (json['style'] as String).isNotEmpty)
+                  json['style'] as String
+              ],
+        interests: (json['interests'] as List? ?? const []).cast<String>(),
       );
 }

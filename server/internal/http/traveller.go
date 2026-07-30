@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -15,19 +14,9 @@ import (
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
+	"github.com/spotto/server/internal/geo"
 	"github.com/spotto/server/internal/store/postgres"
 )
-
-// haversineKm is the great-circle distance in km between two lat/lng points
-// — same formula as the SQL version used by VendorsNear/NearbyTravellers,
-// just applied in Go since a place's lat/lng live inside its JSONB data
-// blob rather than dedicated columns.
-func haversineKm(lat1, lng1, lat2, lng2 float64) float64 {
-	toRad := func(deg float64) float64 { return deg * math.Pi / 180 }
-	x := math.Cos(toRad(lat1))*math.Cos(toRad(lat2))*math.Cos(toRad(lng2)-toRad(lng1)) +
-		math.Sin(toRad(lat1))*math.Sin(toRad(lat2))
-	return 6371 * math.Acos(math.Min(1, math.Max(-1, x)))
-}
 
 // placeJSON flattens Place.Data with id/name/vendorId for the Flutter model,
 // plus real vibe vote counts — so the app never needs a hardcoded vibe seed
@@ -74,9 +63,10 @@ func (s *Server) handlePlaces(w http.ResponseWriter, r *http.Request) {
 			pLng, lngOk := m["lng"].(float64)
 			wd := withDist{m: m}
 			if latOk && lngOk && (pLat != 0 || pLng != 0) {
-				wd.dist = haversineKm(lat, lng, pLat, pLng)
+				wd.dist = geo.HaversineKm(lat, lng, pLat, pLng)
 				wd.has = true
 				m["distance"] = fmt.Sprintf("%.1f km away", wd.dist)
+				m["distanceKm"] = wd.dist
 			}
 			withDists[i] = wd
 		}

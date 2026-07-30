@@ -95,9 +95,13 @@ func Run(ctx context.Context, s *postgres.Store) error {
 		{"usr_admin", "admin@spotto.dev", "Spotto Admin", "Sri Lanka", "", domain.RoleAdmin, nil, nil},
 	}
 	for _, u := range users {
+		var style []string
+		if u.style != "" {
+			style = []string{u.style}
+		}
 		if err := s.CreateUser(ctx, domain.User{
 			ID: u.id, Email: u.email, PasswordHash: hash, Role: u.role, Name: u.name,
-			Country: u.country, TravelStyle: u.style, Interests: u.interests,
+			Country: u.country, TravelStyle: style, Interests: u.interests,
 			VendorID: u.vendorID, CreatedAt: now.AddDate(0, -1, 0),
 		}); err != nil {
 			return fmt.Errorf("user %s: %w", u.email, err)

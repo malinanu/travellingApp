@@ -105,16 +105,16 @@ func (s *Store) CreateUser(ctx context.Context, u domain.User) error {
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO users (id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, vendor_role)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-		u.ID, u.Email, u.PasswordHash, u.Role, u.Name, u.Country, u.TravelStyle,
+		u.ID, u.Email, u.PasswordHash, u.Role, u.Name, u.Country, jsonb(u.TravelStyle),
 		jsonb(u.Interests), u.VendorID, u.Extra, u.CreatedAt, vendorRole)
 	return err
 }
 
 func scanUser(row pgx.Row) (domain.User, error) {
 	var u domain.User
-	var interests []byte
+	var travelStyle, interests []byte
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.Name, &u.Country,
-		&u.TravelStyle, &interests, &u.VendorID, &u.Extra, &u.CreatedAt,
+		&travelStyle, &interests, &u.VendorID, &u.Extra, &u.CreatedAt,
 		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled, &u.TokenVersion,
 		&u.ShareLocation, &u.Lat, &u.Lng, &u.LocationUpdatedAt,
 		&u.Phone, &u.VendorRole, &u.NotifyRedemptions, &u.NotifyReviews, &u.NotifyPayouts, &u.NotifyGrowthTips,
@@ -125,6 +125,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	if err != nil {
 		return u, err
 	}
+	json.Unmarshal(travelStyle, &u.TravelStyle)
 	json.Unmarshal(interests, &u.Interests)
 	return u, nil
 }
@@ -176,10 +177,10 @@ func (s *Store) UsersByIDs(ctx context.Context, ids []string) ([]domain.User, er
 	return out, rows.Err()
 }
 
-func (s *Store) UpdateUserProfile(ctx context.Context, id, name, country, style string, interests []string) error {
+func (s *Store) UpdateUserProfile(ctx context.Context, id, name, country string, style, interests []string) error {
 	_, err := s.Pool.Exec(ctx,
 		`UPDATE users SET name=$2, country=$3, travel_style=$4, interests=$5 WHERE id=$1`,
-		id, name, country, style, jsonb(interests))
+		id, name, country, jsonb(style), jsonb(interests))
 	return err
 }
 
@@ -220,10 +221,10 @@ func (s *Store) UpdateUserLocation(ctx context.Context, id string, lat, lng floa
 // NearbyTravellers — never another traveller's exact lat/lng, just enough
 // to show them as a nearby pin at a rounded distance.
 type NearbyTraveller struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	TravelStyle string  `json:"travelStyle"`
-	DistanceKm  float64 `json:"distanceKm"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	TravelStyle []string `json:"travelStyle"`
+	DistanceKm  float64  `json:"distanceKm"`
 }
 
 // NearbyTravellers finds other opted-in, recently-active travellers within
@@ -254,9 +255,11 @@ func (s *Store) NearbyTravellers(ctx context.Context, callerID string, lat, lng,
 	out := []NearbyTraveller{}
 	for rows.Next() {
 		var t NearbyTraveller
-		if err := rows.Scan(&t.ID, &t.Name, &t.TravelStyle, &t.DistanceKm); err != nil {
+		var travelStyle []byte
+		if err := rows.Scan(&t.ID, &t.Name, &travelStyle, &t.DistanceKm); err != nil {
 			return nil, err
 		}
+		json.Unmarshal(travelStyle, &t.TravelStyle)
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -1308,18 +1311,23 @@ func (s *Store) PlaceByVendorID(ctx context.Context, vendorID string) (domain.Pl
 
 // claimCols joins traveller display fields for vendor-facing views.
 const claimCols = `c.id, c.code, c.place_id, c.offer_id, c.offer_label, c.offer_value, c.vendor_id, c.traveller_id, c.status, c.claimed_at, c.redeemed_at,
-	COALESCE(u.name,''), COALESCE(u.country,''), COALESCE(u.travel_style,'')`
+	COALESCE(u.name,''), COALESCE(u.country,''), COALESCE(u.travel_style,'[]'::jsonb)`
 const claimFrom = ` FROM claims c LEFT JOIN users u ON u.id = c.traveller_id `
 
 func scanClaim(row pgx.Row) (domain.Claim, error) {
 	var c domain.Claim
+	var travelStyle []byte
 	err := row.Scan(&c.ID, &c.Code, &c.PlaceID, &c.OfferID, &c.OfferLabel, &c.OfferValue,
 		&c.VendorID, &c.TravellerID, &c.Status, &c.ClaimedAt, &c.RedeemedAt,
-		&c.TravellerName, &c.TravellerCountry, &c.TravellerStyle)
+		&c.TravellerName, &c.TravellerCountry, &travelStyle)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c, ErrNotFound
 	}
-	return c, err
+	if err != nil {
+		return c, err
+	}
+	json.Unmarshal(travelStyle, &c.TravellerStyle)
+	return c, nil
 }
 
 func (s *Store) CreateClaim(ctx context.Context, c domain.Claim) error {

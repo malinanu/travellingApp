@@ -18,6 +18,7 @@ const interests = [
   Interest(id: 'food', label: 'Local Food', icon: 'UtensilsCrossed'),
   Interest(id: 'beach', label: 'Beaches', icon: 'Palmtree'),
   Interest(id: 'music', label: 'Live Music', icon: 'Music'),
+  Interest(id: 'hiking', label: 'Hiking', icon: 'Mountain'),
 ];
 
 const places = [

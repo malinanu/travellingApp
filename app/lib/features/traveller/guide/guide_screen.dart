@@ -9,6 +9,7 @@ import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/spotto_icons.dart';
 import '../../../data/mock/guide_engine.dart';
 import '../../../data/mock/places.dart' as data;
+import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import '../place_detail/business_drawer.dart';
 
@@ -32,14 +33,14 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
   bool _busy = false;
 
   String get _styleLabel {
-    final style = ref.read(prefsProvider)?.style;
+    final style = ref.read(prefsProvider)?.styles.firstOrNull;
     return data.travelStyles.where((s) => s.id == style).firstOrNull?.label ?? 'Traveler';
   }
 
   @override
   void initState() {
     super.initState();
-    _messages.add(_Msg(false, guideGreeting(_styleLabel, ref.read(weatherProvider))));
+    _messages.add(_Msg(false, guideGreeting(_styleLabel, ref.read(weatherConditionProvider))));
   }
 
   @override
@@ -47,6 +48,15 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     _input.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  /// guideFindPlace matches against the hardcoded demo dataset, whose ids
+  /// (e.g. 'driftwood') don't exist in the live places table — resolve by
+  /// name against the real, API-backed list so we never hand a phantom
+  /// place into the business drawer (posting a review against it 404s).
+  Place? _liveGuidePlace(Place? mock) {
+    if (mock == null) return null;
+    return ref.read(placesProvider).where((p) => p.name == mock.name).firstOrNull;
   }
 
   void _scrollDown() {
@@ -69,7 +79,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     _scrollDown();
 
     final reply = await guideReply(q,
-        weather: ref.read(weatherProvider), style: ref.read(prefsProvider)?.style);
+        weather: ref.read(weatherConditionProvider), style: ref.read(prefsProvider)?.styles.firstOrNull);
     if (!mounted) return;
     setState(() {
       _messages.add(_Msg(false, reply));
@@ -81,7 +91,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final rainy = ref.watch(weatherProvider) == 'rainy';
+    final rainy = ref.watch(weatherConditionProvider) == 'rainy';
     final suggestions = rainy ? guideSuggestionsRainy : guideSuggestions;
 
     return Scaffold(
@@ -159,7 +169,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                 itemBuilder: (context, i) {
                   if (i == _messages.length) return const _TypingBubble();
                   final m = _messages[i];
-                  final place = m.mine ? null : guideFindPlace(m.content);
+                  final place = m.mine ? null : _liveGuidePlace(guideFindPlace(m.content));
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Column(

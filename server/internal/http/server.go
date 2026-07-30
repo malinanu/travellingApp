@@ -18,6 +18,7 @@ import (
 	"github.com/spotto/server/internal/mail"
 	"github.com/spotto/server/internal/media"
 	"github.com/spotto/server/internal/store/postgres"
+	"github.com/spotto/server/internal/weather"
 )
 
 type Server struct {
@@ -39,6 +40,13 @@ type Server struct {
 	// internal/holidays and holiday_scheduler.go) — empty means the
 	// scheduler falls back to a bundled static list instead.
 	GoogleCalendarAPIKey string
+	// TomorrowIOAPIKey enables live weather (see internal/weather) — empty
+	// means GET /weather reports itself unconfigured (501) instead.
+	TomorrowIOAPIKey string
+	// WeatherCache holds recent Tomorrow.io responses keyed by a coarse
+	// lat/lng cell (see internal/weather/cache.go) to stay within the free
+	// tier's tight rate limit.
+	WeatherCache *weather.Cache
 	// GoogleOAuth is nil when GOOGLE_CLIENT_ID/SECRET aren't configured —
 	// handleGoogleLogin/handleGoogleCallback report 501 in that case rather
 	// than panicking on a nil config.
@@ -67,6 +75,8 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		AdminAppURL:          cfg.AdminAppURL,
 		SuperAdminEmails:     superAdminSet(cfg.SuperAdminEmails),
 		GoogleCalendarAPIKey: cfg.GoogleCalendarAPIKey,
+		TomorrowIOAPIKey:     cfg.TomorrowIOAPIKey,
+		WeatherCache:         weather.NewCache(),
 		loginLimit:           newLoginLimiter(5, 15*time.Minute),
 		totpLimit:            newLoginLimiter(5, 15*time.Minute),
 		resetLimit:           newLoginLimiter(5, 15*time.Minute),
@@ -151,6 +161,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Post("/auth/2fa/enable", s.handleTwoFactorEnable)
 		r.Post("/auth/2fa/disable", s.handleTwoFactorDisable)
 
+		r.Get("/weather", s.handleWeather)
 		r.Get("/places", s.handlePlaces)
 		r.Get("/places/{id}", s.handlePlace)
 		r.Get("/places/{id}/reviews", s.handlePlaceReviews)

@@ -28,9 +28,9 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   String? _sub; // security | payment | privacy | help
   bool _uploadingAvatar = false;
-  final _name = TextEditingController(text: 'Lena Müller');
-  final _email = TextEditingController(text: 'lena@email.com');
-  late String _style;
+  final _name = TextEditingController();
+  final _email = TextEditingController();
+  late Set<String> _styles;
   late List<String> _interests;
   final Map<String, bool> _notif = {
     'deals': true,
@@ -44,8 +44,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   void initState() {
     super.initState();
     final prefs = ref.read(prefsProvider);
-    _style = prefs?.style ?? 'nomad';
+    _styles = {...(prefs?.styles ?? const ['nomad'])};
     _interests = [...(prefs?.interests ?? const [])];
+    final me = ref.read(meProvider);
+    _name.text = me?['name'] as String? ?? '';
+    _email.text = me?['email'] as String? ?? '';
   }
 
   @override
@@ -56,7 +59,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   void _save() {
-    ref.read(prefsProvider.notifier).save(UserPrefs(style: _style, interests: _interests));
+    ref.read(prefsProvider.notifier).save(UserPrefs(styles: _styles.toList(), interests: _interests));
+    // Email isn't editable server-side yet (handleUpdateMe has no email
+    // field — changing it would need a verification flow), so only name
+    // round-trips here; the field stays display-only for email.
+    ref.read(apiProvider).dio.put('/me', data: {'name': _name.text.trim()}).ignore();
     setState(() => _savedFlash = true);
     Future.delayed(const Duration(milliseconds: 1800), () {
       if (mounted) setState(() => _savedFlash = false);
@@ -116,6 +123,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     final text = Theme.of(context).textTheme;
     final avatarUrl = ref.watch(meProvider)?['avatarUrl'] as String? ?? '';
+    // /me loads asynchronously (Future.microtask in MeNotifier.build()), so
+    // it may still be null when this screen first builds — seed the
+    // controllers the moment real data actually arrives, once, rather than
+    // only in initState (which can run before /me has resolved).
+    ref.listen<Map<String, dynamic>?>(meProvider, (prev, next) {
+      if (prev == null && next != null) {
+        setState(() {
+          _name.text = next['name'] as String? ?? '';
+          _email.text = next['email'] as String? ?? '';
+        });
+      }
+    });
+    // Same async-timing issue as name/email above: prefsProvider may still
+    // be un-hydrated (from MeNotifier.refresh()) when initState ran.
+    ref.listen<UserPrefs?>(prefsProvider, (prev, next) {
+      if (prev == null && next != null) {
+        setState(() {
+          _styles = {...next.styles};
+          _interests = [...next.interests];
+        });
+      }
+    });
     final name = _name.text.trim();
     final initials = name
         .split(' ')
@@ -124,7 +153,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         .take(2)
         .join()
         .toUpperCase();
-    final styleObj = data.travelStyles.where((s) => s.id == _style).firstOrNull;
+    // Badge shows the first selected style — a small simplification rather
+    // than redesigning the pill to list several.
+    final styleObj =
+        data.travelStyles.where((s) => s.id == _styles.firstOrNull).firstOrNull;
 
     return Scaffold(
       backgroundColor: SpottoColors.sand,
@@ -303,7 +335,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     profField(context, 'Name', _name, Icons.person_outline,
                         onChanged: () => setState(() {})),
                     const SizedBox(height: 14),
-                    profField(context, 'Email', _email, Icons.mail_outline),
+                    profField(context, 'Email', _email, Icons.mail_outline,
+                        readOnly: true, helperText: 'Contact support to change your email'),
                   ]),
                   const SizedBox(height: 22),
 
@@ -319,11 +352,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         for (final s in data.travelStyles)
                           PressScale(
                             scale: 0.98,
-                            onTap: () => setState(() => _style = s.id),
+                            onTap: () => setState(() {
+                              _styles.contains(s.id) ? _styles.remove(s.id) : _styles.add(s.id);
+                            }),
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12),
                               decoration: BoxDecoration(
-                                color: _style == s.id
+                                color: _styles.contains(s.id)
                                     ? SpottoColors.accent
                                     : SpottoColors.sand,
                                 borderRadius: BorderRadius.circular(16),
@@ -332,7 +367,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 children: [
                                   Icon(spottoIcon(s.icon),
                                       size: 18,
-                                      color: _style == s.id
+                                      color: _styles.contains(s.id)
                                           ? Colors.white
                                           : SpottoColors.ink),
                                   const SizedBox(width: 10),
@@ -343,7 +378,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                         style: TextStyle(
                                             fontSize: 13,
                                             fontWeight: FontWeight.w800,
-                                            color: _style == s.id
+                                            color: _styles.contains(s.id)
                                                 ? Colors.white
                                                 : SpottoColors.ink)),
                                   ),
@@ -527,7 +562,7 @@ Widget sectionCard(BuildContext context, String? title, List<Widget> children) {
 
 Widget profField(BuildContext context, String label, TextEditingController controller,
     IconData icon,
-    {VoidCallback? onChanged, bool obscure = false}) {
+    {VoidCallback? onChanged, bool obscure = false, bool readOnly = false, String? helperText}) {
   final text = Theme.of(context).textTheme;
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -537,10 +572,12 @@ Widget profField(BuildContext context, String label, TextEditingController contr
       TextField(
         controller: controller,
         obscureText: obscure,
+        readOnly: readOnly,
         onChanged: onChanged == null ? null : (_) => onChanged(),
         decoration: InputDecoration(
-          fillColor: SpottoColors.sand,
+          fillColor: readOnly ? SpottoColors.line.withValues(alpha: 0.4) : SpottoColors.sand,
           prefixIcon: Icon(icon, size: 17, color: SpottoColors.muted),
+          helperText: helperText,
         ),
       ),
     ],

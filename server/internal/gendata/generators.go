@@ -26,7 +26,7 @@ func genTravellers(ctx context.Context, store *postgres.Store, passwordHash stri
 			Role:         domain.RoleTraveller,
 			Name:         gofakeit.Name(),
 			Country:      gofakeit.Country(),
-			TravelStyle:  style,
+			TravelStyle:  []string{style},
 			Interests:    pool[:numInterests],
 			CreatedAt:    now.Add(-time.Duration(gofakeit.Number(1, 180)) * 24 * time.Hour),
 		}

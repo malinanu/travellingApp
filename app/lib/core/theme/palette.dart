@@ -19,6 +19,22 @@ abstract final class SpottoColors {
   /// Soft ink shadow used across cards and sheets.
   static const inkShadow = Color(0x2E103D3A); // rgba(16,61,58,0.18)
 
+  /// Activity-suitability tones (good/fair/poor), foreground + tint pairs —
+  /// derived from the existing palette rather than a new warning-red
+  /// system. `sun` itself fails contrast as text on `sand`, hence the
+  /// darkened amber for "fair"; "poor" sits between the existing `clay`
+  /// and coral pin tones so it reads as "not now" without an alarm red.
+  static const ratingTones = {
+    'good': accent,
+    'fair': Color(0xFF8A6410),
+    'poor': Color(0xFFB2472F),
+  };
+  static const ratingTints = {
+    'good': accentTint,
+    'fair': Color(0x2EF6B81E),
+    'poor': Color(0x1FB2472F),
+  };
+
   /// Pin tone colors keyed by Place.color.
   static const pinTones = {
     'teal': accent,

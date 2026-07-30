@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,9 +14,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/config"
 	"github.com/spotto/server/internal/domain"
+	"github.com/spotto/server/internal/geo"
 	"github.com/spotto/server/internal/media"
 	"github.com/spotto/server/internal/store/postgres"
 )
@@ -116,14 +119,32 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 			userID = userID[:50]
 		}
 
-		var geo struct {
+		var coords struct {
 			Lat float64 `json:"lat"`
 			Lng float64 `json:"lng"`
 		}
 		lat, lng := fallbackLat, fallbackLng
-		if err := json.Unmarshal(p.Data, &geo); err == nil && geo.Lat != 0 && geo.Lng != 0 {
-			lat, lng = geo.Lat, geo.Lng
+		if err := json.Unmarshal(p.Data, &coords); err == nil && coords.Lat != 0 && coords.Lng != 0 {
+			lat, lng = coords.Lat, coords.Lng
 		}
+
+		// Every vendor used to get a hardcoded region_id="colombo"/town="Sri
+		// Lanka" regardless of where the place actually is — resolve the real
+		// nearest region from its own coordinates instead, and mirror it into
+		// the place's data blob too (self-contained JSONB, same as lat/lng),
+		// so the traveller-facing API can expose it with no extra join.
+		region := geo.NearestRegion(lat, lng)
+		var data map[string]any
+		if err := json.Unmarshal(p.Data, &data); err != nil || data == nil {
+			data = map[string]any{}
+		}
+		data["region"] = region.Name
+		data["regionId"] = region.ID
+		enrichedData, err := json.Marshal(data)
+		if err != nil {
+			return fmt.Errorf("marshal place data for %s: %w", p.ID, err)
+		}
+		p.Data = enrichedData
 
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO vendors (id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng)
@@ -135,7 +156,7 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 				wifi_score=EXCLUDED.wifi_score, flags=EXCLUDED.flags, note=EXCLUDED.note,
 				tier=EXCLUDED.tier, profile=EXCLUDED.profile, menu=EXCLUDED.menu,
 				submitted_at=EXCLUDED.submitted_at, lat=EXCLUDED.lat, lng=EXCLUDED.lng`,
-			vendorID, p.Name+" Vendor", "General", "Sri Lanka", "LK", ptr("colombo"), "Admin",
+			vendorID, p.Name+" Vendor", "General", region.Name, "LK", ptr(region.ID), "Admin",
 			domain.VendorApproved, "normal", true, 0, nil, []byte(`[]`), "", "Premium",
 			[]byte(`{}`), []byte(`{}`), now.AddDate(0, -1, 0), lat, lng,
 		); err != nil {
@@ -147,7 +168,7 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 			ON CONFLICT (id) DO NOTHING`,
 			userID, "import_"+p.ID+"@spotto.dev", hash, domain.RoleVendor, p.Name+" Owner", "Sri Lanka",
-			"", []byte(`[]`), vendorID, []byte(`{}`), now.AddDate(0, -1, 0), domain.VendorRoleOwner,
+			[]byte(`[]`), []byte(`[]`), vendorID, []byte(`{}`), now.AddDate(0, -1, 0), domain.VendorRoleOwner,
 		); err != nil {
 			return fmt.Errorf("upsert user %s: %w", userID, err)
 		}
@@ -175,7 +196,10 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 // already committed, so slow/failed network calls here can't hold the
 // places table locked or block the API from starting — every failure is
 // logged and skipped, never fatal. Idempotent: a vendor that already has a
-// "cover" media row is skipped, so repeat deploys only process new vendors.
+// "cover" media row skips the fetch/upload, but every vendor still gets its
+// cover mirrored into places.data below — so a prior deploy that uploaded
+// media without mirroring it (or a place row rebuilt by runImport since)
+// gets self-healed on every run rather than only on first upload.
 func uploadCoverPhotos(ctx context.Context, store *postgres.Store, cfg config.Config, spots []domain.Place) {
 	if cfg.R2AccountID == "" || cfg.R2AccessKeyID == "" || cfg.R2SecretAccessKey == "" || cfg.R2Bucket == "" {
 		log.Println("importsrilanka: R2 not configured, skipping cover photo upload")
@@ -188,62 +212,104 @@ func uploadCoverPhotos(ctx context.Context, store *postgres.Store, cfg config.Co
 	for _, p := range spots {
 		vendorID := vendorIDFor(p.ID)
 
-		var exists bool
-		if err := store.Pool.QueryRow(ctx,
-			`SELECT EXISTS(SELECT 1 FROM media WHERE owner_type='vendor' AND owner_id=$1 AND role='cover')`,
+		var coverURL string
+		err := store.Pool.QueryRow(ctx,
+			`SELECT url FROM media WHERE owner_type='vendor' AND owner_id=$1 AND role='cover' LIMIT 1`,
 			vendorID,
-		).Scan(&exists); err != nil {
+		).Scan(&coverURL)
+		switch {
+		case err == nil:
+			skipped++
+		case errors.Is(err, pgx.ErrNoRows):
+			coverURL, err = uploadOneCoverPhoto(ctx, store, client, r2, vendorID, p.Data)
+			if err != nil {
+				log.Printf("importsrilanka: %v", err)
+				failed++
+				continue
+			}
+			if coverURL == "" {
+				continue // no sourcePhotos to use
+			}
+			uploaded++
+		default:
 			log.Printf("importsrilanka: check existing cover for %s: %v", vendorID, err)
 			continue
 		}
-		if exists {
-			skipped++
-			continue
-		}
 
-		var pd struct {
-			SourcePhotos []string `json:"sourcePhotos"`
+		if err := mirrorCoverIntoPlace(ctx, store, vendorID, coverURL); err != nil {
+			log.Printf("importsrilanka: mirror cover into place for %s: %v", vendorID, err)
 		}
-		if err := json.Unmarshal(p.Data, &pd); err != nil || len(pd.SourcePhotos) == 0 {
-			continue
-		}
-
-		body, contentType, err := fetchImage(ctx, client, pd.SourcePhotos[0])
-		if err != nil {
-			log.Printf("importsrilanka: fetch cover photo for %s: %v", vendorID, err)
-			failed++
-			continue
-		}
-
-		ext, kind, maxSize, ok := media.Resolve(contentType)
-		if !ok || int64(len(body)) > maxSize {
-			log.Printf("importsrilanka: cover photo for %s rejected (type=%s size=%d)", vendorID, contentType, len(body))
-			failed++
-			continue
-		}
-
-		key := fmt.Sprintf("vendor/%s/%s%s", vendorID, randomID("m"), ext)
-		if err := putToR2(ctx, client, r2, key, contentType, body); err != nil {
-			log.Printf("importsrilanka: upload to R2 for %s: %v", vendorID, err)
-			failed++
-			continue
-		}
-
-		if _, err := store.Pool.Exec(ctx, `
-			INSERT INTO media (id, owner_type, owner_id, kind, role, object_key, url, content_type, size, width, height, uploaded_by, status, sort, created_at)
-			VALUES ($1,'vendor',$2,$3,'cover',$4,$5,$6,$7,0,0,'system-import','ready',0,now())`,
-			randomID("m"), vendorID, kind, key, r2.PublicURL(key), contentType, len(body),
-		); err != nil {
-			log.Printf("importsrilanka: insert media row for %s: %v", vendorID, err)
-			failed++
-			continue
-		}
-		if _, err := store.Pool.Exec(ctx, `UPDATE vendors SET photos = 1 WHERE id = $1`, vendorID); err != nil {
-			log.Printf("importsrilanka: update photos count for %s: %v", vendorID, err)
-		}
-		uploaded++
 	}
 	log.Printf("importsrilanka: cover photos - uploaded %d, skipped %d (already had one), failed %d\n", uploaded, skipped, failed)
+}
+
+// uploadOneCoverPhoto fetches placeData.sourcePhotos[0], uploads it to R2,
+// and records it as the vendor's cover media row. Returns ("", nil) if the
+// place has no source photos to use.
+func uploadOneCoverPhoto(ctx context.Context, store *postgres.Store, client *http.Client, r2 *media.R2, vendorID string, placeData []byte) (string, error) {
+	var pd struct {
+		SourcePhotos []string `json:"sourcePhotos"`
+	}
+	if err := json.Unmarshal(placeData, &pd); err != nil || len(pd.SourcePhotos) == 0 {
+		return "", nil
+	}
+
+	body, contentType, err := fetchImage(ctx, client, pd.SourcePhotos[0])
+	if err != nil {
+		return "", fmt.Errorf("fetch cover photo for %s: %w", vendorID, err)
+	}
+
+	ext, kind, maxSize, ok := media.Resolve(contentType)
+	if !ok || int64(len(body)) > maxSize {
+		return "", fmt.Errorf("cover photo for %s rejected (type=%s size=%d)", vendorID, contentType, len(body))
+	}
+
+	key := fmt.Sprintf("vendor/%s/%s%s", vendorID, randomID("m"), ext)
+	if err := putToR2(ctx, client, r2, key, contentType, body); err != nil {
+		return "", fmt.Errorf("upload to R2 for %s: %w", vendorID, err)
+	}
+
+	url := r2.PublicURL(key)
+	if _, err := store.Pool.Exec(ctx, `
+		INSERT INTO media (id, owner_type, owner_id, kind, role, object_key, url, content_type, size, width, height, uploaded_by, status, sort, created_at)
+		VALUES ($1,'vendor',$2,$3,'cover',$4,$5,$6,$7,0,0,'system-import','ready',0,now())`,
+		randomID("m"), vendorID, kind, key, url, contentType, len(body),
+	); err != nil {
+		return "", fmt.Errorf("insert media row for %s: %w", vendorID, err)
+	}
+	if _, err := store.Pool.Exec(ctx, `UPDATE vendors SET photos = 1 WHERE id = $1`, vendorID); err != nil {
+		log.Printf("importsrilanka: update photos count for %s: %v", vendorID, err)
+	}
+	return url, nil
+}
+
+// mirrorCoverIntoPlace writes coverURL into the vendor's place.data.cover
+// (and a single-entry gallery), matching what syncVendorPlace does for the
+// live HTTP vendor-media-upload path (server/internal/http/vendor.go). The
+// import script is a separate main package without access to that server
+// code, so it replicates the same JSON patch directly here.
+func mirrorCoverIntoPlace(ctx context.Context, store *postgres.Store, vendorID, coverURL string) error {
+	var placeID string
+	var raw []byte
+	if err := store.Pool.QueryRow(ctx,
+		`SELECT id, data FROM places WHERE vendor_id=$1`, vendorID,
+	).Scan(&placeID, &raw); err != nil {
+		return fmt.Errorf("find place for vendor %s: %w", vendorID, err)
+	}
+
+	data := map[string]any{}
+	_ = json.Unmarshal(raw, &data)
+	data["cover"] = coverURL
+	data["gallery"] = []string{coverURL}
+
+	updated, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("marshal place data for %s: %w", placeID, err)
+	}
+	if _, err := store.Pool.Exec(ctx, `UPDATE places SET data=$1 WHERE id=$2`, updated, placeID); err != nil {
+		return fmt.Errorf("update place %s: %w", placeID, err)
+	}
+	return nil
 }
 
 func fetchImage(ctx context.Context, client *http.Client, url string) ([]byte, string, error) {

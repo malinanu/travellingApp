@@ -37,6 +37,11 @@ type Config struct {
 	// Unset means the holiday scheduler falls back to a bundled static list
 	// instead of failing.
 	GoogleCalendarAPIKey string
+	// TomorrowIOAPIKey enables live weather (see internal/weather) for the
+	// app's Weather screen. Unset means GET /weather reports itself
+	// unconfigured (501) rather than failing startup — same convention as
+	// GoogleCalendarAPIKey above.
+	TomorrowIOAPIKey string
 	// VendorAppURL is the base URL of the vendor Next.js app, used to build
 	// links embedded in emails (invite accept, password reset).
 	VendorAppURL string
@@ -102,6 +107,7 @@ func Load() Config {
 		GoogleClientSecret:   getenv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURL:    getenv("GOOGLE_REDIRECT_URL", ""),
 		GoogleCalendarAPIKey: getenv("GOOGLE_CALENDAR_API_KEY", ""),
+		TomorrowIOAPIKey:     getenv("TOMORROW_IO_API_KEY", ""),
 		VendorAppURL:         getenv("VENDOR_APP_URL", "http://localhost:3000"),
 		AdminAppURL:          getenv("ADMIN_APP_URL", "http://localhost:3001"),
 		SuperAdminEmails:     splitNonEmpty(getenv("SUPER_ADMIN_EMAILS", "")),

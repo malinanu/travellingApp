@@ -16,9 +16,14 @@ import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import '../group/group_sheet.dart';
 import '../place_detail/business_drawer.dart';
+import '../weather/activity_rules.dart';
 
-/// Weligama Bay center — initial camera target for the Discover map.
-const _weligamaBay = LatLng(5.9724, 80.4292);
+/// Weligama Bay — the map's synchronous construction-time default (a
+/// GoogleMap needs some initial target immediately); overridden by an
+/// animateCamera to the user's real device position as soon as it resolves
+/// (see _maybeCenterOnDevice), same fallback coordinates as
+/// devicePositionProvider/kFallbackLat/kFallbackLng in repositories.dart.
+const _weligamaBay = LatLng(kFallbackLat, kFallbackLng);
 
 /// Real user's initial for the "you" avatar bubble, falling back to '?'
 /// before /me has loaded.
@@ -39,6 +44,57 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   Set<Marker> _markers = {};
   String? _builtForTime;
   bool _builtForGroupMode = false;
+
+  // One-time recenter onto the user's real device position once it's
+  // available — the map starts at the Weligama fallback (initialCameraPosition
+  // requires some value synchronously) and glides to the real location as
+  // soon as both the controller and position are ready, in whichever order
+  // they resolve. Only fires once so it never fights the user's own panning
+  // (the myLocationButton covers manual recenter after that).
+  GoogleMapController? _mapController;
+  LatLngAt? _resolvedPosition;
+  bool _centeredOnDevice = false;
+
+  void _maybeCenterOnDevice() {
+    if (_centeredOnDevice || _mapController == null || _resolvedPosition == null) return;
+    _centeredOnDevice = true;
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngZoom(LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng), 16),
+    );
+  }
+
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<Place> _searchResults(List<Place> places) {
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    return places
+        .where((p) =>
+            p.name.toLowerCase().contains(q) ||
+            p.type.toLowerCase().contains(q) ||
+            p.region.toLowerCase().contains(q))
+        .take(6)
+        .toList();
+  }
+
+  void _selectSearchResult(Place p) {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _searchQuery = '';
+      _searchController.clear();
+    });
+    if (p.lat != 0 || p.lng != 0) {
+      _mapController?.animateCamera(CameraUpdate.newLatLngZoom(LatLng(p.lat, p.lng), 17));
+    }
+    showBusinessDrawer(context, p);
+  }
 
   Future<void> _rebuildMarkers({
     required List<Place> places,
@@ -95,7 +151,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   @override
   Widget build(BuildContext context) {
     final time = ref.watch(timeFilterProvider);
-    final weather = data.weatherKinds[ref.watch(weatherProvider)]!;
+    final weatherAsync = ref.watch(currentWeatherProvider);
+    final category = resolveCategory(ref.watch(prefsProvider));
     final text = Theme.of(context).textTheme;
     final groupMode = ref.watch(groupModeProvider);
     final group = ref.watch(groupProvider);
@@ -106,6 +163,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     // used for markers directly (no exact position for non-group members),
     // but keeps group_sheet's "invite nearby travellers" list fresh.
     ref.watch(nearbyTravellersProvider);
+    ref.listen<AsyncValue<LatLngAt>>(devicePositionProvider, (_, next) {
+      _resolvedPosition = next.valueOrNull;
+      _maybeCenterOnDevice();
+    });
 
     if (_builtForTime != time || _builtForGroupMode != groupMode) {
       _builtForTime = time;
@@ -126,10 +187,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         GoogleMap(
           initialCameraPosition: const CameraPosition(target: _weligamaBay, zoom: 16),
           markers: _markers,
-          myLocationButtonEnabled: false,
+          myLocationEnabled: true,
+          myLocationButtonEnabled: true,
           zoomControlsEnabled: false,
           mapToolbarEnabled: false,
           compassEnabled: false,
+          onMapCreated: (controller) {
+            _mapController = controller;
+            _maybeCenterOnDevice();
+          },
         ),
 
         // time-of-day lighting overlay (700ms like the prototype)
@@ -146,41 +212,109 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Column(
               children: [
+                PressScale(
+                  scale: 0.98,
+                  onTap: () => context.push('/t/weather'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: const [
+                        BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4)),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(spottoIcon(weatherAsync.valueOrNull?.now.icon ?? 'Sun'), color: SpottoColors.sun),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                weatherAsync.when(
+                                  data: (s) => '${s.now.conditionLabel} · ${s.now.temp.round()}°',
+                                  loading: () => 'Getting conditions…',
+                                  error: (_, __) => 'Weather unavailable',
+                                ),
+                                style: text.labelLarge,
+                              ),
+                              Text(
+                                weatherAsync.valueOrNull != null
+                                    ? headline(category, rateHours(category, weatherAsync.value!.hourly))
+                                    : 'Tap for the full forecast',
+                                style: text.bodySmall,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right, size: 18, color: SpottoColors.muted),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(16),
                     boxShadow: const [
                       BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4)),
                     ],
                   ),
-                  child: Row(
-                    children: [
-                      Icon(spottoIcon(weather.icon), color: SpottoColors.sun),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('${weather.label} · ${weather.temp}', style: text.labelLarge),
-                            Text(weather.tip, style: text.bodySmall),
-                          ],
-                        ),
-                      ),
-                      // demo affordance: tap to cycle weather
-                      IconButton(
-                        icon: const Icon(Icons.refresh, size: 18, color: SpottoColors.muted),
-                        onPressed: () {
-                          final order = ['sunny', 'cloudy', 'rainy'];
-                          final cur = ref.read(weatherProvider);
-                          ref.read(weatherProvider.notifier).state =
-                              order[(order.indexOf(cur) + 1) % order.length];
-                        },
-                      ),
-                    ],
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (v) => setState(() => _searchQuery = v),
+                    decoration: InputDecoration(
+                      hintText: 'Search spots on the map…',
+                      prefixIcon: const Icon(Icons.search, size: 18, color: SpottoColors.muted),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.close, size: 18, color: SpottoColors.muted),
+                              onPressed: () => setState(() {
+                                _searchQuery = '';
+                                _searchController.clear();
+                              }),
+                            )
+                          : null,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+                    ),
                   ),
                 ),
+                if (_searchResults(places).isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 6),
+                    constraints: const BoxConstraints(maxHeight: 260),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: const [
+                        BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4)),
+                      ],
+                    ),
+                    child: ListView(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      children: [
+                        for (final p in _searchResults(places))
+                          ListTile(
+                            dense: true,
+                            leading: Icon(spottoIcon(p.icon), color: SpottoColors.pinTones[p.color] ?? SpottoColors.accent),
+                            title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(
+                              [p.type, if (p.region.isNotEmpty) p.region].join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onTap: () => _selectSearchResult(p),
+                          ),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 Row(
                   children: [

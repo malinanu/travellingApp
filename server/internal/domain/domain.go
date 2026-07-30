@@ -23,7 +23,7 @@ type User struct {
 	Role              Role            `json:"role"`
 	Name              string          `json:"name"`
 	Country           string          `json:"country"`
-	TravelStyle       string          `json:"travelStyle"`
+	TravelStyle       []string        `json:"travelStyle"`
 	Interests         []string        `json:"interests"`
 	VendorID          *string         `json:"vendorId,omitempty"`
 	Extra             json.RawMessage `json:"-"`
@@ -181,7 +181,7 @@ type Claim struct {
 	// Joined traveller display fields (not columns on claims).
 	TravellerName    string `json:"travellerName,omitempty"`
 	TravellerCountry string `json:"travellerCountry,omitempty"`
-	TravellerStyle   string `json:"travellerStyle,omitempty"`
+	TravellerStyle   []string `json:"travellerStyle,omitempty"`
 }
 
 // Place is curated traveller content; Data mirrors the Dart Place model
