@@ -112,12 +112,29 @@ func Load() Config {
 		AdminAppURL:          getenv("ADMIN_APP_URL", "http://localhost:3001"),
 		SuperAdminEmails:     splitNonEmpty(getenv("SUPER_ADMIN_EMAILS", "")),
 
-		R2AccountID:       getenv("R2_ACCOUNT_ID", ""),
+		R2AccountID:       sanitizedR2AccountID(getenv("R2_ACCOUNT_ID", "")),
 		R2AccessKeyID:     getenv("R2_ACCESS_KEY_ID", ""),
 		R2SecretAccessKey: getenv("R2_SECRET_ACCESS_KEY", ""),
 		R2Bucket:          getenv("R2_BUCKET", ""),
 		R2PublicBaseURL:   strings.TrimRight(getenv("R2_PUBLIC_BASE_URL", ""), "/"),
 	}
+}
+
+// sanitizedR2AccountID guards against the R2 endpoint silently becoming
+// unreachable. A Cloudflare R2 account ID is always a bare 32-character hex
+// string; the most common way to break it is pasting in the dashboard's
+// example endpoint ("<ACCOUNT_ID>.r2.cloudflarestorage.com") instead of just
+// the ID, which — once media.NewR2 appends ".r2.cloudflarestorage.com" of
+// its own — builds a doubled, non-existent host and every upload fails with
+// an opaque "tls: handshake failure" instead of a message that says what's
+// actually wrong. Treating a malformed value as unset (rather than passing
+// it through) keeps R2 in its existing "unconfigured" path.
+func sanitizedR2AccountID(id string) string {
+	if id == "" || !strings.ContainsAny(id, "./:") {
+		return id
+	}
+	log.Printf("R2_ACCOUNT_ID looks malformed (%q) — it should be just the 32-character hex account ID, not the full endpoint hostname or URL; treating R2 as unconfigured", id)
+	return ""
 }
 
 // splitNonEmpty splits a comma-separated env value, trimming whitespace and
