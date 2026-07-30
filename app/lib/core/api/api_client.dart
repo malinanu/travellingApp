@@ -6,7 +6,7 @@
 // callback (wired to sign-out in main.dart).
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kReleaseMode;
+import 'package:flutter/foundation.dart' show debugPrint, kReleaseMode;
 
 import '../storage/local_store.dart';
 
@@ -61,6 +61,17 @@ class ApiClient {
           e.type == DioExceptionType.connectionError) {
         return 'Cannot reach the server — is the API running?';
       }
+      // A response came back but wasn't the {"error": "..."} shape (e.g. a
+      // plain-text 4xx/5xx body, or a proxy/500 page) — the user only ever
+      // sees the generic fallback below, so at least log the real status/
+      // body here rather than leaving this undiagnosable from the outside.
+      debugPrint('ApiClient: unshaped error response ${e.response?.statusCode}: ${e.response?.data}');
+    } else {
+      // Not even a DioException — a bug in client-side code (bad cast,
+      // null field, etc.) rather than a network/server problem. Same idea:
+      // the user sees "Something went wrong," but this makes it traceable
+      // in the Flutter logs instead of a dead end.
+      debugPrint('ApiClient: non-network error: $e');
     }
     return 'Something went wrong. Please try again.';
   }

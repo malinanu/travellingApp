@@ -14,6 +14,19 @@ import '../mock/places.dart' as seed;
 import '../mock/trip_catalog.dart';
 import '../models/models.dart';
 
+/// Parses a string-list field from server JSON that may still be in an
+/// older single-string shape (e.g. travelStyle before it became
+/// multi-select) — `v as List?` is a hard cast in Dart that throws on a
+/// non-null, wrong-typed value rather than returning null, so a server
+/// that hasn't redeployed a schema change yet (or has redeployed and the
+/// app hasn't, in either direction) could crash login/profile instead of
+/// just showing slightly-stale data. Never throws.
+List<String> parseStringList(dynamic v) {
+  if (v is List) return v.cast<String>();
+  if (v is String && v.isNotEmpty) return [v];
+  return const [];
+}
+
 // ── device location (shared best-effort helper) ────────────────────
 
 /// Weligama Bay — the app's home base, used as a fallback location when
@@ -133,7 +146,7 @@ class AuthNotifier extends Notifier<bool> {
 
     // Adopt server-side prefs so a returning user skips onboarding.
     final user = data['user'] as Map<String, dynamic>? ?? const {};
-    final styles = [for (final s in (user['travelStyle'] as List? ?? const [])) s as String];
+    final styles = parseStringList(user['travelStyle']);
     if (styles.isNotEmpty) {
       ref.read(prefsProvider.notifier).saveLocal(UserPrefs(
             styles: styles,
@@ -187,7 +200,7 @@ class MeNotifier extends Notifier<Map<String, dynamic>?> {
       // explicitly saves — hydrate it from the server's real values here so
       // a fresh install/login shows the traveller's actual saved
       // style/interests instead of blank/default onboarding state.
-      final styles = (data['travelStyle'] as List?)?.cast<String>() ?? const [];
+      final styles = parseStringList(data['travelStyle']);
       if (styles.isNotEmpty) {
         final interests = (data['interests'] as List?)?.cast<String>() ?? const [];
         ref.read(prefsProvider.notifier).saveLocal(UserPrefs(styles: styles, interests: interests));

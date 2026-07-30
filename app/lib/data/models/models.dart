@@ -1,6 +1,17 @@
 // Core Spotto data models — ported from Prototype/design/data.jsx.
 // Plain immutable classes; only persisted types get toJson/fromJson.
 
+/// Parses a string-list field that may still be in an older single-string
+/// shape — `v as List?` is a hard cast in Dart that throws on a non-null,
+/// wrong-typed value rather than returning null, so a server/app running
+/// mismatched versions of a field's shape could crash parsing instead of
+/// just showing slightly-stale data. Never throws.
+List<String> _parseStringList(dynamic v) {
+  if (v is List) return v.cast<String>();
+  if (v is String && v.isNotEmpty) return [v];
+  return const [];
+}
+
 class WifiInfo {
   final double score;
   final String speed;
@@ -346,7 +357,7 @@ class NearbyTraveller {
   factory NearbyTraveller.fromJson(Map<String, dynamic> json) => NearbyTraveller(
         id: json['id'] as String,
         name: json['name'] as String,
-        travelStyle: (json['travelStyle'] as List? ?? const []).cast<String>(),
+        travelStyle: _parseStringList(json['travelStyle']),
         distanceKm: (json['distanceKm'] as num).toDouble(),
       );
 }
