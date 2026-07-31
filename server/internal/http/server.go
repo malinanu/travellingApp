@@ -17,6 +17,7 @@ import (
 	"github.com/spotto/server/internal/jobs"
 	"github.com/spotto/server/internal/mail"
 	"github.com/spotto/server/internal/media"
+	"github.com/spotto/server/internal/placedetails"
 	"github.com/spotto/server/internal/store/postgres"
 	"github.com/spotto/server/internal/weather"
 )
@@ -47,6 +48,16 @@ type Server struct {
 	// lat/lng cell (see internal/weather/cache.go) to stay within the free
 	// tier's tight rate limit.
 	WeatherCache *weather.Cache
+	// GooglePlacesAPIKey enables live Places Details enrichment (see
+	// internal/placedetails) for GET /places/{id} — sourced from the same
+	// shared Google Maps/Places-enabled key as GoogleCalendarAPIKey (see
+	// its doc comment in config.Config), not a separate credential. Empty
+	// means that enrichment is silently skipped.
+	GooglePlacesAPIKey string
+	// PlaceDetailsCache holds recent Places Details lookups keyed by Google
+	// place ID (see internal/placedetails/cache.go) to keep paid API spend
+	// down — these attributes rarely change, so the TTL is long.
+	PlaceDetailsCache *placedetails.Cache
 	// GoogleOAuth is nil when GOOGLE_CLIENT_ID/SECRET aren't configured —
 	// handleGoogleLogin/handleGoogleCallback report 501 in that case rather
 	// than panicking on a nil config.
@@ -77,11 +88,14 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		GoogleCalendarAPIKey: cfg.GoogleCalendarAPIKey,
 		TomorrowIOAPIKey:     cfg.TomorrowIOAPIKey,
 		WeatherCache:         weather.NewCache(),
-		loginLimit:           newLoginLimiter(5, 15*time.Minute),
-		totpLimit:            newLoginLimiter(5, 15*time.Minute),
-		resetLimit:           newLoginLimiter(5, 15*time.Minute),
-		grantPinLimit:        newLoginLimiter(5, 15*time.Minute),
-		oauthCodes:           newAuthCodeStore(),
+		// Same key as GoogleCalendarAPIKey — see its doc comment.
+		GooglePlacesAPIKey: cfg.GoogleCalendarAPIKey,
+		PlaceDetailsCache:  placedetails.NewCache(),
+		loginLimit:         newLoginLimiter(5, 15*time.Minute),
+		totpLimit:          newLoginLimiter(5, 15*time.Minute),
+		resetLimit:         newLoginLimiter(5, 15*time.Minute),
+		grantPinLimit:      newLoginLimiter(5, 15*time.Minute),
+		oauthCodes:         newAuthCodeStore(),
 	}
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
 		s.GoogleOAuth = &oauth2.Config{

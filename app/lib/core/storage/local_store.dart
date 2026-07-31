@@ -16,9 +16,12 @@ abstract final class StoreKeys {
   static const prefs = 'spotto_prefs';
   static const group = 'spotto_group';
   static const trip = 'spotto_trip';
+  static const allTrips = 'spotto_all_trips';
   static const claims = 'spotto_claims'; // placeId -> claimed deal code
   static const places = 'spotto_places'; // last good /places response
   static const weatherPins = 'spotto_weather_pins'; // saved Weather-screen locations
+  static const checkIns = 'spotto_checkins'; // placeIds checked into (artisan quest)
+  static const favorites = 'spotto_favorites'; // bookmarked placeIds
 }
 
 class LocalStore {

@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,7 +13,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/config"
 	"github.com/spotto/server/internal/domain"
@@ -190,16 +188,24 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 	return nil
 }
 
-// uploadCoverPhotos gives each vendor a cover photo pulled from its place's
-// data.sourcePhotos[0] (captured from Google Places when the dataset was
-// fetched, never used until now). Runs after runImport's transaction has
-// already committed, so slow/failed network calls here can't hold the
-// places table locked or block the API from starting — every failure is
-// logged and skipped, never fatal. Idempotent: a vendor that already has a
-// "cover" media row skips the fetch/upload, but every vendor still gets its
-// cover mirrored into places.data below — so a prior deploy that uploaded
-// media without mirroring it (or a place row rebuilt by runImport since)
-// gets self-healed on every run rather than only on first upload.
+// maxSourcePhotosPerPlace caps how many of a place's scraped Google Places
+// photos get re-uploaded to R2 — Google Places itself returns at most a
+// handful of photo references per place (sri_lanka_spots.json has up to 5),
+// so this is "all of them", not an arbitrary truncation.
+const maxSourcePhotosPerPlace = 5
+
+// uploadCoverPhotos gives each vendor a real photo gallery pulled from its
+// place's data.sourcePhotos (captured from Google Places when the dataset
+// was fetched, but until now only sourcePhotos[0] was ever used — the rest
+// were fetched and paid for, then discarded). Runs after runImport's
+// transaction has already committed, so slow/failed network calls here
+// can't hold the places table locked or block the API from starting —
+// every failure is logged and skipped, never fatal. Idempotent: a vendor
+// that already has a "cover" media row skips the fetch/upload, but every
+// vendor still gets cover+gallery mirrored into places.data below — so a
+// prior deploy that uploaded media without mirroring it (or a place row
+// rebuilt by runImport since) gets self-healed on every run rather than
+// only on first upload.
 func uploadCoverPhotos(ctx context.Context, store *postgres.Store, cfg config.Config, spots []domain.Place) {
 	if cfg.R2AccountID == "" || cfg.R2AccessKeyID == "" || cfg.R2SecretAccessKey == "" || cfg.R2Bucket == "" {
 		log.Println("importsrilanka: R2 not configured, skipping cover photo upload")
@@ -212,56 +218,116 @@ func uploadCoverPhotos(ctx context.Context, store *postgres.Store, cfg config.Co
 	for _, p := range spots {
 		vendorID := vendorIDFor(p.ID)
 
-		var coverURL string
-		err := store.Pool.QueryRow(ctx,
-			`SELECT url FROM media WHERE owner_type='vendor' AND owner_id=$1 AND role='cover' LIMIT 1`,
-			vendorID,
-		).Scan(&coverURL)
+		cover, gallery, err := existingVendorPhotos(ctx, store, vendorID)
+		if err != nil {
+			log.Printf("importsrilanka: check existing photos for %s: %v", vendorID, err)
+			continue
+		}
 		switch {
-		case err == nil:
+		case cover != "":
 			skipped++
-		case errors.Is(err, pgx.ErrNoRows):
-			coverURL, err = uploadOneCoverPhoto(ctx, store, client, r2, vendorID, p.Data)
+		default:
+			cover, gallery, err = uploadVendorPhotos(ctx, store, client, r2, vendorID, p.Data)
 			if err != nil {
 				log.Printf("importsrilanka: %v", err)
 				failed++
 				continue
 			}
-			if coverURL == "" {
+			if cover == "" {
 				continue // no sourcePhotos to use
 			}
 			uploaded++
-		default:
-			log.Printf("importsrilanka: check existing cover for %s: %v", vendorID, err)
-			continue
 		}
 
-		if err := mirrorCoverIntoPlace(ctx, store, vendorID, coverURL); err != nil {
-			log.Printf("importsrilanka: mirror cover into place for %s: %v", vendorID, err)
+		if err := mirrorPhotosIntoPlace(ctx, store, vendorID, cover, gallery); err != nil {
+			log.Printf("importsrilanka: mirror photos into place for %s: %v", vendorID, err)
 		}
 	}
 	log.Printf("importsrilanka: cover photos - uploaded %d, skipped %d (already had one), failed %d\n", uploaded, skipped, failed)
 }
 
-// uploadOneCoverPhoto fetches placeData.sourcePhotos[0], uploads it to R2,
-// and records it as the vendor's cover media row. Returns ("", nil) if the
-// place has no source photos to use.
-func uploadOneCoverPhoto(ctx context.Context, store *postgres.Store, client *http.Client, r2 *media.R2, vendorID string, placeData []byte) (string, error) {
+// existingVendorPhotos returns a vendor's already-uploaded cover + gallery
+// media, if any — lets uploadCoverPhotos skip re-fetching from Google on
+// every run while still re-mirroring into places.data (self-heal).
+func existingVendorPhotos(ctx context.Context, store *postgres.Store, vendorID string) (cover string, gallery []string, err error) {
+	rows, err := store.Pool.Query(ctx,
+		`SELECT role, url FROM media WHERE owner_type='vendor' AND owner_id=$1 AND role IN ('cover','gallery') ORDER BY created_at ASC`,
+		vendorID,
+	)
+	if err != nil {
+		return "", nil, err
+	}
+	defer rows.Close()
+	gallery = []string{}
+	for rows.Next() {
+		var role, url string
+		if err := rows.Scan(&role, &url); err != nil {
+			return "", nil, err
+		}
+		if role == "cover" {
+			cover = url
+		} else {
+			gallery = append(gallery, url)
+		}
+	}
+	return cover, gallery, rows.Err()
+}
+
+// uploadVendorPhotos fetches up to maxSourcePhotosPerPlace of
+// placeData.sourcePhotos, uploads each to R2, and records it as a vendor
+// media row (the first as role "cover", the rest as role "gallery" —
+// matching the live vendor-upload convention in internal/http/vendor.go).
+// A single photo failing (rejected type, oversize, network blip) doesn't
+// sink the rest; returns ("", nil, nil) if the place has no source photos.
+func uploadVendorPhotos(ctx context.Context, store *postgres.Store, client *http.Client, r2 *media.R2, vendorID string, placeData []byte) (cover string, gallery []string, err error) {
 	var pd struct {
 		SourcePhotos []string `json:"sourcePhotos"`
 	}
 	if err := json.Unmarshal(placeData, &pd); err != nil || len(pd.SourcePhotos) == 0 {
-		return "", nil
+		return "", nil, nil
 	}
 
-	body, contentType, err := fetchImage(ctx, client, pd.SourcePhotos[0])
+	n := min(len(pd.SourcePhotos), maxSourcePhotosPerPlace)
+	gallery = []string{}
+	for i := 0; i < n; i++ {
+		role := "gallery"
+		if i == 0 {
+			role = "cover"
+		}
+		url, uploadErr := uploadOnePhoto(ctx, store, client, r2, vendorID, role, pd.SourcePhotos[i])
+		if uploadErr != nil {
+			log.Printf("importsrilanka: photo %d for %s: %v", i, vendorID, uploadErr)
+			continue
+		}
+		if role == "cover" {
+			cover = url
+		} else {
+			gallery = append(gallery, url)
+		}
+	}
+	if cover != "" || len(gallery) > 0 {
+		count := len(gallery)
+		if cover != "" {
+			count++
+		}
+		if _, err := store.Pool.Exec(ctx, `UPDATE vendors SET photos = $2 WHERE id = $1`, vendorID, count); err != nil {
+			log.Printf("importsrilanka: update photos count for %s: %v", vendorID, err)
+		}
+	}
+	return cover, gallery, nil
+}
+
+// uploadOnePhoto fetches sourceURL, uploads it to R2, and records it as a
+// vendor media row with the given role.
+func uploadOnePhoto(ctx context.Context, store *postgres.Store, client *http.Client, r2 *media.R2, vendorID, role, sourceURL string) (string, error) {
+	body, contentType, err := fetchImage(ctx, client, sourceURL)
 	if err != nil {
-		return "", fmt.Errorf("fetch cover photo for %s: %w", vendorID, err)
+		return "", fmt.Errorf("fetch photo for %s: %w", vendorID, err)
 	}
 
 	ext, kind, maxSize, ok := media.Resolve(contentType)
 	if !ok || int64(len(body)) > maxSize {
-		return "", fmt.Errorf("cover photo for %s rejected (type=%s size=%d)", vendorID, contentType, len(body))
+		return "", fmt.Errorf("photo for %s rejected (type=%s size=%d)", vendorID, contentType, len(body))
 	}
 
 	key := fmt.Sprintf("vendor/%s/%s%s", vendorID, randomID("m"), ext)
@@ -272,23 +338,20 @@ func uploadOneCoverPhoto(ctx context.Context, store *postgres.Store, client *htt
 	url := r2.PublicURL(key)
 	if _, err := store.Pool.Exec(ctx, `
 		INSERT INTO media (id, owner_type, owner_id, kind, role, object_key, url, content_type, size, width, height, uploaded_by, status, sort, created_at)
-		VALUES ($1,'vendor',$2,$3,'cover',$4,$5,$6,$7,0,0,'system-import','ready',0,now())`,
-		randomID("m"), vendorID, kind, key, url, contentType, len(body),
+		VALUES ($1,'vendor',$2,$3,$4,$5,$6,$7,0,0,'system-import','ready',0,now())`,
+		randomID("m"), vendorID, kind, role, key, url, contentType, len(body),
 	); err != nil {
 		return "", fmt.Errorf("insert media row for %s: %w", vendorID, err)
-	}
-	if _, err := store.Pool.Exec(ctx, `UPDATE vendors SET photos = 1 WHERE id = $1`, vendorID); err != nil {
-		log.Printf("importsrilanka: update photos count for %s: %v", vendorID, err)
 	}
 	return url, nil
 }
 
-// mirrorCoverIntoPlace writes coverURL into the vendor's place.data.cover
-// (and a single-entry gallery), matching what syncVendorPlace does for the
+// mirrorPhotosIntoPlace writes cover/gallery into the vendor's
+// place.data.cover/data.gallery, matching what syncVendorPlace does for the
 // live HTTP vendor-media-upload path (server/internal/http/vendor.go). The
 // import script is a separate main package without access to that server
 // code, so it replicates the same JSON patch directly here.
-func mirrorCoverIntoPlace(ctx context.Context, store *postgres.Store, vendorID, coverURL string) error {
+func mirrorPhotosIntoPlace(ctx context.Context, store *postgres.Store, vendorID, cover string, gallery []string) error {
 	var placeID string
 	var raw []byte
 	if err := store.Pool.QueryRow(ctx,
@@ -299,8 +362,8 @@ func mirrorCoverIntoPlace(ctx context.Context, store *postgres.Store, vendorID, 
 
 	data := map[string]any{}
 	_ = json.Unmarshal(raw, &data)
-	data["cover"] = coverURL
-	data["gallery"] = []string{coverURL}
+	data["cover"] = cover
+	data["gallery"] = gallery
 
 	updated, err := json.Marshal(data)
 	if err != nil {

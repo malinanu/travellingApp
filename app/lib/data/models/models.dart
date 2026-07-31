@@ -111,6 +111,7 @@ class Place {
   final String type;
   final String region; // display name, e.g. "Galle" — '' for older/seed data
   final String regionId; // e.g. "galle" — matches server/internal/geo.Regions
+  final String address; // full street address, from Google Places imports
   final String icon; // Lucide icon name from the prototype
   final String color; // pin tone key: teal/coral/sun/clay/plum
   final double x; // map position, percent 0-100
@@ -130,6 +131,7 @@ class Place {
   final List<String> tags;
   final String blurb;
   final ContactInfo contact;
+  final bool? wheelchairAccessible; // null = unknown, from live Google Places details
   final bool seaView;
   final bool indoor;
   final bool artisan;
@@ -155,6 +157,7 @@ class Place {
     required this.type,
     this.region = '',
     this.regionId = '',
+    this.address = '',
     required this.icon,
     required this.color,
     required this.x,
@@ -174,6 +177,7 @@ class Place {
     required this.tags,
     required this.blurb,
     this.contact = ContactInfo.none,
+    this.wheelchairAccessible,
     required this.seaView,
     this.indoor = false,
     this.artisan = false,
@@ -191,58 +195,76 @@ class Place {
   });
 
   /// Parses the API shape: place row flattened with its JSONB data document.
-  factory Place.fromJson(Map<String, dynamic> json) => Place(
-        id: json['id'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        type: json['type'] as String? ?? '',
-        region: json['region'] as String? ?? '',
-        regionId: json['regionId'] as String? ?? '',
-        icon: json['icon'] as String? ?? 'MapPin',
-        color: json['color'] as String? ?? 'teal',
-        x: (json['x'] as num?)?.toDouble() ?? 50,
-        y: (json['y'] as num?)?.toDouble() ?? 50,
-        lat: (json['lat'] as num?)?.toDouble() ?? 0,
-        lng: (json['lng'] as num?)?.toDouble() ?? 0,
-        rating: (json['rating'] as num?)?.toDouble() ?? 0,
-        reviews: (json['reviews'] as num?)?.toInt() ?? 0,
-        distance: json['distance'] as String? ?? '',
-        distanceKm: (json['distanceKm'] as num?)?.toDouble(),
-        priceLevel: json['priceLevel'] as String? ?? '',
-        wifi: json['wifi'] is Map
-            ? WifiInfo.fromJson((json['wifi'] as Map).cast<String, dynamic>())
-            : const WifiInfo(score: 0, speed: '', label: ''),
-        hours: json['hours'] as String? ?? '',
-        openNow: json['openNow'] as bool? ?? false,
-        bestTimes: [for (final t in (json['bestTimes'] as List? ?? const [])) t as String],
-        deal: json['deal'] is Map
-            ? Deal.fromJson((json['deal'] as Map).cast<String, dynamic>())
-            : Deal.none,
-        tags: [for (final t in (json['tags'] as List? ?? const [])) t as String],
-        blurb: json['blurb'] as String? ?? '',
-        contact: json['contact'] is Map
-            ? ContactInfo.fromJson((json['contact'] as Map).cast<String, dynamic>())
-            : ContactInfo.none,
-        seaView: json['seaView'] as bool? ?? false,
-        indoor: json['indoor'] as bool? ?? false,
-        artisan: json['artisan'] as bool? ?? false,
-        popularEvening: json['popularEvening'] as bool? ?? false,
-        photo: json['photo'] as String? ?? 'cowork',
-        cover: json['cover'] as String? ?? '',
-        gallery: [for (final g in (json['gallery'] as List? ?? const [])) g as String],
-        promoVideo: json['promoVideo'] as String? ?? '',
-        menu: [
-          for (final s in (json['menu'] as List? ?? const []))
-            MenuSection.fromJson(s as Map<String, dynamic>)
-        ],
-        vibes: (json['vibes'] as Map?)?.map(
-              (k, v) => MapEntry(k as String, (v as num).toInt()),
-            ) ??
-            const {},
-        cost: (json['cost'] as num?)?.toInt() ?? 0,
-        styles: [for (final s in (json['styles'] as List? ?? const [])) s as String],
-        hint: json['hint'] as String? ?? '',
-        curated: json['curated'] as bool? ?? false,
-      );
+  ///
+  /// `cost`/`priceLevel` need defensive handling: `cost` is normally the
+  /// trip-planner's numeric Rs estimate, but some imported records instead
+  /// carry a Google-style `$`/`$$`/`$$$` string under that same key (a data
+  /// pipeline mix-up) — a plain `as num?` cast throws on that shape, and
+  /// since this factory runs inside a list comprehension (see
+  /// PlacesNotifier.refresh), one bad record would otherwise blank out the
+  /// entire live places list. Treat a non-numeric `cost` as the price-level
+  /// tier when `priceLevel` itself wasn't set.
+  factory Place.fromJson(Map<String, dynamic> json) {
+    final rawCost = json['cost'];
+    final numericCost = rawCost is num ? rawCost.toInt() : 0;
+    var priceLevel = json['priceLevel'] as String? ?? '';
+    if (priceLevel.isEmpty && rawCost is String) priceLevel = rawCost;
+
+    return Place(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      type: json['type'] as String? ?? '',
+      region: json['region'] as String? ?? '',
+      regionId: json['regionId'] as String? ?? '',
+      address: json['address'] as String? ?? '',
+      icon: json['icon'] as String? ?? 'MapPin',
+      color: json['color'] as String? ?? 'teal',
+      x: (json['x'] as num?)?.toDouble() ?? 50,
+      y: (json['y'] as num?)?.toDouble() ?? 50,
+      lat: (json['lat'] as num?)?.toDouble() ?? 0,
+      lng: (json['lng'] as num?)?.toDouble() ?? 0,
+      rating: (json['rating'] as num?)?.toDouble() ?? 0,
+      reviews: (json['reviews'] as num?)?.toInt() ?? 0,
+      distance: json['distance'] as String? ?? '',
+      distanceKm: (json['distanceKm'] as num?)?.toDouble(),
+      priceLevel: priceLevel,
+      wifi: json['wifi'] is Map
+          ? WifiInfo.fromJson((json['wifi'] as Map).cast<String, dynamic>())
+          : const WifiInfo(score: 0, speed: '', label: ''),
+      hours: json['hours'] as String? ?? '',
+      openNow: json['openNow'] as bool? ?? false,
+      bestTimes: [for (final t in (json['bestTimes'] as List? ?? const [])) t as String],
+      deal: json['deal'] is Map
+          ? Deal.fromJson((json['deal'] as Map).cast<String, dynamic>())
+          : Deal.none,
+      tags: [for (final t in (json['tags'] as List? ?? const [])) t as String],
+      blurb: json['blurb'] as String? ?? '',
+      contact: json['contact'] is Map
+          ? ContactInfo.fromJson((json['contact'] as Map).cast<String, dynamic>())
+          : ContactInfo.none,
+      wheelchairAccessible: json['wheelchairAccessible'] as bool?,
+      seaView: json['seaView'] as bool? ?? false,
+      indoor: json['indoor'] as bool? ?? false,
+      artisan: json['artisan'] as bool? ?? false,
+      popularEvening: json['popularEvening'] as bool? ?? false,
+      photo: json['photo'] as String? ?? 'cowork',
+      cover: json['cover'] as String? ?? '',
+      gallery: [for (final g in (json['gallery'] as List? ?? const [])) g as String],
+      promoVideo: json['promoVideo'] as String? ?? '',
+      menu: [
+        for (final s in (json['menu'] as List? ?? const []))
+          MenuSection.fromJson(s as Map<String, dynamic>)
+      ],
+      vibes: (json['vibes'] as Map?)?.map(
+            (k, v) => MapEntry(k as String, (v as num).toInt()),
+          ) ??
+          const {},
+      cost: numericCost,
+      styles: [for (final s in (json['styles'] as List? ?? const [])) s as String],
+      hint: json['hint'] as String? ?? '',
+      curated: json['curated'] as bool? ?? false,
+    );
+  }
 }
 
 class TravelStyle {

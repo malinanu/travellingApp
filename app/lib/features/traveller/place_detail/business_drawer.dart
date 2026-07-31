@@ -63,6 +63,19 @@ class BusinessDrawerBody extends ConsumerWidget {
     final text = Theme.of(context).textTheme;
     final claimedCode = ref.watch(claimsProvider)[place.id];
 
+    // Live Google Places details (phone/website/wheelchair/price level) —
+    // fetched lazily per-place and cached server-side; only overrides a
+    // field when it actually has something the list-derived `place` didn't,
+    // and never blocks the sheet on a slow/failed fetch.
+    final details = ref.watch(placeDetailsProvider(place.id)).valueOrNull;
+    final contact = (details != null && !details.contact.isEmpty) ? details.contact : place.contact;
+    final wheelchairAccessible = details?.wheelchairAccessible ?? place.wheelchairAccessible;
+    final priceLevel = (details != null && details.priceLevel.isNotEmpty)
+        ? details.priceLevel
+        : place.priceLevel;
+    final favorites = ref.watch(favoritesProvider);
+    final isFavorite = favorites.contains(place.id);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -106,7 +119,10 @@ class BusinessDrawerBody extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(place.name, style: text.titleLarge?.copyWith(color: Colors.white)),
-                        Text('${place.type} · ${place.distance} · ${place.priceLevel}',
+                        Text(
+                            [place.type, place.distance, priceLevel]
+                                .where((s) => s.isNotEmpty)
+                                .join(' · '),
                             style: text.bodyMedium
                                 ?.copyWith(color: Colors.white.withValues(alpha: 0.9))),
                       ],
@@ -186,26 +202,71 @@ class BusinessDrawerBody extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // stat chips
+              // stat chips — WiFi only means something once a vendor has
+              // actually entered it (score 0 is the "never set" default,
+              // meaningless for e.g. a public landmark), so it's hidden
+              // rather than showing a misleading "0.0".
               Row(
                 children: [
+                  if (place.wifi.score > 0) ...[
+                    Expanded(
+                      child: StatChip(
+                          icon: Icons.wifi,
+                          value: '${place.wifi.score}',
+                          label: '${place.wifi.speed} · ${place.wifi.label}'),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
                   Expanded(
-                    child: StatChip(
-                        icon: Icons.wifi,
-                        value: '${place.wifi.score}',
-                        label: '${place.wifi.speed} · ${place.wifi.label}'),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: StatChip(
-                        icon: Icons.schedule,
-                        value: place.openNow ? 'Open' : 'Closed',
-                        label: place.hours,
-                        iconColor: place.openNow ? SpottoColors.accent2 : SpottoColors.muted),
+                    child: _HoursStat(hours: place.hours, openNow: place.openNow),
                   ),
                 ],
               ),
               const SizedBox(height: 14),
+
+              // full street address, tappable to the same maps query used
+              // by the Directions button below.
+              if (place.address.isNotEmpty) ...[
+                PressScale(
+                  scale: 0.98,
+                  onTap: () => launchUrl(
+                    Uri.parse(
+                        'https://www.google.com/maps/search/?api=1&query=${_mapsQuery(place)}'),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.place_outlined, size: 16, color: SpottoColors.muted),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(place.address,
+                            style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+
+              // wheelchair accessibility, when known from live Places details
+              if (wheelchairAccessible != null) ...[
+                Row(
+                  children: [
+                    Icon(
+                      wheelchairAccessible ? Icons.accessible : Icons.not_accessible,
+                      size: 16,
+                      color: SpottoColors.muted,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      wheelchairAccessible ? 'Wheelchair accessible' : 'Not wheelchair accessible',
+                      style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
 
               // deal claim
               if (place.deal.active) ...[
@@ -281,9 +342,9 @@ class BusinessDrawerBody extends ConsumerWidget {
               const SizedBox(height: 18),
               _ReviewsSection(place: place),
 
-              if (!place.contact.isEmpty) ...[
+              if (!contact.isEmpty) ...[
                 const SizedBox(height: 18),
-                _ContactLinks(contact: place.contact),
+                _ContactLinks(contact: contact),
               ],
 
               // bottom actions
@@ -307,19 +368,66 @@ class BusinessDrawerBody extends ConsumerWidget {
                       label: const Text('Directions'),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: SpottoColors.accent,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                    ),
+                    onPressed: () {
+                      final trip = ref.read(tripProvider);
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          title: Text('Add to ${trip.name}'),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Select a day for ${place.name}:'),
+                              const SizedBox(height: 12),
+                              for (var i = 0; i < trip.days.length; i++)
+                                ListTile(
+                                  dense: true,
+                                  leading: const Icon(Icons.calendar_today_rounded, color: SpottoColors.accent),
+                                  title: Text('Day ${i + 1} (${trip.days[i].stops.length} stops)'),
+                                  onTap: () {
+                                    ref.read(tripProvider.notifier).addPlaceStop(i, place);
+                                    Navigator.pop(ctx);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Added ${place.name} to Day ${i + 1} of your trip!')),
+                                    );
+                                  },
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.calendar_today_rounded, size: 17),
+                    label: const Text('Add to Trip'),
+                  ),
+                  const SizedBox(width: 8),
                   PressScale(
                     scale: 0.95,
-                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Saved to bookmarks'))),
+                    onTap: () {
+                      ref.read(favoritesProvider.notifier).toggle(place.id);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(isFavorite ? 'Removed from bookmarks' : 'Saved to bookmarks'),
+                        ),
+                      );
+                    },
                     child: Container(
-                      width: 56,
-                      height: 50,
+                      width: 48,
+                      height: 48,
                       decoration: BoxDecoration(
-                        color: SpottoColors.sand,
+                        color: isFavorite ? SpottoColors.accentTint : SpottoColors.sand,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: const Icon(Icons.bookmark_outline,
+                      child: Icon(isFavorite ? Icons.bookmark : Icons.bookmark_outline,
                           size: 19, color: SpottoColors.ink),
                     ),
                   ),
@@ -329,6 +437,110 @@ class BusinessDrawerBody extends ConsumerWidget {
             ],
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// One parsed "Day: range" entry from a Place's `hours` string, e.g.
+/// `"Monday: Open 24 hours, Tuesday: Open 24 hours, ..."`.
+class _DayHours {
+  final String day;
+  final String range;
+  const _DayHours(this.day, this.range);
+}
+
+const _weekdayNames = [
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+];
+
+/// Parses the comma-separated `"Day: range"` hours string. Returns an empty
+/// list (never throws) for any shape it doesn't recognize, so the caller
+/// can fall back to showing the raw string.
+List<_DayHours> _parseHours(String raw) {
+  final out = <_DayHours>[];
+  for (final part in raw.split(', ')) {
+    final idx = part.indexOf(': ');
+    if (idx == -1) continue;
+    out.add(_DayHours(part.substring(0, idx).trim(), part.substring(idx + 2).trim()));
+  }
+  return out;
+}
+
+/// The Open/Closed stat chip, collapsed to a single line instead of dumping
+/// all 7 days — "Open 24 hours every day" when every day matches, otherwise
+/// today's range, with the full week available on tap only when the days
+/// actually differ (nothing to expand when they're all the same).
+class _HoursStat extends StatefulWidget {
+  final String hours;
+  final bool openNow;
+  const _HoursStat({required this.hours, required this.openNow});
+
+  @override
+  State<_HoursStat> createState() => _HoursStatState();
+}
+
+class _HoursStatState extends State<_HoursStat> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final days = _parseHours(widget.hours);
+    final ranges = days.map((d) => d.range).toSet();
+    final expandable = ranges.length > 1;
+
+    String summary;
+    if (days.isEmpty) {
+      summary = widget.hours;
+    } else if (!expandable) {
+      summary = ranges.first;
+    } else {
+      final todayName = _weekdayNames[(DateTime.now().weekday - 1) % 7];
+      final today = days.firstWhere((d) => d.day == todayName, orElse: () => days.first);
+      summary = 'Today: ${today.range}';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PressScale(
+          onTap: expandable ? () => setState(() => _expanded = !_expanded) : null,
+          child: StatChip(
+            icon: Icons.schedule,
+            value: widget.openNow ? 'Open' : 'Closed',
+            label: summary,
+            iconColor: widget.openNow ? SpottoColors.accent2 : SpottoColors.muted,
+          ),
+        ),
+        if (expandable) ...[
+          const SizedBox(height: 4),
+          Center(
+            child: Text(
+              _expanded ? 'Hide full week ▴' : 'Full week ▾',
+              style: text.labelSmall?.copyWith(color: SpottoColors.muted),
+            ),
+          ),
+        ],
+        if (_expanded)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Column(
+              children: [
+                for (final d in days)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(d.day, style: text.bodySmall),
+                        Text(d.range, style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
       ],
     );
   }

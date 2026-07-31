@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/geo"
+	"github.com/spotto/server/internal/placedetails"
 	"github.com/spotto/server/internal/store/postgres"
 )
 
@@ -90,7 +92,91 @@ func (s *Server) handlePlace(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.placeJSON(r.Context(), p))
+	m := s.placeJSON(r.Context(), p)
+	// Only the single-place fetch enriches with live Places details, not
+	// the bulk handlePlaces list above — Google bills per Details call, so
+	// this only runs for the one place a traveller actually opened.
+	s.enrichWithPlaceDetails(r.Context(), m)
+	writeJSON(w, http.StatusOK, m)
+}
+
+// enrichWithPlaceDetails backfills phone/website/wheelchairAccessible/
+// priceLevel from a live (cached) Google Places Details lookup — only for
+// places actually imported from Google (data.source == "google_places"
+// with a data.sourceId), and only into fields that are still empty/zero,
+// so a curated business's real vendor-entered contact info can never be
+// clobbered. Best-effort: any failure (no API key configured, Google
+// error, etc.) just leaves the place as-is instead of failing the request.
+func (s *Server) enrichWithPlaceDetails(ctx context.Context, m map[string]any) {
+	if s.GooglePlacesAPIKey == "" {
+		return
+	}
+	if source, _ := m["source"].(string); source != "google_places" {
+		return
+	}
+	sourceID, _ := m["sourceId"].(string)
+	if sourceID == "" {
+		return
+	}
+
+	details, err := s.getOrFetchPlaceDetails(ctx, sourceID)
+	if err != nil {
+		log.Printf("placedetails: fetch for %s: %v", sourceID, err)
+		return
+	}
+
+	contact, _ := m["contact"].(map[string]any)
+	if contact == nil {
+		contact = map[string]any{}
+	}
+	if phone, _ := contact["phone"].(string); phone == "" && details.Phone != "" {
+		contact["phone"] = details.Phone
+	}
+	if website, _ := contact["website"].(string); website == "" && details.Website != "" {
+		contact["website"] = details.Website
+	}
+	if len(contact) > 0 {
+		m["contact"] = contact
+	}
+
+	if details.WheelchairAccessible != nil {
+		m["wheelchairAccessible"] = *details.WheelchairAccessible
+	}
+	if priceLevel, _ := m["priceLevel"].(string); priceLevel == "" && details.PriceLevel != "" {
+		m["priceLevel"] = details.PriceLevel
+	}
+}
+
+// getOrFetchPlaceDetails is the three-tier cache path for Places Details:
+// in-memory cache, then the Postgres-backed cache (survives a process
+// restart, e.g. every deploy), and only then a real paid Google call —
+// mirrors getOrFetchWeather in weather.go.
+func (s *Server) getOrFetchPlaceDetails(ctx context.Context, googlePlaceID string) (*placedetails.Details, error) {
+	if cached, ok := s.PlaceDetailsCache.Get(googlePlaceID); ok {
+		return cached, nil
+	}
+
+	if raw, ok, err := s.Store.GetPlaceDetailsCache(ctx, googlePlaceID); err != nil {
+		log.Printf("placedetails: read persisted cache for %s: %v", googlePlaceID, err)
+	} else if ok {
+		var cached placedetails.Details
+		if err := json.Unmarshal(raw, &cached); err == nil {
+			s.PlaceDetailsCache.Set(googlePlaceID, &cached)
+			return &cached, nil
+		}
+	}
+
+	fresh, err := placedetails.Fetch(ctx, s.GooglePlacesAPIKey, googlePlaceID)
+	if err != nil {
+		return nil, err
+	}
+	s.PlaceDetailsCache.Set(googlePlaceID, fresh)
+	if raw, err := json.Marshal(fresh); err != nil {
+		log.Printf("placedetails: marshal cache for %s: %v", googlePlaceID, err)
+	} else if err := s.Store.SetPlaceDetailsCache(ctx, googlePlaceID, raw, time.Now().Add(placedetails.TTL)); err != nil {
+		log.Printf("placedetails: persist cache for %s: %v", googlePlaceID, err)
+	}
+	return fresh, nil
 }
 
 // handlePlacePhotos returns the traveller-contributed photos for a place

@@ -32,10 +32,15 @@ type Config struct {
 	GoogleClientSecret string
 	GoogleRedirectURL  string
 	// GoogleCalendarAPIKey enables live public-holiday lookups (see
-	// internal/holidays) — a plain API key (not an OAuth client), since
-	// Google's public holiday calendars are readable without user consent.
-	// Unset means the holiday scheduler falls back to a bundled static list
-	// instead of failing.
+	// internal/holidays) and, since the same Cloud project/key also has the
+	// Maps JavaScript + Places APIs enabled (it's the same value as the
+	// vendor portal's NEXT_PUBLIC_GOOGLE_MAPS_API_KEY and the Flutter app's
+	// MAPS_API_KEY — one key, several config files), also powers live
+	// Places Details lookups (see internal/placedetails) that backfill
+	// phone/website/wheelchair-accessibility/price-level for imported
+	// spots. Unset means the holiday scheduler falls back to a bundled
+	// static list, and GET /places/{id} just skips the Places enrichment —
+	// neither fails startup.
 	GoogleCalendarAPIKey string
 	// TomorrowIOAPIKey enables live weather (see internal/weather) for the
 	// app's Weather screen. Unset means GET /weather reports itself

@@ -76,11 +76,14 @@ Future<(Position?, DeviceLocationResult)> _resolvePosition() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
       return (null, DeviceLocationResult.unavailable);
     }
-    // timeLimit is essential here too — without it, getCurrentPosition can
-    // hang indefinitely on a device/emulator that can't get a fresh GPS fix
-    // (no mock location set, weak signal indoors).
+    // Check cached last known position first for instant startup resolution (<5ms)
+    final lastPos = await Geolocator.getLastKnownPosition();
+    if (lastPos != null) {
+      return (lastPos, DeviceLocationResult.granted);
+    }
+
     final pos = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 8)),
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 6)),
     );
     return (pos, DeviceLocationResult.granted);
   } catch (_) {
@@ -267,17 +270,33 @@ enum PlacesLocationStatus { unknown, sorted, deniedForever, unavailable }
 final placesLocationStatusProvider =
     StateProvider<PlacesLocationStatus>((ref) => PlacesLocationStatus.unknown);
 
+/// Parses each raw place row independently, skipping (and logging) any
+/// single record that fails instead of throwing and losing the whole batch
+/// — one malformed record from the server or a stale local cache must never
+/// blank out the entire live places list.
+List<Place> _parsePlaces(List raw) {
+  final places = <Place>[];
+  for (final p in raw) {
+    try {
+      places.add(Place.fromJson((p as Map).cast<String, dynamic>()));
+    } catch (e) {
+      debugPrint('placesProvider: skipping unparseable place: $e');
+    }
+  }
+  return places;
+}
+
 class PlacesNotifier extends Notifier<List<Place>> {
   @override
   List<Place> build() {
     Future.microtask(refresh);
     final cached = ref.read(localStoreProvider).getJsonList(StoreKeys.places);
     if (cached != null && cached.isNotEmpty) {
-      try {
-        final places = [for (final p in cached) Place.fromJson((p as Map).cast<String, dynamic>())];
+      final places = _parsePlaces(cached);
+      if (places.isNotEmpty) {
         _syncTripCatalog(places);
         return places;
-      } catch (_) {}
+      }
     }
     return seed.places;
   }
@@ -296,7 +315,8 @@ class PlacesNotifier extends Notifier<List<Place>> {
           queryParameters: pos == null ? null : {'lat': pos.latitude, 'lng': pos.longitude});
       final list = res.data as List;
       if (list.isEmpty) return;
-      final places = [for (final p in list) Place.fromJson((p as Map).cast<String, dynamic>())];
+      final places = _parsePlaces(list);
+      if (places.isEmpty) return;
       state = places;
       _syncTripCatalog(places);
       await ref.read(localStoreProvider).setJsonList(StoreKeys.places, list);
@@ -473,6 +493,7 @@ class TripNotifier extends Notifier<Trip> {
   void update(Trip trip) {
     state = trip;
     ref.read(localStoreProvider).setJson(StoreKeys.trip, trip.toJson());
+    ref.read(savedTripsProvider.notifier).saveTrip(trip);
     _schedulePush();
   }
 
@@ -528,19 +549,78 @@ class TripNotifier extends Notifier<Trip> {
         TripStop(id: tripNewId('s'), placeId: '', time: t, by: 'me', custom: CustomStopInfo(name: name)));
   }
 
+  void addPlaceStop(int dayIndex, Place place) {
+    final stops = state.days[dayIndex].stops;
+    final t = stops.isEmpty ? 9 * 60 : (stops.last.time + 90).clamp(0, 23 * 60 + 30);
+    addStop(
+      dayIndex,
+      TripStop(
+        id: tripNewId('s'),
+        placeId: place.id,
+        time: t,
+        by: 'me',
+        custom: place.id.startsWith('gplace_') ? CustomStopInfo(name: place.name) : null,
+      ),
+    );
+  }
+
   void addDay() {
-    if (state.days.length >= 4) return;
     update(state.copyWith(days: [...state.days, TripDay(id: tripNewId('d'), stops: const [])]));
   }
 
   void createTrip(String name, int days, String startDate) {
     update(Trip(
-      name: name.trim().isEmpty ? 'My Weligama Trip' : name.trim(),
+      name: name.trim().isEmpty ? 'Spotto Trip' : name.trim(),
       code: newTripCode(),
       startDate: startDate,
       collaborators: const [],
       days: [for (var i = 0; i < days; i++) TripDay(id: tripNewId('d'), stops: const [])],
     ));
+  }
+
+  void switchActiveTrip(String code) {
+    final all = ref.read(savedTripsProvider);
+    final target = all.firstWhere((t) => t.code == code, orElse: () => state);
+    update(target);
+  }
+
+  void deleteTrip(String code) {
+    ref.read(savedTripsProvider.notifier).deleteTrip(code);
+    final remaining = ref.read(savedTripsProvider);
+    if (remaining.isNotEmpty) {
+      update(remaining.first);
+    } else {
+      createTrip('Spotto Trip', 3, todayIso());
+    }
+  }
+
+  void updateTripDetails(String code, String newName, String newStartDate, int newDays) {
+    final all = ref.read(savedTripsProvider);
+    final target = all.firstWhere((t) => t.code == code, orElse: () => state);
+    final trimmedName = newName.trim().isEmpty ? target.name : newName.trim();
+
+    List<TripDay> days = [...target.days];
+    if (newDays > days.length) {
+      final toAdd = newDays - days.length;
+      for (var i = 0; i < toAdd; i++) {
+        days.add(TripDay(id: tripNewId('d'), stops: const []));
+      }
+    } else if (newDays < days.length && newDays > 0) {
+      days = days.take(newDays).toList();
+    }
+
+    final updated = target.copyWith(
+      name: trimmedName,
+      startDate: newStartDate,
+      days: days,
+    );
+
+    ref.read(savedTripsProvider.notifier).saveTrip(updated);
+    if (state.code == code) {
+      state = updated;
+      ref.read(localStoreProvider).setJson(StoreKeys.trip, updated.toJson());
+      _schedulePush();
+    }
   }
 
   void addCollaborator(String id) {
@@ -553,6 +633,44 @@ class TripNotifier extends Notifier<Trip> {
 }
 
 final tripProvider = NotifierProvider<TripNotifier, Trip>(TripNotifier.new);
+
+/// Saved trips collection — manages all user trips locally.
+class SavedTripsNotifier extends Notifier<List<Trip>> {
+  @override
+  List<Trip> build() {
+    final store = ref.read(localStoreProvider);
+    final jsonList = store.getJsonList(StoreKeys.allTrips);
+    if (jsonList != null && jsonList.isNotEmpty) {
+      return [for (final j in jsonList) Trip.fromJson(j as Map<String, dynamic>)];
+    }
+    final seed = ref.read(tripProvider);
+    return [seed];
+  }
+
+  void saveTrip(Trip trip) {
+    final list = [...state];
+    final index = list.indexWhere((t) => t.code == trip.code);
+    if (index >= 0) {
+      list[index] = trip;
+    } else {
+      list.insert(0, trip);
+    }
+    state = list;
+    _persist();
+  }
+
+  void deleteTrip(String code) {
+    state = state.where((t) => t.code != code).toList();
+    _persist();
+  }
+
+  void _persist() {
+    final store = ref.read(localStoreProvider);
+    store.setJsonList(StoreKeys.allTrips, [for (final t in state) t.toJson()]);
+  }
+}
+
+final savedTripsProvider = NotifierProvider<SavedTripsNotifier, List<Trip>>(SavedTripsNotifier.new);
 
 // ── deal claims (server-issued single-use SPOTTO codes) ───────────
 
@@ -705,13 +823,20 @@ final vibeVotesProvider =
     NotifierProvider<VibeVotesNotifier, Map<String, Map<String, int>>>(VibeVotesNotifier.new);
 
 /// Artisan check-ins for the daily quest (optimistic, posted to the server).
+/// Persisted locally so "already checked in" survives an app restart —
+/// there's no GET to hydrate this from the server, so LocalStore is the
+/// only record of it.
 class CheckInsNotifier extends Notifier<Set<String>> {
   @override
-  Set<String> build() => {};
+  Set<String> build() {
+    final saved = ref.read(localStoreProvider).getJsonList(StoreKeys.checkIns);
+    return saved?.cast<String>().toSet() ?? {};
+  }
 
   void checkIn(String placeId) {
     if (state.contains(placeId)) return;
     state = {...state, placeId};
+    ref.read(localStoreProvider).setJsonList(StoreKeys.checkIns, state.toList());
     if (ref.read(authProvider)) {
       ref.read(apiProvider).dio.post('/checkins', data: {'placeId': placeId}).ignore();
     }
@@ -720,15 +845,45 @@ class CheckInsNotifier extends Notifier<Set<String>> {
 
 final checkInsProvider = NotifierProvider<CheckInsNotifier, Set<String>>(CheckInsNotifier.new);
 
+/// Bookmarked / favorited places for the traveller — local-only (no server
+/// endpoint yet), persisted so bookmarks survive an app restart.
+class FavoritesNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() {
+    final saved = ref.read(localStoreProvider).getJsonList(StoreKeys.favorites);
+    return saved?.cast<String>().toSet() ?? {};
+  }
+
+  void toggle(String placeId) {
+    if (state.contains(placeId)) {
+      state = state.where((id) => id != placeId).toSet();
+    } else {
+      state = {...state, placeId};
+    }
+    ref.read(localStoreProvider).setJsonList(StoreKeys.favorites, state.toList());
+  }
+}
+
+final favoritesProvider = NotifierProvider<FavoritesNotifier, Set<String>>(FavoritesNotifier.new);
+
 /// Group mode: show group members on the Discover map (session-only).
 final groupModeProvider = StateProvider<bool>((ref) => false);
 
 // ── reviews (real traveller ratings; 1-2 stars flag the vendor) ───
 
+/// How long a resolved reviews/photos fetch is served from cache before a
+/// re-watch (e.g. reopening the same place's drawer) triggers a background
+/// refetch — reopening within the window is instant, and a write (review
+/// submit, photo upload) still calls `ref.invalidate(...)` for an immediate
+/// refresh regardless of this timer.
+const _placeDetailCacheTtl = Duration(minutes: 3);
+
 /// Reviews for a single place, newest first. Call
 /// `ref.invalidate(placeReviewsProvider(placeId))` after submitting to refresh.
 final placeReviewsProvider =
     FutureProvider.family<List<Review>, String>((ref, placeId) async {
+  final timer = Timer(_placeDetailCacheTtl, ref.invalidateSelf);
+  ref.onDispose(timer.cancel);
   final res = await ref.read(apiProvider).dio.get('/places/$placeId/reviews');
   return [for (final r in (res.data as List)) Review.fromJson((r as Map).cast<String, dynamic>())];
 });
@@ -737,8 +892,24 @@ final placeReviewsProvider =
 /// Invalidate after uploading to refresh the place detail's photo strip.
 final placePhotosProvider =
     FutureProvider.family<List<String>, String>((ref, placeId) async {
+  final timer = Timer(_placeDetailCacheTtl, ref.invalidateSelf);
+  ref.onDispose(timer.cancel);
   final res = await ref.read(apiProvider).dio.get('/places/$placeId/photos');
   return [for (final m in (res.data as List)) (m as Map)['url'] as String];
+});
+
+/// Fetches a single place fresh from `GET /places/{id}` — unlike the bulk
+/// `placesProvider` list, this is what the server enriches with live,
+/// cached Google Places details (phone/website/wheelchairAccessible/
+/// priceLevel) for imported spots. The drawer merges the result on top of
+/// the list-derived Place it already has (see business_drawer.dart), so a
+/// slow/failed fetch never blocks the sheet — it just keeps showing what it
+/// already knew.
+final placeDetailsProvider = FutureProvider.family<Place, String>((ref, placeId) async {
+  final timer = Timer(_placeDetailCacheTtl, ref.invalidateSelf);
+  ref.onDispose(timer.cancel);
+  final res = await ref.read(apiProvider).dio.get('/places/$placeId');
+  return Place.fromJson((res.data as Map).cast<String, dynamic>());
 });
 
 /// Submits (or edits) the current traveller's review for a place, then
