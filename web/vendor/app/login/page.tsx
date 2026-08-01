@@ -17,12 +17,20 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
+import LocationPickerAuto from '../../components/location-picker-auto';
 import { SpottoMark } from '../../components/shell';
 import { api } from '../../lib/api';
 import { BUSINESS_CATEGORIES } from '../../lib/business-categories';
 import { loadGoogleMaps } from '../../lib/google-maps';
 
 const REGISTER_STEPS = ['Find your business', 'Your account', 'Your business', 'A few details'];
+
+// Default map-pin center for owners who skip the Step 1 business search
+// entirely (placeLat/placeLng stay null in that case) — Colombo, matching
+// the "every vendor is Sri Lanka-based" assumption used elsewhere in this
+// wizard (see categoryFromGoogleTypes/townFromAddressComponents below).
+const DEFAULT_PIN_LAT = 6.9271;
+const DEFAULT_PIN_LNG = 79.8612;
 
 // Best-effort Google place-type → Spotto category mapping, checked in
 // array order (first match wins) — falls back to the wizard's existing
@@ -590,15 +598,31 @@ function LoginPageInner() {
 
         {registerStep === 3 && (
           <div className="space-y-3.5">
-            <div className="flex gap-2.5">
-              <div className="flex items-center gap-1.5 rounded-2xl px-3 h-[50px] bg-white border-[1.5px] border-line shrink-0">
-                <span className="text-[15px]">🇱🇰</span><span className="font-extrabold text-[15px]">+94</span>
+            <div className="flex gap-2.5 items-end">
+              <div className="shrink-0">
+                <span className="block text-[12.5px] font-extrabold mb-1.5 text-transparent select-none" aria-hidden="true">LK</span>
+                <div className="flex items-center gap-1.5 rounded-2xl px-3 h-[50px] bg-white border-[1.5px] border-line">
+                  <span className="text-[15px]">🇱🇰</span><span className="font-extrabold text-[15px]">+94</span>
+                </div>
               </div>
               <div className="flex-1">
                 <Field label="Phone number" type="tel" value={phone} onChange={setPhone} icon={Phone} placeholder="76 123 4891" />
               </div>
             </div>
             <Field label="Town / area" value={town} onChange={setTown} icon={MapPin} placeholder="e.g. Weligama" />
+            <div>
+              <span className="block text-[12.5px] font-extrabold mb-1.5 text-ink-soft">Pin your exact location</span>
+              <p className="text-[12px] text-muted font-semibold mb-1.5">
+                Click anywhere on the map to move your pin — this is where travelers get directions to.
+              </p>
+              <div className="h-[180px] rounded-2xl overflow-hidden border-[1.5px] border-line">
+                <LocationPickerAuto
+                  lat={placeLat ?? DEFAULT_PIN_LAT}
+                  lng={placeLng ?? DEFAULT_PIN_LNG}
+                  onChange={(lat, lng) => { setPlaceLat(lat); setPlaceLng(lng); }}
+                />
+              </div>
+            </div>
             <label className="block">
               <span className="block text-[12.5px] font-extrabold mb-1.5 text-ink-soft">Tell travelers about your place</span>
               <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)}

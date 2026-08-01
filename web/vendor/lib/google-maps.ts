@@ -21,3 +21,27 @@ export function loadGoogleMaps(): Promise<typeof google> {
   }
   return loaderPromise;
 }
+
+// A bad/restricted key, a disabled API, or missing billing doesn't reject
+// loadGoogleMaps()'s promise — the script tag itself loads fine (200 OK),
+// it's the API's own credential check that fails, asynchronously, after
+// the map is already being set up. Google's JS API reports that failure
+// by calling window.gm_authFailure if it's defined, which is the only
+// reliable hook for it (there's no promise rejection or thrown error to
+// catch). Consumers subscribe here to fall back to the free Leaflet
+// picker instead of leaving Google's own "Oops!" overlay on screen.
+type AuthFailureListener = () => void;
+const authFailureListeners = new Set<AuthFailureListener>();
+
+function ensureAuthFailureHook() {
+  if (typeof window === 'undefined') return;
+  const w = window as unknown as { gm_authFailure?: () => void };
+  if (w.gm_authFailure) return;
+  w.gm_authFailure = () => authFailureListeners.forEach((fn) => fn());
+}
+
+export function onGoogleMapsAuthFailure(listener: AuthFailureListener): () => void {
+  ensureAuthFailureHook();
+  authFailureListeners.add(listener);
+  return () => authFailureListeners.delete(listener);
+}

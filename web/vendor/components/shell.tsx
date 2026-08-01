@@ -18,14 +18,17 @@ import { api } from '../lib/api';
 
 // staffHidden marks nav items staff has zero access to on the backend
 // (RequireVendorManagerOrAbove — see server.go) — hiding them here is
-// defense in depth, not the real enforcement.
-const NAV: { href: string; label: string; icon: LucideIcon; foodOnly?: boolean; staffHidden?: boolean }[] = [
+// defense in depth, not the real enforcement. approvedOnly marks nav items
+// that only make sense once the business is actually live to travelers
+// (running offers, growth tools, redeeming codes, reports) — pending/
+// edits-status vendors can still set up Dashboard/Menu/Profile/Account.
+const NAV: { href: string; label: string; icon: LucideIcon; foodOnly?: boolean; staffHidden?: boolean; approvedOnly?: boolean }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/offers', label: 'Offers', icon: Tag },
+  { href: '/offers', label: 'Offers', icon: Tag, approvedOnly: true },
   { href: '/menu', label: 'Menu', icon: UtensilsCrossed, foodOnly: true, staffHidden: true },
-  { href: '/growth', label: 'Growth', icon: Rocket, staffHidden: true },
-  { href: '/validate', label: 'Validate', icon: QrCode },
-  { href: '/reports', label: 'Reports', icon: BarChart3, staffHidden: true },
+  { href: '/growth', label: 'Growth', icon: Rocket, staffHidden: true, approvedOnly: true },
+  { href: '/validate', label: 'Validate', icon: QrCode, approvedOnly: true },
+  { href: '/reports', label: 'Reports', icon: BarChart3, staffHidden: true, approvedOnly: true },
   { href: '/profile', label: 'Profile', icon: Store },
 ];
 
@@ -179,7 +182,10 @@ function NotificationBell() {
   );
 }
 
-/** Full-page gate: requires a token, and an approved vendor for the portal. */
+/** Requires a token. Rejected/suspended vendors get a full-page gate;
+ * pending/edits-status vendors get the real dashboard plus a StatusBanner
+ * so they can set up their profile/menu while awaiting approval (approval-
+ * only nav items are hidden via NAV's approvedOnly flag). */
 export default function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -202,13 +208,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return <div className="min-h-screen flex items-center justify-center text-muted font-bold">Loading…</div>;
   }
 
-  if (me && me.vendorStatus && me.vendorStatus !== 'approved') {
+  if (me && (me.vendorStatus === 'rejected' || me.vendorStatus === 'suspended')) {
     return <PendingGate status={me.vendorStatus} />;
   }
 
+  const isApproved = !me?.vendorStatus || me.vendorStatus === 'approved';
   const isFood = isFoodCategory(business?.category);
   const isStaff = me?.vendorRole === 'staff';
-  const visibleNav = NAV.filter((n) => (!n.foodOnly || isFood) && (!n.staffHidden || !isStaff));
+  const visibleNav = NAV.filter((n) => (!n.foodOnly || isFood) && (!n.staffHidden || !isStaff) && (!n.approvedOnly || isApproved));
   const title = NAV.find((n) => pathname.startsWith(n.href))?.label ??
     (pathname.startsWith('/account') ? 'Account' : '');
 
@@ -306,14 +313,22 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
         <main id="scroll-main" className="flex-1 px-8 py-6">
-          <div className="max-w-[1180px] mx-auto">{children}</div>
+          <div className="max-w-[1180px] mx-auto">
+            {(me?.vendorStatus === 'pending' || me?.vendorStatus === 'edits') && (
+              <StatusBanner status={me.vendorStatus} />
+            )}
+            {children}
+          </div>
         </main>
       </div>
     </div>
   );
 }
 
-function PendingGate({ status }: { status: string }) {
+// Full-page block for statuses with nothing to do in the dashboard —
+// 'pending'/'edits' vendors get StatusBanner instead and can keep using
+// the portal to set up their profile/menu while they wait (see Shell).
+function PendingGate({ status }: { status: 'rejected' | 'suspended' }) {
   const router = useRouter();
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
@@ -322,20 +337,12 @@ function PendingGate({ status }: { status: string }) {
           <Clock size={28} className="text-[#a97b00]" />
         </span>
         <h1 className="text-xl font-extrabold font-display mb-2">
-          {status === 'suspended'
-            ? 'Account suspended'
-            : status === 'rejected'
-              ? 'Application not approved'
-              : 'Pending review'}
+          {status === 'suspended' ? 'Account suspended' : 'Application not approved'}
         </h1>
         <p className="text-muted font-semibold text-[14px] leading-relaxed">
           {status === 'suspended'
             ? 'Your account has been suspended after an admin review. Contact partners@spotto.dev if you believe this is a mistake.'
-            : status === 'rejected'
-              ? 'Your application was not approved. Contact partners@spotto.dev for details.'
-              : status === 'edits'
-                ? 'Our team requested edits to your application. Check your email for details, then resubmit.'
-                : 'Our team is reviewing your business. You will get access to the full portal as soon as an admin approves it — usually within a day.'}
+            : 'Your application was not approved. Contact partners@spotto.dev for details.'}
         </p>
         <button
           onClick={() => {
@@ -346,6 +353,24 @@ function PendingGate({ status }: { status: string }) {
         >
           <LogOut size={16} /> Sign out
         </button>
+      </div>
+    </div>
+  );
+}
+
+function StatusBanner({ status }: { status: 'pending' | 'edits' }) {
+  return (
+    <div className="rounded-2xl px-4 py-3.5 mb-5 flex items-start gap-3 border" style={{ background: 'rgba(246,184,30,0.1)', borderColor: 'rgba(246,184,30,0.4)' }}>
+      <span className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-sun/20 text-[#a97b00]">
+        <Clock size={17} />
+      </span>
+      <div>
+        <p className="font-extrabold text-[13.5px]">{status === 'edits' ? 'Changes requested' : 'Pending review'}</p>
+        <p className="text-muted font-semibold text-[12.5px] leading-relaxed mt-0.5">
+          {status === 'edits'
+            ? 'Our team requested edits to your application — check your email for details, update your profile below, then we’ll take another look.'
+            : 'Our team is reviewing your business, usually within a day. Feel free to finish setting up your profile and menu while you wait — some features unlock once you’re approved.'}
+        </p>
       </div>
     </div>
   );

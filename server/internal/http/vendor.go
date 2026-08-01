@@ -30,10 +30,10 @@ func (s *Server) handleVendorBusiness(w http.ResponseWriter, r *http.Request) {
 // requireBusinessProfileAccess additionally gates Business Profile writes:
 // owners (and legacy empty-VendorRole rows) always pass; managers need an
 // active (redeemed, unrevoked, unexpired) profile grant; staff are always
-// rejected. Call after requireApprovedVendor, before any Business Profile
-// mutation. GET /vendor/business intentionally stays open to all roles
-// (see server.go) since the portal shell reads it on every page — only
-// writes are gated here.
+// rejected. Call after requireEditableVendor/requireApprovedVendor, before
+// any Business Profile mutation. GET /vendor/business intentionally stays
+// open to all roles (see server.go) since the portal shell reads it on
+// every page — only writes are gated here.
 func (s *Server) requireBusinessProfileAccess(w http.ResponseWriter, r *http.Request, v domain.Vendor) bool {
 	c := auth.FromContext(r.Context())
 	if c.VendorRole == domain.VendorRoleOwner || c.VendorRole == "" {
@@ -49,7 +49,7 @@ func (s *Server) requireBusinessProfileAccess(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleUpdateVendorBusiness(w http.ResponseWriter, r *http.Request) {
-	v, ok := s.requireApprovedVendor(w, r)
+	v, ok := s.requireEditableVendor(w, r)
 	if !ok {
 		return
 	}
@@ -72,7 +72,7 @@ func (s *Server) handleUpdateVendorBusiness(w http.ResponseWriter, r *http.Reque
 // handleUpdateVendorIdentity corrects business name/town/map-pin location —
 // these are otherwise set once at registration and never touched again.
 func (s *Server) handleUpdateVendorIdentity(w http.ResponseWriter, r *http.Request) {
-	v, ok := s.requireApprovedVendor(w, r)
+	v, ok := s.requireEditableVendor(w, r)
 	if !ok {
 		return
 	}
@@ -105,7 +105,7 @@ func (s *Server) handleUpdateVendorIdentity(w http.ResponseWriter, r *http.Reque
 // handleUpdateVendorBusiness since category is a top-level vendors column,
 // not part of the profile JSON blob that endpoint replaces wholesale.
 func (s *Server) handleUpdateVendorCategory(w http.ResponseWriter, r *http.Request) {
-	v, ok := s.requireApprovedVendor(w, r)
+	v, ok := s.requireEditableVendor(w, r)
 	if !ok {
 		return
 	}
@@ -239,7 +239,7 @@ func orEmpty(m json.RawMessage) []byte {
 }
 
 func (s *Server) handleUpdateVendorMenu(w http.ResponseWriter, r *http.Request) {
-	v, ok := s.requireApprovedVendor(w, r)
+	v, ok := s.requireEditableVendor(w, r)
 	if !ok {
 		return
 	}

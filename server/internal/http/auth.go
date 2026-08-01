@@ -611,13 +611,35 @@ func (s *Server) requireVendor(w http.ResponseWriter, r *http.Request) (domain.V
 	return v, true
 }
 
-// requireApprovedVendor additionally gates on admin approval.
+// requireApprovedVendor additionally gates on admin approval. Use for
+// anything that depends on the business actually being live to travelers
+// (offers, growth tools, redemption validation, reports).
 func (s *Server) requireApprovedVendor(w http.ResponseWriter, r *http.Request) (domain.Vendor, bool) {
 	v, ok := s.requireVendor(w, r)
 	if !ok {
 		return v, false
 	}
 	if v.Status != domain.VendorApproved {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"error":        "vendor_not_approved",
+			"vendorStatus": v.Status,
+		})
+		return v, false
+	}
+	return v, true
+}
+
+// requireEditableVendor allows pending/edits-status vendors through in
+// addition to approved ones, so they can set up their business profile,
+// category, and menu while awaiting admin approval — only rejected/
+// suspended vendors are blocked. Use for writes that just describe the
+// business rather than making it live to travelers.
+func (s *Server) requireEditableVendor(w http.ResponseWriter, r *http.Request) (domain.Vendor, bool) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return v, false
+	}
+	if v.Status == domain.VendorRejected || v.Status == domain.VendorSuspended {
 		writeJSON(w, http.StatusForbidden, map[string]any{
 			"error":        "vendor_not_approved",
 			"vendorStatus": v.Status,
