@@ -236,6 +236,15 @@ func (s *Server) handleMediaDelete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "not allowed")
 		return
 	}
+	// canUploadFor's blanket true for ownerType "place" is correct for
+	// uploads (any traveller can contribute a photo to a public place) but
+	// far too permissive for deletion — without this, any signed-in
+	// traveller could delete any other traveller's place photo, not just
+	// their own.
+	if m.OwnerType == "place" && c.Role != domain.RoleAdmin && m.UploadedBy != c.Subject {
+		writeErr(w, http.StatusForbidden, "not allowed")
+		return
+	}
 	_ = s.Media.Delete(r.Context(), m.ObjectKey)
 	if err := s.Store.DeleteMedia(r.Context(), m.ID); err != nil {
 		storeErr(w, err)

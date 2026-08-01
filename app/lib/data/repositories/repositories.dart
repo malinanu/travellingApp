@@ -906,14 +906,18 @@ final placeReviewsProvider =
   return [for (final r in (res.data as List)) Review.fromJson((r as Map).cast<String, dynamic>())];
 });
 
-/// Traveller-contributed photo URLs for a place (media role "contrib").
-/// Invalidate after uploading to refresh the place detail's photo strip.
+/// Traveller-contributed photos for a place (media role "contrib").
+/// Invalidate after uploading/deleting to refresh the place detail's photo
+/// grid.
 final placePhotosProvider =
-    FutureProvider.family<List<String>, String>((ref, placeId) async {
+    FutureProvider.family<List<PlacePhoto>, String>((ref, placeId) async {
   final timer = Timer(_placeDetailCacheTtl, ref.invalidateSelf);
   ref.onDispose(timer.cancel);
   final res = await ref.read(apiProvider).dio.get('/places/$placeId/photos');
-  return [for (final m in (res.data as List)) (m as Map)['url'] as String];
+  return [
+    for (final m in (res.data as List))
+      PlacePhoto.fromJson((m as Map).cast<String, dynamic>()),
+  ];
 });
 
 /// Fetches a single place fresh from `GET /places/{id}` — unlike the bulk

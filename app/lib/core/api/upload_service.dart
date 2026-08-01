@@ -60,6 +60,13 @@ class UploadService {
     });
     return (confirm.data as Map).cast<String, dynamic>();
   }
+
+  /// Deletes a previously uploaded media row (R2 object + DB row) — the
+  /// server only allows this for the uploader themselves (or an admin), see
+  /// handleMediaDelete's ownership check in server/internal/http/media.go.
+  Future<void> delete(String mediaId) async {
+    await api.dio.delete('/media/$mediaId');
+  }
 }
 
 final uploadServiceProvider = Provider<UploadService>((ref) {

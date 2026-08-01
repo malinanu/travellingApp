@@ -660,20 +660,26 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
             ],
           ),
           const SizedBox(height: 12),
-          for (final v in data.vibes) ...[
-            _VibeBar(
-              label: v.label,
-              icon: spottoIcon(v.icon),
-              color: Color(v.color),
-              average: _vibeAverageFor(vibe, v.id),
-              mine: _vibeMineFor(mine, v.id),
-              enabled: withinGeofence && !_rating,
-              onTap: devicePos == null
-                  ? null
-                  : (value) => _tap(v.id, value, mine, devicePos),
-            ),
-            if (v != data.vibes.last) const SizedBox(height: 10),
-          ],
+          Row(
+            children: [
+              for (final (i, v) in data.vibes.indexed) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(
+                  child: _VibeCard(
+                    label: v.label,
+                    icon: spottoIcon(v.icon),
+                    color: Color(v.color),
+                    average: _vibeAverageFor(vibe, v.id),
+                    mine: _vibeMineFor(mine, v.id),
+                    enabled: withinGeofence && !_rating,
+                    onTap: devicePos == null
+                        ? null
+                        : (value) => _tap(v.id, value, mine, devicePos),
+                  ),
+                ),
+              ],
+            ],
+          ),
           if (!withinGeofence) ...[
             const SizedBox(height: 8),
             Text("Rate this once you're here.",
@@ -686,20 +692,21 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
   }
 }
 
-/// One vibe dimension: a label/icon, a 10-segment tappable bar filled to
-/// the place's current average, and — when the traveller has rated this
-/// place — a small "You: N" readout so they can see their own rating
-/// alongside everyone else's.
-class _VibeBar extends StatelessWidget {
+/// One vibe dimension, styled like the old one-tap vote card (solid-color
+/// fill once you've rated it, white icon/border) but with the new 0-10
+/// check-in logic: a 5-segment tappable strip filled to the place's
+/// current average — each segment worth 2 points, so the full 0-10 range
+/// stays reachable with fewer, coarser tap targets than a 10-segment bar.
+class _VibeCard extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
   final double average; // 0-10
   final int? mine; // 0-10, or null if never rated
   final bool enabled;
-  final ValueChanged<int>? onTap; // segment value 1-10
+  final ValueChanged<int>? onTap; // submitted value: 2/4/6/8/10
 
-  const _VibeBar({
+  const _VibeCard({
     required this.label,
     required this.icon,
     required this.color,
@@ -711,45 +718,58 @@ class _VibeBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final filled = average.round().clamp(0, 10);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 14, color: color),
-            const SizedBox(width: 6),
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w800, color: SpottoColors.ink)),
-            const Spacer(),
-            if (mine != null)
-              Text('You: $mine',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            for (var i = 1; i <= 10; i++)
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(right: i < 10 ? 2 : 0),
-                  child: GestureDetector(
-                    onTap: enabled && onTap != null ? () => onTap!(i) : null,
-                    child: Container(
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: i <= filled ? color : SpottoColors.ink.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(3),
+    final filled = (average / 2).round().clamp(0, 5);
+    final isMine = mine != null;
+    final segmentOn = isMine ? Colors.white : color;
+    final segmentOff =
+        isMine ? Colors.white.withValues(alpha: 0.3) : SpottoColors.ink.withValues(alpha: 0.08);
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isMine ? color : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isMine ? color : SpottoColors.line, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: isMine ? Colors.white : color),
+          const SizedBox(height: 4),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: isMine ? Colors.white : SpottoColors.ink)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              for (var i = 1; i <= 5; i++)
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(right: i < 5 ? 2 : 0),
+                    child: GestureDetector(
+                      onTap: enabled && onTap != null ? () => onTap!(i * 2) : null,
+                      child: Container(
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: i <= filled ? segmentOn : segmentOff,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+            ],
+          ),
+          if (isMine) ...[
+            const SizedBox(height: 6),
+            Text('You: $mine',
+                style: const TextStyle(
+                    fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
           ],
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -1233,7 +1253,7 @@ class _ReviewTile extends StatelessWidget {
             Builder(builder: (context) {
               final urls = [for (final u in review.photos) resolveMediaUrl(u)];
               return SizedBox(
-                height: 64,
+                height: 84,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: [
@@ -1246,12 +1266,29 @@ class _ReviewTile extends StatelessWidget {
                             builder: (_) => _PhotoViewerDialog(urls: urls, initialIndex: i),
                           ),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: Image.network(url,
-                                width: 64,
-                                height: 64,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const SizedBox(width: 64, height: 64)),
+                            borderRadius: BorderRadius.circular(14),
+                            child: Image.network(
+                              url,
+                              width: 84,
+                              height: 84,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (_, child, progress) => progress == null
+                                  ? child
+                                  : Container(
+                                      width: 84,
+                                      height: 84,
+                                      color: SpottoColors.sand,
+                                      child: const Center(
+                                        child: SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      ),
+                                    ),
+                              errorBuilder: (_, __, ___) =>
+                                  Container(width: 84, height: 84, color: SpottoColors.sand),
+                            ),
                           ),
                         ),
                       ),
@@ -1266,8 +1303,58 @@ class _ReviewTile extends StatelessWidget {
   }
 }
 
-/// Traveller-contributed photos for a spot: a horizontal strip of uploaded
-/// photos plus an "Add" tile that picks and uploads one to R2 (role contrib).
+/// Short relative-time label for a photo's createdAt — no existing helper
+/// in this file to reuse, and simple enough not to warrant pulling in intl
+/// just for this. Falls back to the ISO string's date slice once it's old
+/// enough that "40d ago" stops being a useful unit.
+String _timeAgo(String iso) {
+  final parsed = DateTime.tryParse(iso);
+  if (parsed == null) return '';
+  final diff = DateTime.now().toUtc().difference(parsed.toUtc());
+  if (diff.inMinutes < 1) return 'Just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  if (diff.inDays < 7) return '${diff.inDays}d ago';
+  if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w ago';
+  return iso.length >= 10 ? iso.substring(0, 10) : iso;
+}
+
+/// The tappable "add a photo" tile shared by the empty state and the grid —
+/// sizes to whatever its parent gives it (a fixed SizedBox in the empty
+/// state, a GridView cell otherwise).
+class _AddPhotoTile extends StatelessWidget {
+  final bool uploading;
+  final VoidCallback onTap;
+  const _AddPhotoTile({required this.uploading, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return PressScale(
+      onTap: uploading ? null : onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: SpottoColors.accentTint,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Center(
+          child: uploading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2.5, color: SpottoColors.accent),
+                )
+              : const Icon(Icons.add_a_photo_outlined, color: SpottoColors.accent, size: 24),
+        ),
+      ),
+    );
+  }
+}
+
+/// Traveller-contributed photos for a spot: a grid of uploaded photos (so
+/// nothing's hidden off-screen the way a horizontal strip could) plus an
+/// "Add" tile that picks and uploads to R2 (role contrib). Each photo shows
+/// a relative "posted X ago" label, and carries a delete control when it's
+/// one the signed-in traveller posted themselves.
 class _TravellerPhotos extends ConsumerStatefulWidget {
   final Place place;
   const _TravellerPhotos({required this.place});
@@ -1278,10 +1365,12 @@ class _TravellerPhotos extends ConsumerStatefulWidget {
 
 class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
   bool _uploading = false;
+  String? _deletingId;
 
   Future<void> _add() async {
     if (_uploading) return;
-    final current = ref.read(placePhotosProvider(widget.place.id)).valueOrNull ?? const <String>[];
+    final current =
+        ref.read(placePhotosProvider(widget.place.id)).valueOrNull ?? const <PlacePhoto>[];
     final remaining = kMaxPhotosPerUpload - current.length;
     if (remaining <= 0) return;
     final files = await ImagePicker().pickMultiImage(
@@ -1321,6 +1410,19 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
     if (anyFailed) _snack('Some photos failed to upload — try again.');
   }
 
+  Future<void> _delete(PlacePhoto photo) async {
+    if (_deletingId != null) return;
+    setState(() => _deletingId = photo.id);
+    try {
+      await ref.read(uploadServiceProvider).delete(photo.id);
+      ref.invalidate(placePhotosProvider(widget.place.id));
+    } catch (e) {
+      _snack(ApiClient.errorMessage(e));
+    } finally {
+      if (mounted) setState(() => _deletingId = null);
+    }
+  }
+
   void _snack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -1329,63 +1431,122 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final photos = ref.watch(placePhotosProvider(widget.place.id)).valueOrNull ?? const <String>[];
-    final urls = [for (final u in photos) resolveMediaUrl(u)];
+    final photos =
+        ref.watch(placePhotosProvider(widget.place.id)).valueOrNull ?? const <PlacePhoto>[];
+    final urls = [for (final p in photos) resolveMediaUrl(p.url)];
+    final myId = ref.watch(meProvider)?['id'] as String?;
+    final canAddMore = photos.length < kMaxPhotosPerUpload;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Traveller photos', style: text.titleMedium),
         const SizedBox(height: 8),
-        SizedBox(
-          height: 84,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
+        if (photos.isEmpty)
+          Row(
             children: [
-              if (photos.length < kMaxPhotosPerUpload)
-                PressScale(
-                  onTap: _add,
-                  child: Container(
-                    width: 84,
-                    height: 84,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      color: SpottoColors.accentTint,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Center(
-                      child: _uploading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2.5, color: SpottoColors.accent),
-                            )
-                          : const Icon(Icons.add_a_photo_outlined,
-                              color: SpottoColors.accent, size: 24),
-                    ),
-                  ),
-                ),
-              for (final (i, url) in urls.indexed)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: () => showDialog<void>(
-                      context: context,
-                      builder: (_) => _PhotoViewerDialog(urls: urls, initialIndex: i),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Image.network(url,
-                          width: 84,
-                          height: 84,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const SizedBox(width: 84, height: 84)),
-                    ),
-                  ),
-                ),
+              SizedBox(
+                width: 84,
+                height: 84,
+                child: _AddPhotoTile(uploading: _uploading, onTap: _add),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('No photos yet — be the first to share one.',
+                    style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
+              ),
             ],
+          )
+        else
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: photos.length + (canAddMore ? 1 : 0),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 1,
+            ),
+            itemBuilder: (context, index) {
+              if (canAddMore && index == 0) {
+                return _AddPhotoTile(uploading: _uploading, onTap: _add);
+              }
+              final i = canAddMore ? index - 1 : index;
+              final photo = photos[i];
+              final isMine = myId != null && myId.isNotEmpty && photo.uploadedBy == myId;
+              return GestureDetector(
+                onTap: () => showDialog<void>(
+                  context: context,
+                  builder: (_) => _PhotoViewerDialog(urls: urls, initialIndex: i),
+                ),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Image.network(
+                          urls[i],
+                          fit: BoxFit.cover,
+                          loadingBuilder: (_, child, progress) => progress == null
+                              ? child
+                              : Container(
+                                  color: SpottoColors.sand,
+                                  child: const Center(
+                                    child: SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                  ),
+                                ),
+                          errorBuilder: (_, __, ___) => Container(color: SpottoColors.sand),
+                        ),
+                      ),
+                    ),
+                    if (_timeAgo(photo.createdAt).isNotEmpty)
+                      Positioned(
+                        left: 4,
+                        bottom: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(_timeAgo(photo.createdAt),
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
+                        ),
+                      ),
+                    if (isMine)
+                      Positioned(
+                        right: 4,
+                        top: 4,
+                        child: GestureDetector(
+                          onTap: () => _delete(photo),
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: _deletingId == photo.id
+                                ? const SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 1.5, color: Colors.white),
+                                  )
+                                : const Icon(Icons.close, size: 14, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
           ),
-        ),
       ],
     );
   }
@@ -1522,6 +1683,7 @@ class _PhotoViewerDialog extends StatefulWidget {
 class _PhotoViewerDialogState extends State<_PhotoViewerDialog> {
   late final PageController _controller;
   late int _index;
+  double _dragOffset = 0;
 
   @override
   void initState() {
@@ -1536,59 +1698,78 @@ class _PhotoViewerDialogState extends State<_PhotoViewerDialog> {
     super.dispose();
   }
 
+  void _onDragEnd(DragEndDetails details) {
+    final flungFast = (details.primaryVelocity ?? 0).abs() > 800;
+    if (_dragOffset.abs() > 120 || flungFast) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() => _dragOffset = 0);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    return Dialog(
-      backgroundColor: Colors.black,
-      insetPadding: EdgeInsets.zero,
-      child: SizedBox(
-        width: size.width,
-        height: size.height,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            PageView.builder(
-              controller: _controller,
-              itemCount: widget.urls.length,
-              onPageChanged: (i) => setState(() => _index = i),
-              itemBuilder: (_, i) => InteractiveViewer(
-                child: Center(
-                  child: Image.network(
-                    widget.urls[i],
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Text("Couldn't load this photo.",
-                        style: TextStyle(color: Colors.white)),
-                    loadingBuilder: (_, child, progress) => progress == null
-                        ? child
-                        : const CircularProgressIndicator(color: Colors.white),
+    // Fades the backdrop out as the photo is dragged down, so the dismiss
+    // gesture reads as "pulling the photo away" rather than a hard cut.
+    final dragProgress = (_dragOffset.abs() / 400).clamp(0.0, 1.0);
+    return GestureDetector(
+      onVerticalDragUpdate: (details) => setState(() => _dragOffset += details.delta.dy),
+      onVerticalDragEnd: _onDragEnd,
+      child: Dialog(
+        backgroundColor: Colors.black.withValues(alpha: 1 - dragProgress * 0.7),
+        insetPadding: EdgeInsets.zero,
+        child: Transform.translate(
+          offset: Offset(0, _dragOffset),
+          child: SizedBox(
+            width: size.width,
+            height: size.height,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                PageView.builder(
+                  controller: _controller,
+                  itemCount: widget.urls.length,
+                  onPageChanged: (i) => setState(() => _index = i),
+                  itemBuilder: (_, i) => InteractiveViewer(
+                    child: Center(
+                      child: Image.network(
+                        widget.urls[i],
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Text("Couldn't load this photo.",
+                            style: TextStyle(color: Colors.white)),
+                        loadingBuilder: (_, child, progress) => progress == null
+                            ? child
+                            : const CircularProgressIndicator(color: Colors.white),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-            if (widget.urls.length > 1)
-              Positioned(
-                bottom: 24,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(20),
+                if (widget.urls.length > 1)
+                  Positioned(
+                    bottom: 24,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text('${_index + 1} / ${widget.urls.length}',
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                    ),
                   ),
-                  child: Text('${_index + 1} / ${widget.urls.length}',
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                Positioned(
+                  right: 4,
+                  top: 4,
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
                 ),
-              ),
-            Positioned(
-              right: 4,
-              top: 4,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

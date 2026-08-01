@@ -465,6 +465,32 @@ class Review {
       );
 }
 
+/// A traveller-contributed photo for a place (media role "contrib" — see
+/// GET /places/{id}/photos, which returns full Media rows server-side).
+/// Keeps just what the UI needs: `id` to delete it, `uploadedBy` to gate
+/// the delete affordance to whoever posted it, `createdAt` for a relative
+/// "2d ago"-style label.
+class PlacePhoto {
+  final String id;
+  final String url;
+  final String uploadedBy;
+  final String createdAt;
+
+  const PlacePhoto({
+    required this.id,
+    required this.url,
+    required this.uploadedBy,
+    required this.createdAt,
+  });
+
+  factory PlacePhoto.fromJson(Map<String, dynamic> json) => PlacePhoto(
+        id: json['id'] as String? ?? '',
+        url: json['url'] as String? ?? '',
+        uploadedBy: json['uploadedBy'] as String? ?? '',
+        createdAt: json['createdAt'] as String? ?? '',
+      );
+}
+
 /// A group member's real profile, resolved server-side from memberIds
 /// (GET /me/group) — replaces the old fake local phone-contacts list.
 /// lat/lng are only present when that member has opted into live location
