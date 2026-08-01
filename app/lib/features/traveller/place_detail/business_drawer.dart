@@ -585,7 +585,8 @@ class _VibeCheck extends ConsumerStatefulWidget {
 class _VibeCheckState extends ConsumerState<_VibeCheck> {
   bool _rating = false;
 
-  Future<void> _tap(String vibeId, int value, VibeCheckin? previousMine, LatLngAt pos) async {
+  Future<void> _tap(String vibeId, int value, VibeCheckin? previousMine, VibeAggregate currentVibe,
+      LatLngAt pos) async {
     if (_rating) return;
     setState(() => _rating = true);
     try {
@@ -595,6 +596,7 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
             loud: vibeId == 'loud' ? value : null,
             crowded: vibeId == 'crowded' ? value : null,
             previousMine: previousMine,
+            currentVibe: currentVibe,
             lat: pos.lat,
             lng: pos.lng,
           );
@@ -674,7 +676,7 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
                     enabled: withinGeofence && !_rating,
                     onTap: devicePos == null
                         ? null
-                        : (value) => _tap(v.id, value, mine, devicePos),
+                        : (value) => _tap(v.id, value, mine, vibe, devicePos),
                   ),
                 ),
               ],

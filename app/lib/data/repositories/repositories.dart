@@ -809,31 +809,58 @@ class VibeCheckInsNotifier extends Notifier<Map<String, VibeState>> {
   /// ([previousMine] when nothing's been submitted here yet this session,
   /// else 0), since the server always records a full three-dimension
   /// snapshot rather than editing one dimension in place.
+  ///
+  /// Optimistic: writes the traveller's own tap into [state] immediately,
+  /// before the network round-trip, so the card confirms instantly instead
+  /// of waiting on the request — [currentVibe] is the aggregate the caller
+  /// already has on hand (there's no way to correctly recompute the average
+  /// locally without knowing the server's true sample size, so it's kept
+  /// as-is until the response reconciles it). Rolls back to whatever was
+  /// there before on failure, so a failed submission doesn't leave a false
+  /// confirmation on screen.
   Future<void> rate(
     String placeId, {
     int? productive,
     int? loud,
     int? crowded,
     required VibeCheckin? previousMine,
+    required VibeAggregate currentVibe,
     required double lat,
     required double lng,
   }) async {
-    final current = state[placeId]?.mine ?? previousMine;
-    final res = await ref.read(apiProvider).dio.post('/places/$placeId/vibe-checkin', data: {
-      'productive': productive ?? current?.productive ?? 0,
-      'loud': loud ?? current?.loud ?? 0,
-      'crowded': crowded ?? current?.crowded ?? 0,
-      'lat': lat,
-      'lng': lng,
-    });
-    final resp = (res.data as Map).cast<String, dynamic>();
-    state = {
-      ...state,
-      placeId: (
-        vibe: VibeAggregate.fromJson((resp['vibe'] as Map).cast<String, dynamic>()),
-        mine: VibeCheckin.fromJson((resp['myVibe'] as Map).cast<String, dynamic>()),
-      ),
-    };
+    final previousState = state[placeId];
+    final current = previousState?.mine ?? previousMine;
+    final optimisticMine = VibeCheckin(
+      productive: productive ?? current?.productive ?? 0,
+      loud: loud ?? current?.loud ?? 0,
+      crowded: crowded ?? current?.crowded ?? 0,
+      createdAt: DateTime.now(),
+    );
+    state = {...state, placeId: (vibe: currentVibe, mine: optimisticMine)};
+    try {
+      final res = await ref.read(apiProvider).dio.post('/places/$placeId/vibe-checkin', data: {
+        'productive': optimisticMine.productive,
+        'loud': optimisticMine.loud,
+        'crowded': optimisticMine.crowded,
+        'lat': lat,
+        'lng': lng,
+      });
+      final resp = (res.data as Map).cast<String, dynamic>();
+      state = {
+        ...state,
+        placeId: (
+          vibe: VibeAggregate.fromJson((resp['vibe'] as Map).cast<String, dynamic>()),
+          mine: VibeCheckin.fromJson((resp['myVibe'] as Map).cast<String, dynamic>()),
+        ),
+      };
+    } catch (e) {
+      if (previousState != null) {
+        state = {...state, placeId: previousState};
+      } else {
+        state = {...state}..remove(placeId);
+      }
+      rethrow;
+    }
   }
 }
 
