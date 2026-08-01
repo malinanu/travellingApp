@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { resolveMediaUrl, uploadMedia, validateFile, WEEKDAYS, type MenuPreset, type MenuSection, type StoredMenuDoc, type Weekday } from '@spotto/shared';
+import { resolveMediaUrl, uploadMedia, useAutoSave, validateFile, WEEKDAYS, type MenuPreset, type MenuSection, type StoredMenuDoc, type Weekday } from '@spotto/shared';
 import Shell, { RoleLockedCard, useBusiness, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
 
@@ -122,6 +122,19 @@ export default function MenuPage() {
       qc.invalidateQueries({ queryKey: ['menu'] });
     },
     onError: (err) => setSaveError(err instanceof Error ? err.message : 'Something went wrong — try again.'),
+  });
+
+  // Auto-save: debounced while typing/editing, plus an immediate flush()
+  // wired to the manual "Save menu" button (kept as a fallback). Firing
+  // only from this effect's timer — never synchronously right after
+  // setPresets(...) — is exactly what keeps this safe from the stale-state
+  // race described in mutateSections's comment below: by the time the
+  // timer callback runs, React has already committed whichever setPresets
+  // call was last, so save.mutate() always persists the latest state.
+  const menuAutoSave = useAutoSave({
+    deps: [presets, activePresetId],
+    dirty,
+    onSave: () => save.mutate(),
   });
 
   const editingPreset = presets.find((p) => p.id === editingPresetId) ?? presets[0];
@@ -464,7 +477,7 @@ export default function MenuPage() {
           {dirty && (
             <div className="flex justify-end mt-4">
               <button className="btn-accent px-4 py-2.5 flex items-center gap-2 text-[13.5px]"
-                disabled={save.isPending} onClick={() => save.mutate()}>
+                disabled={save.isPending} onClick={menuAutoSave.flush}>
                 <Save size={16} /> {save.isPending ? 'Saving…' : 'Save menu'}
               </button>
             </div>

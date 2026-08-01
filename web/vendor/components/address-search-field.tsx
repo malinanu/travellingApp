@@ -46,7 +46,7 @@ function townFromLegacyAddressComponents(components: google.maps.GeocoderAddress
 }
 
 export default function AddressSearchField({
-  label = 'Address', value, onChange, onLocationSelect, onPlaceDetails, placeholder, autoFocus, variant = 'field',
+  label = 'Address', value, onChange, onLocationSelect, onPlaceDetails, onBlur, placeholder, autoFocus, variant = 'field',
 }: {
   label?: string;
   value: string;
@@ -57,6 +57,7 @@ export default function AddressSearchField({
   // phone/website/hours/category data attached — undefined/null fields mean
   // Google didn't have that particular piece of data for this place.
   onPlaceDetails?: (details: PlaceDetails) => void;
+  onBlur?: () => void;
   placeholder?: string;
   autoFocus?: boolean;
   // 'field' matches the registration wizard's rounded pill Field component
@@ -118,6 +119,7 @@ export default function AddressSearchField({
           ref={inputRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
           autoFocus={autoFocus}
           placeholder={placeholder ?? 'Search for your address…'}
           className="input"
@@ -135,6 +137,7 @@ export default function AddressSearchField({
           ref={inputRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
           autoFocus={autoFocus}
           placeholder={placeholder ?? 'Search for your address…'}
           className="flex-1 bg-transparent outline-none text-[15px] font-bold w-full text-ink"

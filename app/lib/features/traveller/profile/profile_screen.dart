@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/upload_service.dart';
 import '../../../core/theme/palette.dart';
+import '../../../core/utils/debounced_saver.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/spotto_icons.dart';
 import '../../../data/mock/places.dart' as data;
@@ -40,6 +41,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     'email': false,
   };
   bool _savedFlash = false;
+  // Auto-save: debounced while editing, plus an immediate flush() wired to
+  // the Name field losing focus and to the header's manual "Save" pill
+  // (kept as a fallback) — see DebouncedSaver's own doc comment.
+  late final _saver = DebouncedSaver(save: () async => _save());
 
   @override
   void initState() {
@@ -54,6 +59,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   void dispose() {
+    _saver.dispose();
     _name.dispose();
     _email.dispose();
     super.dispose();
@@ -177,7 +183,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                   PressScale(
                     scale: 0.95,
-                    onTap: _save,
+                    onTap: _saver.flush,
                     child: Container(
                       height: 40,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -333,8 +339,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const SizedBox(height: 24),
 
                   sectionCard(context, 'Your details', [
-                    profField(context, 'Name', _name, Icons.person_outline,
-                        onChanged: () => setState(() {})),
+                    Focus(
+                      onFocusChange: (hasFocus) {
+                        if (!hasFocus) _saver.flush();
+                      },
+                      child: profField(context, 'Name', _name, Icons.person_outline,
+                          onChanged: () {
+                            setState(() {});
+                            _saver.schedule();
+                          }),
+                    ),
                     const SizedBox(height: 14),
                     profField(context, 'Email', _email, Icons.mail_outline,
                         readOnly: true, helperText: 'Contact support to change your email'),
@@ -353,9 +367,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         for (final s in data.travelStyles)
                           PressScale(
                             scale: 0.98,
-                            onTap: () => setState(() {
-                              _styles.contains(s.id) ? _styles.remove(s.id) : _styles.add(s.id);
-                            }),
+                            onTap: () {
+                              setState(() {
+                                _styles.contains(s.id) ? _styles.remove(s.id) : _styles.add(s.id);
+                              });
+                              _saver.schedule();
+                            },
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12),
                               decoration: BoxDecoration(
@@ -400,9 +417,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         for (final it in data.interests)
                           PressScale(
                             scale: 0.95,
-                            onTap: () => setState(() => _interests.contains(it.id)
-                                ? _interests.remove(it.id)
-                                : _interests.add(it.id)),
+                            onTap: () {
+                              setState(() => _interests.contains(it.id)
+                                  ? _interests.remove(it.id)
+                                  : _interests.add(it.id));
+                              _saver.schedule();
+                            },
                             child: Container(
                               padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
                               decoration: BoxDecoration(

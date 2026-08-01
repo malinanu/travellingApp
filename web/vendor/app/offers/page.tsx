@@ -9,9 +9,10 @@ import {
   Package, Pencil, Percent, Rocket, Tag, Trash2, Zap, LucideIcon,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
 import type { Offer, OfferStatus } from '@spotto/shared';
+import { useAutoSave } from '@spotto/shared';
 import Shell, { useBusiness, useMe } from '../../components/shell';
 import OfferDetailDrawer from '../../components/offer-detail-drawer';
 import { api } from '../../lib/api';
@@ -99,6 +100,19 @@ function OffersPageInner() {
 
   const [filter, setFilter] = useState<FilterId>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
+  // The offer's status as of when editing began — auto-save (while editing
+  // an existing offer) persists field changes against this, so fixing a
+  // typo never silently flips a live offer back to draft or vice versa
+  // the way blindly reusing the Publish/Save-as-draft buttons' status
+  // would. Only set for 'live'/'draft' (the two statuses a save can target
+  // at all) — editing an 'ending'/'ended' offer just doesn't auto-save.
+  const [editingStatus, setEditingStatus] = useState<'live' | 'draft' | null>(null);
+  const [dirty, setDirty] = useState(false);
+  // startEdit/resetForm batch several setState calls at once to populate/
+  // clear the form — that batch shouldn't itself count as "the vendor made
+  // an edit," so the dirty-tracking effect below skips the one render it
+  // causes rather than needing every individual field's onChange updated.
+  const skipNextDirtyRef = useRef(false);
 
   const [typeId, setTypeId] = useState('pct');
   const [title, setTitle] = useState('');
@@ -114,7 +128,10 @@ function OffersPageInner() {
   const [error, setError] = useState<string | null>(null);
 
   const resetForm = () => {
+    skipNextDirtyRef.current = true;
     setEditingId(null);
+    setEditingStatus(null);
+    setDirty(false);
     setTypeId('pct');
     setTitle('');
     setPercent('20');
@@ -141,9 +158,12 @@ function OffersPageInner() {
   };
 
   const startEdit = (o: Offer) => {
+    skipNextDirtyRef.current = true;
     const found = DISCOUNT_TYPES.find((t) => t.apiType === o.type);
     const tId = found?.id ?? 'pct';
     setEditingId(o.id);
+    setEditingStatus(o.status === 'live' || o.status === 'draft' ? o.status : null);
+    setDirty(false);
     setTypeId(tId);
     setTitle(o.title);
     setPercent(tId === 'pct' ? parseValue(tId, o.value) : '20');
@@ -164,7 +184,7 @@ function OffersPageInner() {
   const computedLimit = unlimited ? 0 : limit;
 
   const save = useMutation({
-    mutationFn: (status: 'live' | 'draft') => {
+    mutationFn: ({ status }: { status: 'live' | 'draft'; resetAfter: boolean }) => {
       const body = {
         title,
         type: DISCOUNT_TYPES.find((t) => t.id === typeId)?.apiType ?? 'Percentage',
@@ -176,11 +196,37 @@ function OffersPageInner() {
       };
       return editingId ? api.put(`/vendor/offers/${editingId}`, body) : api.post('/vendor/offers', body);
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['offers'] });
-      resetForm();
+      // The explicit Publish/Save-as-draft buttons finish the flow and
+      // reset to a blank form — but a background auto-save mid-edit
+      // (resetAfter: false) must never do that, or the form would blank
+      // itself out from under the vendor while they're still typing.
+      if (vars.resetAfter) resetForm();
+      else setDirty(false);
     },
     onError: (e) => setError(e instanceof Error ? e.message : 'Failed to save'),
+  });
+
+  // Auto-save: only while editing an existing offer whose status is 'live'
+  // or 'draft' (editingStatus) — creating a new offer stays manual-publish-
+  // only, since auto-saving mid-typing would otherwise POST a new offer
+  // record before the vendor has finished filling it in.
+  const canAutoSaveOffer = editingId != null && editingStatus != null;
+  useEffect(() => {
+    if (skipNextDirtyRef.current) {
+      skipNextDirtyRef.current = false;
+      return;
+    }
+    setDirty(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeId, title, percent, amount, freeText, bundleText, duration, startTime, endTime, limit, unlimited]);
+  const offerAutoSave = useAutoSave({
+    deps: [typeId, title, percent, amount, freeText, bundleText, duration, startTime, endTime, limit, unlimited],
+    dirty: dirty && canAutoSaveOffer,
+    onSave: () => {
+      if (editingStatus) save.mutate({ status: editingStatus, resetAfter: false });
+    },
   });
 
   const setStatus = useMutation({
@@ -330,11 +376,11 @@ function OffersPageInner() {
           {error && <p className="text-[13px] font-bold text-coral mb-3">{error}</p>}
 
           <button className="btn-accent w-full py-3 flex items-center justify-center gap-2 mb-2.5"
-            disabled={!title || save.isPending} onClick={() => save.mutate('live')}>
+            disabled={!title || save.isPending} onClick={() => save.mutate({ status: 'live', resetAfter: true })}>
             <Rocket size={16} /> {save.isPending ? 'Publishing…' : 'Publish offer'}
           </button>
           <button className="rounded-xl border border-line bg-white w-full py-3 font-extrabold text-[14px] flex items-center justify-center gap-2"
-            disabled={!title || save.isPending} onClick={() => save.mutate('draft')}>
+            disabled={!title || save.isPending} onClick={() => save.mutate({ status: 'draft', resetAfter: true })}>
             <Pencil size={15} /> Save as draft
           </button>
           <p className="text-[11.5px] text-muted font-semibold text-center mt-2.5">

@@ -15,7 +15,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  resolveMediaUrl, timeAgo, uploadMedia, validateFile, type AdminAuditLogEntry, type AdminVendorProfileGrant,
+  resolveMediaUrl, timeAgo, uploadMedia, useAutoSave, validateFile, type AdminAuditLogEntry, type AdminVendorProfileGrant,
   type AdminVendorStats, type AdminVendorSummary, type AdminVendorTeam, type Claim, type Media,
   type MediaRole, type Offer, type Review, type Vendor, type VendorProfile, type VendorStatus,
 } from '@spotto/shared';
@@ -687,10 +687,14 @@ function EditForm({ vendor, onDone, onSaved }: { vendor: Vendor; onDone: () => v
     wifiEnabled: !!p.wifi?.enabled, wifiScore: p.wifi?.score ?? 0,
     phone: c.phone ?? '', website: c.website ?? '', instagram: c.instagram ?? '', facebook: c.facebook ?? '',
   });
-  const set = (k: keyof typeof f, v: string | number | boolean) => setF((prev) => ({ ...prev, [k]: v }));
+  const [dirty, setDirty] = useState(false);
+  const set = (k: keyof typeof f, v: string | number | boolean) => {
+    setF((prev) => ({ ...prev, [k]: v }));
+    setDirty(true);
+  };
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: (_vars: { closeAfter: boolean }) => {
       const list = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
       const profile: VendorProfile = {
         ...p,
@@ -707,7 +711,22 @@ function EditForm({ vendor, onDone, onSaved }: { vendor: Vendor; onDone: () => v
         priority: f.priority, note: f.note, flags: list(f.flags), profile,
       });
     },
-    onSuccess: () => { onSaved(); onDone(); },
+    onSuccess: (_data, vars) => {
+      setDirty(false);
+      onSaved();
+      // Only the explicit "Save changes" button closes the form back to
+      // view mode — a background auto-save mid-edit must leave it open, or
+      // the form would collapse out from under whoever's still editing it.
+      if (vars.closeAfter) onDone();
+    },
+  });
+
+  // Auto-save: debounced while typing, plus an immediate flush() wired to
+  // onBlur and the manual "Save changes" button (kept as a fallback).
+  const autoSave = useAutoSave({
+    deps: [f],
+    dirty,
+    onSave: () => save.mutate({ closeAfter: false }),
   });
 
   const input = 'rounded-lg px-3 py-2 text-[13px] font-medium outline-none w-full';
@@ -717,22 +736,22 @@ function EditForm({ vendor, onDone, onSaved }: { vendor: Vendor; onDone: () => v
     <div className="mt-5 rounded-xl p-4" style={{ background: 'var(--bg)', border: '1px solid var(--line)' }}>
       <p className="text-[11.5px] font-bold text-muted uppercase mb-3">Admin edit — applies immediately, even for suspended vendors</p>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Name"><input className={input} style={inputStyle} value={f.name} onChange={(e) => set('name', e.target.value)} /></Field>
-        <Field label="Category"><input className={input} style={inputStyle} value={f.category} onChange={(e) => set('category', e.target.value)} /></Field>
-        <Field label="Town"><input className={input} style={inputStyle} value={f.town} onChange={(e) => set('town', e.target.value)} /></Field>
-        <Field label="Country"><input className={input} style={inputStyle} value={f.country} onChange={(e) => set('country', e.target.value)} /></Field>
+        <Field label="Name"><input className={input} style={inputStyle} value={f.name} onChange={(e) => set('name', e.target.value)} onBlur={autoSave.flush} /></Field>
+        <Field label="Category"><input className={input} style={inputStyle} value={f.category} onChange={(e) => set('category', e.target.value)} onBlur={autoSave.flush} /></Field>
+        <Field label="Town"><input className={input} style={inputStyle} value={f.town} onChange={(e) => set('town', e.target.value)} onBlur={autoSave.flush} /></Field>
+        <Field label="Country"><input className={input} style={inputStyle} value={f.country} onChange={(e) => set('country', e.target.value)} onBlur={autoSave.flush} /></Field>
         <Field label="Priority">
           <select className={input} style={inputStyle} value={f.priority} onChange={(e) => set('priority', e.target.value)}>
             <option value="high">high</option><option value="normal">normal</option><option value="low">low</option>
           </select>
         </Field>
-        <Field label="Flags (comma-separated)"><input className={input} style={inputStyle} value={f.flags} onChange={(e) => set('flags', e.target.value)} /></Field>
-        <Field label="Phone"><input className={input} style={inputStyle} value={f.phone} onChange={(e) => set('phone', e.target.value)} /></Field>
-        <Field label="Website"><input className={input} style={inputStyle} value={f.website} onChange={(e) => set('website', e.target.value)} /></Field>
-        <Field label="Instagram"><input className={input} style={inputStyle} value={f.instagram} onChange={(e) => set('instagram', e.target.value)} /></Field>
-        <Field label="Facebook"><input className={input} style={inputStyle} value={f.facebook} onChange={(e) => set('facebook', e.target.value)} /></Field>
-        <Field label="Amenities (comma-separated)"><input className={input} style={inputStyle} value={f.amenities} onChange={(e) => set('amenities', e.target.value)} /></Field>
-        <Field label="Wi-Fi score (if offered)"><input className={input} style={inputStyle} inputMode="numeric" value={f.wifiScore} onChange={(e) => set('wifiScore', Number(e.target.value) || 0)} /></Field>
+        <Field label="Flags (comma-separated)"><input className={input} style={inputStyle} value={f.flags} onChange={(e) => set('flags', e.target.value)} onBlur={autoSave.flush} /></Field>
+        <Field label="Phone"><input className={input} style={inputStyle} value={f.phone} onChange={(e) => set('phone', e.target.value)} onBlur={autoSave.flush} /></Field>
+        <Field label="Website"><input className={input} style={inputStyle} value={f.website} onChange={(e) => set('website', e.target.value)} onBlur={autoSave.flush} /></Field>
+        <Field label="Instagram"><input className={input} style={inputStyle} value={f.instagram} onChange={(e) => set('instagram', e.target.value)} onBlur={autoSave.flush} /></Field>
+        <Field label="Facebook"><input className={input} style={inputStyle} value={f.facebook} onChange={(e) => set('facebook', e.target.value)} onBlur={autoSave.flush} /></Field>
+        <Field label="Amenities (comma-separated)"><input className={input} style={inputStyle} value={f.amenities} onChange={(e) => set('amenities', e.target.value)} onBlur={autoSave.flush} /></Field>
+        <Field label="Wi-Fi score (if offered)"><input className={input} style={inputStyle} inputMode="numeric" value={f.wifiScore} onChange={(e) => set('wifiScore', Number(e.target.value) || 0)} onBlur={autoSave.flush} /></Field>
       </div>
       <div className="flex items-center gap-4 mt-3">
         <label className="flex items-center gap-2 text-[13px] font-semibold">
@@ -743,10 +762,10 @@ function EditForm({ vendor, onDone, onSaved }: { vendor: Vendor; onDone: () => v
         </label>
       </div>
       <Field label="Blurb" className="mt-3">
-        <textarea className={input} style={inputStyle} rows={2} value={f.blurb} onChange={(e) => set('blurb', e.target.value)} />
+        <textarea className={input} style={inputStyle} rows={2} value={f.blurb} onChange={(e) => set('blurb', e.target.value)} onBlur={autoSave.flush} />
       </Field>
       <Field label="Internal note" className="mt-3">
-        <textarea className={input} style={inputStyle} rows={2} value={f.note} onChange={(e) => set('note', e.target.value)} />
+        <textarea className={input} style={inputStyle} rows={2} value={f.note} onChange={(e) => set('note', e.target.value)} onBlur={autoSave.flush} />
       </Field>
       <p className="text-[11.5px] text-muted font-semibold mt-2">
         Opening hours and the full menu are edited from the vendor portal.
@@ -754,7 +773,7 @@ function EditForm({ vendor, onDone, onSaved }: { vendor: Vendor; onDone: () => v
       {save.isError && <p className="text-[13px] font-bold text-coral mt-2">Save failed — try again.</p>}
       <div className="flex justify-end gap-2 mt-4">
         <button className="btn !py-2" onClick={onDone}>Cancel</button>
-        <button className="btn btn-primary !py-2 flex items-center gap-2" disabled={save.isPending} onClick={() => save.mutate()}>
+        <button className="btn btn-primary !py-2 flex items-center gap-2" disabled={save.isPending} onClick={() => save.mutate({ closeAfter: true })}>
           <Save size={15} /> {save.isPending ? 'Saving…' : 'Save changes'}
         </button>
       </div>

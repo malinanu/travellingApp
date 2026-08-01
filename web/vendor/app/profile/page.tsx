@@ -18,7 +18,7 @@ import {
 import { useEffect, useState } from 'react';
 
 import type { DayHours, UpcomingHoliday, Vendor, VendorProfile, VendorProfileGrant, Weekday } from '@spotto/shared';
-import { WEEKDAYS } from '@spotto/shared';
+import { useAutoSave, WEEKDAYS } from '@spotto/shared';
 import AddressSearchField from '../../components/address-search-field';
 import LocationPicker from '../../components/location-picker-auto';
 import Shell, { isFoodCategory, useBusiness, useMe } from '../../components/shell';
@@ -243,6 +243,22 @@ export default function ProfilePage() {
     set({ contact: { ...p.contact, ...patch } });
   };
 
+  // Auto-save: debounced while typing, plus an immediate flush() wired to
+  // onBlur and to the manual buttons below (kept as a fallback). See
+  // useAutoSave's own doc comment for why scheduling from an effect avoids
+  // the stale-state race the vendor menu page hit with a naive
+  // save-immediately-after-setState approach.
+  const identityAutoSave = useAutoSave({
+    deps: [identity],
+    dirty: identityDirty,
+    onSave: () => saveIdentity.mutate(),
+  });
+  const profileAutoSave = useAutoSave({
+    deps: [p],
+    dirty,
+    onSave: () => save.mutate(),
+  });
+
   const amenities = p.amenities ?? [];
   const bestTimes = p.bestTimes ?? [];
   const remainingPresets = ALL_AMENITIES.filter((a) => !amenities.includes(a));
@@ -271,7 +287,7 @@ export default function ProfilePage() {
           </div>
           {hasAccess && (
             <button className="btn-accent flex items-center gap-2 px-4 py-2.5 shrink-0 whitespace-nowrap"
-              disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+              disabled={!dirty || save.isPending} onClick={profileAutoSave.flush}>
               <Save size={16} /> {save.isPending ? 'Saving…' : justSaved ? 'Saved' : 'Save changes'}
             </button>
           )}
@@ -294,14 +310,15 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between mb-4">
               <CardHeader icon={MapPin} title="Business identity & location" sub="Your name, address, and map pin" />
               <button className="btn-accent flex items-center gap-2 px-3.5 py-2 text-[13px] shrink-0"
-                disabled={!identityDirty || saveIdentity.isPending} onClick={() => saveIdentity.mutate()}>
+                disabled={!identityDirty || saveIdentity.isPending} onClick={identityAutoSave.flush}>
                 <Save size={14} /> {saveIdentity.isPending ? 'Saving…' : identitySaved ? 'Saved' : 'Save'}
               </button>
             </div>
             <div className="grid sm:grid-cols-2 gap-3 mb-3">
               <label className="block">
                 <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Business name</span>
-                <input className="input" value={identity.name} onChange={(e) => setIdentityField({ name: e.target.value })} />
+                <input className="input" value={identity.name} onChange={(e) => setIdentityField({ name: e.target.value })}
+                  onBlur={identityAutoSave.flush} />
               </label>
               <AddressSearchField
                 variant="plain"
@@ -314,6 +331,7 @@ export default function ProfilePage() {
                   if (hours && !p.hours) set({ hours });
                   if (category && !business?.category) updateCategory.mutate(category);
                 }}
+                onBlur={identityAutoSave.flush}
                 placeholder="Search for your address…"
               />
             </div>
@@ -449,9 +467,9 @@ export default function ProfilePage() {
                   <div key={day} className="grid grid-cols-[34px_1fr_1fr_auto] gap-1.5 items-center">
                     <span className="text-[13px] font-extrabold capitalize">{day.slice(0, 3)}</span>
                     <input type="time" className="input min-w-0 !px-2 !text-[12.5px]" disabled={d.closed} value={d.open}
-                      onChange={(e) => setDayHours(day, { open: e.target.value })} />
+                      onChange={(e) => setDayHours(day, { open: e.target.value })} onBlur={profileAutoSave.flush} />
                     <input type="time" className="input min-w-0 !px-2 !text-[12.5px]" disabled={d.closed} value={d.close}
-                      onChange={(e) => setDayHours(day, { close: e.target.value })} />
+                      onChange={(e) => setDayHours(day, { close: e.target.value })} onBlur={profileAutoSave.flush} />
                     <label className="relative inline-flex items-center cursor-pointer shrink-0" title="Closed">
                       <input type="checkbox" className="sr-only peer" checked={!d.closed}
                         onChange={(e) => setDayHours(day, { closed: !e.target.checked })} />
@@ -476,7 +494,7 @@ export default function ProfilePage() {
                 <div className="relative">
                   <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                   <input className="input pl-9" placeholder="+94 …" value={p.contact?.phone ?? ''}
-                    onChange={(e) => setContact({ phone: e.target.value })} />
+                    onChange={(e) => setContact({ phone: e.target.value })} onBlur={profileAutoSave.flush} />
                 </div>
               </label>
               <label className="block">
@@ -484,7 +502,7 @@ export default function ProfilePage() {
                 <div className="relative">
                   <Globe size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                   <input className="input pl-9" placeholder="https://…" value={p.contact?.website ?? ''}
-                    onChange={(e) => setContact({ website: e.target.value })} />
+                    onChange={(e) => setContact({ website: e.target.value })} onBlur={profileAutoSave.flush} />
                 </div>
               </label>
               <div className="grid grid-cols-2 gap-3">
@@ -493,7 +511,7 @@ export default function ProfilePage() {
                   <div className="relative">
                     <Instagram size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                     <input className="input pl-9" placeholder="@yourbusiness" value={p.contact?.instagram ?? ''}
-                      onChange={(e) => setContact({ instagram: e.target.value })} />
+                      onChange={(e) => setContact({ instagram: e.target.value })} onBlur={profileAutoSave.flush} />
                   </div>
                 </label>
                 <label className="block">
@@ -501,7 +519,7 @@ export default function ProfilePage() {
                   <div className="relative">
                     <Facebook size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                     <input className="input pl-9" placeholder="facebook.com/…" value={p.contact?.facebook ?? ''}
-                      onChange={(e) => setContact({ facebook: e.target.value })} />
+                      onChange={(e) => setContact({ facebook: e.target.value })} onBlur={profileAutoSave.flush} />
                   </div>
                 </label>
               </div>
@@ -511,7 +529,7 @@ export default function ProfilePage() {
           <div className="card p-6">
             <CardHeader icon={FileText} title="About & amenities" sub="A short, honest pitch" />
             <textarea className="input min-h-[90px] resize-y mb-4" rows={3} value={p.blurb ?? ''}
-              onChange={(e) => set({ blurb: e.target.value })} />
+              onChange={(e) => set({ blurb: e.target.value })} onBlur={profileAutoSave.flush} />
 
             <div className="flex flex-wrap gap-2 mb-3">
               {amenities.map((a) => (

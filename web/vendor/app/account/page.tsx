@@ -19,6 +19,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useState } from 'react';
 
 import type { TeamResponse, TwoFactorSetupResponse, User } from '@spotto/shared';
+import { useAutoSave } from '@spotto/shared';
 import Shell, { useBusiness, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
 
@@ -64,26 +65,36 @@ export default function AccountPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [dirty, setDirty] = useState(false);
   const [contactError, setContactError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (me) {
+    if (me && !dirty) {
       setName(me.name);
       setEmail(me.email);
       setPhone(me.phone ?? '');
     }
-  }, [me]);
+  }, [me, dirty]);
 
   const saveContact = useMutation({
     mutationFn: () => api.put<User>('/me/contact', { name, email, phone }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['me'] });
+      setDirty(false);
       setContactError(null);
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
     },
     onError: (e) => setContactError(e instanceof Error ? e.message : 'Could not save changes'),
+  });
+
+  // Auto-save: debounced while typing, plus an immediate flush() wired to
+  // onBlur and the manual button (kept as a fallback).
+  const contactAutoSave = useAutoSave({
+    deps: [name, email, phone],
+    dirty,
+    onSave: () => saveContact.mutate(),
   });
 
   return (
@@ -95,7 +106,7 @@ export default function AccountPage() {
             <p className="text-muted font-semibold mt-0.5">Your personal login, security and alerts.</p>
           </div>
           <button className="btn-accent flex items-center gap-2 px-4 py-2.5 shrink-0 whitespace-nowrap" disabled={saveContact.isPending}
-            onClick={() => saveContact.mutate()}>
+            onClick={contactAutoSave.flush}>
             {saveContact.isPending ? 'Saving…' : saved ? <><Check size={16} /> Saved</> : <><Send size={16} /> Save changes</>}
           </button>
         </div>
@@ -140,19 +151,22 @@ export default function AccountPage() {
             <label className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Full name</label>
             <div className="relative mb-3.5">
               <UserIcon size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-              <input className="input pl-9" value={name} onChange={(e) => setName(e.target.value)} />
+              <input className="input pl-9" value={name}
+                onChange={(e) => { setName(e.target.value); setDirty(true); }} onBlur={contactAutoSave.flush} />
             </div>
 
             <label className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Email</label>
             <div className="relative mb-3.5">
               <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-              <input className="input pl-9" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <input className="input pl-9" type="email" value={email}
+                onChange={(e) => { setEmail(e.target.value); setDirty(true); }} onBlur={contactAutoSave.flush} />
             </div>
 
             <label className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Phone</label>
             <div className="relative">
               <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-              <input className="input pl-9" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+94 …" />
+              <input className="input pl-9" value={phone} placeholder="+94 …"
+                onChange={(e) => { setPhone(e.target.value); setDirty(true); }} onBlur={contactAutoSave.flush} />
             </div>
           </div>
 
