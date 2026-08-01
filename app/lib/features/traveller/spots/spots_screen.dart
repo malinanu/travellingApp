@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/category_icons.dart';
 import '../../../core/widgets/illustration.dart';
@@ -429,7 +430,7 @@ class _SpotCard extends StatelessWidget {
                   // for the same pattern.
                   if (place.cover.isNotEmpty)
                     Image.network(
-                      place.cover,
+                      resolveMediaUrl(place.cover),
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Illustration(kind: place.photo),
                     )

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../core/api/api_client.dart';
 import '../../../core/api/upload_service.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
@@ -238,7 +239,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 ],
                               ),
                               child: avatarUrl.isNotEmpty
-                                  ? Image.network(avatarUrl,
+                                  ? Image.network(resolveMediaUrl(avatarUrl),
                                       width: 92,
                                       height: 92,
                                       fit: BoxFit.cover,

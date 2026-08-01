@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { uploadMedia, validateFile, WEEKDAYS, type MenuPreset, type MenuSection, type StoredMenuDoc, type Weekday } from '@spotto/shared';
+import { resolveMediaUrl, uploadMedia, validateFile, WEEKDAYS, type MenuPreset, type MenuSection, type StoredMenuDoc, type Weekday } from '@spotto/shared';
 import Shell, { RoleLockedCard, useBusiness, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
 
@@ -492,7 +492,7 @@ export default function MenuPage() {
                   <div key={i.id} className="flex items-center gap-2 mb-2">
                     {i.img ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={i.img} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                      <img src={resolveMediaUrl(i.img)} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
                     ) : (
                       <span className="w-8 h-8 rounded-lg bg-accent-tint text-accent flex items-center justify-center shrink-0">
                         {(() => {
@@ -534,7 +534,7 @@ function MenuItemThumb({
     <div className="relative w-9 h-9 shrink-0 group">
       {img ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={img} alt="" className="w-9 h-9 rounded-xl object-cover" />
+        <img src={resolveMediaUrl(img)} alt="" className="w-9 h-9 rounded-xl object-cover" />
       ) : (
         <span className="w-9 h-9 rounded-xl bg-accent-tint text-accent flex items-center justify-center">
           <Icon size={17} />

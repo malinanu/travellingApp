@@ -126,6 +126,44 @@ func (t *Tokens) VerifyTwoFactorPending(token string) (string, error) {
 	return c.Subject, nil
 }
 
+const mediaViewPurpose = "media-view"
+
+// mediaViewLifetime bounds how long a signed /media/raw URL stays valid.
+// Callers re-sign on every response (see Server.signMediaPath), so in
+// practice a client never sees an expired one during normal use — this only
+// bounds how long a leaked/shared URL (browser history, referrer, logs)
+// keeps working.
+const mediaViewLifetime = 24 * time.Hour
+
+// IssueMediaView issues a short-lived, single-purpose token scoped to
+// reading exactly one R2 object key — embedded as a query param on
+// /media/raw URLs instead of a bearer session token, since plain <img>/
+// <video>/<a> tags can't attach an Authorization header.
+func (t *Tokens) IssueMediaView(key string) (string, error) {
+	c := Claims{
+		Purpose: mediaViewPurpose,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   key,
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(mediaViewLifetime)),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString(t.secret)
+}
+
+// VerifyMediaView validates a token from IssueMediaView and returns the R2
+// object key it authorises reading.
+func (t *Tokens) VerifyMediaView(token string) (string, error) {
+	c, err := t.Verify(token)
+	if err != nil {
+		return "", err
+	}
+	if c.Purpose != mediaViewPurpose {
+		return "", jwt.ErrTokenInvalidClaims
+	}
+	return c.Subject, nil
+}
+
 // GenerateTOTPSecret creates a new secret + otpauth:// provisioning URI for
 // an authenticator app (Google Authenticator/Authy/1Password-compatible).
 func GenerateTOTPSecret(accountEmail string) (secret string, otpauthURL string, err error) {

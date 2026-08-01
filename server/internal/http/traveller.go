@@ -34,7 +34,35 @@ func (s *Server) placeJSON(ctx context.Context, p domain.Place) map[string]any {
 	if counts, err := s.Store.VibeCounts(ctx, p.ID); err == nil {
 		m["vibes"] = counts
 	}
+	s.signMediaRefs(m)
 	return m
+}
+
+// signMediaRefs walks an already-unmarshaled JSON value in place (maps and
+// slices from encoding/json use shared backing storage, so mutating a
+// nested map/slice found inside m is visible through m itself) and signs
+// every string that looks like a stored "/media/raw/<key>" path — cover,
+// gallery, promoVideo, nested menu item photos, and anything else future
+// fields add, without needing to enumerate each field by name.
+func (s *Server) signMediaRefs(v any) {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, child := range t {
+			if str, ok := child.(string); ok {
+				t[k] = s.signMediaPath(str)
+			} else {
+				s.signMediaRefs(child)
+			}
+		}
+	case []any:
+		for i, child := range t {
+			if str, ok := child.(string); ok {
+				t[i] = s.signMediaPath(str)
+			} else {
+				s.signMediaRefs(child)
+			}
+		}
+	}
 }
 
 func (s *Server) handlePlaces(w http.ResponseWriter, r *http.Request) {
@@ -238,7 +266,12 @@ func (s *Server) handlePlaceReviews(w http.ResponseWriter, r *http.Request) {
 	}
 	if photos, err := s.Store.ReviewPhotos(r.Context(), ids); err == nil {
 		for i := range reviews {
-			reviews[i].Photos = photos[reviews[i].ID]
+			urls := photos[reviews[i].ID]
+			signed := make([]string, len(urls))
+			for j, u := range urls {
+				signed[j] = s.signMediaPath(u)
+			}
+			reviews[i].Photos = signed
 		}
 	}
 	writeJSON(w, http.StatusOK, reviews)

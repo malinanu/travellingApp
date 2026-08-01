@@ -211,7 +211,7 @@ func uploadCoverPhotos(ctx context.Context, store *postgres.Store, cfg config.Co
 		log.Println("importsrilanka: R2 not configured, skipping cover photo upload")
 		return
 	}
-	r2 := media.NewR2(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket, cfg.R2PublicBaseURL)
+	r2 := media.NewR2(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
 	client := &http.Client{Timeout: 20 * time.Second}
 
 	uploaded, skipped, failed := 0, 0, 0

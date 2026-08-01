@@ -306,6 +306,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
+	u.AvatarURL = s.signMediaPath(u.AvatarURL)
 	resp := meResp{User: u}
 	if u.VendorID != nil {
 		if v, err := s.Store.VendorByID(r.Context(), *u.VendorID); err == nil {

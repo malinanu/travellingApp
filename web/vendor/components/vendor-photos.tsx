@@ -10,7 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Film, ImagePlus, Loader2, Star, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 
-import { uploadMedia, validateFile, type Media, type MediaRole } from '@spotto/shared';
+import { resolveMediaUrl, uploadMedia, validateFile, type Media, type MediaRole } from '@spotto/shared';
 import { api } from '../lib/api';
 
 export default function VendorPhotos({ vendorId }: { vendorId: string }) {
@@ -83,7 +83,7 @@ export default function VendorPhotos({ vendorId }: { vendorId: string }) {
         {gallery.map((m) => (
           <div key={m.id} className="relative rounded-xl overflow-hidden aspect-[4/3] group">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={m.url} alt="" className="w-full h-full object-cover" />
+            <img src={resolveMediaUrl(m.url)} alt="" className="w-full h-full object-cover" />
             <button
               onClick={() => remove.mutate(m.id)}
               className="absolute right-1.5 top-1.5 rounded-full p-1 bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity"
@@ -99,7 +99,7 @@ export default function VendorPhotos({ vendorId }: { vendorId: string }) {
       <p className="text-[11.5px] font-extrabold uppercase text-muted mt-5 mb-1.5">Promo video</p>
       {promo ? (
         <div className="relative rounded-xl overflow-hidden aspect-video">
-          <video src={promo.url} controls className="w-full h-full object-cover" />
+          <video src={resolveMediaUrl(promo.url)} controls className="w-full h-full object-cover" />
           <button
             onClick={() => remove.mutate(promo.id)}
             className="absolute right-1.5 top-1.5 rounded-full p-1 bg-black/50 text-white"
@@ -125,7 +125,7 @@ function UploadTile({
     return (
       <div className={`relative rounded-xl overflow-hidden ${aspect} group`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={media.url} alt="" className="w-full h-full object-cover" />
+        <img src={resolveMediaUrl(media.url)} alt="" className="w-full h-full object-cover" />
         {badge && (
           <div className="absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-extrabold flex items-center gap-1 bg-[var(--sun)] text-[#5a3b00]">
             <Star size={10} className="fill-current" /> {badge}

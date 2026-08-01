@@ -12,6 +12,14 @@ import '../storage/local_store.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:8080');
 
+/// The R2 bucket behind media uploads is private — the server hands back
+/// app-relative paths like `/media/raw/<key>?token=...` (see
+/// handleMediaRaw/signMediaPath server-side) rather than an absolute R2/CDN
+/// URL, so every render site needs to resolve against our own API host
+/// before handing the URL to Image.network/VideoPlayerController. Anything
+/// already absolute (http/https) passes through unchanged.
+String resolveMediaUrl(String url) => url.startsWith('/') ? '$apiBaseUrl$url' : url;
+
 // Guards against shipping a release build that still points at the plaintext
 // emulator default (or any http:// URL) — the bearer token would go out
 // over cleartext. Uses kReleaseMode + a thrown error rather than assert()

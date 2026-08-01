@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileText, Loader2, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 
-import { uploadMedia, validateFile, type Media } from '@spotto/shared';
+import { resolveMediaUrl, uploadMedia, validateFile, type Media } from '@spotto/shared';
 import { api } from '../lib/api';
 
 export default function VendorDocs({ vendorId }: { vendorId: string }) {
@@ -65,7 +65,7 @@ export default function VendorDocs({ vendorId }: { vendorId: string }) {
           <div key={d.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5"
             style={{ background: 'var(--sand, #faf7f2)', border: '1px solid var(--line, #eee)' }}>
             <FileText size={18} className="text-accent shrink-0" />
-            <a href={d.url} target="_blank" rel="noreferrer"
+            <a href={resolveMediaUrl(d.url)} target="_blank" rel="noreferrer"
               className="flex-1 text-[13px] font-bold truncate hover:underline">
               {d.contentType.includes('pdf') ? 'Document (PDF)' : 'Document (image)'}
             </a>

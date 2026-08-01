@@ -7,6 +7,7 @@ package media
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -63,22 +64,23 @@ func Resolve(contentType string) (ext, kind string, maxSize int64, ok bool) {
 type Uploader interface {
 	PresignPut(ctx context.Context, key, contentType string, ttl time.Duration) (string, error)
 	Head(ctx context.Context, key string) (size int64, contentType string, err error)
+	Get(ctx context.Context, key string) (body io.ReadCloser, contentType string, err error)
 	Delete(ctx context.Context, key string) error
 	PublicURL(key string) string
 }
 
 // R2 is the Cloudflare R2 implementation of Uploader.
 type R2 struct {
-	client     *s3.Client
-	presign    *s3.PresignClient
-	bucket     string
-	publicBase string
+	client  *s3.Client
+	presign *s3.PresignClient
+	bucket  string
 }
 
 // NewR2 builds an R2 client from static credentials. accountID selects the
-// R2 endpoint; publicBase is the public bucket / custom-domain URL objects
-// are served from.
-func NewR2(accountID, accessKey, secretKey, bucket, publicBase string) *R2 {
+// R2 endpoint. The bucket is kept private — objects are never served
+// straight from R2; see PublicURL and internal/http/media.go's
+// handleMediaRaw, which proxies reads through our own API instead.
+func NewR2(accountID, accessKey, secretKey, bucket string) *R2 {
 	endpoint := fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)
 	client := s3.New(s3.Options{
 		Region:       "auto",
@@ -86,10 +88,9 @@ func NewR2(accountID, accessKey, secretKey, bucket, publicBase string) *R2 {
 		Credentials:  credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
 	})
 	return &R2{
-		client:     client,
-		presign:    s3.NewPresignClient(client),
-		bucket:     bucket,
-		publicBase: strings.TrimRight(publicBase, "/"),
+		client:  client,
+		presign: s3.NewPresignClient(client),
+		bucket:  bucket,
 	}
 }
 
@@ -124,6 +125,24 @@ func (r *R2) Head(ctx context.Context, key string) (int64, string, error) {
 	return size, ct, nil
 }
 
+// Get streams an object's body straight from R2 — the caller must Close it.
+// Used by handleMediaRaw to proxy a read without ever handing the client
+// direct (or signed) R2 access.
+func (r *R2) Get(ctx context.Context, key string) (io.ReadCloser, string, error) {
+	out, err := r.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	ct := ""
+	if out.ContentType != nil {
+		ct = *out.ContentType
+	}
+	return out.Body, ct, nil
+}
+
 func (r *R2) Delete(ctx context.Context, key string) error {
 	_, err := r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(r.bucket),
@@ -132,6 +151,10 @@ func (r *R2) Delete(ctx context.Context, key string) error {
 	return err
 }
 
+// PublicURL returns the app-relative path objects are served from —
+// deliberately not an absolute R2 URL, since the bucket is private. The
+// path is resolved by handleMediaRaw, which signs a short-lived, per-key
+// view token onto it at response time (see Server.signMediaPath).
 func (r *R2) PublicURL(key string) string {
-	return r.publicBase + "/" + key
+	return "/media/raw/" + key
 }

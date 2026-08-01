@@ -7,6 +7,7 @@ package httpapi_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,11 +39,17 @@ func (u *stubUploader) Head(_ context.Context, key string) (int64, string, error
 	}
 	return 2048, ct, nil
 }
+func (u *stubUploader) Get(_ context.Context, key string) (io.ReadCloser, string, error) {
+	return io.NopCloser(strings.NewReader("stub-bytes-" + key)), "image/jpeg", nil
+}
 func (u *stubUploader) Delete(_ context.Context, key string) error {
 	u.deleted = append(u.deleted, key)
 	return nil
 }
-func (u *stubUploader) PublicURL(key string) string { return "https://cdn.example.test/" + key }
+
+// PublicURL matches the real R2 implementation: a relative path proxied
+// through our own API, not an absolute R2/CDN URL — see media.R2.PublicURL.
+func (u *stubUploader) PublicURL(key string) string { return "/media/raw/" + key }
 
 func newMediaTestServer(t *testing.T, store *postgres.Store, withUploader bool) (*httptest.Server, *stubUploader) {
 	t.Helper()

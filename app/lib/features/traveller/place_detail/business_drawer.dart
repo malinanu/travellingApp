@@ -93,7 +93,7 @@ class BusinessDrawerBody extends ConsumerWidget {
                   // fall back to the illustration.
                   if (place.cover.isNotEmpty)
                     Image.network(
-                      place.cover,
+                      resolveMediaUrl(place.cover),
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Illustration(kind: place.photo),
                     )
@@ -167,7 +167,7 @@ class BusinessDrawerBody extends ConsumerWidget {
                     child: PressScale(
                       onTap: () => showDialog<void>(
                         context: context,
-                        builder: (_) => _PromoVideoDialog(url: place.promoVideo),
+                        builder: (_) => _PromoVideoDialog(url: resolveMediaUrl(place.promoVideo)),
                       ),
                       child: Container(
                         width: 118,
@@ -187,7 +187,7 @@ class BusinessDrawerBody extends ConsumerWidget {
                     padding: const EdgeInsets.only(right: 8),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.network(url,
+                      child: Image.network(resolveMediaUrl(url),
                           width: 118,
                           height: 88,
                           fit: BoxFit.cover,
@@ -314,7 +314,7 @@ class BusinessDrawerBody extends ConsumerWidget {
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
                             child: item.img.isNotEmpty
-                                ? Image.network(item.img,
+                                ? Image.network(resolveMediaUrl(item.img),
                                     width: 40,
                                     height: 40,
                                     fit: BoxFit.cover,
@@ -1140,7 +1140,7 @@ class _ReviewTile extends StatelessWidget {
                       padding: const EdgeInsets.only(right: 8),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(10),
-                        child: Image.network(url,
+                        child: Image.network(resolveMediaUrl(url),
                             width: 64,
                             height: 64,
                             fit: BoxFit.cover,
@@ -1248,7 +1248,7 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
                   padding: const EdgeInsets.only(right: 8),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(14),
-                    child: Image.network(url,
+                    child: Image.network(resolveMediaUrl(url),
                         width: 84,
                         height: 84,
                         fit: BoxFit.cover,

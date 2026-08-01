@@ -15,7 +15,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  timeAgo, uploadMedia, validateFile, type AdminAuditLogEntry, type AdminVendorProfileGrant,
+  resolveMediaUrl, timeAgo, uploadMedia, validateFile, type AdminAuditLogEntry, type AdminVendorProfileGrant,
   type AdminVendorStats, type AdminVendorSummary, type AdminVendorTeam, type Claim, type Media,
   type MediaRole, type Offer, type Review, type Vendor, type VendorProfile, type VendorStatus,
 } from '@spotto/shared';
@@ -891,14 +891,14 @@ function MediaThumb({ m, label, video, doc, onDelete }: { m: Media; label?: stri
   return (
     <div className="relative w-16 h-16 rounded-lg overflow-hidden group" style={{ border: '1px solid var(--line)' }}>
       {video ? (
-        <video src={m.url} className="w-full h-full object-cover" />
+        <video src={resolveMediaUrl(m.url)} className="w-full h-full object-cover" />
       ) : doc ? (
-        <a href={m.url} target="_blank" rel="noreferrer" className="w-full h-full flex items-center justify-center" style={{ background: 'var(--surface)' }}>
+        <a href={resolveMediaUrl(m.url)} target="_blank" rel="noreferrer" className="w-full h-full flex items-center justify-center" style={{ background: 'var(--surface)' }}>
           <FileText size={22} className="text-muted" />
         </a>
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={m.url} alt="" className="w-full h-full object-cover" />
+        <img src={resolveMediaUrl(m.url)} alt="" className="w-full h-full object-cover" />
       )}
       {label && <span className="absolute left-1 bottom-1 text-[9px] font-bold px-1 rounded bg-black/50 text-white">{label}</span>}
       <button onClick={onDelete} aria-label="Delete"

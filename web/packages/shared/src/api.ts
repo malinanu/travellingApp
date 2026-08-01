@@ -3,6 +3,16 @@
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
 
+// The R2 bucket behind media uploads is private — the server hands back
+// app-relative paths like `/media/raw/<key>?token=...` (see
+// handleMediaRaw/signMediaPath server-side) rather than an absolute R2/CDN
+// URL, so every <img>/<video>/<a> render site needs to resolve against our
+// own API host first. Anything already absolute (http/https) passes
+// through unchanged.
+export function resolveMediaUrl(url: string): string {
+  return url.startsWith('/') ? `${API_URL}${url}` : url;
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {

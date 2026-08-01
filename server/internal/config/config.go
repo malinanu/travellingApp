@@ -60,23 +60,22 @@ type Config struct {
 	// there's no need yet for admin accounts to be self-service provisioned.
 	SuperAdminEmails []string
 
-	// R2 (Cloudflare) powers image/video uploads. All five are optional —
+	// R2 (Cloudflare) powers image/video uploads. All four are optional —
 	// unset means the media endpoints report themselves unconfigured (501)
-	// rather than failing startup, exactly like Google OAuth. R2PublicBaseURL
-	// is the public bucket/custom-domain base that uploaded objects are
-	// served from (e.g. https://media.spotto.app).
+	// rather than failing startup, exactly like Google OAuth. The bucket is
+	// kept private: reads are proxied through our own API (see
+	// internal/http/media.go's handleMediaRaw), not served straight from a
+	// public R2/custom domain.
 	R2AccountID       string
 	R2AccessKeyID     string
 	R2SecretAccessKey string
 	R2Bucket          string
-	R2PublicBaseURL   string
 }
 
 // R2Configured reports whether all R2 settings needed to sign uploads and
-// serve public URLs are present.
+// proxy reads are present.
 func (c Config) R2Configured() bool {
-	return c.R2AccountID != "" && c.R2AccessKeyID != "" && c.R2SecretAccessKey != "" &&
-		c.R2Bucket != "" && c.R2PublicBaseURL != ""
+	return c.R2AccountID != "" && c.R2AccessKeyID != "" && c.R2SecretAccessKey != "" && c.R2Bucket != ""
 }
 
 // minSecretLen guards against trivially short/guessable secrets — anyone
@@ -121,7 +120,6 @@ func Load() Config {
 		R2AccessKeyID:     getenv("R2_ACCESS_KEY_ID", ""),
 		R2SecretAccessKey: getenv("R2_SECRET_ACCESS_KEY", ""),
 		R2Bucket:          getenv("R2_BUCKET", ""),
-		R2PublicBaseURL:   strings.TrimRight(getenv("R2_PUBLIC_BASE_URL", ""), "/"),
 	}
 }
 

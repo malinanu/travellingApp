@@ -110,7 +110,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		}
 	}
 	if cfg.R2Configured() {
-		s.Media = media.NewR2(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket, cfg.R2PublicBaseURL)
+		s.Media = media.NewR2(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
 	}
 	return s
 }
@@ -152,6 +152,14 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+
+	// Proxies a private R2 object read — deliberately outside the
+	// Authenticated group below: it's loaded via plain <img>/<video>/<a>
+	// tags (app and web), which can't attach an Authorization header, so it
+	// authorises via a signed token query param instead (see
+	// handleMediaRaw). The trailing "*" is chi's wildcard match, needed
+	// because object keys contain slashes (e.g. vendor/ven_x/m_y.jpg).
+	r.Get("/media/raw/*", s.handleMediaRaw)
 
 	r.Post("/auth/register", s.handleRegister)
 	r.Post("/auth/login", s.handleLogin)

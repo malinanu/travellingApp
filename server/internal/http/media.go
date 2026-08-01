@@ -3,7 +3,9 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -160,7 +162,62 @@ func (s *Server) handleMediaConfirm(w http.ResponseWriter, r *http.Request) {
 		_ = s.Store.SetVendorDocs(r.Context(), req.OwnerID, true)
 	}
 	s.resyncVendorMediaBestEffort(r.Context(), req.OwnerType, req.OwnerID)
+	m.URL = s.signMediaPath(m.URL)
 	writeJSON(w, http.StatusOK, m)
+}
+
+// handleMediaRaw proxies a read of one R2 object through our own API — the
+// bucket is private, so this is the only way any client (app or web) ever
+// sees the bytes. Authorisation is a signed, single-key token in the query
+// string (see auth.Tokens.IssueMediaView) rather than the usual bearer
+// session header: plain <img>/<video>/<a> tags in the vendor/admin web apps
+// can't attach an Authorization header, so this route intentionally sits
+// outside the Authenticated middleware group (see server.go).
+func (s *Server) handleMediaRaw(w http.ResponseWriter, r *http.Request) {
+	if s.Media == nil {
+		writeErr(w, http.StatusNotImplemented, "uploads are not configured")
+		return
+	}
+	key := chi.URLParam(r, "*")
+	tokenKey, err := s.Tokens.VerifyMediaView(r.URL.Query().Get("token"))
+	if err != nil || tokenKey != key {
+		writeErr(w, http.StatusForbidden, "invalid or expired token")
+		return
+	}
+	body, contentType, err := s.Media.Get(r.Context(), key)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	defer body.Close()
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	io.Copy(w, body)
+}
+
+// signMediaPath appends a fresh, short-lived view token to a stored
+// "/media/raw/<key>" path — called at HTTP-response time, never when a
+// media row is written, so a signed URL is never stale by the time a client
+// sees it. Paths that don't start with the proxy prefix (empty strings,
+// or anything else) pass through unchanged. Idempotent: if path already
+// carries a "?token=..." (e.g. a client persisted an already-signed URL
+// it was handed, like the vendor menu editor does with a photo's confirm
+// response), any existing query string is discarded first rather than
+// appended to, so this never produces a doubly-signed URL.
+func (s *Server) signMediaPath(path string) string {
+	const prefix = "/media/raw/"
+	base, _, _ := strings.Cut(path, "?")
+	if !strings.HasPrefix(base, prefix) {
+		return path
+	}
+	key := strings.TrimPrefix(base, prefix)
+	token, err := s.Tokens.IssueMediaView(key)
+	if err != nil {
+		return base
+	}
+	return base + "?token=" + token
 }
 
 // handleMediaDelete removes an object (R2 + row) after an ownership check.
@@ -203,6 +260,16 @@ func (s *Server) handleMediaDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
+// signMediaList signs every item's URL in place before it goes out in a
+// response — the stored value is always the unsigned "/media/raw/<key>"
+// path (see signMediaPath).
+func (s *Server) signMediaList(list []domain.Media) []domain.Media {
+	for i := range list {
+		list[i].URL = s.signMediaPath(list[i].URL)
+	}
+	return list
+}
+
 // handleVendorMedia lists a vendor's media (cover/gallery/promo/doc) for the
 // vendor portal and admin detail.
 func (s *Server) handleVendorMedia(w http.ResponseWriter, r *http.Request) {
@@ -211,7 +278,7 @@ func (s *Server) handleVendorMedia(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, media)
+	writeJSON(w, http.StatusOK, s.signMediaList(media))
 }
 
 // handleVendorOwnMedia lists the calling vendor's own media (vendor portal).
@@ -225,7 +292,7 @@ func (s *Server) handleVendorOwnMedia(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, media)
+	writeJSON(w, http.StatusOK, s.signMediaList(media))
 }
 
 // resyncVendorMediaBestEffort re-mirrors a vendor's media into its traveller
