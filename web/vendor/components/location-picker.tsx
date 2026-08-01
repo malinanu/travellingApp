@@ -21,11 +21,16 @@ function ClickToMove({ onMove }: { onMove: (lat: number, lng: number) => void })
 }
 
 export default function LocationPicker({
-  lat, lng, onChange,
+  lat, lng, onChange, recenterToken,
 }: {
   lat: number;
   lng: number;
   onChange: (lat: number, lng: number) => void;
+  // Bump this (e.g. from an address-search selection) to pan the map to
+  // the current lat/lng props — MapContainer's own `center` prop only
+  // sets the *initial* view in react-leaflet, it doesn't recenter on
+  // change, so an external jump needs this explicit signal instead.
+  recenterToken?: number;
 }) {
   // React Strict Mode's dev-only double-mount doesn't clear Leaflet's
   // internal `_leaflet_id` binding on the container div between the two
@@ -38,6 +43,17 @@ export default function LocationPicker({
     mapRef.current?.remove();
     mapRef.current = null;
   }, []);
+
+  const latRef = useRef(lat);
+  latRef.current = lat;
+  const lngRef = useRef(lng);
+  lngRef.current = lng;
+  useEffect(() => {
+    if (recenterToken == null || !mapRef.current) return;
+    mapRef.current.setView([latRef.current, lngRef.current], 16);
+    // Reads lat/lng fresh via refs when recenterToken changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recenterToken]);
 
   // CircleMarker (unlike Marker) has no native dragging in Leaflet, so the
   // pin is repositioned by clicking anywhere on the map — same interaction

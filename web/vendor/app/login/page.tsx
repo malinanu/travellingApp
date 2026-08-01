@@ -17,6 +17,7 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
+import AddressSearchField from '../../components/address-search-field';
 import LocationPickerAuto from '../../components/location-picker-auto';
 import { SpottoMark } from '../../components/shell';
 import { api } from '../../lib/api';
@@ -181,6 +182,9 @@ function LoginPageInner() {
   // all optional, sent with the registration request only when present.
   const [placeLat, setPlaceLat] = useState<number | null>(null);
   const [placeLng, setPlaceLng] = useState<number | null>(null);
+  // Bumped whenever Step 4's Address search resolves a new location, so
+  // the pin picker pans there — see LocationPickerAuto's recenterToken prop.
+  const [pinSeq, setPinSeq] = useState(0);
   const [foundPlace, setFoundPlace] = useState<{ name: string; address: string } | null>(null);
   const [businessContact, setBusinessContact] = useState<{ phone: string; website: string } | null>(null);
   const [businessHours, setBusinessHours] = useState<Record<string, { open: string; close: string }> | null>(null);
@@ -609,7 +613,22 @@ function LoginPageInner() {
                 <Field label="Phone number" type="tel" value={phone} onChange={setPhone} icon={Phone} placeholder="76 123 4891" />
               </div>
             </div>
-            <Field label="Town / area" value={town} onChange={setTown} icon={MapPin} placeholder="e.g. Weligama" />
+            <AddressSearchField
+              value={town}
+              onChange={setTown}
+              onLocationSelect={(lat, lng) => { setPlaceLat(lat); setPlaceLng(lng); setPinSeq((s) => s + 1); }}
+              onPlaceDetails={({ phone, website, hours }) => {
+                // Category isn't wired here: Step 2 already has the owner
+                // pick one (defaulting to 'cafe'), so there's no reliable
+                // "still empty" signal the way there is for businessContact/
+                // businessHours, which start out as null.
+                if ((phone || website) && !businessContact) {
+                  setBusinessContact({ phone: phone ?? '', website: website ?? '' });
+                }
+                if (hours && !businessHours) setBusinessHours(hours);
+              }}
+              placeholder="Search for your address…"
+            />
             <div>
               <span className="block text-[12.5px] font-extrabold mb-1.5 text-ink-soft">Pin your exact location</span>
               <p className="text-[12px] text-muted font-semibold mb-1.5">
@@ -619,6 +638,7 @@ function LoginPageInner() {
                 <LocationPickerAuto
                   lat={placeLat ?? DEFAULT_PIN_LAT}
                   lng={placeLng ?? DEFAULT_PIN_LNG}
+                  recenterToken={pinSeq}
                   onChange={(lat, lng) => { setPlaceLat(lat); setPlaceLng(lng); }}
                 />
               </div>

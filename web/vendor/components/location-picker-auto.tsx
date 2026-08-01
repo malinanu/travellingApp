@@ -23,11 +23,14 @@ const GoogleLocationPicker = dynamic(() => import('./location-picker-google'), {
 const LeafletLocationPicker = dynamic(() => import('./location-picker'), { ssr: false, loading: mapPickerLoading });
 
 export default function LocationPickerAuto({
-  lat, lng, onChange,
+  lat, lng, onChange, recenterToken,
 }: {
   lat: number;
   lng: number;
   onChange: (lat: number, lng: number) => void;
+  // Bump to pan/re-center the map — e.g. after an address search resolves
+  // a new location. See location-picker-google.tsx / location-picker.tsx.
+  recenterToken?: number;
 }) {
   const hasKey = !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const [authFailed, setAuthFailed] = useState(false);
@@ -38,7 +41,7 @@ export default function LocationPickerAuto({
   }, [hasKey]);
 
   if (!hasKey || authFailed) {
-    return <LeafletLocationPicker lat={lat} lng={lng} onChange={onChange} />;
+    return <LeafletLocationPicker lat={lat} lng={lng} onChange={onChange} recenterToken={recenterToken} />;
   }
-  return <GoogleLocationPicker lat={lat} lng={lng} onChange={onChange} />;
+  return <GoogleLocationPicker lat={lat} lng={lng} onChange={onChange} recenterToken={recenterToken} />;
 }

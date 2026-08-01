@@ -19,6 +19,7 @@ import { useEffect, useState } from 'react';
 
 import type { DayHours, UpcomingHoliday, Vendor, VendorProfile, VendorProfileGrant, Weekday } from '@spotto/shared';
 import { WEEKDAYS } from '@spotto/shared';
+import AddressSearchField from '../../components/address-search-field';
 import LocationPicker from '../../components/location-picker-auto';
 import Shell, { isFoodCategory, useBusiness, useMe } from '../../components/shell';
 import VendorPhotos from '../../components/vendor-photos';
@@ -184,6 +185,9 @@ export default function ProfilePage() {
   const [identity, setIdentity] = useState({ name: '', town: '', lat: 0, lng: 0 });
   const [identityDirty, setIdentityDirty] = useState(false);
   const [identitySaved, setIdentitySaved] = useState(false);
+  // Bumped whenever the Address search resolves a new location, so the map
+  // pans/jumps there — see LocationPickerAuto's recenterToken prop.
+  const [pinSeq, setPinSeq] = useState(0);
 
   useEffect(() => {
     if (business?.profile && !dirty) setP(business.profile);
@@ -288,7 +292,7 @@ export default function ProfilePage() {
         <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(330px, 100%), 1fr))' }}>
           <div className="card p-6">
             <div className="flex items-center justify-between mb-4">
-              <CardHeader icon={MapPin} title="Business identity & location" sub="Your name, town, and map pin" />
+              <CardHeader icon={MapPin} title="Business identity & location" sub="Your name, address, and map pin" />
               <button className="btn-accent flex items-center gap-2 px-3.5 py-2 text-[13px] shrink-0"
                 disabled={!identityDirty || saveIdentity.isPending} onClick={() => saveIdentity.mutate()}>
                 <Save size={14} /> {saveIdentity.isPending ? 'Saving…' : identitySaved ? 'Saved' : 'Save'}
@@ -299,17 +303,27 @@ export default function ProfilePage() {
                 <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Business name</span>
                 <input className="input" value={identity.name} onChange={(e) => setIdentityField({ name: e.target.value })} />
               </label>
-              <label className="block">
-                <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Town</span>
-                <input className="input" value={identity.town} onChange={(e) => setIdentityField({ town: e.target.value })} />
-              </label>
+              <AddressSearchField
+                variant="plain"
+                value={identity.town}
+                onChange={(town) => setIdentityField({ town })}
+                onLocationSelect={(lat, lng) => { setIdentityField({ lat, lng }); setPinSeq((s) => s + 1); }}
+                onPlaceDetails={({ phone, website, category, hours }) => {
+                  if (phone && !p.contact?.phone) setContact({ phone });
+                  if (website && !p.contact?.website) setContact({ website });
+                  if (hours && !p.hours) set({ hours });
+                  if (category && !business?.category) updateCategory.mutate(category);
+                }}
+                placeholder="Search for your address…"
+              />
             </div>
+            <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Pin your exact location</span>
             <p className="text-[12px] text-muted font-semibold mb-2">
               Click anywhere on the map to move your pin — this is where travelers get directions to.
             </p>
             <div className="h-[220px] rounded-xl overflow-hidden border border-line">
               {business ? (
-                <LocationPicker lat={identity.lat} lng={identity.lng}
+                <LocationPicker lat={identity.lat} lng={identity.lng} recenterToken={pinSeq}
                   onChange={(lat, lng) => setIdentityField({ lat, lng })} />
               ) : (
                 <div className="h-full flex items-center justify-center text-muted font-semibold text-[13px]">Loading map…</div>

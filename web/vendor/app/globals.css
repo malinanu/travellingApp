@@ -26,38 +26,46 @@ body {
   background: var(--accent-tint);
 }
 
-.card {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-}
+/* Wrapped in Tailwind's components layer so utility classes (e.g. the
+   Contact & links card's `pl-9`, used to clear an absolutely-positioned
+   icon) reliably win the cascade over these shorthand rules regardless of
+   source order in this file — without this, `.input`'s shorthand
+   `padding` was resetting `pl-9`'s `padding-left` back down to 14px,
+   leaving the icon overlapping the text. */
+@layer components {
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+  }
 
-.btn-accent {
-  background: var(--accent);
-  color: #fff;
-  border-radius: 12px;
-  font-weight: 800;
-  transition: filter 120ms;
-}
-.btn-accent:hover {
-  filter: brightness(1.08);
-}
-.btn-accent:disabled {
-  opacity: 0.5;
-}
+  .btn-accent {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 12px;
+    font-weight: 800;
+    transition: filter 120ms;
+  }
+  .btn-accent:hover {
+    filter: brightness(1.08);
+  }
+  .btn-accent:disabled {
+    opacity: 0.5;
+  }
 
-.input {
-  width: 100%;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-weight: 600;
-  outline: none;
-}
-.input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-tint);
+  .input {
+    width: 100%;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-weight: 600;
+    outline: none;
+  }
+  .input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-tint);
+  }
 }
 
 @keyframes feed-in {
