@@ -241,6 +241,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	u.AvatarURL = s.signMediaPath(u.AvatarURL)
 	writeJSON(w, http.StatusCreated, authResp{Token: token, User: u})
 }
 
@@ -287,6 +288,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	u.AvatarURL = s.signMediaPath(u.AvatarURL)
 	writeJSON(w, http.StatusOK, authResp{Token: token, User: u})
 }
 
@@ -349,6 +351,7 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	u.AvatarURL = s.signMediaPath(u.AvatarURL)
 	writeJSON(w, http.StatusOK, u)
 }
 

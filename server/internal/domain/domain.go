@@ -258,6 +258,28 @@ type Review struct {
 	Photos []string `json:"photos,omitempty"`
 }
 
+// VibeCheckin is one traveller's timestamped snapshot rating of a place
+// across all three dimensions at once — a traveller can have many of these
+// per place over time (one per visit), never edited, only added to.
+type VibeCheckin struct {
+	PlaceID     string    `json:"placeId"`
+	TravellerID string    `json:"travellerId"`
+	Productive  int       `json:"productive"`
+	Loud        int       `json:"loud"`
+	Crowded     int       `json:"crowded"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// VibeAggregate is a place's current vibe reading — the average of each
+// traveller's most recent check-in (not an all-time blend), so it stays
+// representative of how the place is right now rather than years ago.
+type VibeAggregate struct {
+	Productive float64 `json:"productive"`
+	Loud       float64 `json:"loud"`
+	Crowded    float64 `json:"crowded"`
+	SampleSize int     `json:"sampleSize"`
+}
+
 type Subscription struct {
 	ID       string     `json:"id"`
 	VendorID *string    `json:"vendorId,omitempty"`

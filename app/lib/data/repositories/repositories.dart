@@ -792,35 +792,53 @@ final weatherPinsProvider = NotifierProvider<WeatherPinsNotifier, List<PinnedLoc
 /// Active time-of-day filter: morning | afternoon | evening.
 final timeFilterProvider = StateProvider<String>((ref) => 'afternoon');
 
-/// Vibe votes per place. Initialized from each place's real `vibes` counts
-/// (returned by the server with /places); a vote's response carries the
-/// server's updated counts, which are what actually get stored — an
-/// optimistic local bump is only used as an offline fallback.
-class VibeVotesNotifier extends Notifier<Map<String, Map<String, int>>> {
-  @override
-  Map<String, Map<String, int>> build() => {
-        for (final p in ref.watch(placesProvider)) p.id: Map<String, int>.from(p.vibes),
-      };
+/// One place's vibe state as submitted this session — a fresh three-
+/// dimension snapshot every time (see VibeCheckInsNotifier.rate).
+typedef VibeState = ({VibeAggregate vibe, VibeCheckin mine});
 
-  Future<void> vote(String placeId, String vibeId) async {
-    if (!ref.read(authProvider)) return;
-    final optimistic = Map<String, int>.from(state[placeId] ?? {});
-    optimistic[vibeId] = (optimistic[vibeId] ?? 0) + 1;
-    state = {...state, placeId: optimistic};
-    try {
-      final res = await ref.read(apiProvider).dio.post('/places/$placeId/vibes/$vibeId');
-      final counts = (res.data['vibes'] as Map).map(
-        (k, v) => MapEntry(k as String, (v as num).toInt()),
-      );
-      state = {...state, placeId: counts};
-    } catch (_) {
-      // Offline — keep the optimistic bump.
-    }
+/// Session overrides for vibe check-ins, keyed by placeId. Starts empty —
+/// the vibe widget falls back to placeDetailsProvider's `vibe`/`myVibe`
+/// (from GET /places/{id}) until the traveller actually rates a place here,
+/// so an entry only ever exists once they've tapped something this session.
+class VibeCheckInsNotifier extends Notifier<Map<String, VibeState>> {
+  @override
+  Map<String, VibeState> build() => {};
+
+  /// Submits a full check-in — pass only the dimension(s) that actually
+  /// changed; the rest carry over from the current known "mine" value
+  /// ([previousMine] when nothing's been submitted here yet this session,
+  /// else 0), since the server always records a full three-dimension
+  /// snapshot rather than editing one dimension in place.
+  Future<void> rate(
+    String placeId, {
+    int? productive,
+    int? loud,
+    int? crowded,
+    required VibeCheckin? previousMine,
+    required double lat,
+    required double lng,
+  }) async {
+    final current = state[placeId]?.mine ?? previousMine;
+    final res = await ref.read(apiProvider).dio.post('/places/$placeId/vibe-checkin', data: {
+      'productive': productive ?? current?.productive ?? 0,
+      'loud': loud ?? current?.loud ?? 0,
+      'crowded': crowded ?? current?.crowded ?? 0,
+      'lat': lat,
+      'lng': lng,
+    });
+    final resp = (res.data as Map).cast<String, dynamic>();
+    state = {
+      ...state,
+      placeId: (
+        vibe: VibeAggregate.fromJson((resp['vibe'] as Map).cast<String, dynamic>()),
+        mine: VibeCheckin.fromJson((resp['myVibe'] as Map).cast<String, dynamic>()),
+      ),
+    };
   }
 }
 
-final vibeVotesProvider =
-    NotifierProvider<VibeVotesNotifier, Map<String, Map<String, int>>>(VibeVotesNotifier.new);
+final vibeCheckInsProvider =
+    NotifierProvider<VibeCheckInsNotifier, Map<String, VibeState>>(VibeCheckInsNotifier.new);
 
 /// Artisan check-ins for the daily quest (optimistic, posted to the server).
 /// Persisted locally so "already checked in" survives an app restart —

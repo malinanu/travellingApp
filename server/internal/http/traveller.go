@@ -21,8 +21,9 @@ import (
 )
 
 // placeJSON flattens Place.Data with id/name/vendorId for the Flutter model,
-// plus real vibe vote counts — so the app never needs a hardcoded vibe seed
-// even on a place's first load, before anyone in this session has voted.
+// plus the place's real current vibe aggregate — so the app never needs a
+// hardcoded vibe seed even on a place's first load, before anyone in this
+// session has checked in.
 func (s *Server) placeJSON(ctx context.Context, p domain.Place) map[string]any {
 	m := map[string]any{}
 	json.Unmarshal(p.Data, &m)
@@ -31,8 +32,8 @@ func (s *Server) placeJSON(ctx context.Context, p domain.Place) map[string]any {
 	if p.VendorID != nil {
 		m["vendorId"] = *p.VendorID
 	}
-	if counts, err := s.Store.VibeCounts(ctx, p.ID); err == nil {
-		m["vibes"] = counts
+	if vibe, err := s.Store.VibeAggregate(ctx, p.ID); err == nil {
+		m["vibe"] = vibe
 	}
 	s.signMediaRefs(m)
 	return m
@@ -121,6 +122,12 @@ func (s *Server) handlePlace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m := s.placeJSON(r.Context(), p)
+	// Only the single-place fetch looks up the caller's own latest vibe
+	// check-in, not the bulk handlePlaces list above — same "don't N+1 the
+	// list" reasoning as enrichWithPlaceDetails below.
+	if mine, err := s.Store.MyLatestVibeCheckin(r.Context(), p.ID, auth.FromContext(r.Context()).Subject); err == nil {
+		m["myVibe"] = mine
+	}
 	// Only the single-place fetch enriches with live Places details, not
 	// the bulk handlePlaces list above — Google bills per Details call, so
 	// this only runs for the one place a traveller actually opened.
@@ -222,7 +229,7 @@ func (s *Server) handlePlacePhotos(w http.ResponseWriter, r *http.Request) {
 			out = append(out, m)
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, s.signMediaList(out))
 }
 
 // handleOfferView records one real traveller impression of an offer's deal
@@ -235,19 +242,63 @@ func (s *Server) handleOfferView(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleVibeVote(w http.ResponseWriter, r *http.Request) {
+// vibeCheckinGeofenceMeters bounds how close a traveller must be to a place
+// to rate its vibe. This is collected for future vibe-based recommendation
+// analytics — a rating submitted from anywhere would poison that, so it's
+// enforced here server-side, not just hidden client-side.
+const vibeCheckinGeofenceMeters = 150.0
+
+// handleVibeCheckin records one traveller's full vibe snapshot for a place —
+// always a new row (see Store.AddVibeCheckin), never an edit of a previous
+// check-in, so a traveller can re-rate a place on a later visit.
+func (s *Server) handleVibeCheckin(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	placeID := chi.URLParam(r, "id")
-	if err := s.Store.AddVibeVote(r.Context(), placeID, chi.URLParam(r, "vibeId"), c.Subject); err != nil {
+	var req struct {
+		Productive int     `json:"productive"`
+		Loud       int     `json:"loud"`
+		Crowded    int     `json:"crowded"`
+		Lat        float64 `json:"lat"`
+		Lng        float64 `json:"lng"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.Productive < 0 || req.Productive > 10 || req.Loud < 0 || req.Loud > 10 || req.Crowded < 0 || req.Crowded > 10 {
+		writeErr(w, http.StatusBadRequest, "ratings must be between 0 and 10")
+		return
+	}
+	place, err := s.Store.PlaceByID(r.Context(), placeID)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	var loc struct {
+		Lat float64 `json:"lat"`
+		Lng float64 `json:"lng"`
+	}
+	json.Unmarshal(place.Data, &loc)
+	if geo.HaversineKm(req.Lat, req.Lng, loc.Lat, loc.Lng)*1000 > vibeCheckinGeofenceMeters {
+		writeErr(w, http.StatusForbidden, "you're too far from this place to rate its vibe")
+		return
+	}
+	if err := s.Store.AddVibeCheckin(r.Context(), placeID, c.Subject, req.Productive, req.Loud, req.Crowded); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	counts, err := s.Store.VibeCounts(r.Context(), placeID)
+	vibe, err := s.Store.VibeAggregate(r.Context(), placeID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"placeId": placeID, "vibes": counts})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"placeId": placeID,
+		"vibe":    vibe,
+		"myVibe": domain.VibeCheckin{
+			PlaceID: placeID, TravellerID: c.Subject,
+			Productive: req.Productive, Loud: req.Loud, Crowded: req.Crowded, CreatedAt: time.Now(),
+		},
+	})
 }
 
 func (s *Server) handlePlaceReviews(w http.ResponseWriter, r *http.Request) {

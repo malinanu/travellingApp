@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -22,6 +23,12 @@ import '../../../core/widgets/stat_chip.dart';
 import '../../../data/mock/places.dart' as data;
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
+
+/// Shared cap for both the review-photo picker and the traveller-photo
+/// picker (see _ReviewsSectionState._pickPhoto and
+/// _TravellerPhotosState._add) — kept as one constant so the two limits
+/// can't silently drift apart.
+const kMaxPhotosPerUpload = 5;
 
 /// Google Maps search query for a place — lat/lng is unambiguous and needs
 /// no town/region data, unlike the old hardcoded "place name + Weligama"
@@ -275,7 +282,7 @@ class BusinessDrawerBody extends ConsumerWidget {
               ],
 
               // vibe check
-              _VibeCheck(placeId: place.id),
+              _VibeCheck(place: place),
               const SizedBox(height: 14),
 
               // artisan quest check-in
@@ -546,24 +553,89 @@ class _HoursStatState extends State<_HoursStat> {
   }
 }
 
+/// Matches the server's own enforcement (vibeCheckinGeofenceMeters in
+/// traveller.go) — this copy is only for UI gating (show/hide the tappable
+/// bars); the server is what actually enforces it on submit.
+const kVibeCheckinGeofenceMeters = 150.0;
+
+/// Reads one dimension's value out of a VibeAggregate/VibeCheckin by the
+/// shared vibe id (see data.vibes) — keeps _VibeCheck's build method from
+/// hardcoding a productive/loud/crowded switch three times over.
+double _vibeAverageFor(VibeAggregate v, String id) => switch (id) {
+      'productive' => v.productive,
+      'loud' => v.loud,
+      'crowded' => v.crowded,
+      _ => 0,
+    };
+int? _vibeMineFor(VibeCheckin? v, String id) => switch (id) {
+      'productive' => v?.productive,
+      'loud' => v?.loud,
+      'crowded' => v?.crowded,
+      _ => null,
+    };
+
 class _VibeCheck extends ConsumerStatefulWidget {
-  final String placeId;
-  const _VibeCheck({required this.placeId});
+  final Place place;
+  const _VibeCheck({required this.place});
 
   @override
   ConsumerState<_VibeCheck> createState() => _VibeCheckState();
 }
 
 class _VibeCheckState extends ConsumerState<_VibeCheck> {
-  String? _justVoted;
+  bool _rating = false;
+
+  Future<void> _tap(String vibeId, int value, VibeCheckin? previousMine, LatLngAt pos) async {
+    if (_rating) return;
+    setState(() => _rating = true);
+    try {
+      await ref.read(vibeCheckInsProvider.notifier).rate(
+            widget.place.id,
+            productive: vibeId == 'productive' ? value : null,
+            loud: vibeId == 'loud' ? value : null,
+            crowded: vibeId == 'crowded' ? value : null,
+            previousMine: previousMine,
+            lat: pos.lat,
+            lng: pos.lng,
+          );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
+      }
+    } finally {
+      if (mounted) setState(() => _rating = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final votes = ref.watch(vibeVotesProvider)[widget.placeId] ?? const <String, int>{};
-    final total = data.vibes.fold(0, (a, v) => a + (votes[v.id] ?? 0));
-    final lead = [...data.vibes]
-      ..sort((a, b) => (votes[b.id] ?? 0).compareTo(votes[a.id] ?? 0));
+
+    // GET /places/{id} is the only response that includes the caller's own
+    // latest check-in (myVibe) — the bulk list this sheet was opened from
+    // never does, same reasoning as the contact/wheelchair/priceLevel
+    // overrides above in BusinessDrawerBody. Falls back to the list-derived
+    // place while that detail fetch is still in flight.
+    final details = ref.watch(placeDetailsProvider(widget.place.id)).valueOrNull;
+    final serverVibe = details?.vibe ?? widget.place.vibe;
+    final serverMine = details?.myVibe ?? widget.place.myVibe;
+
+    // A session override exists once the traveller has actually rated this
+    // place here — see VibeCheckInsNotifier's doc comment.
+    final override = ref.watch(vibeCheckInsProvider)[widget.place.id];
+    final vibe = override?.vibe ?? serverVibe;
+    final mine = override?.mine ?? serverMine;
+
+    final devicePos = ref.watch(devicePositionProvider).valueOrNull;
+    final withinGeofence = devicePos != null &&
+        Geolocator.distanceBetween(
+              devicePos.lat,
+              devicePos.lng,
+              widget.place.lat,
+              widget.place.lng,
+            ) <=
+            kVibeCheckinGeofenceMeters;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -582,82 +654,102 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
                   style: text.labelSmall
                       ?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6)),
               const Spacer(),
-              if (total > 0)
-                Row(
-                  children: [
-                    Icon(spottoIcon(lead.first.icon),
-                        size: 13, color: Color(lead.first.color)),
-                    const SizedBox(width: 4),
-                    Text('Mostly ${lead.first.label.toLowerCase()} · $total votes',
-                        style: text.labelSmall?.copyWith(color: Color(lead.first.color))),
-                  ],
-                ),
+              if (vibe.sampleSize > 0)
+                Text('${vibe.sampleSize} traveller${vibe.sampleSize == 1 ? '' : 's'}',
+                    style: text.labelSmall?.copyWith(color: SpottoColors.muted)),
             ],
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              for (final (i, v) in data.vibes.indexed) ...[
-                if (i > 0) const SizedBox(width: 8),
-                Expanded(
-                  child: PressScale(
-                    scale: 0.95,
-                    onTap: () {
-                      ref.read(vibeVotesProvider.notifier).vote(widget.placeId, v.id);
-                      setState(() => _justVoted = v.id);
-                    },
-                    child: _vibeOption(text, v, votes, total),
-                  ),
-                ),
-              ],
-            ],
-          ),
+          const SizedBox(height: 12),
+          for (final v in data.vibes) ...[
+            _VibeBar(
+              label: v.label,
+              icon: spottoIcon(v.icon),
+              color: Color(v.color),
+              average: _vibeAverageFor(vibe, v.id),
+              mine: _vibeMineFor(mine, v.id),
+              enabled: withinGeofence && !_rating,
+              onTap: devicePos == null
+                  ? null
+                  : (value) => _tap(v.id, value, mine, devicePos),
+            ),
+            if (v != data.vibes.last) const SizedBox(height: 10),
+          ],
+          if (!withinGeofence) ...[
+            const SizedBox(height: 8),
+            Text("Rate this once you're here.",
+                style: text.labelSmall
+                    ?.copyWith(color: SpottoColors.muted, fontStyle: FontStyle.italic)),
+          ],
         ],
       ),
     );
   }
+}
 
-  Widget _vibeOption(TextTheme text, VibeTag v, Map<String, int> votes, int total) {
-    final count = votes[v.id] ?? 0;
-    final pct = total > 0 ? count / total : 0.0;
-    final mine = _justVoted == v.id;
-    final color = Color(v.color);
+/// One vibe dimension: a label/icon, a 10-segment tappable bar filled to
+/// the place's current average, and — when the traveller has rated this
+/// place — a small "You: N" readout so they can see their own rating
+/// alongside everyone else's.
+class _VibeBar extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final double average; // 0-10
+  final int? mine; // 0-10, or null if never rated
+  final bool enabled;
+  final ValueChanged<int>? onTap; // segment value 1-10
 
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: mine ? color : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: mine ? color : SpottoColors.line, width: 1.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(spottoIcon(v.icon), size: 18, color: mine ? Colors.white : color),
-          const SizedBox(height: 4),
-          Text(v.label,
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: mine ? Colors.white : SpottoColors.ink)),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: Container(
-              height: 6,
-              color: mine
-                  ? Colors.white.withValues(alpha: 0.3)
-                  : SpottoColors.ink.withValues(alpha: 0.08),
-              child: AnimatedFractionallySizedBox(
-                duration: const Duration(milliseconds: 500),
-                alignment: Alignment.centerLeft,
-                widthFactor: pct,
-                child: Container(color: mine ? Colors.white : color),
+  const _VibeBar({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.average,
+    required this.mine,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final filled = average.round().clamp(0, 10);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 6),
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w800, color: SpottoColors.ink)),
+            const Spacer(),
+            if (mine != null)
+              Text('You: $mine',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            for (var i = 1; i <= 10; i++)
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: i < 10 ? 2 : 0),
+                  child: GestureDetector(
+                    onTap: enabled && onTap != null ? () => onTap!(i) : null,
+                    child: Container(
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: i <= filled ? color : SpottoColors.ink.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -904,19 +996,26 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
   }
 
   Future<void> _pickPhoto() async {
-    final f = await ImagePicker().pickImage(
-        source: ImageSource.gallery, maxWidth: 1600, imageQuality: 85);
-    if (f == null) return;
-    final contentType = mimeForUpload(f.mimeType, f.name);
-    if (contentType == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Unsupported image type.')));
+    final remaining = kMaxPhotosPerUpload - _photos.length;
+    if (remaining <= 0) return;
+    final files = await ImagePicker().pickMultiImage(
+        maxWidth: 1600, imageQuality: 85, limit: remaining);
+    if (files.isEmpty) return;
+    final picked = <_PickedImage>[];
+    var rejected = false;
+    for (final f in files) {
+      final contentType = mimeForUpload(f.mimeType, f.name);
+      if (contentType == null) {
+        rejected = true;
+        continue;
       }
-      return;
+      picked.add(_PickedImage(await f.readAsBytes(), contentType));
     }
-    final bytes = await f.readAsBytes();
-    setState(() => _photos.add(_PickedImage(bytes, contentType)));
+    if (mounted && rejected) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Unsupported image type.')));
+    }
+    if (picked.isNotEmpty) setState(() => _photos.addAll(picked));
   }
 
   Future<void> _submit() async {
@@ -1003,21 +1102,22 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: [
-                    PressScale(
-                      onTap: _pickPhoto,
-                      child: Container(
-                        width: 56,
-                        height: 56,
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: SpottoColors.accentTint, width: 1.5),
+                    if (_photos.length < kMaxPhotosPerUpload)
+                      PressScale(
+                        onTap: _pickPhoto,
+                        child: Container(
+                          width: 56,
+                          height: 56,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: SpottoColors.accentTint, width: 1.5),
+                          ),
+                          child: const Icon(Icons.add_a_photo_outlined,
+                              color: SpottoColors.accent, size: 20),
                         ),
-                        child: const Icon(Icons.add_a_photo_outlined,
-                            color: SpottoColors.accent, size: 20),
                       ),
-                    ),
                     for (var i = 0; i < _photos.length; i++)
                       Padding(
                         padding: const EdgeInsets.only(right: 8),
@@ -1130,26 +1230,35 @@ class _ReviewTile extends StatelessWidget {
           ],
           if (review.photos.isNotEmpty) ...[
             const SizedBox(height: 8),
-            SizedBox(
-              height: 64,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (final url in review.photos)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.network(resolveMediaUrl(url),
-                            width: 64,
-                            height: 64,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const SizedBox(width: 64, height: 64)),
+            Builder(builder: (context) {
+              final urls = [for (final u in review.photos) resolveMediaUrl(u)];
+              return SizedBox(
+                height: 64,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    for (final (i, url) in urls.indexed)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: GestureDetector(
+                          onTap: () => showDialog<void>(
+                            context: context,
+                            builder: (_) => _PhotoViewerDialog(urls: urls, initialIndex: i),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.network(url,
+                                width: 64,
+                                height: 64,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const SizedBox(width: 64, height: 64)),
+                          ),
+                        ),
                       ),
-                    ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+              );
+            }),
           ],
         ],
       ),
@@ -1172,33 +1281,44 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
 
   Future<void> _add() async {
     if (_uploading) return;
-    final XFile? file = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
+    final current = ref.read(placePhotosProvider(widget.place.id)).valueOrNull ?? const <String>[];
+    final remaining = kMaxPhotosPerUpload - current.length;
+    if (remaining <= 0) return;
+    final files = await ImagePicker().pickMultiImage(
       maxWidth: 1600,
       imageQuality: 85,
+      limit: remaining,
     );
-    if (file == null) return;
-    final contentType = mimeForUpload(file.mimeType, file.name);
-    if (contentType == null) {
-      _snack('Unsupported image type.');
-      return;
-    }
+    if (files.isEmpty) return;
     setState(() => _uploading = true);
+    var anyRejected = false;
+    var anyFailed = false;
     try {
-      final bytes = await file.readAsBytes();
-      await ref.read(uploadServiceProvider).upload(
-            bytes: bytes,
-            contentType: contentType,
-            ownerType: 'place',
-            ownerId: widget.place.id,
-            role: 'contrib',
-          );
+      for (final file in files) {
+        final contentType = mimeForUpload(file.mimeType, file.name);
+        if (contentType == null) {
+          anyRejected = true;
+          continue;
+        }
+        try {
+          final bytes = await file.readAsBytes();
+          await ref.read(uploadServiceProvider).upload(
+                bytes: bytes,
+                contentType: contentType,
+                ownerType: 'place',
+                ownerId: widget.place.id,
+                role: 'contrib',
+              );
+        } catch (_) {
+          anyFailed = true;
+        }
+      }
       ref.invalidate(placePhotosProvider(widget.place.id));
-    } catch (_) {
-      _snack('Upload failed — try again.');
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
+    if (anyRejected) _snack('Unsupported image type.');
+    if (anyFailed) _snack('Some photos failed to upload — try again.');
   }
 
   void _snack(String message) {
@@ -1210,6 +1330,7 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final photos = ref.watch(placePhotosProvider(widget.place.id)).valueOrNull ?? const <String>[];
+    final urls = [for (final u in photos) resolveMediaUrl(u)];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1220,39 +1341,46 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: [
-              PressScale(
-                onTap: _add,
-                child: Container(
-                  width: 84,
-                  height: 84,
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: SpottoColors.accentTint,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Center(
-                    child: _uploading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2.5, color: SpottoColors.accent),
-                          )
-                        : const Icon(Icons.add_a_photo_outlined,
-                            color: SpottoColors.accent, size: 24),
+              if (photos.length < kMaxPhotosPerUpload)
+                PressScale(
+                  onTap: _add,
+                  child: Container(
+                    width: 84,
+                    height: 84,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: SpottoColors.accentTint,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Center(
+                      child: _uploading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2.5, color: SpottoColors.accent),
+                            )
+                          : const Icon(Icons.add_a_photo_outlined,
+                              color: SpottoColors.accent, size: 24),
+                    ),
                   ),
                 ),
-              ),
-              for (final url in photos)
+              for (final (i, url) in urls.indexed)
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Image.network(resolveMediaUrl(url),
-                        width: 84,
-                        height: 84,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const SizedBox(width: 84, height: 84)),
+                  child: GestureDetector(
+                    onTap: () => showDialog<void>(
+                      context: context,
+                      builder: (_) => _PhotoViewerDialog(urls: urls, initialIndex: i),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.network(url,
+                          width: 84,
+                          height: 84,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const SizedBox(width: 84, height: 84)),
+                    ),
                   ),
                 ),
             ],
@@ -1372,6 +1500,96 @@ class _PromoVideoDialogState extends State<_PromoVideoDialog> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Full-screen swipeable photo viewer — opened by tapping any thumbnail in
+/// a review's or a spot's traveller-contributed photo strip. Same full-
+/// screen Dialog shape as _PromoVideoDialog above (black background, close
+/// button top-right), with a PageView of photos in place of a single video
+/// plus a page counter since there's more than one photo to swipe through.
+class _PhotoViewerDialog extends StatefulWidget {
+  final List<String> urls;
+  final int initialIndex;
+  const _PhotoViewerDialog({required this.urls, required this.initialIndex});
+
+  @override
+  State<_PhotoViewerDialog> createState() => _PhotoViewerDialogState();
+}
+
+class _PhotoViewerDialogState extends State<_PhotoViewerDialog> {
+  late final PageController _controller;
+  late int _index;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = widget.initialIndex;
+    _controller = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: EdgeInsets.zero,
+      child: SizedBox(
+        width: size.width,
+        height: size.height,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            PageView.builder(
+              controller: _controller,
+              itemCount: widget.urls.length,
+              onPageChanged: (i) => setState(() => _index = i),
+              itemBuilder: (_, i) => InteractiveViewer(
+                child: Center(
+                  child: Image.network(
+                    widget.urls[i],
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Text("Couldn't load this photo.",
+                        style: TextStyle(color: Colors.white)),
+                    loadingBuilder: (_, child, progress) => progress == null
+                        ? child
+                        : const CircularProgressIndicator(color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+            if (widget.urls.length > 1)
+              Positioned(
+                bottom: 24,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text('${_index + 1} / ${widget.urls.length}',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            Positioned(
+              right: 4,
+              top: 4,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

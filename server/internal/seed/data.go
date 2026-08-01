@@ -15,7 +15,6 @@ const placeDriftwoodData = `{
   "tags": ["Coffee", "Coworking", "Fast Wi-Fi", "Power outlets"],
   "blurb": "Airy garden café with a dedicated co-work loft, standing desks and the fastest fibre line in the bay. Sea-view seats on the upper deck.",
   "seaView": true, "photo": "cowork",
-  "vibes": {"productive": 28, "loud": 3, "empty": 4},
   "cost": 1200, "styles": ["nomad"], "hint": "8:00", "curated": true,
   "menu": [
     {"id": "s1", "name": "Breakfast", "items": [
@@ -42,7 +41,6 @@ const placeBaysurfData = `{
   "tags": ["Surf", "Board rental", "Beginner friendly"],
   "blurb": "Right on the gentle beach-break that made Weligama famous for first-timers. Boards, rash guards and ISA-certified instructors.",
   "seaView": true, "photo": "surf",
-  "vibes": {"productive": 5, "loud": 14, "empty": 6},
   "cost": 3500, "styles": ["surf", "backpacker"], "hint": "6:30", "curated": true
 }`
 
@@ -55,7 +53,6 @@ const placeHangtimeData = `{
   "tags": ["Cocktails", "Live DJ", "Ocean view", "Popular at sunset"],
   "blurb": "Palm-fringed rooftop facing due west over the bay — the spot locals point to when the sky turns gold. DJ sets Thu–Sun.",
   "seaView": true, "popularEvening": true, "photo": "sunset",
-  "vibes": {"productive": 2, "loud": 31, "empty": 1},
   "cost": 2800, "styles": ["nomad", "luxury"], "hint": "17:30", "curated": true,
   "menu": [
     {"id": "s1", "name": "Cocktails", "items": [
@@ -79,7 +76,6 @@ const placeClaystudioData = `{
   "tags": ["Pottery", "Hands-on", "Indoor", "Local artisan"],
   "blurb": "A working clay studio tucked off the main road. Spin the wheel with resident potters — the perfect rainy-day plan when the surf is blown out.",
   "seaView": false, "photo": "clay",
-  "vibes": {"productive": 12, "loud": 2, "empty": 9},
   "cost": 1500, "styles": ["backpacker"], "hint": "10:00", "curated": true
 }`
 
@@ -93,7 +89,6 @@ const placeBatikData = `{
   "tags": ["Batik", "Hand-dyed", "Indoor", "Local artisan"],
   "blurb": "Family atelier hand-waxing and dyeing batik the traditional way. Watch a panel come to life, or wax your own under the canopy.",
   "seaView": false, "photo": "batik",
-  "vibes": {"productive": 7, "loud": 1, "empty": 11},
   "cost": 1000, "styles": ["luxury"], "hint": "11:00", "curated": true
 }`
 

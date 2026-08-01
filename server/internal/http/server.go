@@ -200,7 +200,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	// Traveller.
 	r.Group(func(r chi.Router) {
 		r.Use(s.Authenticated, auth.RequireRole(domain.RoleTraveller))
-		r.Post("/places/{id}/vibes/{vibeId}", s.handleVibeVote)
+		r.Post("/places/{id}/vibe-checkin", s.handleVibeCheckin)
 		r.Post("/places/{id}/reviews", s.handleCreateReview)
 		r.Post("/checkins", s.handleCheckin)
 		r.Post("/claims", s.handleCreateClaim)

@@ -105,6 +105,51 @@ class MenuSection {
       );
 }
 
+/// A place's current vibe reading — the average of each traveller's most
+/// recent check-in (see server VibeAggregate), not an all-time blend.
+class VibeAggregate {
+  final double productive;
+  final double loud;
+  final double crowded;
+  final int sampleSize;
+  const VibeAggregate({
+    this.productive = 0,
+    this.loud = 0,
+    this.crowded = 0,
+    this.sampleSize = 0,
+  });
+
+  factory VibeAggregate.fromJson(Map<String, dynamic> json) => VibeAggregate(
+        productive: (json['productive'] as num?)?.toDouble() ?? 0,
+        loud: (json['loud'] as num?)?.toDouble() ?? 0,
+        crowded: (json['crowded'] as num?)?.toDouble() ?? 0,
+        sampleSize: (json['sampleSize'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// One traveller's own timestamped vibe rating of a place — only ever the
+/// latest one (see server MyLatestVibeCheckin); null means they haven't
+/// rated this place (yet, or ever).
+class VibeCheckin {
+  final int productive;
+  final int loud;
+  final int crowded;
+  final DateTime createdAt;
+  const VibeCheckin({
+    required this.productive,
+    required this.loud,
+    required this.crowded,
+    required this.createdAt,
+  });
+
+  factory VibeCheckin.fromJson(Map<String, dynamic> json) => VibeCheckin(
+        productive: (json['productive'] as num?)?.toInt() ?? 0,
+        loud: (json['loud'] as num?)?.toInt() ?? 0,
+        crowded: (json['crowded'] as num?)?.toInt() ?? 0,
+        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+      );
+}
+
 class Place {
   final String id;
   final String name;
@@ -141,7 +186,8 @@ class Place {
   final List<String> gallery; // uploaded gallery photo URLs (R2)
   final String promoVideo; // uploaded promo video URL (R2), '' = none
   final List<MenuSection> menu;
-  final Map<String, int> vibes; // vibeId -> vote count, from the server
+  final VibeAggregate vibe; // place's current vibe reading, from the server
+  final VibeCheckin? myVibe; // caller's own latest check-in — handlePlace only
   // Trip-planner fields — only meaningful for stops surfaced in the trip
   // catalog (see TripCatalogItem.fromPlace in data/mock/trip_catalog.dart).
   final int cost; // suggested visit cost, Rs
@@ -187,7 +233,8 @@ class Place {
     this.gallery = const [],
     this.promoVideo = '',
     this.menu = const [],
-    this.vibes = const {},
+    this.vibe = const VibeAggregate(),
+    this.myVibe,
     this.cost = 0,
     this.styles = const [],
     this.hint = '',
@@ -255,10 +302,12 @@ class Place {
         for (final s in (json['menu'] as List? ?? const []))
           MenuSection.fromJson(s as Map<String, dynamic>)
       ],
-      vibes: (json['vibes'] as Map?)?.map(
-            (k, v) => MapEntry(k as String, (v as num).toInt()),
-          ) ??
-          const {},
+      vibe: json['vibe'] is Map
+          ? VibeAggregate.fromJson((json['vibe'] as Map).cast<String, dynamic>())
+          : const VibeAggregate(),
+      myVibe: json['myVibe'] is Map
+          ? VibeCheckin.fromJson((json['myVibe'] as Map).cast<String, dynamic>())
+          : null,
       cost: numericCost,
       styles: [for (final s in (json['styles'] as List? ?? const [])) s as String],
       hint: json['hint'] as String? ?? '',

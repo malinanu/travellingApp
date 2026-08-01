@@ -10,7 +10,7 @@
 # importsrilanka (real-world places dataset, from sri_lanka_spots.json) is
 # NOT run on demand like the two above — the entrypoint below runs it
 # automatically on every container start, before the API server. It wipes
-# the places table (and reviews/claims/vibe_votes/checkins/media that
+# the places table (and reviews/claims/vibe_checkins/checkins/media that
 # reference a place) and reloads it, with a vendor + owner account per
 # place, on every single boot — see cmd/importsrilanka/main.go for why, and
 # note the entrypoint tolerates it failing so a bad run can't take the API

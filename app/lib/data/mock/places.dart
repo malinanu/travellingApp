@@ -197,5 +197,5 @@ const groupSeed = Group(name: 'Weligama Crew', code: 'WLG-4K2', memberIds: ['mia
 const vibes = [
   VibeTag(id: 'productive', label: 'Productive', icon: 'Laptop', color: 0xFF0B6F86),
   VibeTag(id: 'loud', label: 'Loud', icon: 'Volume2', color: 0xFFF0682F),
-  VibeTag(id: 'empty', label: 'Empty', icon: 'Wind', color: 0xFF6C8582),
+  VibeTag(id: 'crowded', label: 'Crowded', icon: 'Users', color: 0xFF6C8582),
 ];

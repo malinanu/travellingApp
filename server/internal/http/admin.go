@@ -202,6 +202,9 @@ func (s *Server) handleAdminVendorTeam(w http.ResponseWriter, r *http.Request) {
 			resp.Grants = append(resp.Grants, g)
 		}
 	}
+	for i := range resp.Members {
+		resp.Members[i].AvatarURL = s.signMediaPath(resp.Members[i].AvatarURL)
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 

@@ -89,7 +89,7 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 	for _, stmt := range []string{
 		`DELETE FROM reviews WHERE place_id IS NOT NULL`,
 		`DELETE FROM claims WHERE place_id IS NOT NULL`,
-		`DELETE FROM vibe_votes WHERE place_id IS NOT NULL`,
+		`DELETE FROM vibe_checkins WHERE place_id IS NOT NULL`,
 		`DELETE FROM checkins WHERE place_id IS NOT NULL`,
 		`DELETE FROM media WHERE owner_type = 'place'`,
 		`DELETE FROM places`,

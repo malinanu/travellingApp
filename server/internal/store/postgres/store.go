@@ -1759,30 +1759,46 @@ func (s *Store) ReviewsByVendor(ctx context.Context, vendorID string) ([]domain.
 
 // ---- vibes / checkins ----
 
-func (s *Store) AddVibeVote(ctx context.Context, placeID, vibeID, travellerID string) error {
+// AddVibeCheckin always inserts a new row — unlike the old vibe_votes it
+// replaces, a traveller's rating is never overwritten, only added to, so
+// the full history stays available for future vibe-based recommendations.
+func (s *Store) AddVibeCheckin(ctx context.Context, placeID, travellerID string, productive, loud, crowded int) error {
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO vibe_votes (place_id, vibe_id, traveller_id) VALUES ($1,$2,$3)
-		ON CONFLICT DO NOTHING`, placeID, vibeID, travellerID)
+		INSERT INTO vibe_checkins (place_id, traveller_id, productive, loud, crowded)
+		VALUES ($1,$2,$3,$4,$5)`, placeID, travellerID, productive, loud, crowded)
 	return err
 }
 
-func (s *Store) VibeCounts(ctx context.Context, placeID string) (map[string]int, error) {
-	rows, err := s.Pool.Query(ctx,
-		`SELECT vibe_id, count(*) FROM vibe_votes WHERE place_id=$1 GROUP BY vibe_id`, placeID)
-	if err != nil {
-		return nil, err
+// VibeAggregate averages each traveller's most recent check-in at placeID
+// from the last 30 days — a rolling "current vibe" reading, not an all-time
+// blend that would never reflect a place's vibe actually changing.
+func (s *Store) VibeAggregate(ctx context.Context, placeID string) (domain.VibeAggregate, error) {
+	var agg domain.VibeAggregate
+	err := s.Pool.QueryRow(ctx, `
+		SELECT coalesce(avg(productive), 0), coalesce(avg(loud), 0), coalesce(avg(crowded), 0), count(*)
+		FROM (
+			SELECT DISTINCT ON (traveller_id) productive, loud, crowded
+			FROM vibe_checkins
+			WHERE place_id=$1 AND created_at > now() - interval '30 days'
+			ORDER BY traveller_id, created_at DESC
+		) latest`, placeID).Scan(&agg.Productive, &agg.Loud, &agg.Crowded, &agg.SampleSize)
+	return agg, err
+}
+
+// MyLatestVibeCheckin returns one traveller's most recent check-in at a
+// place, how ever old — unlike VibeAggregate this has no recency window,
+// since "what I last rated it" should never just disappear.
+func (s *Store) MyLatestVibeCheckin(ctx context.Context, placeID, travellerID string) (domain.VibeCheckin, error) {
+	c := domain.VibeCheckin{PlaceID: placeID, TravellerID: travellerID}
+	err := s.Pool.QueryRow(ctx, `
+		SELECT productive, loud, crowded, created_at FROM vibe_checkins
+		WHERE place_id=$1 AND traveller_id=$2
+		ORDER BY created_at DESC LIMIT 1`, placeID, travellerID).
+		Scan(&c.Productive, &c.Loud, &c.Crowded, &c.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return c, ErrNotFound
 	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var id string
-		var n int
-		if err := rows.Scan(&id, &n); err != nil {
-			return nil, err
-		}
-		out[id] = n
-	}
-	return out, rows.Err()
+	return c, err
 }
 
 func (s *Store) AddCheckin(ctx context.Context, placeID, travellerID string) error {
@@ -2070,7 +2086,7 @@ func (s *Store) AdminNotifications(ctx context.Context, adminID string) ([]domai
 func (s *Store) Wipe(ctx context.Context) error {
 	_, err := s.Pool.Exec(ctx, `
 		TRUNCATE users, vendors, offers, places, claims, trips, groups, feed_items,
-			regions, subscriptions, audio_guides, vibe_votes, checkins,
+			regions, subscriptions, audio_guides, vibe_checkins, checkins,
 			vendor_notifications, vendor_blobs, reviews, vendor_invites, admin_audit_log,
 			admin_notification_reads`)
 	return err
