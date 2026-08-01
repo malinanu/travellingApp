@@ -69,6 +69,14 @@ type Media struct {
 	Role        string    `json:"role"`
 	ObjectKey   string    `json:"objectKey"`
 	URL         string    `json:"url"`
+	// ThumbKey/ThumbURL are only ever set for Kind == "image" — a small
+	// (~320px) JPEG derivative generated at confirm time (see
+	// handleMediaConfirm), same key-stored/URL-derived pairing as
+	// ObjectKey/URL. Empty for media uploaded before this existed, for
+	// non-image kinds, or if thumbnail generation failed — clients fall
+	// back to URL in that case rather than treating it as an error.
+	ThumbKey    string    `json:"-"`
+	ThumbURL    string    `json:"thumbUrl,omitempty"`
 	ContentType string    `json:"contentType"`
 	Size        int64     `json:"size"`
 	Width       int       `json:"width"`

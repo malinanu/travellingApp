@@ -65,6 +65,11 @@ type Uploader interface {
 	PresignPut(ctx context.Context, key, contentType string, ttl time.Duration) (string, error)
 	Head(ctx context.Context, key string) (size int64, contentType string, err error)
 	Get(ctx context.Context, key string) (body io.ReadCloser, contentType string, err error)
+	// Put is a server-initiated write, unlike PresignPut (which only ever
+	// hands a client a URL to upload to directly) — used for generated
+	// derivatives the server creates itself, like a resized thumbnail,
+	// where there's no client upload step to presign.
+	Put(ctx context.Context, key, contentType string, body io.Reader) error
 	Delete(ctx context.Context, key string) error
 	PublicURL(key string) string
 }
@@ -141,6 +146,18 @@ func (r *R2) Get(ctx context.Context, key string) (io.ReadCloser, string, error)
 		ct = *out.ContentType
 	}
 	return out.Body, ct, nil
+}
+
+// Put uploads body directly (server-side) — see Uploader.Put's doc comment
+// for how this differs from the client-facing PresignPut flow.
+func (r *R2) Put(ctx context.Context, key, contentType string, body io.Reader) error {
+	_, err := r.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(r.bucket),
+		Key:         aws.String(key),
+		ContentType: aws.String(contentType),
+		Body:        body,
+	})
+	return err
 }
 
 func (r *R2) Delete(ctx context.Context, key string) error {

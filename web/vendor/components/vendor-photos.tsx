@@ -83,7 +83,7 @@ export default function VendorPhotos({ vendorId }: { vendorId: string }) {
         {gallery.map((m) => (
           <div key={m.id} className="relative rounded-xl overflow-hidden aspect-[4/3] group">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={resolveMediaUrl(m.url)} alt="" className="w-full h-full object-cover" />
+            <img src={resolveMediaUrl(m.thumbUrl || m.url)} alt="" className="w-full h-full object-cover" />
             <button
               onClick={() => remove.mutate(m.id)}
               className="absolute right-1.5 top-1.5 rounded-full p-1 bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity"

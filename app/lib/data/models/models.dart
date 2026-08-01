@@ -473,12 +473,18 @@ class Review {
 class PlacePhoto {
   final String id;
   final String url;
+  // A small (~320px) JPEG derivative for grid tiles — empty for photos
+  // uploaded before this existed or if generation failed; fall back to
+  // [url] whenever this is empty. The full-screen viewer always uses
+  // [url], never this.
+  final String thumbUrl;
   final String uploadedBy;
   final String createdAt;
 
   const PlacePhoto({
     required this.id,
     required this.url,
+    this.thumbUrl = '',
     required this.uploadedBy,
     required this.createdAt,
   });
@@ -486,6 +492,7 @@ class PlacePhoto {
   factory PlacePhoto.fromJson(Map<String, dynamic> json) => PlacePhoto(
         id: json['id'] as String? ?? '',
         url: json['url'] as String? ?? '',
+        thumbUrl: json['thumbUrl'] as String? ?? '',
         uploadedBy: json['uploadedBy'] as String? ?? '',
         createdAt: json['createdAt'] as String? ?? '',
       );

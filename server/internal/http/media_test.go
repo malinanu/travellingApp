@@ -42,6 +42,15 @@ func (u *stubUploader) Head(_ context.Context, key string) (int64, string, error
 func (u *stubUploader) Get(_ context.Context, key string) (io.ReadCloser, string, error) {
 	return io.NopCloser(strings.NewReader("stub-bytes-" + key)), "image/jpeg", nil
 }
+
+// Put is a no-op stub — real thumbnail bytes never need to actually land
+// anywhere for these tests, and Get's fake, non-image "stub-bytes-..."
+// body already exercises handleMediaConfirm's must-not-fail-the-upload
+// path when thumbnail generation can't decode it as a real image.
+func (u *stubUploader) Put(_ context.Context, _, _ string, _ io.Reader) error {
+	return nil
+}
+
 func (u *stubUploader) Delete(_ context.Context, key string) error {
 	u.deleted = append(u.deleted, key)
 	return nil

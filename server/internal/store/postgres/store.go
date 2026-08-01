@@ -999,11 +999,11 @@ func (s *Store) UpdateVendorMenu(ctx context.Context, id string, menu json.RawMe
 
 // ---- media (R2 uploads) ----
 
-const mediaCols = `id, owner_type, owner_id, kind, role, object_key, url, content_type, size, width, height, uploaded_by, status, sort, created_at`
+const mediaCols = `id, owner_type, owner_id, kind, role, object_key, url, thumb_key, content_type, size, width, height, uploaded_by, status, sort, created_at`
 
 func scanMedia(row pgx.Row) (domain.Media, error) {
 	var m domain.Media
-	err := row.Scan(&m.ID, &m.OwnerType, &m.OwnerID, &m.Kind, &m.Role, &m.ObjectKey, &m.URL,
+	err := row.Scan(&m.ID, &m.OwnerType, &m.OwnerID, &m.Kind, &m.Role, &m.ObjectKey, &m.URL, &m.ThumbKey,
 		&m.ContentType, &m.Size, &m.Width, &m.Height, &m.UploadedBy, &m.Status, &m.Sort, &m.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return m, ErrNotFound
@@ -1014,8 +1014,8 @@ func scanMedia(row pgx.Row) (domain.Media, error) {
 func (s *Store) InsertMedia(ctx context.Context, m domain.Media) error {
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO media (`+mediaCols+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-		m.ID, m.OwnerType, m.OwnerID, m.Kind, m.Role, m.ObjectKey, m.URL,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+		m.ID, m.OwnerType, m.OwnerID, m.Kind, m.Role, m.ObjectKey, m.URL, m.ThumbKey,
 		m.ContentType, m.Size, m.Width, m.Height, m.UploadedBy, m.Status, m.Sort, m.CreatedAt)
 	return err
 }

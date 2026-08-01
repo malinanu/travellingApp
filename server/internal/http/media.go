@@ -1,10 +1,13 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -143,13 +146,29 @@ func (s *Server) handleMediaConfirm(w http.ResponseWriter, r *http.Request) {
 		old, _ := s.Store.ClearOwnerRole(r.Context(), req.OwnerType, req.OwnerID, req.Role)
 		for _, o := range old {
 			_ = s.Media.Delete(r.Context(), o.ObjectKey)
+			if o.ThumbKey != "" {
+				_ = s.Media.Delete(r.Context(), o.ThumbKey)
+			}
 		}
+	}
+
+	var thumbKey string
+	if kind == media.KindImage {
+		// Best-effort: a corrupt/undecodable image (or any other failure
+		// here) must not fail the confirm — the original upload already
+		// succeeded, and clients fall back to the full-size url when
+		// thumbUrl is empty.
+		thumbKey = s.generateThumbnail(r.Context(), req.Key)
 	}
 
 	m := domain.Media{
 		ID: newID("med"), OwnerType: req.OwnerType, OwnerID: req.OwnerID, Kind: kind, Role: req.Role,
-		ObjectKey: req.Key, URL: s.Media.PublicURL(req.Key), ContentType: contentType, Size: size,
+		ObjectKey: req.Key, URL: s.Media.PublicURL(req.Key), ThumbKey: thumbKey,
+		ContentType: contentType, Size: size,
 		Width: req.Width, Height: req.Height, UploadedBy: c.Subject, Status: "ready", CreatedAt: time.Now(),
+	}
+	if thumbKey != "" {
+		m.ThumbURL = s.Media.PublicURL(thumbKey)
 	}
 	if err := s.Store.InsertMedia(r.Context(), m); err != nil {
 		storeErr(w, err)
@@ -163,7 +182,38 @@ func (s *Server) handleMediaConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	s.resyncVendorMediaBestEffort(r.Context(), req.OwnerType, req.OwnerID)
 	m.URL = s.signMediaPath(m.URL)
+	if m.ThumbURL != "" {
+		m.ThumbURL = s.signMediaPath(m.ThumbURL)
+	}
 	writeJSON(w, http.StatusOK, m)
+}
+
+// generateThumbnail fetches the just-uploaded object, resizes it to a small
+// JPEG derivative, and stores it under a derived key — returning that key,
+// or "" if anything along the way fails (a corrupt/undecodable image, a
+// storage error, etc.). Failing here must never fail the confirm itself:
+// the original upload already succeeded, and clients fall back to the
+// full-size url when there's no thumbnail.
+func (s *Server) generateThumbnail(ctx context.Context, key string) string {
+	body, _, err := s.Media.Get(ctx, key)
+	if err != nil {
+		log.Printf("thumbnail: fetch %s: %v", key, err)
+		return ""
+	}
+	defer body.Close()
+
+	thumb, err := media.GenerateThumbnail(body)
+	if err != nil {
+		log.Printf("thumbnail: decode/resize %s: %v", key, err)
+		return ""
+	}
+
+	thumbKey := strings.TrimSuffix(key, path.Ext(key)) + "_thumb.jpg"
+	if err := s.Media.Put(ctx, thumbKey, "image/jpeg", bytes.NewReader(thumb)); err != nil {
+		log.Printf("thumbnail: upload %s: %v", thumbKey, err)
+		return ""
+	}
+	return thumbKey
 }
 
 // handleMediaRaw proxies a read of one R2 object through our own API — the
@@ -246,6 +296,9 @@ func (s *Server) handleMediaDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.Media.Delete(r.Context(), m.ObjectKey)
+	if m.ThumbKey != "" {
+		_ = s.Media.Delete(r.Context(), m.ThumbKey)
+	}
 	if err := s.Store.DeleteMedia(r.Context(), m.ID); err != nil {
 		storeErr(w, err)
 		return
@@ -275,6 +328,12 @@ func (s *Server) handleMediaDelete(w http.ResponseWriter, r *http.Request) {
 func (s *Server) signMediaList(list []domain.Media) []domain.Media {
 	for i := range list {
 		list[i].URL = s.signMediaPath(list[i].URL)
+		// ThumbURL isn't a stored column (only ThumbKey is, via scanMedia) —
+		// derive it here the same way handleMediaConfirm does right after
+		// generating it, so it round-trips correctly through the DB too.
+		if list[i].ThumbKey != "" {
+			list[i].ThumbURL = s.signMediaPath(s.Media.PublicURL(list[i].ThumbKey))
+		}
 	}
 	return list
 }

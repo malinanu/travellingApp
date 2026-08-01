@@ -43,6 +43,10 @@ export interface Media {
   role: string;
   objectKey: string;
   url: string;
+  /** A small (~320px) JPEG derivative for grid/list tiles — absent for
+   * media uploaded before this existed, non-image kinds, or if generation
+   * failed; fall back to `url` whenever this is missing. */
+  thumbUrl?: string;
   contentType: string;
   size: number;
   width: number;

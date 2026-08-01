@@ -629,7 +629,14 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
     final vibe = override?.vibe ?? serverVibe;
     final mine = override?.mine ?? serverMine;
 
-    final devicePos = ref.watch(devicePositionProvider).valueOrNull;
+    final devicePosAsync = ref.watch(devicePositionProvider);
+    final devicePos = devicePosAsync.valueOrNull;
+    // devicePositionProvider always eventually resolves to a real position
+    // or the Weligama Bay fallback — it never stays null forever — so
+    // "still loading" and "resolved but too far away" are two genuinely
+    // different states that deserve different copy, not the same disabled
+    // segments + "Rate this once you're here." for both.
+    final resolvingLocation = devicePosAsync.isLoading && devicePos == null;
     final withinGeofence = devicePos != null &&
         Geolocator.distanceBetween(
               devicePos.lat,
@@ -684,7 +691,7 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
           ),
           if (!withinGeofence) ...[
             const SizedBox(height: 8),
-            Text("Rate this once you're here.",
+            Text(resolvingLocation ? 'Finding your location…' : "Rate this once you're here.",
                 style: text.labelSmall
                     ?.copyWith(color: SpottoColors.muted, fontStyle: FontStyle.italic)),
           ],
@@ -1436,6 +1443,12 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
     final photos =
         ref.watch(placePhotosProvider(widget.place.id)).valueOrNull ?? const <PlacePhoto>[];
     final urls = [for (final p in photos) resolveMediaUrl(p.url)];
+    // Grid tiles load the small thumbnail (falling back to the full image
+    // for photos uploaded before thumbnails existed); the full-screen
+    // viewer always opens the full-resolution `urls` above.
+    final thumbUrls = [
+      for (final p in photos) resolveMediaUrl(p.thumbUrl.isNotEmpty ? p.thumbUrl : p.url),
+    ];
     final myId = ref.watch(meProvider)?['id'] as String?;
     final canAddMore = photos.length < kMaxPhotosPerUpload;
 
@@ -1488,7 +1501,7 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(14),
                         child: Image.network(
-                          urls[i],
+                          thumbUrls[i],
                           fit: BoxFit.cover,
                           loadingBuilder: (_, child, progress) => progress == null
                               ? child
