@@ -41,11 +41,23 @@ export async function uploadMedia(api: Api, file: File, target: UploadTarget): P
     size: file.size,
   });
 
-  const put = await fetch(presign.uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type },
-    body: file,
-  });
+  let put: Response;
+  try {
+    put = await fetch(presign.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+  } catch {
+    // fetch() throws its own bare "TypeError: Failed to fetch" — with no
+    // HTTP status at all — when the request never gets a response, which
+    // for this direct-to-R2 PUT almost always means R2's bucket CORS
+    // policy doesn't allow this origin (a Cloudflare dashboard setting,
+    // not something wrong with the file or a transient blip most of the
+    // time). Rethrow something a vendor/admin can actually act on instead
+    // of that cryptic browser string.
+    throw new Error("Couldn't reach file storage — this is usually a temporary network issue or a storage configuration problem, not your file. Try again in a moment.");
+  }
   if (!put.ok) throw new Error(`Upload failed (${put.status})`);
 
   return api.post<Media>('/media/confirm', {
