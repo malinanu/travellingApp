@@ -2093,6 +2093,93 @@ func (s *Store) GuideMessagesByConversation(ctx context.Context, conversationID 
 	return out, rows.Err()
 }
 
+// InsertGuideRequest records telemetry for one POST /guide/chat call,
+// success or failure — see recordGuideRequest in internal/http/guide.go.
+func (s *Store) InsertGuideRequest(ctx context.Context, r domain.GuideRequest) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO guide_requests
+			(conversation_id, traveller_id, status, error_message, latency_ms, tools_used, used_semantic_query)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		r.ConversationID, r.TravellerID, r.Status, r.ErrorMessage, r.LatencyMs,
+		jsonb(r.ToolsUsed), r.UsedSemanticQuery)
+	return err
+}
+
+// GuideStats aggregates Local Guide usage/reliability for the admin
+// dashboard — same scalar-correlated-subquery pattern as VendorSummary.
+func (s *Store) GuideStats(ctx context.Context) (domain.GuideStats, error) {
+	var st domain.GuideStats
+	err := s.Pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM guide_conversations),
+			(SELECT count(*) FROM guide_messages),
+			(SELECT count(*) FROM guide_messages WHERE created_at >= date_trunc('day', now())),
+			(SELECT count(*) FROM guide_messages WHERE created_at >= now() - interval '7 days'),
+			(SELECT count(*) FROM guide_requests WHERE created_at >= now() - interval '7 days'),
+			(SELECT count(*) FROM guide_requests WHERE created_at >= now() - interval '7 days' AND status = 'ok'),
+			(SELECT count(*) FROM guide_requests WHERE created_at >= now() - interval '7 days' AND status = 'rate_limited'),
+			(SELECT count(*) FROM guide_requests WHERE created_at >= now() - interval '7 days' AND status = 'error'),
+			(SELECT COALESCE(avg(latency_ms), 0) FROM guide_requests WHERE created_at >= now() - interval '7 days'),
+			(SELECT count(*) FROM guide_requests WHERE created_at >= now() - interval '7 days' AND used_semantic_query),
+			(SELECT count(*) FROM places WHERE embedding IS NOT NULL),
+			(SELECT count(*) FROM places)`).Scan(
+		&st.TotalConversations, &st.TotalMessages, &st.MessagesToday, &st.Messages7d,
+		&st.Requests7d, &st.OkCount7d, &st.RateLimitedCount7d, &st.ErrorCount7d,
+		&st.AvgLatencyMs7d, &st.SemanticQueryCount7d, &st.PlacesEmbedded, &st.PlacesTotal,
+	)
+	return st, err
+}
+
+// GuideToolUsage breaks down tool-call counts over the trailing 7 days —
+// the one place this needs an actual GROUP BY, since tool names live inside
+// a JSONB array column rather than a scalar one.
+func (s *Store) GuideToolUsage(ctx context.Context) ([]domain.ToolUsageCount, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT tool, count(*) FROM guide_requests, jsonb_array_elements_text(tools_used) AS tool
+		WHERE created_at >= now() - interval '7 days'
+		GROUP BY tool ORDER BY count(*) DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.ToolUsageCount{}
+	for rows.Next() {
+		var t domain.ToolUsageCount
+		if err := rows.Scan(&t.Tool, &t.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// RecentGuideConversations lists the most recently updated conversations
+// for the admin dashboard's browsable list.
+func (s *Store) RecentGuideConversations(ctx context.Context, limit int) ([]domain.GuideConversationSummary, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT c.id, COALESCE(u.name, ''),
+			(SELECT count(*) FROM guide_messages m WHERE m.conversation_id = c.id),
+			COALESCE((SELECT content FROM guide_messages m
+				WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1), ''),
+			c.updated_at
+		FROM guide_conversations c
+		LEFT JOIN users u ON u.id = c.traveller_id
+		ORDER BY c.updated_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.GuideConversationSummary{}
+	for rows.Next() {
+		var g domain.GuideConversationSummary
+		if err := rows.Scan(&g.ID, &g.TravellerName, &g.MessageCount, &g.LastMessage, &g.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) AddCheckin(ctx context.Context, placeID, travellerID string) error {
 	_, err := s.Pool.Exec(ctx,
 		`INSERT INTO checkins (place_id, traveller_id) VALUES ($1,$2)`, placeID, travellerID)

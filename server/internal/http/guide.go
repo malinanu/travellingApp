@@ -23,6 +23,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
@@ -98,16 +99,25 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reply, placeIDs, err := s.runGuideChat(r.Context(), c.Subject, history, req.Message, req.Lat, req.Lng)
+	start := time.Now()
+	reply, placeIDs, meta, err := s.runGuideChat(r.Context(), c.Subject, history, req.Message, req.Lat, req.Lng)
+	latencyMs := int(time.Since(start).Milliseconds())
 	if err != nil {
+		status := "error"
 		if errors.Is(err, openrouter.ErrRateLimited) {
+			status = "rate_limited"
+		} else {
+			log.Printf("guide: chat: %v", err)
+		}
+		s.recordGuideRequest(r.Context(), convID, c.Subject, status, err.Error(), latencyMs, meta)
+		if status == "rate_limited" {
 			writeErr(w, http.StatusTooManyRequests, "Local Guide is busy right now — try again in a moment")
 			return
 		}
-		log.Printf("guide: chat: %v", err)
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	s.recordGuideRequest(r.Context(), convID, c.Subject, "ok", "", latencyMs, meta)
 
 	if err := s.Store.InsertGuideMessage(r.Context(), domain.GuideMessage{
 		ConversationID: convID, Role: "user", Content: req.Message,
@@ -125,6 +135,23 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 		"reply":          reply,
 		"placeIds":       placeIDs,
 	})
+}
+
+// recordGuideRequest is best-effort telemetry for the admin Local Guide
+// dashboard — a failure here should never affect the traveller-facing
+// response, same convention as InsertGuideMessage's error handling.
+func (s *Server) recordGuideRequest(ctx context.Context, convID, travellerID, status, errMsg string, latencyMs int, meta guideRequestMeta) {
+	if err := s.Store.InsertGuideRequest(ctx, domain.GuideRequest{
+		ConversationID:    convID,
+		TravellerID:       travellerID,
+		Status:            status,
+		ErrorMessage:      errMsg,
+		LatencyMs:         latencyMs,
+		ToolsUsed:         dedupe(meta.ToolsUsed),
+		UsedSemanticQuery: meta.UsedSemanticQuery,
+	}); err != nil {
+		log.Printf("guide: record request: %v", err)
+	}
 }
 
 // handleGuideLatestConversation lets the app resume a traveller's most
@@ -147,11 +174,21 @@ func (s *Server) handleGuideLatestConversation(w http.ResponseWriter, r *http.Re
 	})
 }
 
+// guideRequestMeta accumulates telemetry about one runGuideChat call — fed
+// into recordGuideRequest regardless of whether the call ultimately
+// succeeds, so the admin dashboard can see what was attempted even on a
+// failed request.
+type guideRequestMeta struct {
+	ToolsUsed         []string
+	UsedSemanticQuery bool
+}
+
 // runGuideChat builds the conversation + tools, and runs the tool-calling
 // loop until the model gives a final text answer (or guideMaxToolRounds is
 // exhausted). placeIDs accumulates every place any search_places call
 // actually returned, across all rounds, for the response's inline cards.
-func (s *Server) runGuideChat(ctx context.Context, travellerID string, history []domain.GuideMessage, userMessage string, lat, lng float64) (string, []string, error) {
+func (s *Server) runGuideChat(ctx context.Context, travellerID string, history []domain.GuideMessage, userMessage string, lat, lng float64) (string, []string, guideRequestMeta, error) {
+	var meta guideRequestMeta
 	weatherCondition := s.guideWeatherCondition(ctx, lat, lng)
 	styles := s.guideTravellerStyles(ctx, travellerID)
 	stylesText := "none stated"
@@ -176,19 +213,23 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 	for range guideMaxToolRounds {
 		resp, err := openrouter.Complete(ctx, s.OpenRouterAPIKey, messages, tools)
 		if err != nil {
-			return "", nil, err
+			return "", nil, meta, err
 		}
 		if len(resp.ToolCalls) == 0 {
-			return resp.Content, dedupe(placeIDs), nil
+			return resp.Content, dedupe(placeIDs), meta, nil
 		}
 		messages = append(messages, *resp)
 		for _, tc := range resp.ToolCalls {
-			result, ids := s.runGuideTool(ctx, tc, lat, lng, weatherCondition)
+			result, ids, usedSemantic := s.runGuideTool(ctx, tc, lat, lng, weatherCondition)
 			placeIDs = append(placeIDs, ids...)
+			meta.ToolsUsed = append(meta.ToolsUsed, tc.Function.Name)
+			if usedSemantic {
+				meta.UsedSemanticQuery = true
+			}
 			messages = append(messages, openrouter.Message{Role: "tool", ToolCallID: tc.ID, Content: result})
 		}
 	}
-	return "", nil, fmt.Errorf("guide: exceeded %d tool-calling rounds", guideMaxToolRounds)
+	return "", nil, meta, fmt.Errorf("guide: exceeded %d tool-calling rounds", guideMaxToolRounds)
 }
 
 func (s *Server) guideWeatherCondition(ctx context.Context, lat, lng float64) string {
@@ -264,8 +305,9 @@ func guideTools() []openrouter.Tool {
 }
 
 // runGuideTool executes one tool call and returns its JSON result (fed
-// back to the model as a "tool" message) plus any place ids it surfaced.
-func (s *Server) runGuideTool(ctx context.Context, tc openrouter.ToolCall, lat, lng float64, weather string) (result string, placeIDs []string) {
+// back to the model as a "tool" message), any place ids it surfaced, and
+// whether it used a free-text semantic query (search_places only).
+func (s *Server) runGuideTool(ctx context.Context, tc openrouter.ToolCall, lat, lng float64, weather string) (result string, placeIDs []string, usedSemanticQuery bool) {
 	switch tc.Function.Name {
 	case "search_places":
 		var args struct {
@@ -293,7 +335,7 @@ func (s *Server) runGuideTool(ctx context.Context, tc openrouter.ToolCall, lat, 
 
 		places, err := s.Store.Places(ctx)
 		if err != nil {
-			return `{"error":"could not load places"}`, nil
+			return `{"error":"could not load places"}`, nil, false
 		}
 
 		// Best-effort: a failed/unconfigured embed call just drops the
@@ -330,7 +372,7 @@ func (s *Server) runGuideTool(ctx context.Context, tc openrouter.ToolCall, lat, 
 			placeIDs = append(placeIDs, sc.Place.ID)
 		}
 		b, _ := json.Marshal(map[string]any{"places": out})
-		return string(b), placeIDs
+		return string(b), placeIDs, len(queryEmbedding) > 0
 
 	case "get_place_details":
 		var args struct {
@@ -339,13 +381,13 @@ func (s *Server) runGuideTool(ctx context.Context, tc openrouter.ToolCall, lat, 
 		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
 		p, err := s.Store.PlaceByID(ctx, args.PlaceID)
 		if err != nil {
-			return `{"error":"place not found"}`, nil
+			return `{"error":"place not found"}`, nil, false
 		}
 		b, _ := json.Marshal(s.placeJSON(ctx, p))
-		return string(b), []string{p.ID}
+		return string(b), []string{p.ID}, false
 
 	default:
-		return fmt.Sprintf(`{"error":"unknown tool %s"}`, tc.Function.Name), nil
+		return fmt.Sprintf(`{"error":"unknown tool %s"}`, tc.Function.Name), nil, false
 	}
 }
 

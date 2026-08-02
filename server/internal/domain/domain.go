@@ -62,13 +62,13 @@ type User struct {
 // and internal/http/media.go. Kind is image|video|doc; Role distinguishes
 // cover/gallery/promo/doc/avatar/review/contrib/menu_item.
 type Media struct {
-	ID          string    `json:"id"`
-	OwnerType   string    `json:"ownerType"`
-	OwnerID     string    `json:"ownerId"`
-	Kind        string    `json:"kind"`
-	Role        string    `json:"role"`
-	ObjectKey   string    `json:"objectKey"`
-	URL         string    `json:"url"`
+	ID        string `json:"id"`
+	OwnerType string `json:"ownerType"`
+	OwnerID   string `json:"ownerId"`
+	Kind      string `json:"kind"`
+	Role      string `json:"role"`
+	ObjectKey string `json:"objectKey"`
+	URL       string `json:"url"`
 	// ThumbKey/ThumbURL are only ever set for Kind == "image" — a small
 	// (~320px) JPEG derivative generated in the background by the
 	// thumbnail worker (see ThumbStatus, internal/http/thumbnail_worker.go),
@@ -128,7 +128,7 @@ const (
 type BRCertVerifyStatus string
 
 const (
-	BRCertVerifyNone         BRCertVerifyStatus = ""             // no cert number to verify yet
+	BRCertVerifyNone         BRCertVerifyStatus = ""              // no cert number to verify yet
 	BRCertVerifyPending      BRCertVerifyStatus = "pending"       // queued for the eROC sweep
 	BRCertVerifyVerified     BRCertVerifyStatus = "verified"      // eROC status:true
 	BRCertVerifyInvalid      BRCertVerifyStatus = "invalid"       // eROC status:false — definitive, not retried
@@ -165,13 +165,13 @@ type Vendor struct {
 	// media (see internal/gemini), always editable by the vendor before/
 	// after that, and verified in the background against eROC (see
 	// internal/eroc). See BRCertOCRStatus/BRCertVerifyStatus for state.
-	BRCertNumber       string              `json:"brCertNumber"`
-	BRCertOCRStatus    BRCertOCRStatus     `json:"brCertOcrStatus"`
-	BRCertVerifyStatus BRCertVerifyStatus  `json:"brCertVerifyStatus"`
-	BRCertCompanyName  string              `json:"brCertCompanyName,omitempty"` // eROC's company_name
-	BRCertMessage      string              `json:"brCertMessage,omitempty"`     // eROC's message, or last error
-	BRCertAttempts     int                 `json:"brCertAttempts,omitempty"`    // consecutive transient verify failures
-	BRCertVerifiedAt   *time.Time          `json:"brCertVerifiedAt,omitempty"`
+	BRCertNumber       string             `json:"brCertNumber"`
+	BRCertOCRStatus    BRCertOCRStatus    `json:"brCertOcrStatus"`
+	BRCertVerifyStatus BRCertVerifyStatus `json:"brCertVerifyStatus"`
+	BRCertCompanyName  string             `json:"brCertCompanyName,omitempty"` // eROC's company_name
+	BRCertMessage      string             `json:"brCertMessage,omitempty"`     // eROC's message, or last error
+	BRCertAttempts     int                `json:"brCertAttempts,omitempty"`    // consecutive transient verify failures
+	BRCertVerifiedAt   *time.Time         `json:"brCertVerifiedAt,omitempty"`
 	// Joined fields (not columns), populated by admin map/near queries.
 	BadReviewCount int  `json:"badReviewCount,omitempty"`
 	Flagged        bool `json:"flagged,omitempty"`
@@ -231,8 +231,8 @@ type Claim struct {
 	ClaimedAt   time.Time   `json:"claimedAt"`
 	RedeemedAt  *time.Time  `json:"redeemedAt,omitempty"`
 	// Joined traveller display fields (not columns on claims).
-	TravellerName    string `json:"travellerName,omitempty"`
-	TravellerCountry string `json:"travellerCountry,omitempty"`
+	TravellerName    string   `json:"travellerName,omitempty"`
+	TravellerCountry string   `json:"travellerCountry,omitempty"`
 	TravellerStyle   []string `json:"travellerStyle,omitempty"`
 }
 
@@ -371,6 +371,52 @@ type GuideMessage struct {
 	Content        string    `json:"content"`
 	PlaceIDs       []string  `json:"placeIds,omitempty"` // places referenced/recommended in this turn
 	CreatedAt      time.Time `json:"createdAt"`
+}
+
+// GuideRequest is one row per POST /guide/chat call, success or failure —
+// admin-dashboard telemetry, distinct from GuideMessage which only records
+// successful turns (see internal/http/guide.go's recordGuideRequest).
+type GuideRequest struct {
+	ConversationID    string    `json:"conversationId"`
+	TravellerID       string    `json:"-"`
+	Status            string    `json:"status"` // "ok" | "rate_limited" | "error"
+	ErrorMessage      string    `json:"errorMessage,omitempty"`
+	LatencyMs         int       `json:"latencyMs"`
+	ToolsUsed         []string  `json:"toolsUsed"`
+	UsedSemanticQuery bool      `json:"usedSemanticQuery"`
+	CreatedAt         time.Time `json:"createdAt"`
+}
+
+// GuideStats is the admin Local Guide dashboard's aggregate summary.
+type GuideStats struct {
+	TotalConversations   int     `json:"totalConversations"`
+	TotalMessages        int     `json:"totalMessages"`
+	MessagesToday        int     `json:"messagesToday"`
+	Messages7d           int     `json:"messages7d"`
+	Requests7d           int     `json:"requests7d"`
+	OkCount7d            int     `json:"okCount7d"`
+	RateLimitedCount7d   int     `json:"rateLimitedCount7d"`
+	ErrorCount7d         int     `json:"errorCount7d"`
+	AvgLatencyMs7d       float64 `json:"avgLatencyMs7d"`
+	SemanticQueryCount7d int     `json:"semanticQueryCount7d"`
+	PlacesEmbedded       int     `json:"placesEmbedded"`
+	PlacesTotal          int     `json:"placesTotal"`
+}
+
+// ToolUsageCount is one row of GuideStats' tool-usage breakdown.
+type ToolUsageCount struct {
+	Tool  string `json:"tool"`
+	Count int    `json:"count"`
+}
+
+// GuideConversationSummary is one row in the admin dashboard's browsable
+// conversation list.
+type GuideConversationSummary struct {
+	ID            string    `json:"id"`
+	TravellerName string    `json:"travellerName"`
+	MessageCount  int       `json:"messageCount"`
+	LastMessage   string    `json:"lastMessage"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 type Subscription struct {

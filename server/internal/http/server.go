@@ -320,6 +320,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/vendor-grants", s.handleAdminVendorGrants)
 		r.Post("/admin/vendor-grants/{id}/extend", s.handleExtendVendorGrant)
 		r.Post("/admin/vendor-grants/{id}/revoke", s.handleRevokeVendorGrantAdmin)
+		r.Get("/admin/local-guide/stats", s.handleAdminGuideStats)
+		r.Get("/admin/local-guide/conversations", s.handleAdminGuideConversations)
+		r.Get("/admin/local-guide/conversations/{id}", s.handleAdminGuideConversationDetail)
 
 		// Cross-admin history of destructive actions — restricted further
 		// to super-admins, since it names which specific admin did what.

@@ -500,6 +500,53 @@ export interface AdminVendorTeam {
   grants: AdminVendorProfileGrant[];
 }
 
+/** Local Guide dashboard's aggregate summary — GET /admin/local-guide/stats.
+ * The 7d-suffixed fields are rolling-window counts, not calendar weeks. */
+export interface AdminGuideStats {
+  totalConversations: number;
+  totalMessages: number;
+  messagesToday: number;
+  messages7d: number;
+  requests7d: number;
+  okCount7d: number;
+  rateLimitedCount7d: number;
+  errorCount7d: number;
+  avgLatencyMs7d: number;
+  semanticQueryCount7d: number;
+  placesEmbedded: number;
+  placesTotal: number;
+}
+
+export interface AdminGuideToolUsage {
+  tool: string;
+  count: number;
+}
+
+/** GET /admin/local-guide/stats' full response. */
+export interface AdminGuideStatsResponse {
+  stats: AdminGuideStats;
+  toolUsage: AdminGuideToolUsage[];
+}
+
+/** One row in the Local Guide dashboard's browsable conversation list —
+ * GET /admin/local-guide/conversations. */
+export interface AdminGuideConversationSummary {
+  id: string;
+  travellerName: string;
+  messageCount: number;
+  lastMessage: string;
+  updatedAt: string;
+}
+
+/** One turn in a Local Guide conversation — GET
+ * /admin/local-guide/conversations/{id} returns these oldest-first. */
+export interface AdminGuideMessage {
+  role: string;
+  content: string;
+  placeIds?: string[];
+  createdAt: string;
+}
+
 /** "12 min ago" style rendering for server timestamps. */
 export function timeAgo(iso: string | undefined): string {
   if (!iso) return '';

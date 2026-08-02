@@ -6,7 +6,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Bell, CreditCard, Flag, Headphones, History, KeyRound, Map, MapPin, Moon, Radio, Search, ShieldAlert, Store, Sun, UserCheck, LucideIcon,
+  Activity, Bell, CreditCard, Flag, Headphones, History, KeyRound, Map, MapPin, Moon, Radio, Search, ShieldAlert, Sparkles, Store, Sun, UserCheck, LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -23,6 +23,7 @@ const NAV: { href: string; label: string; icon: LucideIcon; live?: boolean; supe
   { href: '/geo', label: 'Geo-analytics', icon: Map },
   { href: '/subscriptions', label: 'Subscriptions', icon: CreditCard },
   { href: '/audio', label: 'Audio guides', icon: Headphones },
+  { href: '/local-guide', label: 'Local Guide', icon: Sparkles },
   { href: '/access-grants', label: 'Access grants', icon: KeyRound },
   { href: '/audit-log', label: 'Audit log', icon: History, superAdminOnly: true },
 ];
