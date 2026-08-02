@@ -2,7 +2,7 @@ import type { Api } from './api';
 import type { Media } from './types';
 
 /** What role a piece of media plays for its owner. */
-export type MediaRole = 'cover' | 'gallery' | 'promo' | 'doc' | 'avatar' | 'review' | 'contrib' | 'menu_item';
+export type MediaRole = 'cover' | 'gallery' | 'promo' | 'doc' | 'br_cert' | 'avatar' | 'review' | 'contrib' | 'menu_item';
 
 export interface UploadTarget {
   ownerType: 'vendor' | 'user' | 'place' | 'review';
@@ -58,7 +58,17 @@ export async function uploadMedia(api: Api, file: File, target: UploadTarget): P
     // of that cryptic browser string.
     throw new Error("Couldn't reach file storage — this is usually a temporary network issue or a storage configuration problem, not your file. Try again in a moment.");
   }
-  if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+  if (!put.ok) {
+    // R2 presigned PUT URLs expire 10 minutes after they're issued (see
+    // handleMediaPresign). A big file on a slow connection can genuinely
+    // outlive that window and get a real 403 from R2 — surface something
+    // actionable instead of a bare status code, same reasoning as the
+    // network-failure case above.
+    if (put.status === 403) {
+      throw new Error("Upload took too long and the link expired — try again.");
+    }
+    throw new Error(`Upload failed (${put.status})`);
+  }
 
   return api.post<Media>('/media/confirm', {
     key: presign.key,

@@ -8,6 +8,7 @@ import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/category_icons.dart';
 import '../../../core/widgets/illustration.dart';
+import '../../../core/widgets/progressive_image.dart';
 import '../../../core/widgets/spotto_card.dart';
 import '../../../core/widgets/stagger_in.dart';
 import '../../../data/models/models.dart';
@@ -427,12 +428,14 @@ class _SpotCard extends StatelessWidget {
                 children: [
                   // Real uploaded cover photo when the vendor has one, else
                   // fall back to the illustration — see business_drawer.dart
-                  // for the same pattern.
+                  // for the same pattern. A card this size never needs more
+                  // than the thumbnail tier — there's no viewer for covers.
                   if (place.cover.isNotEmpty)
-                    Image.network(
-                      resolveMediaUrl(place.cover),
+                    ProgressiveImage(
+                      url: resolveMediaUrl(place.coverThumb.isNotEmpty ? place.coverThumb : place.cover),
+                      microThumb: place.coverMicro,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Illustration(kind: place.photo),
+                      errorBuilder: (_) => Illustration(kind: place.photo),
                     )
                   else
                     Illustration(kind: place.photo),

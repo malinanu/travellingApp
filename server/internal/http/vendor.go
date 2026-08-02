@@ -101,6 +101,43 @@ func (s *Server) handleUpdateVendorIdentity(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, v)
 }
 
+// handleUpdateVendorBRCertNumber sets/edits the vendor's Business
+// Registration certificate number — either a Gemini pre-fill the vendor
+// confirmed as-is, or one they typed/corrected themselves. Any edit
+// re-queues eROC verification (see Store.SetVendorBRCertNumber).
+func (s *Server) handleUpdateVendorBRCertNumber(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireEditableVendor(w, r)
+	if !ok {
+		return
+	}
+	if !s.requireBusinessProfileAccess(w, r, v) {
+		return
+	}
+	var req struct {
+		CertNumber string `json:"certNumber"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	certNo := strings.ToUpper(strings.TrimSpace(req.CertNumber))
+	if len(certNo) > 20 {
+		writeErr(w, http.StatusBadRequest, "certificate number is too long")
+		return
+	}
+	if err := s.Store.SetVendorBRCertNumber(r.Context(), v.ID, certNo); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	v.BRCertNumber, v.BRCertCompanyName, v.BRCertMessage, v.BRCertAttempts = certNo, "", "", 0
+	v.BRCertVerifiedAt = nil
+	if certNo == "" {
+		v.BRCertVerifyStatus = domain.BRCertVerifyNone
+	} else {
+		v.BRCertVerifyStatus = domain.BRCertVerifyPending
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
 // handleUpdateVendorCategory changes the business type — separate from
 // handleUpdateVendorBusiness since category is a top-level vendors column,
 // not part of the profile JSON blob that endpoint replaces wholesale.
@@ -716,25 +753,41 @@ func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
 	data["menu"] = effectiveMenuSections(menuDoc, time.Now())
 
 	// Mirror the vendor's uploaded media into the traveller listing: a cover
-	// image, the gallery, and a promo video (all public R2 URLs).
+	// image, the gallery, and a promo video (all public R2 URLs) — plus
+	// each one's thumbnail/blur-placeholder pair alongside it (additive,
+	// "cover"/"gallery" themselves are left exactly as-is for backward
+	// compatibility). No signing needed here for the new fields:
+	// signMediaRefs (traveller.go) already walks the whole unmarshaled
+	// Place.Data JSON recursively and signs every "/media/raw/<key>" path
+	// by structure, not by field name; coverMicro is a data: URI, not a
+	// stored path, so signMediaPath leaves it untouched by its own
+	// existing early-return.
 	if mediaRows, mErr := s.Store.MediaByOwner(ctx, "vendor", v.ID); mErr == nil {
-		gallery := []string{}
-		cover, promo := "", ""
+		gallery, galleryThumbs := []string{}, []string{}
+		cover, coverThumb, coverMicro, promo := "", "", "", ""
 		for _, m := range mediaRows {
+			thumbPath := ""
+			if m.ThumbKey != "" && s.Media != nil {
+				thumbPath = s.Media.PublicURL(m.ThumbKey)
+			}
 			switch m.Role {
 			case "cover":
-				cover = m.URL
+				cover, coverThumb, coverMicro = m.URL, thumbPath, m.MicroThumb
 			case "promo":
 				promo = m.URL
 			case "gallery":
 				gallery = append(gallery, m.URL)
+				galleryThumbs = append(galleryThumbs, thumbPath)
 			}
 		}
 		if cover == "" && len(gallery) > 0 {
-			cover = gallery[0]
+			cover, coverThumb = gallery[0], galleryThumbs[0]
 		}
 		data["cover"] = cover
+		data["coverThumb"] = coverThumb
+		data["coverMicro"] = coverMicro
 		data["gallery"] = gallery
+		data["galleryThumbs"] = galleryThumbs
 		data["promoVideo"] = promo
 	}
 

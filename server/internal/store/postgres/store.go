@@ -633,14 +633,16 @@ func (s *Store) UserTokenVersion(ctx context.Context, id string) (int, error) {
 
 // ---- vendors ----
 
-const vendorCols = `id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng`
+const vendorCols = `id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng, br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at`
 
 func scanVendor(row pgx.Row) (domain.Vendor, error) {
 	var v domain.Vendor
 	var flags []byte
 	err := row.Scan(&v.ID, &v.Name, &v.Category, &v.Town, &v.Country, &v.RegionID, &v.Owner, &v.Status,
 		&v.Priority, &v.Docs, &v.Photos, &v.WifiScore, &flags, &v.Note, &v.Tier,
-		&v.Profile, &v.Menu, &v.SubmittedAt, &v.Lat, &v.Lng)
+		&v.Profile, &v.Menu, &v.SubmittedAt, &v.Lat, &v.Lng,
+		&v.BRCertNumber, &v.BRCertOCRStatus, &v.BRCertVerifyStatus, &v.BRCertCompanyName,
+		&v.BRCertMessage, &v.BRCertAttempts, &v.BRCertVerifiedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, ErrNotFound
 	}
@@ -660,18 +662,25 @@ func (s *Store) UpsertVendor(ctx context.Context, v domain.Vendor) error {
 		v.Country = "LK"
 	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO vendors (id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+		INSERT INTO vendors (id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng,
+			br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
 		ON CONFLICT (id) DO UPDATE SET
 			name=EXCLUDED.name, category=EXCLUDED.category, town=EXCLUDED.town, country=EXCLUDED.country,
 			region_id=EXCLUDED.region_id, owner=EXCLUDED.owner, status=EXCLUDED.status,
 			priority=EXCLUDED.priority, docs=EXCLUDED.docs, photos=EXCLUDED.photos,
 			wifi_score=EXCLUDED.wifi_score, flags=EXCLUDED.flags, note=EXCLUDED.note,
 			tier=EXCLUDED.tier, profile=EXCLUDED.profile, menu=EXCLUDED.menu,
-			submitted_at=EXCLUDED.submitted_at, lat=EXCLUDED.lat, lng=EXCLUDED.lng`,
+			submitted_at=EXCLUDED.submitted_at, lat=EXCLUDED.lat, lng=EXCLUDED.lng,
+			br_cert_number=EXCLUDED.br_cert_number, br_cert_ocr_status=EXCLUDED.br_cert_ocr_status,
+			br_cert_verify_status=EXCLUDED.br_cert_verify_status, br_cert_company_name=EXCLUDED.br_cert_company_name,
+			br_cert_message=EXCLUDED.br_cert_message, br_cert_attempts=EXCLUDED.br_cert_attempts,
+			br_cert_verified_at=EXCLUDED.br_cert_verified_at`,
 		v.ID, v.Name, v.Category, v.Town, v.Country, v.RegionID, v.Owner, v.Status, v.Priority,
 		v.Docs, v.Photos, v.WifiScore, jsonb(v.Flags), v.Note, v.Tier,
-		orEmptyObj(v.Profile), orEmptyObj(v.Menu), v.SubmittedAt, v.Lat, v.Lng)
+		orEmptyObj(v.Profile), orEmptyObj(v.Menu), v.SubmittedAt, v.Lat, v.Lng,
+		v.BRCertNumber, v.BRCertOCRStatus, v.BRCertVerifyStatus, v.BRCertCompanyName,
+		v.BRCertMessage, v.BRCertAttempts, v.BRCertVerifiedAt)
 	return err
 }
 
@@ -746,7 +755,7 @@ func (s *Store) VendorsNear(ctx context.Context, lat, lng, radiusKm float64) ([]
 }
 
 func vendorColsPrefixed() string {
-	return "id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng"
+	return "id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng, br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at"
 }
 
 func scanVendorWithBadCount(row pgx.Row) (domain.Vendor, int, error) {
@@ -755,7 +764,9 @@ func scanVendorWithBadCount(row pgx.Row) (domain.Vendor, int, error) {
 	var badCount int
 	err := row.Scan(&v.ID, &v.Name, &v.Category, &v.Town, &v.Country, &v.RegionID, &v.Owner, &v.Status,
 		&v.Priority, &v.Docs, &v.Photos, &v.WifiScore, &flags, &v.Note, &v.Tier,
-		&v.Profile, &v.Menu, &v.SubmittedAt, &v.Lat, &v.Lng, &badCount)
+		&v.Profile, &v.Menu, &v.SubmittedAt, &v.Lat, &v.Lng,
+		&v.BRCertNumber, &v.BRCertOCRStatus, &v.BRCertVerifyStatus, &v.BRCertCompanyName,
+		&v.BRCertMessage, &v.BRCertAttempts, &v.BRCertVerifiedAt, &badCount)
 	if err != nil {
 		return v, 0, err
 	}
@@ -999,11 +1010,11 @@ func (s *Store) UpdateVendorMenu(ctx context.Context, id string, menu json.RawMe
 
 // ---- media (R2 uploads) ----
 
-const mediaCols = `id, owner_type, owner_id, kind, role, object_key, url, thumb_key, content_type, size, width, height, uploaded_by, status, sort, created_at`
+const mediaCols = `id, owner_type, owner_id, kind, role, object_key, url, thumb_key, micro_thumb, thumb_status, content_type, size, width, height, uploaded_by, status, sort, created_at`
 
 func scanMedia(row pgx.Row) (domain.Media, error) {
 	var m domain.Media
-	err := row.Scan(&m.ID, &m.OwnerType, &m.OwnerID, &m.Kind, &m.Role, &m.ObjectKey, &m.URL, &m.ThumbKey,
+	err := row.Scan(&m.ID, &m.OwnerType, &m.OwnerID, &m.Kind, &m.Role, &m.ObjectKey, &m.URL, &m.ThumbKey, &m.MicroThumb, &m.ThumbStatus,
 		&m.ContentType, &m.Size, &m.Width, &m.Height, &m.UploadedBy, &m.Status, &m.Sort, &m.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return m, ErrNotFound
@@ -1014,9 +1025,48 @@ func scanMedia(row pgx.Row) (domain.Media, error) {
 func (s *Store) InsertMedia(ctx context.Context, m domain.Media) error {
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO media (`+mediaCols+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-		m.ID, m.OwnerType, m.OwnerID, m.Kind, m.Role, m.ObjectKey, m.URL, m.ThumbKey,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+		m.ID, m.OwnerType, m.OwnerID, m.Kind, m.Role, m.ObjectKey, m.URL, m.ThumbKey, m.MicroThumb, m.ThumbStatus,
 		m.ContentType, m.Size, m.Width, m.Height, m.UploadedBy, m.Status, m.Sort, m.CreatedAt)
+	return err
+}
+
+// MediaPendingThumbnails lists the oldest images still awaiting background
+// thumbnail generation, for the thumbnail worker's sweep (see
+// internal/http/thumbnail_worker.go). limit caps how much one tick takes on.
+func (s *Store) MediaPendingThumbnails(ctx context.Context, limit int) ([]domain.Media, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+mediaCols+` FROM media
+		WHERE kind='image' AND status='ready' AND thumb_status='pending'
+		ORDER BY created_at ASC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Media
+	for rows.Next() {
+		m, err := scanMedia(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// SetMediaThumbnails records a completed background thumbnail pass.
+func (s *Store) SetMediaThumbnails(ctx context.Context, id, thumbKey, microThumb string) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE media SET thumb_key=$2, micro_thumb=$3, thumb_status='done' WHERE id=$1`,
+		id, thumbKey, microThumb)
+	return err
+}
+
+// SetMediaThumbnailError records a failed thumbnail pass (bad/undecodable
+// image, fetch error) — not retried, since a decode failure is almost
+// always deterministic rather than transient.
+func (s *Store) SetMediaThumbnailError(ctx context.Context, id string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE media SET thumb_status='error' WHERE id=$1`, id)
 	return err
 }
 
@@ -1087,6 +1137,125 @@ func (s *Store) SetUserAvatar(ctx context.Context, userID, url string) error {
 func (s *Store) SetVendorDocs(ctx context.Context, vendorID string, has bool) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE vendors SET docs=$2 WHERE id=$1`, vendorID, has)
 	return err
+}
+
+// ---- BR certificate OCR pre-fill + eROC verification (see
+// internal/gemini, internal/eroc, http.br_cert_scheduler.go) ----
+
+// SetVendorBRCertNumber sets the vendor-confirmed/edited certificate
+// number and re-queues verification — editing the number always
+// invalidates any prior verification result.
+func (s *Store) SetVendorBRCertNumber(ctx context.Context, vendorID, certNo string) error {
+	verifyStatus := domain.BRCertVerifyNone
+	if certNo != "" {
+		verifyStatus = domain.BRCertVerifyPending
+	}
+	_, err := s.Pool.Exec(ctx, `
+		UPDATE vendors SET br_cert_number=$2, br_cert_verify_status=$3,
+			br_cert_company_name='', br_cert_message='', br_cert_attempts=0, br_cert_verified_at=NULL
+		WHERE id=$1`, vendorID, certNo, verifyStatus)
+	return err
+}
+
+// StartVendorBRCertOCR queues a freshly-uploaded br_cert doc for the
+// scheduler's OCR sweep — leaves any already-set number/verify state
+// untouched (a re-upload doesn't clobber a confirmed number).
+func (s *Store) StartVendorBRCertOCR(ctx context.Context, vendorID string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE vendors SET br_cert_ocr_status=$2 WHERE id=$1`, vendorID, domain.BRCertOCRPending)
+	return err
+}
+
+// ResetVendorBRCertOCR clears OCR status when the br_cert doc is deleted —
+// there's nothing left to OCR, but a previously confirmed/verified number
+// is preserved.
+func (s *Store) ResetVendorBRCertOCR(ctx context.Context, vendorID string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE vendors SET br_cert_ocr_status=$2 WHERE id=$1`, vendorID, domain.BRCertOCRNone)
+	return err
+}
+
+// SetVendorBRCertOCRResult records a completed OCR pass. candidate may be
+// "" (Gemini found nothing plausible) — the number/verify-status columns
+// only get filled in if the vendor doesn't already have a number set, so
+// OCR never overwrites a value the vendor typed themselves while it ran.
+func (s *Store) SetVendorBRCertOCRResult(ctx context.Context, vendorID, candidate string) error {
+	_, err := s.Pool.Exec(ctx, `
+		UPDATE vendors SET
+			br_cert_ocr_status = $2,
+			br_cert_number = CASE WHEN br_cert_number = '' AND $3 <> '' THEN $3 ELSE br_cert_number END,
+			br_cert_verify_status = CASE WHEN br_cert_number = '' AND $3 <> '' THEN $4 ELSE br_cert_verify_status END
+		WHERE id = $1`, vendorID, domain.BRCertOCRDone, candidate, domain.BRCertVerifyPending)
+	return err
+}
+
+// SetVendorBRCertOCRError records that the OCR pipeline itself failed
+// (network/decode/rate-limit) — distinct from a clean run that simply
+// found no number, which is SetVendorBRCertOCRResult with "".
+func (s *Store) SetVendorBRCertOCRError(ctx context.Context, vendorID string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE vendors SET br_cert_ocr_status=$2 WHERE id=$1`, vendorID, domain.BRCertOCRError)
+	return err
+}
+
+// SetVendorBRCertVerifyResult records a definitive eROC outcome
+// (verified or invalid) and resets the retry-attempt counter. verifiedAt
+// is only stamped for a "verified" status.
+func (s *Store) SetVendorBRCertVerifyResult(ctx context.Context, vendorID string, status domain.BRCertVerifyStatus, companyName, message string) error {
+	if status == domain.BRCertVerifyVerified {
+		_, err := s.Pool.Exec(ctx, `
+			UPDATE vendors SET br_cert_verify_status=$2, br_cert_company_name=$3, br_cert_message=$4,
+				br_cert_attempts=0, br_cert_verified_at=now()
+			WHERE id=$1`, vendorID, status, companyName, message)
+		return err
+	}
+	_, err := s.Pool.Exec(ctx, `
+		UPDATE vendors SET br_cert_verify_status=$2, br_cert_company_name=$3, br_cert_message=$4, br_cert_attempts=0
+		WHERE id=$1`, vendorID, status, companyName, message)
+	return err
+}
+
+// SetVendorBRCertVerifyAttempt records a transient verify failure —
+// verify_status stays "pending" so the scheduler retries it next sweep,
+// up to br_cert_scheduler.go's brCertMaxVerifyAttempts cap.
+func (s *Store) SetVendorBRCertVerifyAttempt(ctx context.Context, vendorID string, attempts int, message string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE vendors SET br_cert_attempts=$2, br_cert_message=$3 WHERE id=$1`, vendorID, attempts, message)
+	return err
+}
+
+// VendorsPendingBRCertOCR lists vendors whose uploaded br_cert doc hasn't
+// been OCR'd yet, for the scheduler's OCR sweep.
+func (s *Store) VendorsPendingBRCertOCR(ctx context.Context) ([]domain.Vendor, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+vendorCols+` FROM vendors WHERE br_cert_ocr_status=$1`, domain.BRCertOCRPending)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Vendor
+	for rows.Next() {
+		v, err := scanVendor(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// VendorsPendingBRCertVerify lists vendors with a certificate number
+// awaiting eROC verification, for the scheduler's verify sweep.
+func (s *Store) VendorsPendingBRCertVerify(ctx context.Context) ([]domain.Vendor, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+vendorCols+` FROM vendors WHERE br_cert_verify_status=$1`, domain.BRCertVerifyPending)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Vendor
+	for rows.Next() {
+		v, err := scanVendor(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
 }
 
 // ---- vendor blobs (dashboard/growth/reports documents) ----
@@ -1656,15 +1825,18 @@ func (s *Store) ReviewIDForTravellerPlace(ctx context.Context, travellerID, plac
 	return id, err
 }
 
-// ReviewPhotos batch-loads the attached photo URLs for a set of reviews,
-// keyed by review id — one query for a whole reviews list (no N+1).
-func (s *Store) ReviewPhotos(ctx context.Context, reviewIDs []string) (map[string][]string, error) {
-	out := map[string][]string{}
+// ReviewPhotos batch-loads the attached photos (url + thumb key) for a set
+// of reviews, keyed by review id — one query for a whole reviews list (no
+// N+1). Returned URL/ThumbKey are unsigned/unresolved — handlePlaceReviews
+// signs URL and resolves+signs ThumbKey into ThumbURL, same as
+// signMediaList does for every other media listing endpoint.
+func (s *Store) ReviewPhotos(ctx context.Context, reviewIDs []string) (map[string][]domain.ReviewPhoto, error) {
+	out := map[string][]domain.ReviewPhoto{}
 	if len(reviewIDs) == 0 {
 		return out, nil
 	}
 	rows, err := s.Pool.Query(ctx,
-		`SELECT owner_id, url FROM media
+		`SELECT owner_id, url, thumb_key, micro_thumb FROM media
 		 WHERE owner_type='review' AND role='review' AND status='ready' AND owner_id = ANY($1)
 		 ORDER BY created_at ASC`, reviewIDs)
 	if err != nil {
@@ -1672,11 +1844,12 @@ func (s *Store) ReviewPhotos(ctx context.Context, reviewIDs []string) (map[strin
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var ownerID, url string
-		if err := rows.Scan(&ownerID, &url); err != nil {
+		var ownerID string
+		var p domain.ReviewPhoto
+		if err := rows.Scan(&ownerID, &p.URL, &p.ThumbKey, &p.MicroThumb); err != nil {
 			return nil, err
 		}
-		out[ownerID] = append(out[ownerID], url)
+		out[ownerID] = append(out[ownerID], p)
 	}
 	return out, rows.Err()
 }

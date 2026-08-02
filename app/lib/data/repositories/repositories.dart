@@ -92,13 +92,18 @@ Future<(Position?, DeviceLocationResult)> _resolvePosition() async {
 }
 
 /// Guaranteed lat/lng — the user's real position, or Weligama Bay when
-/// denied/unavailable. Used wherever a nullable Position is awkward (map
-/// centering, weather) rather than every caller re-applying its own
-/// fallback.
-final devicePositionProvider = FutureProvider<LatLngAt>((ref) async {
-  final (pos, _) = await bestEffortPosition();
-  if (pos == null) return (lat: kFallbackLat, lng: kFallbackLng);
-  return (lat: pos.latitude, lng: pos.longitude);
+/// denied/unavailable — paired with the real [DeviceLocationResult] so a
+/// caller that actually needs to tell "still resolving" apart from
+/// "resolved to a fallback because permission was denied" apart from "a
+/// genuine granted position" doesn't have to re-derive it (see
+/// _VibeCheck in business_drawer.dart, which gates check-ins on `granted`
+/// specifically rather than treating the Weligama Bay fallback as a real
+/// position for geofence math). Callers that just want map-centering/
+/// weather lat-lng and don't care why can ignore the second element.
+final devicePositionProvider = FutureProvider<(LatLngAt, DeviceLocationResult)>((ref) async {
+  final (pos, result) = await bestEffortPosition();
+  if (pos == null) return ((lat: kFallbackLat, lng: kFallbackLng), result);
+  return ((lat: pos.latitude, lng: pos.longitude), DeviceLocationResult.granted);
 });
 
 /// Whether location permission is already granted right now — a plain

@@ -44,6 +44,10 @@ type Server struct {
 	// TomorrowIOAPIKey enables live weather (see internal/weather) — empty
 	// means GET /weather reports itself unconfigured (501) instead.
 	TomorrowIOAPIKey string
+	// GeminiAPIKey enables BR-certificate OCR pre-fill (see
+	// internal/gemini) — empty means the br-cert scheduler's OCR sweep is
+	// a no-op.
+	GeminiAPIKey string
 	// WeatherCache holds recent Tomorrow.io responses keyed by a coarse
 	// lat/lng cell (see internal/weather/cache.go) to stay within the free
 	// tier's tight rate limit.
@@ -87,6 +91,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		SuperAdminEmails:     superAdminSet(cfg.SuperAdminEmails),
 		GoogleCalendarAPIKey: cfg.GoogleCalendarAPIKey,
 		TomorrowIOAPIKey:     cfg.TomorrowIOAPIKey,
+		GeminiAPIKey:         cfg.GeminiAPIKey,
 		WeatherCache:         weather.NewCache(),
 		// Same key as GoogleCalendarAPIKey — see its doc comment.
 		GooglePlacesAPIKey: cfg.GoogleCalendarAPIKey,
@@ -224,6 +229,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Put("/vendor/business", s.handleUpdateVendorBusiness)
 		r.Patch("/vendor/business/category", s.handleUpdateVendorCategory)
 		r.Patch("/vendor/business/identity", s.handleUpdateVendorIdentity)
+		r.Patch("/vendor/business/br-cert-number", s.handleUpdateVendorBRCertNumber)
 		r.Get("/vendor/menu", s.handleVendorMenu)
 		r.Get("/vendor/offers", s.handleVendorOffers)
 		r.Get("/vendor/offers/{id}/claims", s.handleOfferClaims)

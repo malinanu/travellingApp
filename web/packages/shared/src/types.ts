@@ -149,6 +149,17 @@ export interface Vendor {
   submittedAt: string;
   lat: number;
   lng: number;
+  /** Business Registration certificate number (e.g. "PV00334782") — Gemini
+   * pre-fills this from an uploaded "br_cert" doc, always editable by the
+   * vendor, then verified in the background against Sri Lanka's DRC eROC
+   * registry. See brCertOcrStatus/brCertVerifyStatus for pipeline state. */
+  brCertNumber: string;
+  brCertOcrStatus: '' | 'pending' | 'done' | 'error';
+  brCertVerifyStatus: '' | 'pending' | 'verified' | 'invalid' | 'manual_review';
+  brCertCompanyName?: string;
+  brCertMessage?: string;
+  brCertAttempts?: number;
+  brCertVerifiedAt?: string;
   badReviewCount?: number;
   flagged?: boolean;
 }

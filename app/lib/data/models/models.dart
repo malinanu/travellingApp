@@ -183,7 +183,20 @@ class Place {
   final bool popularEvening;
   final String photo; // illustration kind: cowork/surf/sunset/clay/batik
   final String cover; // uploaded cover photo URL (R2), '' = use illustration
+  // ~320px thumbnail derivative of [cover] — '' if not generated yet (the
+  // background thumbnail worker fills it in within ~30s of upload) or if
+  // [cover] itself is empty. Card/header UI should prefer this over
+  // [cover], which is only worth requesting for something more prominent
+  // than a card thumbnail — there currently isn't one for covers.
+  final String coverThumb;
+  // Inline base64 blur placeholder for [cover] ('data:image/jpeg;base64,...'),
+  // shown instantly with no extra network fetch. '' under the same
+  // conditions as [coverThumb].
+  final String coverMicro;
   final List<String> gallery; // uploaded gallery photo URLs (R2)
+  // Same-order thumbnail derivatives of [gallery] — each entry may be ''
+  // under the same conditions as [coverThumb].
+  final List<String> galleryThumbs;
   final String promoVideo; // uploaded promo video URL (R2), '' = none
   final List<MenuSection> menu;
   final VibeAggregate vibe; // place's current vibe reading, from the server
@@ -230,7 +243,10 @@ class Place {
     this.popularEvening = false,
     required this.photo,
     this.cover = '',
+    this.coverThumb = '',
+    this.coverMicro = '',
     this.gallery = const [],
+    this.galleryThumbs = const [],
     this.promoVideo = '',
     this.menu = const [],
     this.vibe = const VibeAggregate(),
@@ -296,7 +312,10 @@ class Place {
       popularEvening: json['popularEvening'] as bool? ?? false,
       photo: json['photo'] as String? ?? 'cowork',
       cover: json['cover'] as String? ?? '',
+      coverThumb: json['coverThumb'] as String? ?? '',
+      coverMicro: json['coverMicro'] as String? ?? '',
       gallery: [for (final g in (json['gallery'] as List? ?? const [])) g as String],
+      galleryThumbs: [for (final g in (json['galleryThumbs'] as List? ?? const [])) g as String],
       promoVideo: json['promoVideo'] as String? ?? '',
       menu: [
         for (final s in (json['menu'] as List? ?? const []))
@@ -442,7 +461,7 @@ class Review {
   final String text;
   final String createdAt;
   final String? travellerName;
-  final List<String> photos;
+  final List<ReviewPhoto> photos;
 
   const Review({
     required this.id,
@@ -461,7 +480,30 @@ class Review {
         text: json['text'] as String? ?? '',
         createdAt: json['createdAt'] as String? ?? '',
         travellerName: json['travellerName'] as String?,
-        photos: [for (final p in (json['photos'] as List? ?? const [])) p as String],
+        photos: [
+          for (final p in (json['photos'] as List? ?? const []))
+            ReviewPhoto.fromJson(p as Map<String, dynamic>),
+        ],
+      );
+}
+
+/// One attached review photo. Mirrors [PlacePhoto]'s url/thumbUrl split: a
+/// small (~320px) JPEG derivative for the grid, empty for photos uploaded
+/// before thumbnails existed or if generation failed — fall back to [url]
+/// whenever [thumbUrl] is empty. The full-screen viewer always uses [url].
+class ReviewPhoto {
+  final String url;
+  final String thumbUrl;
+  // Inline base64 blur placeholder ('data:image/jpeg;base64,...'), shown
+  // instantly with no extra network fetch — '' under the same conditions
+  // as [thumbUrl].
+  final String microThumb;
+  const ReviewPhoto({required this.url, this.thumbUrl = '', this.microThumb = ''});
+
+  factory ReviewPhoto.fromJson(Map<String, dynamic> json) => ReviewPhoto(
+        url: json['url'] as String? ?? '',
+        thumbUrl: json['thumbUrl'] as String? ?? '',
+        microThumb: json['microThumb'] as String? ?? '',
       );
 }
 
@@ -478,6 +520,10 @@ class PlacePhoto {
   // [url] whenever this is empty. The full-screen viewer always uses
   // [url], never this.
   final String thumbUrl;
+  // Inline base64 blur placeholder ('data:image/jpeg;base64,...'), shown
+  // instantly with no extra network fetch — '' under the same conditions
+  // as [thumbUrl].
+  final String microThumb;
   final String uploadedBy;
   final String createdAt;
 
@@ -485,6 +531,7 @@ class PlacePhoto {
     required this.id,
     required this.url,
     this.thumbUrl = '',
+    this.microThumb = '',
     required this.uploadedBy,
     required this.createdAt,
   });
@@ -493,6 +540,7 @@ class PlacePhoto {
         id: json['id'] as String? ?? '',
         url: json['url'] as String? ?? '',
         thumbUrl: json['thumbUrl'] as String? ?? '',
+        microThumb: json['microThumb'] as String? ?? '',
         uploadedBy: json['uploadedBy'] as String? ?? '',
         createdAt: json['createdAt'] as String? ?? '',
       );

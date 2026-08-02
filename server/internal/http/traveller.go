@@ -264,8 +264,11 @@ func (s *Server) handleVibeCheckin(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Productive < 0 || req.Productive > 10 || req.Loud < 0 || req.Loud > 10 || req.Crowded < 0 || req.Crowded > 10 {
-		writeErr(w, http.StatusBadRequest, "ratings must be between 0 and 10")
+	// 0 stays valid — the "not yet rated" sentinel for whichever dimension
+	// wasn't part of this particular tap (see VibeCheckInsNotifier.rate());
+	// 1-5 are the real ratings.
+	if req.Productive < 0 || req.Productive > 5 || req.Loud < 0 || req.Loud > 5 || req.Crowded < 0 || req.Crowded > 5 {
+		writeErr(w, http.StatusBadRequest, "ratings must be between 0 and 5")
 		return
 	}
 	place, err := s.Store.PlaceByID(r.Context(), placeID)
@@ -317,12 +320,14 @@ func (s *Server) handlePlaceReviews(w http.ResponseWriter, r *http.Request) {
 	}
 	if photos, err := s.Store.ReviewPhotos(r.Context(), ids); err == nil {
 		for i := range reviews {
-			urls := photos[reviews[i].ID]
-			signed := make([]string, len(urls))
-			for j, u := range urls {
-				signed[j] = s.signMediaPath(u)
+			list := photos[reviews[i].ID]
+			for j := range list {
+				list[j].URL = s.signMediaPath(list[j].URL)
+				if list[j].ThumbKey != "" && s.Media != nil {
+					list[j].ThumbURL = s.signMediaPath(s.Media.PublicURL(list[j].ThumbKey))
+				}
 			}
-			reviews[i].Photos = signed
+			reviews[i].Photos = list
 		}
 	}
 	writeJSON(w, http.StatusOK, reviews)

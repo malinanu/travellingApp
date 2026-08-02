@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spotto · Travel like you know a local</title>
+<meta name="description" content="Spotto is the free travel app for Sri Lanka. Curated local spots, real deals and AI-guided tips, made by people who live here.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 3c6 0 10.5 4.6 10.5 10.3C26.5 21 16 29 16 29S5.5 21 5.5 13.3C5.5 7.6 10 3 16 3Z' fill='%2310201B'/><path d='M10.5 14c1.8-2 3.2-2 5 0s3.2 2 5 0' stroke='%23E19A3C' stroke-width='2.2' fill='none' stroke-linecap='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css?v=3">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="wordmark" href="index.html" aria-label="Spotto home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3c6 0 10.5 4.6 10.5 10.3C26.5 21 16 29 16 29S5.5 21 5.5 13.3C5.5 7.6 10 3 16 3Z" fill="#10201B"/><path d="M10.5 14c1.8-2 3.2-2 5 0s3.2 2 5 0" stroke="#E19A3C" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
+      Spotto
+    </a>
+    <button class="nav-burger" aria-label="Menu" aria-expanded="false">
+      <svg class="icon-burger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      <svg class="icon-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div class="nav-links">
+      <a href="features.html">Features</a>
+      <a href="businesses.html">For businesses</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="about.html">About</a>
+      <a href="blog.html">Stories</a>
+      <a href="contact.html">Contact</a>
+    </div>
+    <a class="btn btn--ink nav-cta" href="features.html#get">Get the app</a>
+  </div>
+</nav>
+
+<main>
+
+<!-- Hero -->
+<header class="hero">
+  <figure class="photo im-arugam hero-img" data-img="assets/img/hero-arugam.jpg" data-alt="Surfer walking the shoreline at Arugam Bay at golden hour"></figure>
+  <div class="hero-scrim"></div>
+  <div class="hero-content">
+    <div class="container">
+      <h1>Travel like you know a local.</h1>
+      <p class="lead">Curated spots, real deals and AI-guided tips for Sri Lanka, picked by people who actually live here.</p>
+      <div class="hero-ctas">
+        <a class="btn btn--amber" href="features.html#get">Get the app</a>
+        <a class="btn btn--ghost-light" href="#how">See how it works</a>
+      </div>
+    </div>
+  </div>
+  <span class="hero-place">Arugam Bay · East Coast</span>
+</header>
+
+<!-- Stats -->
+<section class="stats">
+  <div class="stats-grid container" style="padding:0">
+    <div class="stat rv"><b>120+</b><span>Curated spots</span></div>
+    <div class="stat rv d1"><b>8,400</b><span>Deals claimed</span></div>
+    <div class="stat rv d2"><b>260</b><span>Local partners</span></div>
+    <div class="stat rv d3"><b>4.9</b><span>App store rating</span></div>
+  </div>
+</section>
+
+<!-- 8 Wonders -->
+<section class="wonders">
+  <div class="container">
+    <div class="wonders-head rv">
+      <div>
+        <span class="eyebrow">The island</span>
+        <h2 style="margin-bottom:0">Eight wonders, one map</h2>
+      </div>
+      <div class="wonders-nav">
+        <button id="railPrev" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <button id="railNext" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+      </div>
+    </div>
+    <div class="rail rv" id="rail">
+      <div class="wcard"><figure class="photo im-arugam" data-img="assets/img/hero-arugam.jpg" data-alt="Arugam Bay"></figure><span class="wnum">01</span><div class="wcap"><b>Arugam Bay</b><span>Point breaks and good mornings</span></div></div>
+      <div class="wcard"><figure class="photo im-mirissa" data-img="assets/img/w-mirissa.jpg" data-alt="Mirissa"></figure><span class="wnum">02</span><div class="wcap"><b>Mirissa</b><span>Whales off the morning coast</span></div></div>
+      <div class="wcard"><figure class="photo im-sigiriya" data-img="assets/img/w-sigiriya.jpg" data-alt="Sigiriya"></figure><span class="wnum">03</span><div class="wcap"><b>Sigiriya</b><span>The rock above the jungle</span></div></div>
+      <div class="wcard"><figure class="photo im-ella" data-img="assets/img/w-ella.jpg" data-alt="Ella"></figure><span class="wnum">04</span><div class="wcap"><b>Ella</b><span>Nine arches, endless tea</span></div></div>
+      <div class="wcard"><figure class="photo im-yala" data-img="assets/img/w-yala.jpg" data-alt="Yala"></figure><span class="wnum">05</span><div class="wcap"><b>Yala</b><span>Where leopards own the road</span></div></div>
+      <div class="wcard"><figure class="photo im-galle" data-img="assets/img/w-galle.jpg" data-alt="Galle Fort"></figure><span class="wnum">06</span><div class="wcap"><b>Galle Fort</b><span>Lighthouse walks at golden hour</span></div></div>
+      <div class="wcard"><figure class="photo im-kandy" data-img="assets/img/w-kandy.jpg" data-alt="Kandy"></figure><span class="wnum">07</span><div class="wcap"><b>Kandy</b><span>Drums at the temple gate</span></div></div>
+      <div class="wcard"><figure class="photo im-peak" data-img="assets/img/w-adamspeak.jpg" data-alt="Adam's Peak"></figure><span class="wnum">08</span><div class="wcap"><b>Adam's Peak</b><span>Sunrise worth 5,500 steps</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- Marquee -->
+<div class="marquee" aria-hidden="true">
+  <div class="marquee-track">
+    <span>Arugam Bay <i>●</i> Mirissa <i>●</i> Sigiriya <i>●</i> Ella <i>●</i> Yala <i>●</i> Galle Fort <i>●</i> Kandy <i>●</i> Adam's Peak <i>●</i></span>
+    <span>Arugam Bay <i>●</i> Mirissa <i>●</i> Sigiriya <i>●</i> Ella <i>●</i> Yala <i>●</i> Galle Fort <i>●</i> Kandy <i>●</i> Adam's Peak <i>●</i></span>
+  </div>
+</div>
+
+<!-- App split -->
+<section>
+  <div class="container split">
+    <div class="rv">
+      <h2>A map curated like a friend's voice note</h2>
+      <p class="muted" style="font-weight:500">Open Spotto and see only places worth your time: reviewed by locals, tagged by vibe, refreshed when a spot slips. No pay-to-appear listings, no 4,000-review buffet traps.</p>
+      <ul class="ticks">
+        <li>Every pin hand-picked by someone who lives nearby</li>
+        <li>Claim real deals and redeem them with a QR code</li>
+        <li>Ask the AI guide anything, get real spots back</li>
+      </ul>
+      <a class="btn btn--ghost" href="features.html">Explore the features</a>
+    </div>
+    <figure class="photo im-app rv d1" data-img="assets/img/app-map.png" data-alt="The Spotto app's curated map screen">
+      <span class="ph-cap">The Spotto app</span>
+    </figure>
+  </div>
+</section>
+
+<!-- How it works -->
+<section id="how" style="padding-top:0">
+  <div class="container">
+    <h2 class="rv">Three steps to travelling like a local</h2>
+    <div class="steps">
+      <div class="step-row rv"><span class="num">01</span><div><h3>Grab the app, pick your vibe</h3><p>Surf, food, waterfalls, wildlife or all of it. Spotto tunes the map to what you love.</p></div></div>
+      <div class="step-row rv d1"><span class="num">02</span><div><h3>Follow the map</h3><p>Wander toward the pins. The guide fills in the details: when to go, what to order, where to park the scooter.</p></div></div>
+      <div class="step-row rv d2"><span class="num">03</span><div><h3>Show your phone, claim the deal</h3><p>Tap claim at a partner spot, the owner scans your code, and everyone leaves happy.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- For businesses band -->
+<section class="band">
+  <figure class="photo im-ember" data-img="assets/img/biz-shack.jpg" data-alt="A kottu shack griddle flaming at dusk"></figure>
+  <div class="band-scrim"></div>
+  <div class="container">
+    <span class="eyebrow" style="color:var(--amber)">For businesses</span>
+    <h2>Run a spot travellers should know about?</h2>
+    <p>Put your cafe, surf school or safari jeep in front of thousands of travellers already exploring nearby. Free to start, ten minutes to list.</p>
+    <div class="btn-row">
+      <a class="btn btn--amber" href="businesses.html">Explore vendor tools</a>
+    </div>
+  </div>
+</section>
+
+<!-- Quote -->
+<section>
+  <div class="container bigquote">
+    <blockquote class="rv">"A local in the app told me to skip the famous place and try the kottu shack two streets over. <span class="hl">Best meal of the whole trip.</span>"</blockquote>
+    <div class="quote-who rv d1">
+      <span class="avatar">LF</span>
+      <span><b>Léa Fontaine</b><span>Backpacker, Lyon</span></span>
+    </div>
+    <div class="quote-minis">
+      <div class="rv d1">
+        <p>"The surf alert woke me at 5:40 and Main Point was pumping with six people out. I owe this app a beer."</p>
+        <div class="quote-who"><span class="avatar">DW</span><span><b>Dan Whitmore</b><span>Surfer, Cornwall</span></span></div>
+      </div>
+      <div class="rv d2">
+        <p>"We did the Ella quest as a family and the kids still talk about the stamp book. Sneaky way to make them love hiking."</p>
+        <div class="quote-who"><span class="avatar">YT</span><span><b>Yuki Tanaka</b><span>Photographer, Osaka</span></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="band band--center">
+  <figure class="photo im-peak" data-img="assets/img/w-adamspeak.jpg" data-alt="Dawn over Adam's Peak"></figure>
+  <div class="band-scrim"></div>
+  <div class="container">
+    <h2>Your next favourite place is already on the map</h2>
+    <p>Free for travellers, forever. Download Spotto and start where the locals start.</p>
+    <div class="btn-row">
+      <a class="btn btn--paper" href="features.html#get">Get the app</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer" style="margin-top:0">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="wordmark" href="index.html">Spotto</a>
+        <p>Your pocket local for Sri Lanka.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Explore</h4>
+        <a href="features.html">Features</a>
+        <a href="blog.html">Stories</a>
+        <a href="about.html">About</a>
+      </div>
+      <div class="footer-col">
+        <h4>Business</h4>
+        <a href="businesses.html">For businesses</a>
+        <a href="pricing.html">Pricing</a>
+        <a href="contact.html">Partner support</a>
+      </div>
+      <div class="footer-col">
+        <h4>Company</h4>
+        <a href="about.html">Our story</a>
+        <a href="contact.html">Contact</a>
+        <a href="blog.html">Newsletter</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Spotto · Sri Lanka</span>
+      <span>Made with sun and salt water</span>
+    </div>
+  </div>
+</footer>
+
+<script src="site.js?v=3"></script>
+</body>
+</html>
