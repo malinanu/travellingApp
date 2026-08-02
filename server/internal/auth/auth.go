@@ -128,24 +128,42 @@ func (t *Tokens) VerifyTwoFactorPending(token string) (string, error) {
 
 const mediaViewPurpose = "media-view"
 
-// mediaViewLifetime bounds how long a signed /media/raw URL stays valid.
-// Callers re-sign on every response (see Server.signMediaPath), so in
-// practice a client never sees an expired one during normal use — this only
-// bounds how long a leaked/shared URL (browser history, referrer, logs)
-// keeps working.
+// mediaViewLifetime bounds how long a signed /media/raw URL stays valid —
+// this bounds how long a leaked/shared URL (browser history, referrer,
+// logs) keeps working, since callers re-sign on every response (see
+// Server.signMediaPath).
 const mediaViewLifetime = 24 * time.Hour
+
+// mediaViewWindow quantizes IssueMediaView's timestamps so repeated calls
+// for the same key within the same window produce the identical token —
+// see its doc comment for why that matters.
+const mediaViewWindow = time.Hour
 
 // IssueMediaView issues a short-lived, single-purpose token scoped to
 // reading exactly one R2 object key — embedded as a query param on
 // /media/raw URLs instead of a bearer session token, since plain <img>/
 // <video>/<a> tags can't attach an Authorization header.
+//
+// IssuedAt is truncated to mediaViewWindow rather than using the exact
+// current instant: every field here (Subject, IssuedAt, ExpiresAt) feeds
+// the JWT signature, so a plain time.Now() would mint a brand-new token
+// string on every single call — meaning the resulting /media/raw URL
+// (whose cache key, for both Flutter's ImageCache and any HTTP cache, is
+// the full URL including this token) would never be reused, defeating
+// caching for every image in the app regardless of Cache-Control headers
+// or mediaViewLifetime. Quantizing means repeated requests for the same
+// key within the same hour get byte-identical tokens/URLs, so a cached
+// image actually gets reused instead of re-fetched — at the cost of at
+// most ~1 extra hour of validity on a leaked URL, negligible next to the
+// existing 24h mediaViewLifetime.
 func (t *Tokens) IssueMediaView(key string) (string, error) {
+	issuedAt := time.Now().Truncate(mediaViewWindow)
 	c := Claims{
 		Purpose: mediaViewPurpose,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   key,
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(mediaViewLifetime)),
+			IssuedAt:  jwt.NewNumericDate(issuedAt),
+			ExpiresAt: jwt.NewNumericDate(issuedAt.Add(mediaViewLifetime)),
 		},
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString(t.secret)

@@ -70,13 +70,22 @@ type Media struct {
 	ObjectKey   string    `json:"objectKey"`
 	URL         string    `json:"url"`
 	// ThumbKey/ThumbURL are only ever set for Kind == "image" — a small
-	// (~320px) JPEG derivative generated at confirm time (see
-	// handleMediaConfirm), same key-stored/URL-derived pairing as
-	// ObjectKey/URL. Empty for media uploaded before this existed, for
-	// non-image kinds, or if thumbnail generation failed — clients fall
-	// back to URL in that case rather than treating it as an error.
-	ThumbKey    string    `json:"-"`
-	ThumbURL    string    `json:"thumbUrl,omitempty"`
+	// (~320px) JPEG derivative generated in the background by the
+	// thumbnail worker (see ThumbStatus, internal/http/thumbnail_worker.go),
+	// same key-stored/URL-derived pairing as ObjectKey/URL. Empty for media
+	// uploaded before this existed, for non-image kinds, while generation
+	// is still pending, or if it failed — clients fall back to URL in that
+	// case rather than treating it as an error.
+	ThumbKey string `json:"-"`
+	ThumbURL string `json:"thumbUrl,omitempty"`
+	// MicroThumb is a tiny (~24px) heavily-compressed JPEG inlined as a
+	// base64 data URI — generated alongside ThumbKey, shown instantly as a
+	// blur-up placeholder without any extra network fetch. Empty under the
+	// same conditions as ThumbURL.
+	MicroThumb string `json:"microThumb,omitempty"`
+	// ThumbStatus drives the thumbnail worker's sweep (pending/done/error)
+	// — never client-facing.
+	ThumbStatus string    `json:"-"`
 	ContentType string    `json:"contentType"`
 	Size        int64     `json:"size"`
 	Width       int       `json:"width"`
@@ -101,6 +110,29 @@ const (
 	VendorRejected  VendorStatus = "rejected"
 	VendorEdits     VendorStatus = "edits"     // edits requested
 	VendorSuspended VendorStatus = "suspended" // pulled from the app after admin review
+)
+
+// BRCertOCRStatus tracks the Gemini pre-fill step for a vendor's Business
+// Registration certificate — see internal/gemini and br_cert_scheduler.go.
+type BRCertOCRStatus string
+
+const (
+	BRCertOCRNone    BRCertOCRStatus = ""        // no BR cert doc uploaded yet
+	BRCertOCRPending BRCertOCRStatus = "pending" // doc uploaded, scheduler hasn't run OCR yet
+	BRCertOCRDone    BRCertOCRStatus = "done"    // OCR ran (found a candidate, or didn't — see BRCertNumber)
+	BRCertOCRError   BRCertOCRStatus = "error"   // the Gemini call itself failed, not just "no number found"
+)
+
+// BRCertVerifyStatus tracks verification of BRCertNumber against Sri
+// Lanka's DRC eROC registry — see internal/eroc and br_cert_scheduler.go.
+type BRCertVerifyStatus string
+
+const (
+	BRCertVerifyNone         BRCertVerifyStatus = ""             // no cert number to verify yet
+	BRCertVerifyPending      BRCertVerifyStatus = "pending"       // queued for the eROC sweep
+	BRCertVerifyVerified     BRCertVerifyStatus = "verified"      // eROC status:true
+	BRCertVerifyInvalid      BRCertVerifyStatus = "invalid"       // eROC status:false — definitive, not retried
+	BRCertVerifyManualReview BRCertVerifyStatus = "manual_review" // exhausted the retry budget on transient failures
 )
 
 type Vendor struct {
@@ -128,6 +160,18 @@ type Vendor struct {
 	SubmittedAt time.Time       `json:"submittedAt"`
 	Lat         float64         `json:"lat"`
 	Lng         float64         `json:"lng"`
+	// BRCertNumber is the vendor's Business Registration certificate number
+	// (e.g. "PV00334782") — Gemini-suggested from the uploaded "br_cert"
+	// media (see internal/gemini), always editable by the vendor before/
+	// after that, and verified in the background against eROC (see
+	// internal/eroc). See BRCertOCRStatus/BRCertVerifyStatus for state.
+	BRCertNumber       string              `json:"brCertNumber"`
+	BRCertOCRStatus    BRCertOCRStatus     `json:"brCertOcrStatus"`
+	BRCertVerifyStatus BRCertVerifyStatus  `json:"brCertVerifyStatus"`
+	BRCertCompanyName  string              `json:"brCertCompanyName,omitempty"` // eROC's company_name
+	BRCertMessage      string              `json:"brCertMessage,omitempty"`     // eROC's message, or last error
+	BRCertAttempts     int                 `json:"brCertAttempts,omitempty"`    // consecutive transient verify failures
+	BRCertVerifiedAt   *time.Time          `json:"brCertVerifiedAt,omitempty"`
 	// Joined fields (not columns), populated by admin map/near queries.
 	BadReviewCount int  `json:"badReviewCount,omitempty"`
 	Flagged        bool `json:"flagged,omitempty"`
@@ -261,9 +305,22 @@ type Review struct {
 	CreatedAt   time.Time `json:"createdAt"`
 	// Joined display field (not a column).
 	TravellerName string `json:"travellerName,omitempty"`
-	// Photos are the review's attached image URLs (media role "review"),
-	// filled in by handlePlaceReviews — not a column on reviews.
-	Photos []string `json:"photos,omitempty"`
+	// Photos are the review's attached photos (media role "review"), filled
+	// in by handlePlaceReviews — not a column on reviews.
+	Photos []ReviewPhoto `json:"photos,omitempty"`
+}
+
+// ReviewPhoto is one attached review photo. ThumbKey/ThumbURL mirror
+// Media's own split (see Media.ThumbKey/ThumbURL): ThumbKey is the raw R2
+// key for a small derivative, never serialized directly — handlePlaceReviews
+// resolves and signs it into ThumbURL, which is empty for photos uploaded
+// before thumbnails existed or where generation failed, in which case
+// clients fall back to URL.
+type ReviewPhoto struct {
+	URL        string `json:"url"`
+	ThumbKey   string `json:"-"`
+	ThumbURL   string `json:"thumbUrl,omitempty"`
+	MicroThumb string `json:"microThumb,omitempty"`
 }
 
 // VibeCheckin is one traveller's timestamped snapshot rating of a place

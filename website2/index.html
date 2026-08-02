@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spotto</title>
+<meta name="description" content="Spotto. Yes, it's really called that. The realest map of Sri Lanka, built by locals.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='15' fill='%23070B14'/><circle cx='16' cy='16' r='7' fill='%23FF6A3D'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+
+<canvas id="scene-canvas" aria-hidden="true"></canvas>
+
+<a class="skip-intro" href="../website/index.html">Skip intro →</a>
+
+<div class="storybeats" aria-hidden="true">
+  <p class="story" data-from="0.10" data-to="0.24">Picked by locals.</p>
+  <p class="story" data-from="0.27" data-to="0.39">Loved by travellers.</p>
+  <p class="story" data-from="0.42" data-to="0.50">Real deals. No filler.</p>
+</div>
+
+<main class="track">
+
+  <section class="beat beat--hero">
+    <span class="chip">Yes, it's really called Spotto.</span>
+    <h1 class="wordmark">Spotto</h1>
+    <p class="sub">A funny name for the realest map of Sri Lanka.</p>
+  </section>
+
+  <section class="beat" style="min-height:220vh" aria-hidden="true"></section>
+
+  <section class="beat beat--climax">
+    <h2 class="climax-text">Funky name. <span class="hl">Serious travel.</span></h2>
+  </section>
+
+  <section class="beat beat--cta">
+    <p class="cta-lead">See what locals actually built.</p>
+    <div class="cta-row">
+      <a class="btn-enter" href="../website/index.html">
+        Enter Spotto
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+      </a>
+      <a class="btn-biz" href="../website/businesses.html">Running a business? →</a>
+    </div>
+  </section>
+
+</main>
+
+<!-- Static fallback: shown instead of the track/canvas under reduced-motion
+     or when WebGL/the scene module is unavailable. Complete and reachable
+     on its own, never a frozen mid-scene. -->
+<div class="fallback">
+  <span class="chip">Yes, it's really called Spotto.</span>
+  <svg class="island" viewBox="0 0 400 120" aria-hidden="true">
+    <path d="M0 120 L40 60 L110 84 L160 40 L210 70 L260 48 L320 82 L400 60 L400 120 Z" fill="currentColor"/>
+  </svg>
+  <h1 class="wordmark" style="font-size:clamp(48px,11vw,120px)">Spotto</h1>
+  <p class="sub">A funny name for the realest map of Sri Lanka.</p>
+  <h2 class="climax-text" style="font-size:clamp(26px,4.5vw,44px)">Funky name. <span class="hl">Serious travel.</span></h2>
+  <div class="cta-row">
+    <a class="btn-enter" href="../website/index.html">
+      Enter Spotto
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+    </a>
+    <a class="btn-biz" href="../website/businesses.html">Running a business? →</a>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+<script type="module" src="main.js?v=1"></script>
+</body>
+</html>

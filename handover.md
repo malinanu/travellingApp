@@ -1,165 +1,187 @@
-# Handover — 2026-07-19 session
+# Handover — 2026-08-02 session
 
 ## Why this exists
 
-Running log of what got done in this session and what's still open, so the
-next session (or you) can pick up without re-deriving context. Supersedes
-the previous `handover.md` (2026-07-16, latent-bug audit) — that audit's
-findings are carried forward below with updated status (two of its four
-items got fixed as a side effect of this session's other work).
+Running log of what got done in this session and what's still open, so the next session (or
+you) can pick up without re-deriving context. Supersedes the previous `HANDOVER.md`
+(2026-07-19, Admin Command Center audit + Validate QR scanning) — that doc's still-open items
+are carried forward at the bottom with updated status.
 
 ---
 
 ## Done this session (chronological)
 
-### 1. Google Places API migration
-`web/vendor/components/location-picker-google.tsx` and `web/vendor/app/login/page.tsx`
-migrated from the deprecated `google.maps.places.Autocomplete` widget (blocked
-for new Google Cloud projects since March 2025 — the real cause of a
-persisting "must use an API key" error in production) to the modern
-`PlaceAutocompleteElement`. Verified locally with the real API key; the
-remaining production-side unknown is whether "Places API (New)" is enabled
-in Google Cloud Console's key restrictions.
-**Committed:** `360d636`.
+### 1. Vendor registration polish + pending-vendor dashboard access
+**Commit `f9f814a`.**
+- Fixed Step 4's misaligned phone-number row (the `LK +94` country-code chip had no label
+  above it, so it didn't line up with the `Field` component next to it).
+- Added a location pin picker to Step 4 (`LocationPickerAuto`, new component) so owners who
+  skip the Step 1 business search still get to set an exact map pin before submitting.
+- `Shell` (`web/vendor/components/shell.tsx`) no longer hard-blocks the *entire* dashboard for
+  pending/edits-status vendors — only `rejected`/`suspended` get the full-page gate now.
+  Pending/edits vendors get the real dashboard plus a persistent `StatusBanner`, so they can
+  set up their profile/menu while awaiting approval instead of sitting idle. Offers/Growth/
+  Validate/Reports stay hidden from nav until approved (`approvedOnly` flag on `NAV`).
+- Backend: new `requireEditableVendor` (`server/internal/http/auth.go`) allows pending/edits/
+  approved vendors to write to profile/identity/category/menu endpoints — `requireApprovedVendor`
+  stays as-is for offers/growth/validate/reports, which depend on actually being live to
+  travelers.
+- Hardened the Google Maps location picker: `gm_authFailure` (Google's own hook for
+  credential/referrer failures) now triggers a runtime fallback to the free Leaflet/
+  OpenStreetMap picker instead of leaving Google's cryptic "Oops!" overlay on screen
+  (`lib/google-maps.ts`, new `location-picker-auto.tsx`).
+- **Follow-up mid-session:** the actual root cause of the Google Maps failure on staging was
+  the Maps API key's HTTP-referrer restriction not covering the staging domain — fixed on your
+  end in Google Cloud Console, confirmed working by a later screenshot showing a live Google
+  map.
 
-### 2. Hydration-mismatch fixes (unrelated, opportunistic)
-Browser-extension-injected attributes (Grammarly's `data-gr-ext-installed`
-on the vendor app's `<body>`, a password manager's `caret-color` style on
-the admin login page's inputs) were causing harmless but noisy React
-hydration-mismatch console errors. Fixed with targeted `suppressHydrationWarning`
-on the specific elements in `web/vendor/app/layout.tsx` and
-`web/admin/app/login/page.tsx`.
-**Committed:** bundled into `360d636` (vendor) and `816136e` (admin login
-page's fix — check `git show --stat` if you need the exact split).
+### 2. Address search + auto-fill from Google Place data
+**Commit `a056fe6`.**
+- "Town" became a real address-search field (`AddressSearchField`, new component) in both
+  registration Step 4 and the vendor Profile page — searching resolves an approximate
+  location and pans the map there, while still storing just the short town name (not the full
+  street address) so admin lists/dashboard copy that expect a short label keep working.
+- If the matched result is an actual Google Maps business listing, Phone/Website/Category/
+  Hours get pulled in automatically — but **only into fields that are still empty**, never
+  overwriting something already typed, with no confirmation UI (silent fill).
+- Removed the old floating search box that used to sit on top of the Google map itself, since
+  the new Address field is the single search entry point.
+- Fixed a real CSS cascade bug found along the way: the Contact & links card's icon-overlapping-
+  text (phone/globe/Instagram/Facebook icons sat on top of the placeholder text) — `.input`'s
+  shorthand `padding` in `globals.css` was declared *after* `@tailwind utilities`, silently
+  overriding the `pl-9` padding those fields need. Fixed by wrapping the custom classes in
+  `@layer components {}`.
+- Added a label above the Profile page's map to match Step 4's.
 
-### 3. Admin Command Center — full audit + 5 fixes
-Audited `web/admin` end-to-end. Good news: all 6 core sections (Approval
-queue, Content monitor, Geo-analytics, Subscriptions, Audio guides, Access
-grants) were already real, DB-backed, no mock data. Gaps were all in header
-chrome and admin-account infrastructure:
-- **Audit log** — new `admin_audit_log` table + write on every admin
-  mutation (approve/reject/suspend a vendor, moderate content, revoke a
-  grant, upgrade a subscription), gated to super-admins only
-  (`server/internal/http/audit.go`, migration `010_admin_audit_log.sql`).
-  Also fixed a real bug: grant revocation was recording the literal string
-  `"admin"` instead of the acting admin's real ID.
-- **Real notification bell** — computed live from pending-vendor/flagged-
-  content/bad-review-vendor counts (no drift risk vs. a stored-event table),
-  replacing a completely dead `<Bell/>` button
-  (`server/internal/store/postgres/store.go`'s `AdminNotifications`,
-  migration `011_admin_notification_reads.sql`).
-- **Real search (⌘K)** — searches vendors/feed items/subscriptions; the
-  search box and the `⌘K` keybinding were both previously decorative dead
-  UI (`GET /admin/search`, wired into `web/admin/components/shell.tsx`).
-- **Super-admin tier via `SUPER_ADMIN_EMAILS` env var** — deliberately
-  lightweight per your explicit choice over building real DB-backed
-  RBAC/invites. The header's hardcoded "Super-admin" text is now real
-  (`server/internal/http/superadmin.go`).
-- **Polish** — forgot-password flow added to the admin login page (plus a
-  real bug fix: `handleForgotPassword` was emailing admins a reset link
-  into the *vendor* app, not the admin app), the previously-dead "Change
-  password" button now works, error/loading states added across every
-  admin route.
-**Committed & pushed:** `14ec713`.
+### 3. Current Vibe redesign + optimistic updates
+**Commits `285a72c`, `eaacf82`.**
+- Restyled to 3 side-by-side colored cards (your requested "old card look") with a 5-segment
+  tap strip per card (each segment = 2 points on the underlying 0-10 scale) instead of 3
+  stacked full-width 10-segment bars — keeps all the check-in logic (geofencing, repeat
+  ratings, timestamps) exactly as it was.
+- Made rating **optimistic**: `VibeCheckInsNotifier.rate()`
+  (`app/lib/data/repositories/repositories.dart`) used to only update local state *after* the
+  network round-trip, so a tap produced zero visible change until the request finished. Now it
+  writes your tap into state immediately, reconciles with the server's response on success, and
+  rolls back on failure.
+- **This session's follow-up:** confirmed via your API logs the vibe-checkin POST itself is
+  ~3-4ms, so the remaining "hot second" people might feel is GPS/location-fix latency
+  (`devicePositionProvider`), not the tap path. Fixed the UX symptom: the card now shows
+  "Finding your location…" while GPS is still resolving, instead of the misleading "Rate this
+  once you're here." (which is supposed to mean "you're too far away") — see commit `cd242c2`.
+  The underlying GPS wait itself is real hardware/OS latency (worse on emulators, which often
+  lack a cached last-known position) and isn't something fixable in app code.
 
-**Explicitly deferred (your call, not forgotten):** real multi-tier admin
-RBAC + an admin-invite system (you chose the env-var approach instead), and
-a CMS for the public Spotto marketing website (a separate future
-initiative you mentioned in passing — no requirements gathered yet, saved
-as a memory note).
+### 4. Traveller-photo UX overhaul + a real authorization fix
+**Commit `285a72c`.**
+- Traveller photos moved from a horizontal scroll strip to a grid (nothing hidden off-screen),
+  with loading placeholders, an empty state, a relative "posted X ago" timestamp per photo, and
+  a delete control on photos you posted yourself.
+- Review photo thumbnails got the same sizing/loading-placeholder treatment for consistency.
+- The full-screen photo viewer gained swipe-down-to-dismiss.
+- **Found and fixed a real security gap** while wiring up delete: `canUploadFor`'s blanket
+  `true` for `ownerType == "place"` is correct for *uploads* (any traveller can contribute a
+  photo to a public place) but was also being reused to authorize *deletes* — meaning any
+  signed-in traveller could delete any other traveller's place photo, not just their own.
+  `handleMediaDelete` now requires you to be the uploader (or an admin) for place-owned media.
 
-### 4. Vendor Menu — preset menus + per-day availability + real bug fix
-Root cause of your "can't add a menu" report: the save mutation auto-fired
-immediately after adding a section, but read React's *pre-update* state due
-to batching — it silently persisted the previous menu, so a newly-added
-section appeared to save then vanished on the next refetch. Fixed by
-removing the auto-save entirely; every edit now just marks the document
-dirty, and the existing "Save menu" button (reads current state) is the
-only thing that persists. Verified via Playwright that a new section+item
-now survives a full page reload.
+### 5. Debounced auto-save everywhere it's safe
+**Commit `bf70b98`.**
+New shared `useAutoSave` hook (`web/packages/shared/src/use-auto-save.ts`) and a Flutter
+`DebouncedSaver` utility (`app/lib/core/utils/debounced_saver.dart`) — both follow the same
+rule: **schedule the save from a `useEffect`/`Timer`, never synchronously right after a state
+update.** That rule exists specifically to avoid a real historical bug: an earlier version of
+the vendor Menu page called its save mutation synchronously after `setPresets(...)`, which
+raced React's state batching and silently persisted the *previous* state. `flush()` forces an
+immediate save on blur, and is what the existing manual "Save" buttons now call — kept as a
+fallback, not removed.
 
-Also built the requested feature: vendors can create multiple named preset
-menus and manually pick which one is active; any section/item can be
-restricted to specific days of the week (whitelist semantics — unrestricted
-by default). All resolved server-side in the existing menu-flattening logic
-(`effectiveMenuSections` in `server/internal/http/vendor.go`) — **zero
-Flutter changes needed**, confirmed live (an item restricted to Monday
-correctly disappeared from the real `/places` response on a Sunday).
-6 new Go integration tests (`vendor_menu_test.go`), all passing.
-**Committed & pushed:** `816136e`.
+Wired into:
+- **Vendor portal**: Business Profile (identity/address, contact, hours, amenities), Account
+  (personal details), Menu, and Offers — but Offers only auto-saves while editing an *existing*
+  offer, and preserves its current live/draft status rather than reusing the Publish/Save-as-
+  draft buttons' explicit status (so a typo fix never silently un-publishes a live offer).
+- **Admin portal**: the vendor `EditForm` — auto-save no longer closes the form back to view
+  mode; only the manual "Save changes" button does that.
+- **Traveller app**: Profile screen's name field and style/interest chips (email turned out to
+  already be read-only, so left alone).
 
-### 5. Validate (redemption) page — real camera QR scanning
-- New `web/vendor/components/qr-scanner.tsx`: real `getUserMedia` camera
-  (rear camera preferred) decoding QR frames via `jsQR` on a canvas —
-  replaces what was a fully static/fake "Simulate scan" placeholder.
-  Self-contained requesting/active/denied/unavailable states.
-- `web/vendor/app/validate/page.tsx` wired to the real scanner; manual
-  entry + backend (`POST /vendor/validate`) were already fully real, no
-  backend changes needed there.
-- **Found a real gap while researching this:** nothing anywhere in the app
-  actually generated a QR code to scan — the Flutter traveller app only
-  showed the redemption code as plain text. Added a real `QrImageView` to
-  the claimed-deal card (`app/lib/features/traveller/place_detail/business_drawer.dart`)
-  using the `qr_flutter` package (already a dependency, already used for
-  2FA) so the loop is genuinely closed end-to-end.
-- **Found and fixed a second real, pre-existing bug** while testing mobile
-  responsiveness: the vendor portal's shared mobile nav drawer
-  (`web/vendor/components/shell.tsx`) had no CSS for its *closed* state —
-  it only ever got `translateX(0)` when open, otherwise fell through to no
-  transform at all, so the drawer was permanently stuck open, covering page
-  content on **every** vendor page at phone-width viewports, not just
-  Validate. One-line fix (`-translate-x-full lg:translate-x-0`), verified
-  with real before/after mobile screenshots.
-- Verified: `jsQR` correctly decodes a real generated Spotto QR end-to-end
-  (via a canvas + local HTTP test harness, since no camera hardware/ffmpeg
-  was available in this environment to fake a full camera→QR pipeline);
-  camera-granted (Chromium fake device), camera-denied, and mobile-viewport
-  Playwright passes all clean; `flutter analyze` and `next build`/`tsc`
-  both clean.
-- **NOT YET COMMITTED.** Touches: `app/lib/features/traveller/place_detail/business_drawer.dart`,
-  `web/vendor/app/validate/page.tsx`, `web/vendor/components/shell.tsx`,
-  `web/vendor/components/qr-scanner.tsx` (new), `web/vendor/package.json`
-  + `web/package-lock.json` (new `jsqr` dependency).
+**Deliberately excluded everywhere:** passwords, 2FA, destructive admin actions (takedown,
+approve/reject), Cancel-able dialogs (trip create/edit sheets), and offer/guide *creation*
+flows (as opposed to editing).
+
+### 6. Upload error clarity + R2 CORS diagnosis
+**Commit `466a996`.**
+Vendor Photos & video uploads were failing with a bare "Failed to fetch" — traced to
+`uploadMedia` (`web/packages/shared/src/upload.ts`) PUTting directly from the browser to
+Cloudflare R2, which is subject to R2's own CORS policy (separate from the API server's CORS
+config). Added a clearer error message for this specific failure mode. **The actual root cause
+was your R2 bucket's CORS policy only allowing `GET`** — you added `PUT` + `Content-Type` to
+the allowed methods/headers on the bucket directly (not a code change); should be resolved now
+but worth double-checking a real upload succeeds on staging if you haven't already.
+
+### 7. Real server-side photo thumbnails
+**Commit `cd242c2`.**
+The Go backend now generates a small (~320px) JPEG thumbnail for every image upload:
+- New `golang.org/x/image` dependency; new migration `017_media_thumbnails.sql` adds
+  `thumb_key` to the `media` table; new `ThumbKey`/`ThumbURL` fields on `domain.Media`.
+- `handleMediaConfirm` fetches the just-uploaded object, decodes/resizes it, and stores the
+  derivative via a new `Put` method on the R2 `Uploader` interface (previously only
+  `PresignPut` existed, for client-direct uploads) — failing gracefully (no thumbnail, not a
+  failed upload) if the source image can't be decoded.
+- Thumb URLs are signed the same way originals are, and cleaned up on delete/replace alongside
+  the original object.
+- **Consumed so far:** the traveller photos grid and the vendor Profile gallery load the
+  thumbnail for tiles, falling back to the full `url` for photos uploaded before this existed;
+  the full-screen viewer always uses the full-resolution image.
+- **Not yet wired up (same backend capability, cheap to add later):** review photos
+  (`Review.photos` is currently a flat `List<String>` from a different response shape than
+  `Media`, needs its own small model/response change) and the admin vendor media panel.
 
 ---
 
 ## What's still open
 
-1. ~~Push the Validate redemption work (item 5 above)~~ — **done**,
-   committed (`305f418`) and pushed with your go-ahead.
-2. **Production Google Places check** — after your next vendor-app
-   redeploy, confirm the "must use an API key" error is actually gone; if
-   not, check "Places API (New)" is allowed under the key's API
-   restrictions in Google Cloud Console.
-3. ~~Old Issue 1 (suspended vendors see the wrong message)~~ — **fixed**:
-   `PendingGate` in `web/vendor/components/shell.tsx` now has a
-   `'suspended'` branch ("Account suspended" + contact-support copy,
-   mirroring the `'rejected'` branch) instead of falling through to the
-   misleading "Pending review… usually within a day" text.
-4. **Old minor note 3, still applicable — `web/vendor/app/account/page.tsx`'s**
-   "Verified" badge check (`business?.status === 'approved'`) is
-   unreachable-but-fragile: `Shell` already gates non-approved vendors away
-   before this page renders, so the check is always true today. Not a bug,
-   just worth remembering if that gating is ever loosened.
-5. ~~Old Issue 2 (admin "Change password" does nothing)~~ — **fixed**, see
-   item 3 above (Admin Command Center polish).
-6. ~~Old minor note 4 (admin "Super-admin" hardcoded)~~ — **fixed**, see
-   item 3 above (super-admin tier).
-7. **Deferred by your choice, not forgotten:** real admin RBAC + invite
-   system; a CMS for the Spotto marketing website (no requirements
-   gathered yet).
+An audit pass this session went back over the 5 items below (the previous version of this
+section), verified each claim against the current code, and found several were stale or
+understated a real bug. Fixes landed for everything except item 1's staging confirmation, which
+only you can do.
 
-## Methodology notes carried forward (still valid if repeating a similar audit)
-
-1. List every `enum`/status/role/category type in
-   `server/internal/domain/domain.go`.
-2. Grep the frontend (`web/**/*.tsx`, `app/lib/**/*.dart`) for string
-   literals matching those values, and check every comparison branch
-   handles every value the type can actually take — not just the ones a
-   demo dataset happens to exercise.
-3. Cross-check what `server/internal/seed/seed.go` and
-   `server/internal/gendata/generators.go` actually generate for each
-   field, since those (not just `domain.go`'s type definition) are what
-   real accounts will actually have.
-4. Grep every `api.<method>(` call site against
-   `server/internal/http/server.go`'s registered routes.
+1. **Verify the R2 CORS fix actually works** — you applied it manually in the Cloudflare
+   dashboard; do one real upload on staging to confirm. Audited the upload path while at it:
+   the CORS fix itself is complete (every web upload funnels through the one shared
+   `uploadMedia()` helper, so nothing else needed it) — but found and fixed an adjacent bug:
+   `PresignPut` URLs expire after 10 minutes, so a slow/large upload could outlive the link and
+   get a bare `Upload failed (403)`; `uploadMedia()` now shows a clear "link expired, try again"
+   message for that case instead.
+2. **Fixed: review photos now carry thumbnails.** The old note here ("different response
+   shape than `Media`, needs its own model") was wrong — review photos already lived in the
+   same `media` table (`ownerType='review'`) and were already getting thumbnails generated on
+   upload, just never selected/returned. `ReviewPhotos` now selects `thumb_key`,
+   `domain.Review.Photos` is `[]ReviewPhoto{URL, ThumbURL}` instead of `[]string`, and the
+   Flutter review-photo carousel (`business_drawer.dart`) uses the thumbnail for the strip and
+   the full image only in the full-screen viewer.
+3. **Fixed: admin vendor media panel now uses thumbnails.** Was a literal one-line gap —
+   `MediaThumb` always rendered `m.url` instead of `m.thumbUrl || m.url`, unlike the vendor
+   portal's own photo grid, which already did this correctly. Every vendor detail page load in
+   admin was pulling full-resolution originals (up to 8MB each) to paint 64×64px tiles — fixed.
+4. **Fixed: two real bugs found behind the "GPS is just slow" framing for Current Vibe.** The
+   "Finding your location…" timing itself was always fine (bounded, never hangs) — but (a)
+   permission-denied and location-services-disabled were silently mapped to a fake fallback
+   position (Weligama Bay) and shown the same "too far away" message forever, with no way to
+   fix it — now shows an actionable "enable location" prompt (tap → Settings or retry),
+   matching the pattern `discover_screen.dart`/`spots_screen.dart` already used elsewhere in the
+   app; and (b) the resolved position was cached for the whole app session with no re-check —
+   now re-checks once each time a place's drawer opens, so walking into range unlocks the cards
+   without an app restart. Also closed a related latent bug this surfaced: the geofence/check-in
+   lat-lng could previously be computed against the Weligama Bay fallback for a denied/disabled
+   user, not just a real position.
+5. Carried forward from the 2026-07-19 handover:
+   - **Corrected, not a bug:** `web/vendor/app/account/page.tsx`'s "Verified" badge check
+     (`business?.status === 'approved'`) was previously described as unreachable-but-fragile.
+     That was already stale before this session even started — this session's `Shell` change
+     (commit `f9f814a`) lets pending/edits vendors reach the real dashboard including
+     `/account`, so the check is genuinely live code today, and it behaves correctly (no
+     badge for non-approved, badge for approved). Nothing to fix.
+   - Real admin RBAC + an admin-invite system, and a CMS for the public Spotto marketing
+     website — both still deliberately deferred by your choice, not forgotten.

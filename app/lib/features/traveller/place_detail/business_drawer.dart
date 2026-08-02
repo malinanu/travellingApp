@@ -1,9 +1,8 @@
 // Spot detail bottom sheet — port of BusinessDrawer.jsx: illustration
 // header, stats, deal claim, vibe voting, artisan check-in, menu, actions.
 
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
@@ -17,6 +16,7 @@ import '../../../core/theme/palette.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../core/widgets/pill.dart';
 import '../../../core/widgets/press_scale.dart';
+import '../../../core/widgets/progressive_image.dart';
 import '../../../core/widgets/sheet_scaffold.dart';
 import '../../../core/widgets/spotto_icons.dart';
 import '../../../core/widgets/stat_chip.dart';
@@ -97,12 +97,15 @@ class BusinessDrawerBody extends ConsumerWidget {
                 fit: StackFit.expand,
                 children: [
                   // Real uploaded cover photo when the vendor has one, else
-                  // fall back to the illustration.
+                  // fall back to the illustration. Same thumb-only tier as
+                  // the spots-list card — there's no viewer for covers, so
+                  // the ~320px thumbnail is plenty even at this larger size.
                   if (place.cover.isNotEmpty)
-                    Image.network(
-                      resolveMediaUrl(place.cover),
+                    ProgressiveImage(
+                      url: resolveMediaUrl(place.coverThumb.isNotEmpty ? place.coverThumb : place.cover),
+                      microThumb: place.coverMicro,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Illustration(kind: place.photo),
+                      errorBuilder: (_) => Illustration(kind: place.photo),
                     )
                   else
                     Illustration(kind: place.photo),
@@ -189,16 +192,22 @@ class BusinessDrawerBody extends ConsumerWidget {
                       ),
                     ),
                   ),
-                for (final url in place.gallery)
+                for (final (i, url) in place.gallery.indexed)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
-                    child: ClipRRect(
+                    // Thumb-tier only (no blur placeholder) — a lower-
+                    // traffic 88px strip with no full-screen viewer, kept
+                    // simple.
+                    child: ProgressiveImage(
+                      url: resolveMediaUrl(
+                          i < place.galleryThumbs.length && place.galleryThumbs[i].isNotEmpty
+                              ? place.galleryThumbs[i]
+                              : url),
+                      width: 118,
+                      height: 88,
+                      fit: BoxFit.cover,
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.network(resolveMediaUrl(url),
-                          width: 118,
-                          height: 88,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const SizedBox(width: 118, height: 88)),
+                      errorBuilder: (_) => const SizedBox(width: 118, height: 88),
                     ),
                   ),
               ],
@@ -585,6 +594,23 @@ class _VibeCheck extends ConsumerStatefulWidget {
 class _VibeCheckState extends ConsumerState<_VibeCheck> {
   bool _rating = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // devicePositionProvider is cached for the whole app session, not
+    // re-checked on its own — without this, a traveller who was out of
+    // range (or had location denied) when they last resolved a position
+    // would stay stuck seeing the same stale "too far away"/"enable
+    // location" state every time they reopen a place's drawer, even after
+    // actually walking into range or granting permission. Re-checking
+    // once per drawer open (not on every rebuild — initState runs once
+    // per widget instance) keeps that cheap: bestEffortPosition tries the
+    // OS's cached last-known position first, which resolves in <5ms.
+    Future.microtask(() {
+      if (mounted) ref.invalidate(devicePositionProvider);
+    });
+  }
+
   Future<void> _tap(String vibeId, int value, VibeCheckin? previousMine, VibeAggregate currentVibe,
       LatLngAt pos) async {
     if (_rating) return;
@@ -630,14 +656,24 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
     final mine = override?.mine ?? serverMine;
 
     final devicePosAsync = ref.watch(devicePositionProvider);
-    final devicePos = devicePosAsync.valueOrNull;
+    final resolved = devicePosAsync.valueOrNull;
+    final devicePos = resolved?.$1;
+    final locationResult = resolved?.$2;
     // devicePositionProvider always eventually resolves to a real position
     // or the Weligama Bay fallback — it never stays null forever — so
     // "still loading" and "resolved but too far away" are two genuinely
     // different states that deserve different copy, not the same disabled
     // segments + "Rate this once you're here." for both.
-    final resolvingLocation = devicePosAsync.isLoading && devicePos == null;
-    final withinGeofence = devicePos != null &&
+    final resolvingLocation = devicePosAsync.isLoading && resolved == null;
+    // Gate on an actual granted position, not just "resolved" — resolved
+    // is also true when permission was denied/location services are off,
+    // in which case devicePos is the Weligama Bay fallback, not the
+    // traveller's real position, and must never count toward the geofence
+    // or be sent as the check-in's lat/lng.
+    final granted = locationResult == DeviceLocationResult.granted;
+    final locationDenied = !resolvingLocation && !granted;
+    final withinGeofence = granted &&
+        devicePos != null &&
         Geolocator.distanceBetween(
               devicePos.lat,
               devicePos.lng,
@@ -681,7 +717,7 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
                     average: _vibeAverageFor(vibe, v.id),
                     mine: _vibeMineFor(mine, v.id),
                     enabled: withinGeofence && !_rating,
-                    onTap: devicePos == null
+                    onTap: !granted || devicePos == null
                         ? null
                         : (value) => _tap(v.id, value, mine, vibe, devicePos),
                   ),
@@ -691,9 +727,33 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
           ),
           if (!withinGeofence) ...[
             const SizedBox(height: 8),
-            Text(resolvingLocation ? 'Finding your location…' : "Rate this once you're here.",
-                style: text.labelSmall
-                    ?.copyWith(color: SpottoColors.muted, fontStyle: FontStyle.italic)),
+            if (resolvingLocation)
+              Text('Finding your location…',
+                  style: text.labelSmall
+                      ?.copyWith(color: SpottoColors.muted, fontStyle: FontStyle.italic))
+            else if (locationDenied)
+              GestureDetector(
+                onTap: () async {
+                  if (locationResult == DeviceLocationResult.deniedForever) {
+                    await Geolocator.openAppSettings();
+                  } else {
+                    ref.invalidate(devicePositionProvider);
+                  }
+                },
+                child: Text(
+                  locationResult == DeviceLocationResult.deniedForever
+                      ? 'Location is off — tap to enable it in Settings.'
+                      : 'Enable location to rate this spot — tap to try again.',
+                  style: text.labelSmall?.copyWith(
+                      color: SpottoColors.accent,
+                      fontStyle: FontStyle.italic,
+                      decoration: TextDecoration.underline),
+                ),
+              )
+            else
+              Text("Rate this once you're here.",
+                  style: text.labelSmall
+                      ?.copyWith(color: SpottoColors.muted, fontStyle: FontStyle.italic)),
           ],
         ],
       ),
@@ -702,18 +762,16 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
 }
 
 /// One vibe dimension, styled like the old one-tap vote card (solid-color
-/// fill once you've rated it, white icon/border) but with the new 0-10
-/// check-in logic: a 5-segment tappable strip filled to the place's
-/// current average — each segment worth 2 points, so the full 0-10 range
-/// stays reachable with fewer, coarser tap targets than a 10-segment bar.
+/// fill once you've rated it, white icon/border) with a 1-5 check-in scale:
+/// a 5-segment tappable strip, each segment one point.
 class _VibeCard extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
-  final double average; // 0-10
-  final int? mine; // 0-10, or null if never rated
+  final double average; // 0-5
+  final int? mine; // 0-5, or null if never rated
   final bool enabled;
-  final ValueChanged<int>? onTap; // submitted value: 2/4/6/8/10
+  final ValueChanged<int>? onTap; // submitted value: 1-5
 
   const _VibeCard({
     required this.label,
@@ -727,8 +785,17 @@ class _VibeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final filled = (average / 2).round().clamp(0, 5);
     final isMine = mine != null;
+    // Once you've rated, the bar shows YOUR rating, not the crowd average —
+    // VibeCheckInsNotifier.rate() optimistically updates `mine` instantly
+    // but deliberately leaves `average` untouched until the server's real
+    // aggregate reconciles (its own doc comment explains why: there's no
+    // way to correctly recompute an average locally without the true
+    // sample size). Driving the segment count from `average` even when
+    // isMine was the actual bug behind "I tap 6 and it shows something
+    // else, then a moment later it catches up" — `mine` has zero lag,
+    // `average` does.
+    final filled = (isMine ? mine!.toDouble() : average).round().clamp(0, 5);
     final segmentOn = isMine ? Colors.white : color;
     final segmentOff =
         isMine ? Colors.white.withValues(alpha: 0.3) : SpottoColors.ink.withValues(alpha: 0.08);
@@ -758,7 +825,12 @@ class _VibeCard extends StatelessWidget {
                   child: Padding(
                     padding: EdgeInsets.only(right: i < 5 ? 2 : 0),
                     child: GestureDetector(
-                      onTap: enabled && onTap != null ? () => onTap!(i * 2) : null,
+                      onTap: enabled && onTap != null
+                          ? () {
+                              HapticFeedback.selectionClick();
+                              onTap!(i);
+                            }
+                          : null,
                       child: Container(
                         height: 8,
                         decoration: BoxDecoration(
@@ -1260,44 +1332,39 @@ class _ReviewTile extends StatelessWidget {
           if (review.photos.isNotEmpty) ...[
             const SizedBox(height: 8),
             Builder(builder: (context) {
-              final urls = [for (final u in review.photos) resolveMediaUrl(u)];
+              // The grid shows the small thumbnail derivative (falling back
+              // to the full image for photos uploaded before thumbnails
+              // existed); the full-screen viewer always uses the original.
+              final fullUrls = [for (final p in review.photos) resolveMediaUrl(p.url)];
+              final thumbUrls = [
+                for (final p in review.photos)
+                  resolveMediaUrl(p.thumbUrl.isNotEmpty ? p.thumbUrl : p.url),
+              ];
               return SizedBox(
                 height: 84,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: [
-                    for (final (i, url) in urls.indexed)
+                    for (final (i, url) in thumbUrls.indexed)
                       Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: GestureDetector(
                           onTap: () => showDialog<void>(
                             context: context,
-                            builder: (_) => _PhotoViewerDialog(urls: urls, initialIndex: i),
+                            // Tapping still escalates to the genuine
+                            // full-resolution image — only the grid tile
+                            // itself is capped at the thumb tier.
+                            builder: (_) => _PhotoViewerDialog(urls: fullUrls, initialIndex: i),
                           ),
-                          child: ClipRRect(
+                          child: ProgressiveImage(
+                            url: url,
+                            microThumb: review.photos[i].microThumb,
+                            width: 84,
+                            height: 84,
+                            fit: BoxFit.cover,
                             borderRadius: BorderRadius.circular(14),
-                            child: Image.network(
-                              url,
-                              width: 84,
-                              height: 84,
-                              fit: BoxFit.cover,
-                              loadingBuilder: (_, child, progress) => progress == null
-                                  ? child
-                                  : Container(
-                                      width: 84,
-                                      height: 84,
-                                      color: SpottoColors.sand,
-                                      child: const Center(
-                                        child: SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        ),
-                                      ),
-                                    ),
-                              errorBuilder: (_, __, ___) =>
-                                  Container(width: 84, height: 84, color: SpottoColors.sand),
-                            ),
+                            errorBuilder: (_) =>
+                                Container(width: 84, height: 84, color: SpottoColors.sand),
                           ),
                         ),
                       ),
@@ -1498,25 +1565,12 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: ClipRRect(
+                      child: ProgressiveImage(
+                        url: thumbUrls[i],
+                        microThumb: photo.microThumb,
+                        fit: BoxFit.cover,
                         borderRadius: BorderRadius.circular(14),
-                        child: Image.network(
-                          thumbUrls[i],
-                          fit: BoxFit.cover,
-                          loadingBuilder: (_, child, progress) => progress == null
-                              ? child
-                              : Container(
-                                  color: SpottoColors.sand,
-                                  child: const Center(
-                                    child: SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    ),
-                                  ),
-                                ),
-                          errorBuilder: (_, __, ___) => Container(color: SpottoColors.sand),
-                        ),
+                        errorBuilder: (_) => Container(color: SpottoColors.sand),
                       ),
                     ),
                     if (_timeAgo(photo.createdAt).isNotEmpty)

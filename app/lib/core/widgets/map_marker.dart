@@ -1,157 +1,318 @@
-// Draws the same circular badge look as the old illustrated-map `_Pin`
-// widget (colored circle, white border, centered icon glyph, optional
-// sun-colored deal badge) directly onto a canvas, for use as a
-// google_maps_flutter `BitmapDescriptor`. Markers can't render arbitrary
-// widgets, so this is the standard workaround: paint once, cache the bytes.
-
-import 'dart:ui' as ui;
+// Marker-icon widgets (places, traveler avatars, location dot, callout banners),
+// rasterized to bitmaps for google_maps_flutter via core/widgets/marker_bitmap.dart.
 
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../theme/palette.dart';
 
-/// Renders a place/traveler pin badge to a [BitmapDescriptor].
-///
-/// [diameter] is the circle's logical size; the image is rendered at
-/// [scale]x that for crispness on high-density screens (defaults suit a
-/// devicePixelRatio around 3).
-Future<BitmapDescriptor> renderPinBitmap({
-  required Color color,
-  required IconData icon,
-  bool hasDeal = false,
-  double diameter = 40,
-  double scale = 3,
-}) async {
-  final size = diameter * scale;
-  final badgeSize = size * 0.28;
-  final canvasSize = size + badgeSize / 2; // room for the corner badge
+/// Spot Popup Banner Callout — renders spots as a sleek small banner
+/// (icon/logo circle on the left + spot name text) with indicators for
+/// deals, user favorites, and trip calendar stops.
+class SpotBannerMarker extends StatelessWidget {
+  final String name;
+  final Color color;
+  final IconData icon;
+  final bool hasDeal;
+  final bool isFavorite;
+  final bool inTripCalendar;
+  final bool matchesInterest;
+  final bool emphasized;
 
-  final recorder = ui.PictureRecorder();
-  final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, canvasSize, canvasSize));
-  final center = Offset(size / 2, size / 2);
-  final radius = size / 2;
+  const SpotBannerMarker({
+    super.key,
+    required this.name,
+    required this.color,
+    required this.icon,
+    this.hasDeal = false,
+    this.isFavorite = false,
+    this.inTripCalendar = false,
+    this.matchesInterest = false,
+    this.emphasized = true,
+  });
 
-  // Drop shadow.
-  canvas.drawCircle(
-    center.translate(0, size * 0.04),
-    radius,
-    Paint()
-      ..color = Colors.black.withValues(alpha: 0.18)
-      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, size * 0.05),
-  );
+  @override
+  Widget build(BuildContext context) {
+    final isHighPriority = matchesInterest || isFavorite || inTripCalendar;
+    final opacity = emphasized || isHighPriority ? 1.0 : 0.65;
+    final borderColor = inTripCalendar
+        ? SpottoColors.accent
+        : (isFavorite
+            ? Colors.pinkAccent
+            : (isHighPriority ? color : Colors.white));
 
-  // White border ring, then the colored fill.
-  canvas.drawCircle(center, radius, Paint()..color = Colors.white);
-  canvas.drawCircle(center, radius - size * 0.075, Paint()..color = color);
-
-  // Icon glyph, centered.
-  final iconSize = size * 0.44;
-  final textPainter = TextPainter(textDirection: TextDirection.ltr)
-    ..text = TextSpan(
-      text: String.fromCharCode(icon.codePoint),
-      style: TextStyle(
-        fontSize: iconSize,
-        fontFamily: icon.fontFamily,
-        package: icon.fontPackage,
-        color: Colors.white,
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 200),
+      opacity: opacity,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(4, 4, 10, 4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border:
+              Border.all(color: borderColor, width: isHighPriority ? 2.0 : 1.5),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x2E000000),
+              blurRadius: 8,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Icon/logo circle
+            Stack(
+              alignment: Alignment.center,
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 15),
+                ),
+                if (hasDeal)
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF6B81E),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 6),
+            // Spot Name text
+            Flexible(
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight:
+                      isHighPriority ? FontWeight.w800 : FontWeight.w600,
+                  color: SpottoColors.ink,
+                ),
+              ),
+            ),
+            if (inTripCalendar) ...[
+              const SizedBox(width: 4),
+              const Icon(Icons.calendar_today_rounded,
+                  size: 11, color: SpottoColors.accent),
+            ] else if (isFavorite) ...[
+              const SizedBox(width: 4),
+              const Icon(Icons.favorite, size: 11, color: Colors.pinkAccent),
+            ],
+          ],
+        ),
       ),
-    )
-    ..layout();
-  textPainter.paint(
-    canvas,
-    center - Offset(textPainter.width / 2, textPainter.height / 2),
-  );
-
-  // Deal badge, top-right corner.
-  if (hasDeal) {
-    final badgeCenter = Offset(size - badgeSize * 0.3, badgeSize * 0.3);
-    canvas.drawCircle(badgeCenter, badgeSize / 2 + 2, Paint()..color = Colors.white);
-    canvas.drawCircle(badgeCenter, badgeSize / 2, Paint()..color = const Color(0xFFF6B81E));
-  }
-
-  final picture = recorder.endRecording();
-  final image = await picture.toImage(canvasSize.round(), canvasSize.round());
-  final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-  return BitmapDescriptor.bytes(bytes!.buffer.asUint8List(), imagePixelRatio: scale);
-}
-
-/// Renders a traveler avatar bubble (initial on a colored circle, white
-/// border) to a [BitmapDescriptor] — same look as [AvatarBubble].
-Future<BitmapDescriptor> renderAvatarBitmap({
-  required String initial,
-  required Color color,
-  double diameter = 34,
-  double scale = 3,
-}) async {
-  final size = diameter * scale;
-  final recorder = ui.PictureRecorder();
-  final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, size, size));
-  final center = Offset(size / 2, size / 2);
-  final radius = size / 2;
-
-  canvas.drawCircle(
-    center.translate(0, size * 0.04),
-    radius,
-    Paint()
-      ..color = Colors.black.withValues(alpha: 0.18)
-      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, size * 0.05),
-  );
-  canvas.drawCircle(center, radius, Paint()..color = Colors.white);
-  canvas.drawCircle(center, radius - size * 0.075, Paint()..color = color);
-
-  final textPainter = TextPainter(textDirection: TextDirection.ltr)
-    ..text = TextSpan(
-      text: initial,
-      style: TextStyle(
-        fontSize: size * 0.38,
-        fontWeight: FontWeight.w800,
-        color: Colors.white,
-      ),
-    )
-    ..layout();
-  textPainter.paint(
-    canvas,
-    center - Offset(textPainter.width / 2, textPainter.height / 2),
-  );
-
-  final picture = recorder.endRecording();
-  final image = await picture.toImage(size.round(), size.round());
-  final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-  return BitmapDescriptor.bytes(bytes!.buffer.asUint8List(), imagePixelRatio: scale);
-}
-
-/// Simple in-memory cache so markers aren't re-rasterized on every rebuild.
-class PinBitmapCache {
-  final _cache = <String, BitmapDescriptor>{};
-
-  Future<BitmapDescriptor> place({
-    required String key,
-    required Color color,
-    required IconData icon,
-    required bool hasDeal,
-    required bool emphasized,
-  }) async {
-    final cacheKey = '${key}_$emphasized';
-    final cached = _cache[cacheKey];
-    if (cached != null) return cached;
-    final bmp = await renderPinBitmap(
-      color: color,
-      icon: icon,
-      hasDeal: hasDeal,
-      diameter: emphasized ? 44 : 38,
     );
-    _cache[cacheKey] = bmp;
-    return bmp;
   }
+}
 
-  Future<BitmapDescriptor> avatar({
-    required String key,
-    required String initial,
-    required Color color,
-  }) async {
-    final cached = _cache[key];
-    if (cached != null) return cached;
-    final bmp = await renderAvatarBitmap(initial: initial, color: color);
-    _cache[key] = bmp;
-    return bmp;
+class PlacePinMarker extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+  final bool hasDeal;
+  final bool emphasized;
+
+  const PlacePinMarker({
+    super.key,
+    required this.color,
+    required this.icon,
+    required this.hasDeal,
+    required this.emphasized,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final size = emphasized ? 42.0 : 36.0;
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 200),
+      opacity: emphasized ? 1.0 : 0.55,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2.5),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 6,
+                  offset: Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Icon(icon, color: Colors.white, size: size * 0.48),
+          ),
+          if (hasDeal)
+            Positioned(
+              top: -1,
+              right: -1,
+              child: Container(
+                width: 13,
+                height: 13,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF6B81E),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class AvatarPinMarker extends StatelessWidget {
+  final String initial;
+  final Color color;
+
+  const AvatarPinMarker({
+    super.key,
+    required this.initial,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2.5),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 6,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+          fontSize: 14,
+        ),
+      ),
+    );
+  }
+}
+
+class CurrentLocationDot extends StatelessWidget {
+  const CurrentLocationDot({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          decoration: BoxDecoration(
+            color: SpottoColors.accent.withValues(alpha: 0.25),
+            shape: BoxShape.circle,
+          ),
+        ),
+        Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            color: SpottoColors.accent,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2.5),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x44000000),
+                blurRadius: 4,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class GooglePlacePinMarker extends StatelessWidget {
+  final String name;
+  final String category;
+  final VoidCallback onTap;
+
+  const GooglePlacePinMarker({
+    super.key,
+    required this.name,
+    required this.category,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF4285F4), width: 1.5),
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x22000000), blurRadius: 6, offset: Offset(0, 2)),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 18,
+              height: 18,
+              decoration: const BoxDecoration(
+                color: Color(0xFF4285F4),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.place_rounded,
+                  color: Colors.white, size: 11),
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: SpottoColors.ink),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

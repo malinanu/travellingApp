@@ -29,6 +29,8 @@ func main() {
 	srv := httpapi.New(store, auth.NewTokens(cfg.JWTSecret), cfg)
 	go srv.StartHolidayScheduler(ctx)
 	go srv.StartWeatherScheduler(ctx)
+	go srv.StartBRCertScheduler(ctx)
+	go srv.StartThumbnailWorker(ctx)
 
 	// Explicit timeouts rather than the zero-value (unbounded) defaults —
 	// ReadHeaderTimeout guards against slow-header (slowloris-style)

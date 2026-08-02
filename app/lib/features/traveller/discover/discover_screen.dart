@@ -4,17 +4,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_compass/flutter_compass.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
-import 'package:latlong2/latlong.dart' as ll;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/api/google_places_service.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/category_icons.dart';
 import '../../../core/widgets/map_marker.dart';
+import '../../../core/widgets/marker_bitmap.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/spotto_icons.dart';
 import '../../../data/mock/places.dart' as data;
@@ -27,7 +28,12 @@ import '../weather/activity_rules.dart';
 enum _LocationMode { idle, following, heading }
 
 /// Default initial fallback map center (Weligama Bay) used before device GPS resolves.
-const _kDefaultMapCenter = ll.LatLng(kFallbackLat, kFallbackLng);
+const _kDefaultMapCenter = LatLng(kFallbackLat, kFallbackLng);
+
+const _kPinSlotSize = Size(58, 58);
+const _kBannerSlotSize = Size(175, 62);
+const _kAvatarSlotSize = Size(48, 48);
+const _kLocationDotSlotSize = Size(34, 34);
 
 String _myInitial(WidgetRef ref) {
   final name = ref.watch(meProvider)?['name'] as String?;
@@ -42,7 +48,8 @@ class DiscoverScreen extends ConsumerStatefulWidget {
 }
 
 class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
-  final MapController _mapController = MapController();
+  GoogleMapController? _mapController;
+  String? _mapStyle;
 
   LatLngAt? _resolvedPosition;
   bool _centeredOnDevice = false;
@@ -50,6 +57,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   @override
   void initState() {
     super.initState();
+    rootBundle.loadString('assets/map/map_style.json').then((style) {
+      if (mounted) setState(() => _mapStyle = style);
+    });
     // Auto-center on user's current location on app launch as soon as GPS resolves
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _autoCenterOnUserLocation();
@@ -59,36 +69,51 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   Future<void> _autoCenterOnUserLocation() async {
     final (pos, _) = await bestEffortPosition();
     if (!mounted || pos == null) return;
-    final userPos = ll.LatLng(pos.latitude, pos.longitude);
+    final userPos = LatLng(pos.latitude, pos.longitude);
     setState(() {
       _lastKnownLatLng = userPos;
       _centeredOnDevice = true;
       _locationMode = _LocationMode.following;
     });
-    _mapController.move(userPos, 16.0);
+    _animateCamera(CameraUpdate.newLatLngZoom(userPos, 16.0));
     _startPositionStream();
   }
 
   void _maybeCenterOnDevice() {
     if (_resolvedPosition == null) return;
-    final userPos = ll.LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng);
+    final userPos = LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng);
     if (!_centeredOnDevice) {
       _centeredOnDevice = true;
-      _mapController.move(userPos, 16.0);
+      _animateCamera(CameraUpdate.newLatLngZoom(userPos, 16.0));
     }
   }
 
   _LocationMode _locationMode = _LocationMode.idle;
   StreamSubscription<Position>? _positionSub;
   StreamSubscription<CompassEvent>? _compassSub;
-  ll.LatLng? _lastKnownLatLng;
+  LatLng? _lastKnownLatLng;
   double _currentBearing = 0;
   DateTime _lastHeadingApply = DateTime.fromMillisecondsSinceEpoch(0);
 
+  // google_maps_flutter's onCameraMoveStarted fires for programmatic camera
+  // moves too (unlike flutter_map's hasGesture flag), so this flag lets us
+  // tell "we just called animateCamera" apart from an actual user drag —
+  // without it, every auto-follow/heading update would immediately cancel
+  // itself via _onCameraMoveStarted.
+  bool _isProgrammaticCamera = false;
+
+  void _animateCamera(CameraUpdate update) {
+    _isProgrammaticCamera = true;
+    _mapController?.animateCamera(update);
+  }
+
   void _updateCamera() {
     if (_lastKnownLatLng == null) return;
-    final bearing = _locationMode == _LocationMode.heading ? _currentBearing : 0.0;
-    _mapController.moveAndRotate(_lastKnownLatLng!, 16, bearing);
+    final bearing =
+        _locationMode == _LocationMode.heading ? _currentBearing : 0.0;
+    _animateCamera(CameraUpdate.newCameraPosition(
+      CameraPosition(target: _lastKnownLatLng!, zoom: 16, bearing: bearing),
+    ));
   }
 
   void _startPositionStream() {
@@ -99,7 +124,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         distanceFilter: 5,
       ),
     ).listen((pos) {
-      _lastKnownLatLng = ll.LatLng(pos.latitude, pos.longitude);
+      _lastKnownLatLng = LatLng(pos.latitude, pos.longitude);
       if (_locationMode != _LocationMode.idle) _updateCamera();
     });
   }
@@ -110,7 +135,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       final heading = event.heading;
       if (heading == null) return;
       final now = DateTime.now();
-      if (now.difference(_lastHeadingApply) < const Duration(milliseconds: 150) &&
+      if (now.difference(_lastHeadingApply) <
+              const Duration(milliseconds: 150) &&
           (heading - _currentBearing).abs() < 3) {
         return;
       }
@@ -128,14 +154,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         if (result == DeviceLocationResult.deniedForever) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Location is off — enable it in Settings to center the map on you.'),
+              content: Text(
+                  'Location is off — enable it in Settings to center the map on you.'),
             ),
           );
         }
         return;
       }
       ref.invalidate(locationPermissionProvider);
-      _lastKnownLatLng = ll.LatLng(pos.latitude, pos.longitude);
+      _lastKnownLatLng = LatLng(pos.latitude, pos.longitude);
       setState(() => _locationMode = _LocationMode.following);
       _updateCamera();
       _startPositionStream();
@@ -172,25 +199,28 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   List<Place> _filterPlaces(List<Place> places, Set<String> favoriteIds) {
     switch (_selectedCategory) {
       case 'Cafés':
-        return places.where((p) =>
-          p.type.toLowerCase().contains('caf') ||
-          p.type.toLowerCase().contains('coffee') ||
-          p.icon == 'Coffee' ||
-          p.name.toLowerCase().contains('cafe')
-        ).toList();
+        return places
+            .where((p) =>
+                p.type.toLowerCase().contains('caf') ||
+                p.type.toLowerCase().contains('coffee') ||
+                p.icon == 'Coffee' ||
+                p.name.toLowerCase().contains('cafe'))
+            .toList();
       case 'Food':
-        return places.where((p) =>
-          p.type.toLowerCase().contains('food') ||
-          p.type.toLowerCase().contains('restaurant') ||
-          p.icon == 'Utensils'
-        ).toList();
+        return places
+            .where((p) =>
+                p.type.toLowerCase().contains('food') ||
+                p.type.toLowerCase().contains('restaurant') ||
+                p.icon == 'Utensils')
+            .toList();
       case 'Beaches':
-        return places.where((p) =>
-          p.type.toLowerCase().contains('beach') ||
-          p.type.toLowerCase().contains('surf') ||
-          p.icon == 'Waves' ||
-          p.name.toLowerCase().contains('beach')
-        ).toList();
+        return places
+            .where((p) =>
+                p.type.toLowerCase().contains('beach') ||
+                p.type.toLowerCase().contains('surf') ||
+                p.icon == 'Waves' ||
+                p.name.toLowerCase().contains('beach'))
+            .toList();
       case 'Deals':
         return places.where((p) => p.deal.active).toList();
       case 'Favorites':
@@ -226,7 +256,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     _searchController.dispose();
     _positionSub?.cancel();
     _compassSub?.cancel();
-    _mapController.dispose();
+    _mapController?.dispose();
     super.dispose();
   }
 
@@ -250,12 +280,36 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _googleResults = [];
     });
     if (p.lat != 0 || p.lng != 0) {
-      _mapController.move(ll.LatLng(p.lat, p.lng), 16.5);
+      _animateCamera(CameraUpdate.newLatLngZoom(LatLng(p.lat, p.lng), 16.5));
     }
     showBusinessDrawer(context, p);
   }
 
-  List<Marker> _buildMapMarkers({
+  /// Resolves a cached marker bitmap for [key], kicking off an off-screen
+  /// render (via [MarkerBitmapCache]) if it isn't cached yet. Returns a
+  /// same-hue placeholder for the first frame or two while the real bitmap
+  /// renders, so markers never wait on a blank/missing icon.
+  BitmapDescriptor _resolveBitmap({
+    required String key,
+    required Widget Function() build,
+    required Size slotSize,
+    required double placeholderHue,
+  }) {
+    final cached = MarkerBitmapCache.instance.get(key);
+    if (cached != null) return cached;
+    MarkerBitmapCache.instance.render(
+      context: context,
+      key: key,
+      widget: Center(child: build()),
+      size: slotSize,
+      onReady: () {
+        if (mounted) setState(() {});
+      },
+    );
+    return BitmapDescriptor.defaultMarkerWithHue(placeholderHue);
+  }
+
+  Set<Marker> _buildMapMarkers({
     required List<Place> places,
     required String time,
     required bool groupMode,
@@ -264,7 +318,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     required Set<String> tripCalendarPlaceNames,
     required List<String> userInterests,
   }) {
-    final markers = <Marker>[];
+    final markers = <Marker>{};
 
     final filteredPlaces = _filterPlaces(places, favoriteIds);
 
@@ -273,46 +327,66 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       if (p.lat == 0 && p.lng == 0) continue;
       final emphasized = p.bestTimes.contains(time);
       final isFavorite = favoriteIds.contains(p.id);
-      final inTripCalendar = tripCalendarPlaceNames.contains(p.id) || tripCalendarPlaceNames.contains(p.name.toLowerCase());
-      final matchesInterest = userInterests.any((style) => p.styles.contains(style));
+      final inTripCalendar = tripCalendarPlaceNames.contains(p.id) ||
+          tripCalendarPlaceNames.contains(p.name.toLowerCase());
+      final matchesInterest =
+          userInterests.any((style) => p.styles.contains(style));
 
       final color = SpottoColors.pinTones[p.color] ?? SpottoColors.accent;
       final icon = categoryIcon(p.type);
 
       final isSelected = _selectedPlaceId == p.id;
-      final showBanner = isSelected || (_currentZoom >= 14.5 && (p.deal.active || inTripCalendar || isFavorite));
+      final showBanner = isSelected ||
+          (_currentZoom >= 14.5 &&
+              (p.deal.active || inTripCalendar || isFavorite));
+      final pinEmphasized = emphasized || isFavorite || matchesInterest;
+
+      final BitmapDescriptor icon_;
+      if (showBanner) {
+        final key =
+            'banner|${p.id}|${color.toARGB32()}|${icon.codePoint}|${p.name}|'
+            '${p.deal.active}|$isFavorite|$inTripCalendar|$matchesInterest|$emphasized';
+        icon_ = _resolveBitmap(
+          key: key,
+          slotSize: _kBannerSlotSize,
+          placeholderHue: BitmapDescriptor.hueAzure,
+          build: () => SpotBannerMarker(
+            name: p.name,
+            color: color,
+            icon: icon,
+            hasDeal: p.deal.active,
+            isFavorite: isFavorite,
+            inTripCalendar: inTripCalendar,
+            matchesInterest: matchesInterest,
+            emphasized: emphasized,
+          ),
+        );
+      } else {
+        final key =
+            'pin|${color.toARGB32()}|${icon.codePoint}|${p.deal.active}|$pinEmphasized';
+        icon_ = _resolveBitmap(
+          key: key,
+          slotSize: _kPinSlotSize,
+          placeholderHue: BitmapDescriptor.hueAzure,
+          build: () => PlacePinMarker(
+            color: color,
+            icon: icon,
+            hasDeal: p.deal.active,
+            emphasized: pinEmphasized,
+          ),
+        );
+      }
 
       markers.add(
         Marker(
-          point: ll.LatLng(p.lat, p.lng),
-          width: showBanner ? 155 : 38,
-          height: showBanner ? 42 : 38,
-          alignment: Alignment.center,
-          child: showBanner
-              ? SpotBannerMarker(
-                  name: p.name,
-                  color: color,
-                  icon: icon,
-                  hasDeal: p.deal.active,
-                  isFavorite: isFavorite,
-                  inTripCalendar: inTripCalendar,
-                  matchesInterest: matchesInterest,
-                  emphasized: emphasized,
-                  onTap: () {
-                    setState(() => _selectedPlaceId = p.id);
-                    showBusinessDrawer(context, p);
-                  },
-                )
-              : PlacePinMarker(
-                  color: color,
-                  icon: icon,
-                  hasDeal: p.deal.active,
-                  emphasized: emphasized || isFavorite || matchesInterest,
-                  onTap: () {
-                    setState(() => _selectedPlaceId = p.id);
-                    showBusinessDrawer(context, p);
-                  },
-                ),
+          markerId: MarkerId('place_${p.id}'),
+          position: LatLng(p.lat, p.lng),
+          icon: icon_,
+          anchor: const Offset(0.5, 0.5),
+          onTap: () {
+            setState(() => _selectedPlaceId = p.id);
+            showBusinessDrawer(context, p);
+          },
         ),
       );
     }
@@ -321,23 +395,25 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     if (groupMode) {
       for (final m in members) {
         if (m.lat == 0 && m.lng == 0) continue;
+        final key = 'avatar|${m.initial}|${m.color}';
+        final icon = _resolveBitmap(
+          key: key,
+          slotSize: _kAvatarSlotSize,
+          placeholderHue: BitmapDescriptor.hueViolet,
+          build: () =>
+              AvatarPinMarker(initial: m.initial, color: Color(m.color)),
+        );
         markers.add(
           Marker(
-            point: ll.LatLng(m.lat, m.lng),
-            width: 40,
-            height: 40,
-            alignment: Alignment.center,
-            child: GestureDetector(
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('${m.name} · ${m.sub}')),
-                );
-              },
-              child: AvatarPinMarker(
-                initial: m.initial,
-                color: Color(m.color),
-              ),
-            ),
+            markerId: MarkerId('member_${m.id}'),
+            position: LatLng(m.lat, m.lng),
+            icon: icon,
+            anchor: const Offset(0.5, 0.5),
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${m.name} · ${m.sub}')),
+              );
+            },
           ),
         );
       }
@@ -345,13 +421,20 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
     // 3. User location dot marker
     if (_lastKnownLatLng != null) {
+      const key = 'location_dot';
+      final icon = _resolveBitmap(
+        key: key,
+        slotSize: _kLocationDotSlotSize,
+        placeholderHue: BitmapDescriptor.hueBlue,
+        build: () => const CurrentLocationDot(),
+      );
       markers.add(
         Marker(
-          point: _lastKnownLatLng!,
-          width: 28,
-          height: 28,
-          alignment: Alignment.center,
-          child: const CurrentLocationDot(),
+          markerId: const MarkerId('current_location'),
+          position: _lastKnownLatLng!,
+          icon: icon,
+          anchor: const Offset(0.5, 0.5),
+          zIndexInt: 1,
         ),
       );
     }
@@ -376,16 +459,19 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final favoriteIds = favorites;
     final Set<String> tripCalendarPlaceNames = trip.days
         .expand((d) => d.stops)
-        .map((s) => s.placeId.isNotEmpty ? s.placeId : (s.custom?.name.toLowerCase() ?? ''))
+        .map((s) => s.placeId.isNotEmpty
+            ? s.placeId
+            : (s.custom?.name.toLowerCase() ?? ''))
         .where((id) => id.isNotEmpty)
         .toSet();
     final userInterests = prefs?.styles ?? const <String>[];
 
     ref.watch(nearbyTravellersProvider);
-    ref.listen<AsyncValue<LatLngAt>>(devicePositionProvider, (_, next) {
-      _resolvedPosition = next.valueOrNull;
+    ref.listen<AsyncValue<(LatLngAt, DeviceLocationResult)>>(devicePositionProvider, (_, next) {
+      _resolvedPosition = next.valueOrNull?.$1;
       if (_resolvedPosition != null && _lastKnownLatLng == null) {
-        _lastKnownLatLng = ll.LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng);
+        _lastKnownLatLng =
+            LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng);
       }
       _maybeCenterOnDevice();
       if (next.hasValue) ref.invalidate(locationPermissionProvider);
@@ -402,34 +488,36 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     );
 
     final localResults = _searchResults(places);
-    final showSearchResults = localResults.isNotEmpty || _googleResults.isNotEmpty || _isSearchingGoogle;
+    final showSearchResults = localResults.isNotEmpty ||
+        _googleResults.isNotEmpty ||
+        _isSearchingGoogle;
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Interactive flutter_map tile engine
-        FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(
-            initialCenter: _kDefaultMapCenter,
-            initialZoom: 15,
-            maxZoom: 19,
-            minZoom: 3,
-            onPositionChanged: (position, hasGesture) {
-              if (hasGesture) _onCameraMoveStarted();
-              if ((position.zoom - _currentZoom).abs() > 0.3) {
-                setState(() => _currentZoom = position.zoom);
-              }
-            },
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-              userAgentPackageName: 'com.spotto.spotto',
-              tileProvider: NetworkTileProvider(),
-            ),
-            MarkerLayer(markers: markers),
-          ],
+        // Interactive Google Maps engine
+        GoogleMap(
+          initialCameraPosition:
+              const CameraPosition(target: _kDefaultMapCenter, zoom: 15),
+          minMaxZoomPreference: const MinMaxZoomPreference(3, 19),
+          style: _mapStyle,
+          markers: markers,
+          myLocationEnabled: false,
+          myLocationButtonEnabled: false,
+          zoomControlsEnabled: false,
+          mapToolbarEnabled: false,
+          compassEnabled: false,
+          onMapCreated: (controller) => _mapController = controller,
+          onCameraMoveStarted: () {
+            if (_isProgrammaticCamera) return;
+            _onCameraMoveStarted();
+          },
+          onCameraMove: (position) {
+            if ((position.zoom - _currentZoom).abs() > 0.3) {
+              setState(() => _currentZoom = position.zoom);
+            }
+          },
+          onCameraIdle: () => _isProgrammaticCamera = false,
         ),
 
         // time-of-day lighting overlay
@@ -450,17 +538,24 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   scale: 0.98,
                   onTap: () => context.push('/t/weather'),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
                       boxShadow: const [
-                        BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4)),
+                        BoxShadow(
+                            color: SpottoColors.inkShadow,
+                            blurRadius: 12,
+                            offset: Offset(0, 4)),
                       ],
                     ),
                     child: Row(
                       children: [
-                        Icon(spottoIcon(weatherAsync.valueOrNull?.now.icon ?? 'Sun'), color: SpottoColors.sun),
+                        Icon(
+                            spottoIcon(
+                                weatherAsync.valueOrNull?.now.icon ?? 'Sun'),
+                            color: SpottoColors.sun),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -468,7 +563,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                             children: [
                               Text(
                                 weatherAsync.when(
-                                  data: (s) => '${s.now.conditionLabel} · ${s.now.temp.round()}°',
+                                  data: (s) =>
+                                      '${s.now.conditionLabel} · ${s.now.temp.round()}°',
                                   loading: () => 'Getting conditions…',
                                   error: (_, __) => 'Weather unavailable',
                                 ),
@@ -476,7 +572,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                               ),
                               Text(
                                 weatherAsync.valueOrNull != null
-                                    ? headline(category, rateHours(category, weatherAsync.value!.hourly))
+                                    ? headline(
+                                        category,
+                                        rateHours(category,
+                                            weatherAsync.value!.hourly))
                                     : 'Tap for the full forecast',
                                 style: text.bodySmall,
                                 maxLines: 1,
@@ -485,7 +584,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                             ],
                           ),
                         ),
-                        const Icon(Icons.chevron_right, size: 18, color: SpottoColors.muted),
+                        const Icon(Icons.chevron_right,
+                            size: 18, color: SpottoColors.muted),
                       ],
                     ),
                   ),
@@ -496,7 +596,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: const [
-                      BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4)),
+                      BoxShadow(
+                          color: SpottoColors.inkShadow,
+                          blurRadius: 12,
+                          offset: Offset(0, 4)),
                     ],
                   ),
                   child: TextField(
@@ -504,10 +607,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     onChanged: _onSearchQueryChanged,
                     decoration: InputDecoration(
                       hintText: 'Search spots or Google Maps…',
-                      prefixIcon: const Icon(Icons.search, size: 18, color: SpottoColors.muted),
+                      prefixIcon: const Icon(Icons.search,
+                          size: 18, color: SpottoColors.muted),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.close, size: 18, color: SpottoColors.muted),
+                              icon: const Icon(Icons.close,
+                                  size: 18, color: SpottoColors.muted),
                               onPressed: () => setState(() {
                                 _searchQuery = '';
                                 _searchController.clear();
@@ -516,7 +621,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                             )
                           : null,
                       border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+                      contentPadding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 4),
                     ),
                   ),
                 ),
@@ -545,7 +651,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: const [
-                        BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4)),
+                        BoxShadow(
+                            color: SpottoColors.inkShadow,
+                            blurRadius: 12,
+                            offset: Offset(0, 4)),
                       ],
                     ),
                     child: ListView(
@@ -555,15 +664,24 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         if (localResults.isNotEmpty) ...[
                           const Padding(
                             padding: EdgeInsets.fromLTRB(16, 10, 16, 4),
-                            child: Text('SPOTTO SPOTS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: SpottoColors.muted, letterSpacing: 0.8)),
+                            child: Text('SPOTTO SPOTS',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: SpottoColors.muted,
+                                    letterSpacing: 0.8)),
                           ),
                           for (final p in localResults)
                             ListTile(
                               dense: true,
-                              leading: Icon(spottoIcon(p.icon), color: SpottoColors.pinTones[p.color] ?? SpottoColors.accent),
-                              title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              leading: Icon(spottoIcon(p.icon),
+                                  color: SpottoColors.pinTones[p.color] ??
+                                      SpottoColors.accent),
+                              title: Text(p.name,
+                                  maxLines: 1, overflow: TextOverflow.ellipsis),
                               subtitle: Text(
-                                [p.type, if (p.region.isNotEmpty) p.region].join(' · '),
+                                [p.type, if (p.region.isNotEmpty) p.region]
+                                    .join(' · '),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -573,18 +691,34 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         if (_googleResults.isNotEmpty) ...[
                           const Padding(
                             padding: EdgeInsets.fromLTRB(16, 10, 16, 4),
-                            child: Text('GOOGLE MAPS PLACES', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: SpottoColors.accent, letterSpacing: 0.8)),
+                            child: Text('GOOGLE MAPS PLACES',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: SpottoColors.accent,
+                                    letterSpacing: 0.8)),
                           ),
                           for (final gres in _googleResults)
                             ListTile(
                               dense: true,
-                              leading: const Icon(Icons.place_rounded, color: SpottoColors.accent),
-                              title: Text(gres.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                              subtitle: Text(gres.address, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              leading: const Icon(Icons.place_rounded,
+                                  color: SpottoColors.accent),
+                              title: Text(gres.name,
+                                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                              subtitle: Text(gres.address,
+                                  maxLines: 1, overflow: TextOverflow.ellipsis),
                               trailing: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: SpottoColors.accent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
-                                child: const Text('Google', style: TextStyle(fontSize: 10, color: SpottoColors.accent, fontWeight: FontWeight.bold)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color: SpottoColors.accent
+                                        .withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(6)),
+                                child: const Text('Google',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: SpottoColors.accent,
+                                        fontWeight: FontWeight.bold)),
                               ),
                               onTap: () => _selectSearchResult(gres.toPlace()),
                             ),
@@ -592,7 +726,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         if (_isSearchingGoogle)
                           const Padding(
                             padding: EdgeInsets.all(12),
-                            child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
+                            child: Center(
+                                child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2))),
                           ),
                       ],
                     ),
@@ -629,8 +768,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                           children: [
                             Icon(Icons.group_outlined,
                                 size: 17,
-                                color:
-                                    groupMode ? Colors.white : SpottoColors.accent),
+                                color: groupMode
+                                    ? Colors.white
+                                    : SpottoColors.accent),
                             const SizedBox(width: 6),
                             Text(
                               groupMode
@@ -639,7 +779,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                               style: TextStyle(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w800,
-                                  color: groupMode ? Colors.white : SpottoColors.ink),
+                                  color: groupMode
+                                      ? Colors.white
+                                      : SpottoColors.ink),
                             ),
                           ],
                         ),
@@ -709,7 +851,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         Positioned(
           right: 16,
           bottom: 150,
-          child: _LocationCompassButton(mode: _locationMode, onTap: _onLocationButtonTap),
+          child: _LocationCompassButton(
+              mode: _locationMode, onTap: _onLocationButtonTap),
         ),
 
         // bottom: daily quest chip + time filter pills
@@ -727,7 +870,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(999),
                   boxShadow: const [
-                    BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4)),
+                    BoxShadow(
+                        color: SpottoColors.inkShadow,
+                        blurRadius: 12,
+                        offset: Offset(0, 4)),
                   ],
                 ),
                 child: Row(
@@ -735,22 +881,30 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     for (final t in data.timeSlots)
                       Expanded(
                         child: PressScale(
-                          onTap: () => ref.read(timeFilterProvider.notifier).state = t.id,
+                          onTap: () => ref
+                              .read(timeFilterProvider.notifier)
+                              .state = t.id,
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
                             padding: const EdgeInsets.symmetric(vertical: 9),
                             decoration: BoxDecoration(
-                              color: time == t.id ? SpottoColors.accent : Colors.transparent,
+                              color: time == t.id
+                                  ? SpottoColors.accent
+                                  : Colors.transparent,
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Column(
                               children: [
                                 Icon(spottoIcon(t.icon),
                                     size: 18,
-                                    color: time == t.id ? Colors.white : SpottoColors.muted),
+                                    color: time == t.id
+                                        ? Colors.white
+                                        : SpottoColors.muted),
                                 Text(t.label,
                                     style: text.labelSmall?.copyWith(
-                                        color: time == t.id ? Colors.white : SpottoColors.muted)),
+                                        color: time == t.id
+                                            ? Colors.white
+                                            : SpottoColors.muted)),
                               ],
                             ),
                           ),
@@ -813,13 +967,18 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
               width: 1.2,
             ),
             boxShadow: const [
-              BoxShadow(color: Color(0x18103D3A), blurRadius: 6, offset: Offset(0, 2)),
+              BoxShadow(
+                  color: Color(0x18103D3A),
+                  blurRadius: 6,
+                  offset: Offset(0, 2)),
             ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 13, color: isSelected ? Colors.white : SpottoColors.accent),
+              Icon(icon,
+                  size: 13,
+                  color: isSelected ? Colors.white : SpottoColors.accent),
               const SizedBox(width: 5),
               Text(
                 label,
@@ -862,10 +1021,14 @@ class _LocationCompassButton extends StatelessWidget {
           color: active ? SpottoColors.accent : Colors.white,
           shape: BoxShape.circle,
           boxShadow: const [
-            BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4)),
+            BoxShadow(
+                color: SpottoColors.inkShadow,
+                blurRadius: 12,
+                offset: Offset(0, 4)),
           ],
         ),
-        child: Icon(icon, size: 22, color: active ? Colors.white : SpottoColors.ink),
+        child: Icon(icon,
+            size: 22, color: active ? Colors.white : SpottoColors.ink),
       ),
     );
   }
@@ -895,7 +1058,10 @@ class _QuestChip extends StatelessWidget {
           color: complete ? SpottoColors.ink : Colors.white,
           borderRadius: BorderRadius.circular(18),
           boxShadow: const [
-            BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4)),
+            BoxShadow(
+                color: SpottoColors.inkShadow,
+                blurRadius: 12,
+                offset: Offset(0, 4)),
           ],
         ),
         child: Row(

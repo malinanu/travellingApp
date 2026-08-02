@@ -1,13 +1,10 @@
 package httpapi
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
-	"path"
 	"strings"
 	"time"
 
@@ -19,16 +16,19 @@ import (
 )
 
 // singleValueRoles hold at most one object per owner — a new upload replaces
-// (and deletes from R2) the previous one.
-var singleValueRoles = map[string]bool{"cover": true, "promo": true, "avatar": true}
+// (and deletes from R2) the previous one. br_cert is single-value (unlike
+// the generic multi-value "doc") because a re-upload should replace the
+// vendor's one Business Registration certificate, not add another.
+var singleValueRoles = map[string]bool{"cover": true, "promo": true, "avatar": true, "br_cert": true}
 
 // roleAllowsKind gates which file kind a role accepts: promo is video-only,
-// docs may be a PDF or a scanned image, everything else is an image.
+// docs (and the dedicated br_cert role) may be a PDF or a scanned image,
+// everything else is an image.
 func roleAllowsKind(role, kind string) bool {
 	switch role {
 	case "promo":
 		return kind == media.KindVideo
-	case "doc":
+	case "doc", "br_cert":
 		return kind == media.KindDoc || kind == media.KindImage
 	default:
 		return kind == media.KindImage
@@ -152,23 +152,20 @@ func (s *Server) handleMediaConfirm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var thumbKey string
+	// Thumbnail generation happens off the request path — see
+	// thumbnail_worker.go. Marking it pending here just queues it; the
+	// confirm response goes out immediately with no thumb/micro yet
+	// (clients already fall back to the full-size url in that case).
+	var thumbStatus string
 	if kind == media.KindImage {
-		// Best-effort: a corrupt/undecodable image (or any other failure
-		// here) must not fail the confirm — the original upload already
-		// succeeded, and clients fall back to the full-size url when
-		// thumbUrl is empty.
-		thumbKey = s.generateThumbnail(r.Context(), req.Key)
+		thumbStatus = "pending"
 	}
 
 	m := domain.Media{
 		ID: newID("med"), OwnerType: req.OwnerType, OwnerID: req.OwnerID, Kind: kind, Role: req.Role,
-		ObjectKey: req.Key, URL: s.Media.PublicURL(req.Key), ThumbKey: thumbKey,
+		ObjectKey: req.Key, URL: s.Media.PublicURL(req.Key), ThumbStatus: thumbStatus,
 		ContentType: contentType, Size: size,
 		Width: req.Width, Height: req.Height, UploadedBy: c.Subject, Status: "ready", CreatedAt: time.Now(),
-	}
-	if thumbKey != "" {
-		m.ThumbURL = s.Media.PublicURL(thumbKey)
 	}
 	if err := s.Store.InsertMedia(r.Context(), m); err != nil {
 		storeErr(w, err)
@@ -180,40 +177,18 @@ func (s *Server) handleMediaConfirm(w http.ResponseWriter, r *http.Request) {
 	if req.OwnerType == "vendor" && req.Role == "doc" {
 		_ = s.Store.SetVendorDocs(r.Context(), req.OwnerID, true)
 	}
+	if req.OwnerType == "vendor" && req.Role == "br_cert" {
+		_ = s.Store.SetVendorDocs(r.Context(), req.OwnerID, true)
+		// Queues the br-cert scheduler's OCR sweep; leaves any
+		// already-confirmed number/verify state untouched.
+		_ = s.Store.StartVendorBRCertOCR(r.Context(), req.OwnerID)
+	}
 	s.resyncVendorMediaBestEffort(r.Context(), req.OwnerType, req.OwnerID)
+	// ThumbURL/MicroThumb are always empty at this point — thumb_status is
+	// only just now "pending" (see thumbnail_worker.go) — so no signing is
+	// needed here, unlike m.URL, which is always present.
 	m.URL = s.signMediaPath(m.URL)
-	if m.ThumbURL != "" {
-		m.ThumbURL = s.signMediaPath(m.ThumbURL)
-	}
 	writeJSON(w, http.StatusOK, m)
-}
-
-// generateThumbnail fetches the just-uploaded object, resizes it to a small
-// JPEG derivative, and stores it under a derived key — returning that key,
-// or "" if anything along the way fails (a corrupt/undecodable image, a
-// storage error, etc.). Failing here must never fail the confirm itself:
-// the original upload already succeeded, and clients fall back to the
-// full-size url when there's no thumbnail.
-func (s *Server) generateThumbnail(ctx context.Context, key string) string {
-	body, _, err := s.Media.Get(ctx, key)
-	if err != nil {
-		log.Printf("thumbnail: fetch %s: %v", key, err)
-		return ""
-	}
-	defer body.Close()
-
-	thumb, err := media.GenerateThumbnail(body)
-	if err != nil {
-		log.Printf("thumbnail: decode/resize %s: %v", key, err)
-		return ""
-	}
-
-	thumbKey := strings.TrimSuffix(key, path.Ext(key)) + "_thumb.jpg"
-	if err := s.Media.Put(ctx, thumbKey, "image/jpeg", bytes.NewReader(thumb)); err != nil {
-		log.Printf("thumbnail: upload %s: %v", thumbKey, err)
-		return ""
-	}
-	return thumbKey
 }
 
 // handleMediaRaw proxies a read of one R2 object through our own API — the
@@ -306,17 +281,22 @@ func (s *Server) handleMediaDelete(w http.ResponseWriter, r *http.Request) {
 	if m.Role == "avatar" {
 		_ = s.Store.SetUserAvatar(r.Context(), m.OwnerID, "")
 	}
-	if m.OwnerType == "vendor" && m.Role == "doc" {
+	if m.OwnerType == "vendor" && (m.Role == "doc" || m.Role == "br_cert") {
 		// Recompute the docs flag from whatever remains.
 		remaining, _ := s.Store.MediaByOwner(r.Context(), "vendor", m.OwnerID)
 		hasDoc := false
 		for _, x := range remaining {
-			if x.Role == "doc" {
+			if x.Role == "doc" || x.Role == "br_cert" {
 				hasDoc = true
 				break
 			}
 		}
 		_ = s.Store.SetVendorDocs(r.Context(), m.OwnerID, hasDoc)
+		if m.Role == "br_cert" {
+			// Nothing left to OCR — but a previously confirmed/verified
+			// certificate number is preserved, not reset.
+			_ = s.Store.ResetVendorBRCertOCR(r.Context(), m.OwnerID)
+		}
 	}
 	s.resyncVendorMediaBestEffort(r.Context(), m.OwnerType, m.OwnerID)
 	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})

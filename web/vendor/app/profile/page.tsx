@@ -24,6 +24,7 @@ import LocationPicker from '../../components/location-picker-auto';
 import Shell, { isFoodCategory, useBusiness, useMe } from '../../components/shell';
 import VendorPhotos from '../../components/vendor-photos';
 import VendorDocs from '../../components/vendor-docs';
+import VendorBRCertificate from '../../components/vendor-br-certificate';
 import { api } from '../../lib/api';
 import { BUSINESS_CATEGORIES, isSelectedCategory } from '../../lib/business-categories';
 
@@ -377,6 +378,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
+          {business?.id && <VendorBRCertificate vendorId={business.id} />}
           {business?.id && <VendorPhotos vendorId={business.id} />}
           {business?.id && <VendorDocs vendorId={business.id} />}
 

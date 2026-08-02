@@ -114,6 +114,10 @@ class CalendarMonth extends StatelessWidget {
     final plan = planned[key];
 
     if (plan != null && onPickDay != null) {
+      final hasStops = plan.stops > 0;
+      final bgColor = hasStops ? SpottoColors.accent : const Color(0xFFFF9800);
+      final shadowColor = hasStops ? const Color(0x4D0B6F86) : const Color(0x4DFF9800);
+
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 3),
         child: PressScale(
@@ -122,10 +126,10 @@ class CalendarMonth extends StatelessWidget {
           child: Container(
             height: height,
             decoration: BoxDecoration(
-              color: SpottoColors.accent,
+              color: bgColor,
               borderRadius: BorderRadius.circular(12),
-              boxShadow: const [
-                BoxShadow(color: Color(0x4D0B6F86), blurRadius: 16, offset: Offset(0, 8))
+              boxShadow: [
+                BoxShadow(color: shadowColor, blurRadius: 10, offset: const Offset(0, 4))
               ],
             ),
             child: Column(
@@ -135,11 +139,11 @@ class CalendarMonth extends StatelessWidget {
                     style: const TextStyle(
                         color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
                 Text(
-                  plan.stops > 0
+                  hasStops
                       ? '${plan.stops} stop${plan.stops > 1 ? 's' : ''}'
-                      : 'Day ${plan.index + 1}',
-                  style: const TextStyle(
-                      color: Colors.white70, fontSize: 8.5, fontWeight: FontWeight.w700),
+                      : 'Unplanned',
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.9), fontSize: 8.5, fontWeight: FontWeight.w800),
                 ),
               ],
             ),

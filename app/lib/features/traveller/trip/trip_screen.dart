@@ -15,6 +15,7 @@ import '../place_detail/business_drawer.dart';
 import 'widgets/add_stop_sheet.dart';
 import 'widgets/calendar_month.dart';
 import 'widgets/confirm_delete_dialog.dart';
+import 'widgets/my_trips_sheet.dart';
 import 'widgets/new_trip_sheet.dart';
 import 'widgets/stop_card.dart';
 import 'widgets/trip_common.dart';
@@ -68,43 +69,94 @@ class _TripScreenState extends ConsumerState<TripScreen> {
     if (_dayIx >= trip.days.length) _dayIx = 0;
     final stops = trip.days[_dayIx].stops;
 
-    return SafeArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('TRIP PLANNER',
-                              style: text.labelSmall
-                                  ?.copyWith(color: SpottoColors.accent, letterSpacing: 1)),
-                          Text(trip.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: text.headlineSmall?.copyWith(fontSize: 21)),
-                        ],
+    ref.listen<Trip>(tripProvider, (prev, next) {
+      if (prev?.startDate != next.startDate || prev?.code != next.code) {
+        try {
+          final start = DateTime.parse(next.startDate);
+          setState(() {
+            _dayIx = 0;
+            _dayView = false;
+            _calMonth = DateTime(start.year, start.month, 1);
+          });
+        } catch (_) {}
+      }
+    });
+
+    return PopScope(
+      canPop: !_dayView,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_dayView) {
+          setState(() => _dayView = false);
+        }
+      },
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('TRIP PLANNER',
+                                style: text.labelSmall
+                                    ?.copyWith(color: SpottoColors.accent, letterSpacing: 1)),
+                            Text(trip.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: text.headlineSmall?.copyWith(fontSize: 21)),
+                          ],
+                        ),
                       ),
-                    ),
-                    _collabButton(trip),
-                    const SizedBox(width: 8),
-                    _iconButton(Icons.add, _newTrip),
-                  ],
-                ),
-                if (_dayView) _daySubHeader(text, trip),
-              ],
+                      _myTripsButton(ref),
+                      const SizedBox(width: 8),
+                      _collabButton(trip),
+                    ],
+                  ),
+                  if (_dayView) _daySubHeader(text, trip),
+                ],
+              ),
             ),
-          ),
-          Expanded(child: _dayView ? _dayBody(stops) : _calendarBody(trip)),
-          if (_dayView && stops.isNotEmpty) _daySummary(text, stops),
-        ],
+            Expanded(child: _dayView ? _dayBody(stops) : _calendarBody(trip)),
+            if (_dayView && stops.isNotEmpty) _daySummary(text, stops),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _myTripsButton(WidgetRef ref) {
+    final allTrips = ref.watch(savedTripsProvider);
+    return PressScale(
+      scale: 0.95,
+      onTap: () => showMyTripsSheet(context, ref),
+      child: Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(color: Color(0x1A103D3A), blurRadius: 10, offset: Offset(0, 2))
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.flight_takeoff_rounded, size: 16, color: SpottoColors.accent),
+            const SizedBox(width: 6),
+            Text(
+              'My Trips (${allTrips.length})',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: SpottoColors.ink),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -269,11 +321,40 @@ class _TripScreenState extends ConsumerState<TripScreen> {
           onNextMonth: () =>
               setState(() => _calMonth = DateTime(_calMonth.year, _calMonth.month + 1, 1)),
         ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(color: SpottoColors.accent, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 5),
+                const Text('Planned Day', style: TextStyle(fontSize: 11.5, color: SpottoColors.ink, fontWeight: FontWeight.w700)),
+              ],
+            ),
+            const SizedBox(width: 18),
+            Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(color: Color(0xFFFF9800), shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 5),
+                const Text('Unplanned Day', style: TextStyle(fontSize: 11.5, color: SpottoColors.ink, fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         Text('Tap a highlighted day to open its plan.',
             textAlign: TextAlign.center,
             style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
-        if (trip.days.length < 4) ...[
+        ...[
           const SizedBox(height: 12),
           PressScale(
             scale: 0.98,

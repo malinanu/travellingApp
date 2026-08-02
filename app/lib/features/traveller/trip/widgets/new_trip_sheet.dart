@@ -1,4 +1,4 @@
-// New-trip sheet: name, start date (inline calendar), length.
+// New-trip sheet: name, start & end date pickers with automatic duration calculation.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,7 +7,6 @@ import 'package:intl/intl.dart';
 import '../../../../core/theme/palette.dart';
 import '../../../../core/widgets/press_scale.dart';
 import '../../../../core/widgets/sheet_scaffold.dart';
-import '../../../../data/mock/trip_catalog.dart';
 import '../../../../data/repositories/repositories.dart';
 import 'calendar_month.dart';
 
@@ -28,17 +27,19 @@ class _NewTripSheet extends ConsumerStatefulWidget {
 }
 
 class _NewTripSheetState extends ConsumerState<_NewTripSheet> {
-  final _name = TextEditingController(text: 'My Weligama Trip');
-  int _days = 2;
-  late String _date = todayIso();
-  bool _pickerOpen = false;
+  final _name = TextEditingController(text: 'Spotto Trip');
+  late DateTime _startDate;
+  late DateTime _endDate;
+  int _activePicker = 0; // 0 = closed, 1 = start date, 2 = end date
   late DateTime _month;
 
   @override
   void initState() {
     super.initState();
-    final d = DateTime.parse(_date);
-    _month = DateTime(d.year, d.month, 1);
+    final now = DateTime.now();
+    _startDate = DateTime(now.year, now.month, now.day);
+    _endDate = _startDate.add(const Duration(days: 6)); // Default 7-day trip
+    _month = DateTime(_startDate.year, _startDate.month, 1);
   }
 
   @override
@@ -47,15 +48,16 @@ class _NewTripSheetState extends ConsumerState<_NewTripSheet> {
     super.dispose();
   }
 
+  int get _totalDays {
+    final diff = _endDate.difference(_startDate).inDays + 1;
+    return diff > 0 ? diff : 1;
+  }
+
+  String _formatDate(DateTime dt) => DateFormat('EEE, MMM d, yyyy').format(dt);
+
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final sel = DateTime.parse(_date);
-    const opts = [
-      (n: 1, label: 'One day', sub: 'A single timeline', icon: Icons.wb_sunny),
-      (n: 2, label: 'Weekend', sub: '2 days', icon: Icons.calendar_month),
-      (n: 3, label: 'Long stay', sub: '3 days', icon: Icons.date_range),
-    ];
 
     return SheetScaffold(
       padding: EdgeInsets.fromLTRB(20, 4, 20, 24 + MediaQuery.of(context).viewInsets.bottom),
@@ -75,120 +77,163 @@ class _NewTripSheetState extends ConsumerState<_NewTripSheet> {
               ),
             ),
             const SizedBox(height: 16),
-            Text('Start date', style: text.labelMedium?.copyWith(color: SpottoColors.inkSoft)),
-            const SizedBox(height: 6),
-            PressScale(
-              onTap: () => setState(() => _pickerOpen = !_pickerOpen),
-              child: Container(
-                height: 50,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                      color: _pickerOpen ? SpottoColors.accent : SpottoColors.line, width: 1.5),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Trip dates', style: text.labelMedium?.copyWith(color: SpottoColors.inkSoft)),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: SpottoColors.accentTint,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$_totalDays ${_totalDays == 1 ? 'day' : 'days'} total',
+                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: SpottoColors.accent),
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    Icon(Icons.calendar_month,
-                        size: 17,
-                        color: _pickerOpen ? SpottoColors.accent : SpottoColors.muted),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(DateFormat('EEE, MMM d, yyyy').format(sel),
-                          style: text.titleSmall),
-                    ),
-                    AnimatedRotation(
-                      turns: _pickerOpen ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 200),
-                      child: const Icon(Icons.keyboard_arrow_down,
-                          size: 18, color: SpottoColors.muted),
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ),
-            if (_pickerOpen) ...[
-              const SizedBox(height: 8),
+            const SizedBox(height: 8),
+
+            // Start & End Date Card Selectors
+            Row(
+              children: [
+                Expanded(
+                  child: PressScale(
+                    onTap: () => setState(() => _activePicker = _activePicker == 1 ? 0 : 1),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                            color: _activePicker == 1 ? SpottoColors.accent : SpottoColors.line, width: 1.5),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('START DATE', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: SpottoColors.muted, letterSpacing: 0.5)),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(Icons.calendar_today_rounded, size: 15, color: SpottoColors.accent),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  DateFormat('MMM d, yyyy').format(_startDate),
+                                  style: text.titleSmall?.copyWith(fontSize: 13.5),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: PressScale(
+                    onTap: () => setState(() => _activePicker = _activePicker == 2 ? 0 : 2),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                            color: _activePicker == 2 ? SpottoColors.accent : SpottoColors.line, width: 1.5),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('END DATE', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: SpottoColors.muted, letterSpacing: 0.5)),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(Icons.event_available, size: 15, color: SpottoColors.accent),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  DateFormat('MMM d, yyyy').format(_endDate),
+                                  style: text.titleSmall?.copyWith(fontSize: 13.5),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            // Inline Calendar Picker for active date selection
+            if (_activePicker != 0) ...[
+              const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: SpottoColors.line, width: 1.5),
+                  border: Border.all(color: SpottoColors.accent, width: 1.5),
                   boxShadow: const [
-                    BoxShadow(color: Color(0x33103D3A), blurRadius: 30, offset: Offset(0, 12), spreadRadius: -14)
+                    BoxShadow(color: Color(0x33103D3A), blurRadius: 24, offset: Offset(0, 10), spreadRadius: -10)
                   ],
                 ),
-                child: CalendarMonth(
-                  month: _month,
-                  compact: true,
-                  selected: sel,
-                  onPickDate: (d) => setState(() {
-                    _date =
-                        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-                    _pickerOpen = false;
-                  }),
-                  onPrevMonth: () =>
-                      setState(() => _month = DateTime(_month.year, _month.month - 1, 1)),
-                  onNextMonth: () =>
-                      setState(() => _month = DateTime(_month.year, _month.month + 1, 1)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        _activePicker == 1 ? 'Select Start Date' : 'Select End Date',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: SpottoColors.accent),
+                      ),
+                    ),
+                    CalendarMonth(
+                      month: _month,
+                      compact: true,
+                      selected: _activePicker == 1 ? _startDate : _endDate,
+                      onPickDate: (d) => setState(() {
+                        final picked = DateTime(d.year, d.month, d.day);
+                        if (_activePicker == 1) {
+                          _startDate = picked;
+                          if (_endDate.isBefore(_startDate)) {
+                            _endDate = _startDate;
+                          }
+                        } else {
+                          _endDate = picked;
+                          if (_endDate.isBefore(_startDate)) {
+                            _startDate = _endDate;
+                          }
+                        }
+                        _activePicker = 0;
+                      }),
+                      onPrevMonth: () =>
+                          setState(() => _month = DateTime(_month.year, _month.month - 1, 1)),
+                      onNextMonth: () =>
+                          setState(() => _month = DateTime(_month.year, _month.month + 1, 1)),
+                    ),
+                  ],
                 ),
               ),
             ],
-            const SizedBox(height: 16),
-            Text('How long?', style: text.labelMedium?.copyWith(color: SpottoColors.inkSoft)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                for (final (i, o) in opts.indexed) ...[
-                  if (i > 0) const SizedBox(width: 10),
-                  Expanded(
-                    child: PressScale(
-                      scale: 0.97,
-                      onTap: () => setState(() => _days = o.n),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color: _days == o.n ? SpottoColors.accent : Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                              color: _days == o.n ? SpottoColors.accent : SpottoColors.line,
-                              width: 1.5),
-                        ),
-                        child: Column(
-                          children: [
-                            Icon(o.icon,
-                                size: 20,
-                                color: _days == o.n ? Colors.white : SpottoColors.ink),
-                            const SizedBox(height: 6),
-                            Text(o.label,
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                    color: _days == o.n ? Colors.white : SpottoColors.ink)),
-                            Text(o.sub,
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: _days == o.n
-                                        ? Colors.white70
-                                        : SpottoColors.muted)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 20),
+
+            const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
                 onPressed: () {
-                  ref.read(tripProvider.notifier).createTrip(_name.text, _days, _date);
-                  Navigator.of(context).pop(_date);
+                  final startDateIso =
+                      '${_startDate.year}-${_startDate.month.toString().padLeft(2, '0')}-${_startDate.day.toString().padLeft(2, '0')}';
+                  ref.read(tripProvider.notifier).createTrip(_name.text, _totalDays, startDateIso);
+                  Navigator.of(context).pop(startDateIso);
                 },
                 icon: const Text('Start planning'),
                 label: const Icon(Icons.arrow_forward, size: 18),

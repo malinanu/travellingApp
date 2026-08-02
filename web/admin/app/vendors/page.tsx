@@ -9,7 +9,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle, CheckCircle2, Clock, CreditCard, Edit3, Eye, FileText, Film, Globe, History,
-  ImagePlus, Loader2, MapPin, Pencil, Phone, Power, Radio, Save, ShieldAlert, Star, Store, Tag,
+  ImagePlus, Loader2, MapPin, Pencil, Phone, Power, Radio, Save, ShieldAlert, ShieldCheck, Star, Store, Tag,
   Ticket, Trash2, Users, Wifi, XCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -424,7 +424,9 @@ function OverviewTab({ vendor, stats }: { vendor: Vendor; stats?: AdminVendorSta
           sub={stats?.subRenewsAt ? `renews ${timeAgo(stats.subRenewsAt)}` : undefined} />
         <StatTile icon={Tag} label="Priority / assets"
           value={vendor.priority || 'normal'}
-          sub={`${vendor.docs ? 'docs ✓' : 'no docs'} · ${vendor.photos} photos`} />
+          sub={`${vendor.docs ? 'docs ✓' : 'no docs'} · ${vendor.photos} photos${
+            vendor.brCertVerifyStatus === 'verified' ? ' · BR ✓' :
+            vendor.brCertVerifyStatus === 'invalid' ? ' · BR ✗' : ''}`} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 mt-4">
@@ -459,7 +461,7 @@ function OverviewTab({ vendor, stats }: { vendor: Vendor; stats?: AdminVendorSta
         </p>
       </div>
 
-      <VendorMediaPanel vendorId={vendor.id} />
+      <VendorMediaPanel vendor={vendor} />
 
       {vendor.flags && vendor.flags.length > 0 && (
         <div className="rounded-xl p-4 mt-3" style={{ background: '#fdf0cd4d', border: '1px solid #f6b81e55' }}>
@@ -851,7 +853,8 @@ function TabEmpty({ label }: { label: string }) {
 // VendorMediaPanel lets an admin view, add, and remove a vendor's uploaded
 // media (cover / gallery / promo video / verification docs) — the override
 // path, so it works regardless of vendor status.
-function VendorMediaPanel({ vendorId }: { vendorId: string }) {
+function VendorMediaPanel({ vendor }: { vendor: Vendor }) {
+  const vendorId = vendor.id;
   const qc = useQueryClient();
   const { data: media = [] } = useQuery<Media[]>({
     queryKey: ['admin-vendor-media', vendorId],
@@ -864,6 +867,7 @@ function VendorMediaPanel({ vendorId }: { vendorId: string }) {
   const gallery = media.filter((m) => m.role === 'gallery');
   const promo = media.find((m) => m.role === 'promo');
   const docs = media.filter((m) => m.role === 'doc');
+  const brCert = media.find((m) => m.role === 'br_cert');
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['admin-vendor-media', vendorId] });
   const add = async (file: File | undefined, role: MediaRole, kind: 'image' | 'video' | 'doc') => {
@@ -890,16 +894,27 @@ function VendorMediaPanel({ vendorId }: { vendorId: string }) {
     <div className="rounded-xl p-4 mt-3" style={{ background: 'var(--bg)', border: '1px solid var(--line)' }}>
       <p className="text-[11.5px] font-bold text-muted uppercase mb-2">Media</p>
       {error && <p className="text-[12.5px] font-bold text-coral mb-2">{error}</p>}
+
+      {vendor.brCertNumber && (
+        <div className="mb-3 rounded-lg p-2.5 text-[12.5px]" style={{ background: 'var(--sand, #faf7f2)' }}>
+          <p className="font-extrabold">BR cert: {vendor.brCertNumber} — {vendor.brCertVerifyStatus || 'not yet checked'}</p>
+          {vendor.brCertCompanyName && <p className="text-muted font-semibold">eROC name: {vendor.brCertCompanyName}</p>}
+          {vendor.brCertMessage && <p className="text-coral font-semibold">{vendor.brCertMessage}</p>}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2 items-start">
         {cover && <MediaThumb m={cover} label="Cover" onDelete={() => remove.mutate(cover.id)} />}
         {gallery.map((m) => <MediaThumb key={m.id} m={m} onDelete={() => remove.mutate(m.id)} />)}
         {promo && <MediaThumb m={promo} label="Promo" video onDelete={() => remove.mutate(promo.id)} />}
+        {brCert && <MediaThumb m={brCert} label="BR cert" doc onDelete={() => remove.mutate(brCert.id)} />}
         {docs.map((m) => <MediaThumb key={m.id} m={m} label="Doc" doc onDelete={() => remove.mutate(m.id)} />)}
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <AdminUploadBtn label="Cover" icon={ImagePlus} busy={busy === 'cover'} accept="image/*" onPick={(f) => add(f, 'cover', 'image')} />
         <AdminUploadBtn label="Photo" icon={ImagePlus} busy={busy === 'gallery'} accept="image/*" onPick={(f) => add(f, 'gallery', 'image')} />
         <AdminUploadBtn label="Video" icon={Film} busy={busy === 'promo'} accept="video/*" onPick={(f) => add(f, 'promo', 'video')} />
+        <AdminUploadBtn label="BR cert" icon={ShieldCheck} busy={busy === 'br_cert'} accept="application/pdf,image/*" onPick={(f) => add(f, 'br_cert', 'doc')} />
         <AdminUploadBtn label="Doc" icon={FileText} busy={busy === 'doc'} accept="application/pdf,image/*" onPick={(f) => add(f, 'doc', 'doc')} />
       </div>
     </div>
@@ -917,7 +932,7 @@ function MediaThumb({ m, label, video, doc, onDelete }: { m: Media; label?: stri
         </a>
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={resolveMediaUrl(m.url)} alt="" className="w-full h-full object-cover" />
+        <img src={resolveMediaUrl(m.thumbUrl || m.url)} alt="" className="w-full h-full object-cover" />
       )}
       {label && <span className="absolute left-1 bottom-1 text-[9px] font-bold px-1 rounded bg-black/50 text-white">{label}</span>}
       <button onClick={onDelete} aria-label="Delete"
