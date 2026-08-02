@@ -51,7 +51,8 @@ Guidelines:
 - Once you have enough to go on, call search_places to find real matching places. Never invent or recommend a place that search_places didn't actually return.
 - search_places' structured filters (categories, tags, vibe, price, etc.) cover the common cases, but for anything that doesn't map cleanly onto them — a specific mood, activity, or phrase the traveller used — also pass it as the free-text "query" argument so it can be matched semantically.
 - When you recommend places, mention them by name naturally in your reply so the traveller can tell which ones you mean.
-- If it's currently raining, lean toward indoor recommendations unless the traveller says otherwise.`
+- If it's currently raining, lean toward indoor recommendations unless the traveller says otherwise.
+- "Current weather where they are" above is only for the traveller's own location. If they ask about weather somewhere else by name (e.g. "is it going to rain in Ella today?"), call get_weather with that place name instead of guessing.`
 
 func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	if s.OpenRouterAPIKey == "" {
@@ -301,6 +302,23 @@ func guideTools() []openrouter.Tool {
 				},
 			},
 		},
+		{
+			Type: "function",
+			Function: openrouter.ToolFunction{
+				Name: "get_weather",
+				Description: "Get the current weather/rain forecast for a named place in Sri Lanka " +
+					"(town, landmark, or attraction), for when the traveller asks about somewhere other " +
+					"than their own current location.",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"location": map[string]any{"type": "string",
+							"description": `e.g. "Ella", "Sigiriya", "Galle"`},
+					},
+					"required": []string{"location"},
+				},
+			},
+		},
 	}
 }
 
@@ -385,6 +403,41 @@ func (s *Server) runGuideTool(ctx context.Context, tc openrouter.ToolCall, lat, 
 		}
 		b, _ := json.Marshal(s.placeJSON(ctx, p))
 		return string(b), []string{p.ID}, false
+
+	case "get_weather":
+		var args struct {
+			Location string `json:"location"`
+		}
+		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+		if s.TomorrowIOAPIKey == "" {
+			return `{"error":"weather is not configured"}`, nil, false
+		}
+		p, err := s.Store.PlaceByName(ctx, strings.TrimSpace(args.Location))
+		if err != nil {
+			return `{"error":"couldn't find that location"}`, nil, false
+		}
+		var facts struct {
+			Lat float64 `json:"lat"`
+			Lng float64 `json:"lng"`
+		}
+		_ = json.Unmarshal(p.Data, &facts)
+		if facts.Lat == 0 && facts.Lng == 0 {
+			return `{"error":"no coordinates for this location"}`, nil, false
+		}
+		snap, _, err := s.getOrFetchWeather(ctx, facts.Lat, facts.Lng)
+		if err != nil {
+			return `{"error":"weather unavailable right now"}`, nil, false
+		}
+		b, _ := json.Marshal(map[string]any{
+			"location":          p.Name,
+			"condition":         snap.Now.Condition,
+			"conditionLabel":    snap.Now.ConditionLabel,
+			"tempC":             snap.Now.Temp,
+			"precipProbability": snap.Now.PrecipProbability,
+			"high":              snap.High,
+			"low":               snap.Low,
+		})
+		return string(b), nil, false
 
 	default:
 		return fmt.Sprintf(`{"error":"unknown tool %s"}`, tc.Function.Name), nil, false

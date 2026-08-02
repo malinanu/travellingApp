@@ -1469,6 +1469,32 @@ func (s *Store) PlaceByID(ctx context.Context, id string) (domain.Place, error) 
 	return p, nil
 }
 
+// PlaceByName resolves a free-text place name (e.g. "Ella") to the best-
+// matching place — an exact case-insensitive match wins if one exists,
+// otherwise the shortest substring match (so "Ella" beats "Ella Rock" when
+// both match but neither is exact). Used by Local Guide's get_weather tool
+// to answer questions about somewhere other than the traveller's own
+// location — sri_lanka_spots.json's imported landmarks/towns already give
+// this real coverage without needing a separate geocoding API.
+func (s *Store) PlaceByName(ctx context.Context, name string) (domain.Place, error) {
+	var p domain.Place
+	var embedding []byte
+	err := s.Pool.QueryRow(ctx, `
+		SELECT p.id, p.name, p.vendor_id, p.data, p.embedding FROM places p
+		WHERE p.name ILIKE $1 AND `+placeVisibleWhere+`
+		ORDER BY (lower(p.name) = lower($2)) DESC, length(p.name) ASC
+		LIMIT 1`, "%"+name+"%", name).
+		Scan(&p.ID, &p.Name, &p.VendorID, &p.Data, &embedding)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, ErrNotFound
+	}
+	if err != nil {
+		return p, err
+	}
+	_ = json.Unmarshal(embedding, &p.Embedding)
+	return p, nil
+}
+
 // PlacesMissingEmbedding returns up to limit places whose semantic-search
 // embedding hasn't been computed yet — used by the background embedding
 // worker (internal/http/embedding_worker.go) to backfill in small batches.
