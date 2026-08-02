@@ -468,7 +468,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
     ref.watch(nearbyTravellersProvider);
     ref.listen<AsyncValue<(LatLngAt, DeviceLocationResult)>>(devicePositionProvider, (_, next) {
-      _resolvedPosition = next.valueOrNull?.$1;
+      _resolvedPosition = next.value?.$1;
       if (_resolvedPosition != null && _lastKnownLatLng == null) {
         _lastKnownLatLng =
             LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng);
@@ -554,7 +554,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                       children: [
                         Icon(
                             spottoIcon(
-                                weatherAsync.valueOrNull?.now.icon ?? 'Sun'),
+                                weatherAsync.value?.now.icon ?? 'Sun'),
                             color: SpottoColors.sun),
                         const SizedBox(width: 10),
                         Expanded(
@@ -571,7 +571,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                                 style: text.labelLarge,
                               ),
                               Text(
-                                weatherAsync.valueOrNull != null
+                                weatherAsync.value != null
                                     ? headline(
                                         category,
                                         rateHours(category,

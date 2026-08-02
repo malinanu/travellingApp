@@ -1,22 +1,47 @@
-// Local Guide chat — port of AIGuide.jsx with the canned guide engine.
+// Local Guide chat — port of AIGuide.jsx, backed by the real
+// POST /guide/chat (see server/internal/http/guide.go) instead of a
+// canned keyword-matcher. Conversations persist server-side, so history
+// is fetched on open via GET /guide/conversations/latest.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/spotto_icons.dart';
-import '../../../data/mock/guide_engine.dart';
 import '../../../data/mock/places.dart' as data;
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import '../place_detail/business_drawer.dart';
 
+const _guideSuggestions = [
+  'Where can I work today with a sea view?',
+  'Best surf spot for a total beginner?',
+  "Where's the move for sunset tonight?",
+  'Any deals on right now?',
+];
+
+const _guideSuggestionsRainy = [
+  'Where can I work today with a sea view?',
+  "What's good to do in the rain?",
+  'Any indoor workshops nearby?',
+  'Any deals on right now?',
+];
+
+String _guideGreeting(String styleLabel, String weather) => weather == 'rainy'
+    ? "Hey! It's raining right now 🌧️ — I've bumped indoor spots to "
+        "the top. Ask me where to go and I'll keep you dry (and caffeinated)."
+    : "Hey! I'm your Spotto local guide 🌴 I've set things up for a "
+        '${styleLabel.toLowerCase()} — ask me where to work, surf, eat or catch '
+        "the sunset and I'll point you to the right spot.";
+
 class _Msg {
   final bool mine;
   final String content;
-  const _Msg(this.mine, this.content);
+  final List<String> placeIds;
+  const _Msg(this.mine, this.content, {this.placeIds = const []});
 }
 
 class GuideScreen extends ConsumerStatefulWidget {
@@ -31,6 +56,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
   bool _busy = false;
+  String? _conversationId;
 
   String get _styleLabel {
     final style = ref.read(prefsProvider)?.styles.firstOrNull;
@@ -40,7 +66,41 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
   @override
   void initState() {
     super.initState();
-    _messages.add(_Msg(false, guideGreeting(_styleLabel, ref.read(weatherConditionProvider))));
+    _loadHistory();
+  }
+
+  /// Resumes the traveller's most recent conversation, if any — falls back
+  /// to the canned weather-aware greeting for a genuinely new chat, or if
+  /// the history fetch fails (offline, no prior conversation yet, etc).
+  Future<void> _loadHistory() async {
+    try {
+      final res = await ref.read(apiProvider).dio.get('/guide/conversations/latest');
+      final body = (res.data as Map).cast<String, dynamic>();
+      final msgs = (body['messages'] as List? ?? const []).cast<Map>();
+      if (msgs.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _conversationId = body['conversationId'] as String?;
+          _messages.addAll([
+            for (final m in msgs)
+              _Msg(
+                m['role'] == 'user',
+                m['content'] as String? ?? '',
+                placeIds: (m['placeIds'] as List? ?? const []).cast<String>(),
+              ),
+          ]);
+        });
+        _scrollDown();
+        return;
+      }
+    } catch (_) {
+      // No prior conversation yet, or a transient error — either way, a
+      // fresh greeting below is the right fallback, not an error state.
+    }
+    if (mounted) {
+      setState(() =>
+          _messages.add(_Msg(false, _guideGreeting(_styleLabel, ref.read(weatherConditionProvider)))));
+    }
   }
 
   @override
@@ -50,13 +110,15 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     super.dispose();
   }
 
-  /// guideFindPlace matches against the hardcoded demo dataset, whose ids
-  /// (e.g. 'driftwood') don't exist in the live places table — resolve by
-  /// name against the real, API-backed list so we never hand a phantom
-  /// place into the business drawer (posting a review against it 404s).
-  Place? _liveGuidePlace(Place? mock) {
-    if (mock == null) return null;
-    return ref.read(placesProvider).where((p) => p.name == mock.name).firstOrNull;
+  /// Resolves an assistant message's recommended place ids against the
+  /// real, API-backed places list — capped to 3 inline cards so a broad
+  /// search result doesn't overwhelm the chat. Takes the list rather than
+  /// reading the provider itself so callers watch it and rebuild once a
+  /// still-loading list (e.g. right after a cold start) catches up.
+  List<Place> _placesFor(_Msg m, List<Place> all) {
+    if (m.mine || m.placeIds.isEmpty) return const [];
+    final byId = {for (final p in all) p.id: p};
+    return [for (final id in m.placeIds) if (byId[id] != null) byId[id]!].take(3).toList();
   }
 
   void _scrollDown() {
@@ -78,13 +140,29 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     _input.clear();
     _scrollDown();
 
-    final reply = await guideReply(q,
-        weather: ref.read(weatherConditionProvider), style: ref.read(prefsProvider)?.styles.firstOrNull);
-    if (!mounted) return;
-    setState(() {
-      _messages.add(_Msg(false, reply));
-      _busy = false;
-    });
+    final pos = ref.read(devicePositionProvider).value?.$1;
+    try {
+      final res = await ref.read(apiProvider).dio.post('/guide/chat', data: {
+        if (_conversationId != null) 'conversationId': _conversationId,
+        'message': q,
+        if (pos != null) 'lat': pos.lat,
+        if (pos != null) 'lng': pos.lng,
+      });
+      final body = (res.data as Map).cast<String, dynamic>();
+      if (!mounted) return;
+      setState(() {
+        _conversationId = body['conversationId'] as String?;
+        _messages.add(_Msg(false, body['reply'] as String? ?? '',
+            placeIds: (body['placeIds'] as List? ?? const []).cast<String>()));
+        _busy = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_Msg(false, ApiClient.errorMessage(e)));
+        _busy = false;
+      });
+    }
     _scrollDown();
   }
 
@@ -92,7 +170,8 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final rainy = ref.watch(weatherConditionProvider) == 'rainy';
-    final suggestions = rainy ? guideSuggestionsRainy : guideSuggestions;
+    final suggestions = rainy ? _guideSuggestionsRainy : _guideSuggestions;
+    final places = ref.watch(placesProvider);
 
     return Scaffold(
       backgroundColor: SpottoColors.sand,
@@ -169,7 +248,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                 itemBuilder: (context, i) {
                   if (i == _messages.length) return const _TypingBubble();
                   final m = _messages[i];
-                  final place = m.mine ? null : _liveGuidePlace(guideFindPlace(m.content));
+                  final msgPlaces = _placesFor(m, places);
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Column(
@@ -210,7 +289,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                             ),
                           ),
                         ),
-                        if (place != null)
+                        for (final place in msgPlaces)
                           Padding(
                             padding: const EdgeInsets.only(top: 6),
                             child: PressScale(

@@ -11,6 +11,13 @@ Future<void> main() async {
   final store = await LocalStore.init();
   runApp(
     ProviderScope(
+      // Riverpod 3 auto-retries a failing provider by default. This app
+      // already has its own hand-rolled cache/retry patterns (manual
+      // Timer + ref.invalidateSelf TTLs on the .family FutureProviders) —
+      // stacking Riverpod's own retry on top risks double-retrying and
+      // delaying/masking error surfacing that existing UI wasn't designed
+      // for. Disabled to keep pre-3.0 behavior: fail once, surface it.
+      retry: (retryCount, error) => null,
       overrides: [localStoreProvider.overrideWithValue(store)],
       child: const SpottoApp(),
     ),

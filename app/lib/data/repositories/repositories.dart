@@ -6,6 +6,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+// StateProvider moved here in Riverpod 3 (still fully supported, just
+// signalled as the "legacy" API) — see placesLocationStatusProvider/
+// timeFilterProvider/groupModeProvider below, the only StateProviders in
+// this app.
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../core/api/api_client.dart';
@@ -752,9 +757,11 @@ final currentWeatherProvider = FutureProvider<WeatherSnapshot>((ref) async {
   return ref.watch(weatherSnapshotProvider(at).future);
 });
 
-/// Legacy sunny|cloudy|rainy string derived from live data — keeps
-/// guide_screen.dart/guide_engine.dart's weather-flavored replies working
-/// with no changes beyond pointing at this provider.
+/// Legacy sunny|cloudy|rainy string derived from live data — drives
+/// guide_screen.dart's weather-aware greeting/suggestion chips locally
+/// (the real chat backend derives its own weather condition server-side,
+/// from lat/lng, for what it actually tells the model — see
+/// server/internal/http/guide.go's guideWeatherCondition).
 final weatherConditionProvider = Provider<String>((ref) {
   return ref.watch(currentWeatherProvider).maybeWhen(
         data: (s) => s.now.condition,

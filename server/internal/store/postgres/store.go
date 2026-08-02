@@ -1435,7 +1435,46 @@ const placeVisibleWhere = `(p.vendor_id IS NULL OR EXISTS (
 
 func (s *Store) Places(ctx context.Context) ([]domain.Place, error) {
 	rows, err := s.Pool.Query(ctx,
-		`SELECT p.id, p.name, p.vendor_id, p.data FROM places p WHERE `+placeVisibleWhere+` ORDER BY p.id`)
+		`SELECT p.id, p.name, p.vendor_id, p.data, p.embedding FROM places p WHERE `+placeVisibleWhere+` ORDER BY p.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Place
+	for rows.Next() {
+		var p domain.Place
+		var embedding []byte
+		if err := rows.Scan(&p.ID, &p.Name, &p.VendorID, &p.Data, &embedding); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal(embedding, &p.Embedding)
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) PlaceByID(ctx context.Context, id string) (domain.Place, error) {
+	var p domain.Place
+	var embedding []byte
+	err := s.Pool.QueryRow(ctx,
+		`SELECT p.id, p.name, p.vendor_id, p.data, p.embedding FROM places p WHERE p.id=$1 AND `+placeVisibleWhere, id).
+		Scan(&p.ID, &p.Name, &p.VendorID, &p.Data, &embedding)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, ErrNotFound
+	}
+	if err != nil {
+		return p, err
+	}
+	_ = json.Unmarshal(embedding, &p.Embedding)
+	return p, nil
+}
+
+// PlacesMissingEmbedding returns up to limit places whose semantic-search
+// embedding hasn't been computed yet — used by the background embedding
+// worker (internal/http/embedding_worker.go) to backfill in small batches.
+func (s *Store) PlacesMissingEmbedding(ctx context.Context, limit int) ([]domain.Place, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT id, name, vendor_id, data FROM places WHERE embedding IS NULL LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1451,15 +1490,14 @@ func (s *Store) Places(ctx context.Context) ([]domain.Place, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) PlaceByID(ctx context.Context, id string) (domain.Place, error) {
-	var p domain.Place
-	err := s.Pool.QueryRow(ctx,
-		`SELECT p.id, p.name, p.vendor_id, p.data FROM places p WHERE p.id=$1 AND `+placeVisibleWhere, id).
-		Scan(&p.ID, &p.Name, &p.VendorID, &p.Data)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return p, ErrNotFound
+// SetPlaceEmbedding stores a place's semantic-search embedding.
+func (s *Store) SetPlaceEmbedding(ctx context.Context, id string, embedding []float64) error {
+	b, err := json.Marshal(embedding)
+	if err != nil {
+		return err
 	}
-	return p, err
+	_, err = s.Pool.Exec(ctx, `UPDATE places SET embedding=$2 WHERE id=$1`, id, b)
+	return err
 }
 
 // PlaceByVendorID looks up the (at most one, enforced by a partial unique
@@ -1972,6 +2010,87 @@ func (s *Store) MyLatestVibeCheckin(ctx context.Context, placeID, travellerID st
 		return c, ErrNotFound
 	}
 	return c, err
+}
+
+// ---- Local Guide chat (see internal/http/guide.go) ----
+
+// CreateGuideConversation starts a new conversation with the given id
+// (caller-generated, see newID("gconv")).
+func (s *Store) CreateGuideConversation(ctx context.Context, id, travellerID string) error {
+	_, err := s.Pool.Exec(ctx,
+		`INSERT INTO guide_conversations (id, traveller_id) VALUES ($1,$2)`, id, travellerID)
+	return err
+}
+
+// LatestGuideConversation returns the traveller's most recently updated
+// conversation, so the app can resume it on reopen.
+func (s *Store) LatestGuideConversation(ctx context.Context, travellerID string) (domain.GuideConversation, error) {
+	var c domain.GuideConversation
+	err := s.Pool.QueryRow(ctx, `
+		SELECT id, created_at, updated_at FROM guide_conversations
+		WHERE traveller_id=$1 ORDER BY updated_at DESC LIMIT 1`, travellerID).
+		Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return c, ErrNotFound
+	}
+	return c, err
+}
+
+// GuideConversationOwner returns the traveller_id a conversation belongs
+// to, for an ownership check before appending to or reading it.
+func (s *Store) GuideConversationOwner(ctx context.Context, conversationID string) (string, error) {
+	var travellerID string
+	err := s.Pool.QueryRow(ctx,
+		`SELECT traveller_id FROM guide_conversations WHERE id=$1`, conversationID).Scan(&travellerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return travellerID, err
+}
+
+// InsertGuideMessage appends one turn and bumps the conversation's
+// updated_at (so LatestGuideConversation reflects real recency).
+func (s *Store) InsertGuideMessage(ctx context.Context, m domain.GuideMessage) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO guide_messages (conversation_id, role, content, place_ids)
+		VALUES ($1,$2,$3,$4)`,
+		m.ConversationID, m.Role, m.Content, jsonb(m.PlaceIDs)); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE guide_conversations SET updated_at=now() WHERE id=$1`, m.ConversationID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// GuideMessagesByConversation lists a conversation's turns oldest-first,
+// for both replaying history to the traveller and as context for the LLM.
+func (s *Store) GuideMessagesByConversation(ctx context.Context, conversationID string) ([]domain.GuideMessage, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT role, content, place_ids, created_at FROM guide_messages
+		WHERE conversation_id=$1 ORDER BY created_at ASC`, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.GuideMessage{}
+	for rows.Next() {
+		var m domain.GuideMessage
+		var placeIDs []byte
+		if err := rows.Scan(&m.Role, &m.Content, &placeIDs, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		m.ConversationID = conversationID
+		json.Unmarshal(placeIDs, &m.PlaceIDs)
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) AddCheckin(ctx context.Context, placeID, travellerID string) error {

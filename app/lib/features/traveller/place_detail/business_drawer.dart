@@ -75,7 +75,7 @@ class BusinessDrawerBody extends ConsumerWidget {
     // fetched lazily per-place and cached server-side; only overrides a
     // field when it actually has something the list-derived `place` didn't,
     // and never blocks the sheet on a slow/failed fetch.
-    final details = ref.watch(placeDetailsProvider(place.id)).valueOrNull;
+    final details = ref.watch(placeDetailsProvider(place.id)).value;
     final contact = (details != null && !details.contact.isEmpty) ? details.contact : place.contact;
     final wheelchairAccessible = details?.wheelchairAccessible ?? place.wheelchairAccessible;
     final priceLevel = (details != null && details.priceLevel.isNotEmpty)
@@ -196,19 +196,28 @@ class BusinessDrawerBody extends ConsumerWidget {
                 for (final (i, url) in place.gallery.indexed)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
-                    // Thumb-tier only (no blur placeholder) — a lower-
-                    // traffic 88px strip with no full-screen viewer, kept
-                    // simple.
-                    child: ProgressiveImage(
-                      url: resolveMediaUrl(
-                          i < place.galleryThumbs.length && place.galleryThumbs[i].isNotEmpty
-                              ? place.galleryThumbs[i]
-                              : url),
-                      width: 118,
-                      height: 88,
-                      fit: BoxFit.cover,
-                      borderRadius: BorderRadius.circular(12),
-                      errorBuilder: (_) => const SizedBox(width: 118, height: 88),
+                    // Thumb-tier for the tile itself (no blur placeholder —
+                    // a lower-traffic 88px strip); tapping still escalates
+                    // to the real full-resolution images in the viewer.
+                    child: PressScale(
+                      onTap: () => showDialog<void>(
+                        context: context,
+                        builder: (_) => _PhotoViewerDialog(
+                          urls: [for (final g in place.gallery) resolveMediaUrl(g)],
+                          initialIndex: i,
+                        ),
+                      ),
+                      child: ProgressiveImage(
+                        url: resolveMediaUrl(
+                            i < place.galleryThumbs.length && place.galleryThumbs[i].isNotEmpty
+                                ? place.galleryThumbs[i]
+                                : url),
+                        width: 118,
+                        height: 88,
+                        fit: BoxFit.cover,
+                        borderRadius: BorderRadius.circular(12),
+                        errorBuilder: (_) => const SizedBox(width: 118, height: 88),
+                      ),
                     ),
                   ),
               ],
@@ -696,7 +705,7 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
     // never does, same reasoning as the contact/wheelchair/priceLevel
     // overrides above in BusinessDrawerBody. Falls back to the list-derived
     // place while that detail fetch is still in flight.
-    final details = ref.watch(placeDetailsProvider(widget.place.id)).valueOrNull;
+    final details = ref.watch(placeDetailsProvider(widget.place.id)).value;
     final serverVibe = details?.vibe ?? widget.place.vibe;
     final serverMine = details?.myVibe ?? widget.place.myVibe;
 
@@ -714,7 +723,7 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
     }
 
     final devicePosAsync = ref.watch(devicePositionProvider);
-    final resolved = devicePosAsync.valueOrNull;
+    final resolved = devicePosAsync.value;
     final devicePos = resolved?.$1;
     final locationResult = resolved?.$2;
     _lastDevicePos = devicePos;
@@ -1501,7 +1510,7 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
   Future<void> _add() async {
     if (_uploading) return;
     final current =
-        ref.read(placePhotosProvider(widget.place.id)).valueOrNull ?? const <PlacePhoto>[];
+        ref.read(placePhotosProvider(widget.place.id)).value ?? const <PlacePhoto>[];
     final remaining = kMaxPhotosPerUpload - current.length;
     if (remaining <= 0) return;
     final files = await ImagePicker().pickMultiImage(
@@ -1563,7 +1572,7 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final photos =
-        ref.watch(placePhotosProvider(widget.place.id)).valueOrNull ?? const <PlacePhoto>[];
+        ref.watch(placePhotosProvider(widget.place.id)).value ?? const <PlacePhoto>[];
     final urls = [for (final p in photos) resolveMediaUrl(p.url)];
     // Grid tiles load the small thumbnail (falling back to the full image
     // for photos uploaded before thumbnails existed); the full-screen

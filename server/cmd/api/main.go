@@ -31,6 +31,7 @@ func main() {
 	go srv.StartWeatherScheduler(ctx)
 	go srv.StartBRCertScheduler(ctx)
 	go srv.StartThumbnailWorker(ctx)
+	go srv.StartEmbeddingWorker(ctx)
 
 	// Explicit timeouts rather than the zero-value (unbounded) defaults —
 	// ReadHeaderTimeout guards against slow-header (slowloris-style)

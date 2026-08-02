@@ -48,6 +48,10 @@ type Server struct {
 	// internal/gemini) — empty means the br-cert scheduler's OCR sweep is
 	// a no-op.
 	GeminiAPIKey string
+	// OpenRouterAPIKey powers the Local Guide chat (see
+	// internal/openrouter) — empty means POST /guide/chat reports itself
+	// unconfigured (501) instead.
+	OpenRouterAPIKey string
 	// WeatherCache holds recent Tomorrow.io responses keyed by a coarse
 	// lat/lng cell (see internal/weather/cache.go) to stay within the free
 	// tier's tight rate limit.
@@ -92,6 +96,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		GoogleCalendarAPIKey: cfg.GoogleCalendarAPIKey,
 		TomorrowIOAPIKey:     cfg.TomorrowIOAPIKey,
 		GeminiAPIKey:         cfg.GeminiAPIKey,
+		OpenRouterAPIKey:     cfg.OpenRouterAPIKey,
 		WeatherCache:         weather.NewCache(),
 		// Same key as GoogleCalendarAPIKey — see its doc comment.
 		GooglePlacesAPIKey: cfg.GoogleCalendarAPIKey,
@@ -216,6 +221,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Put("/me/group", s.handlePutGroup)
 		r.Put("/me/location", s.handleUpdateMyLocation)
 		r.Get("/travellers/nearby", s.handleNearbyTravellers)
+		r.Post("/guide/chat", s.handleGuideChat)
+		r.Get("/guide/conversations/latest", s.handleGuideLatestConversation)
 	})
 
 	// Vendor (approved vendors only, checked in handlers where relevant).

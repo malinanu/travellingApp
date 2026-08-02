@@ -243,6 +243,10 @@ type Place struct {
 	Name     string          `json:"name"`
 	VendorID *string         `json:"vendorId,omitempty"`
 	Data     json.RawMessage `json:"data"`
+	// Embedding is a semantic-search vector for Local Guide (see
+	// internal/recommend, internal/http/embedding_worker.go). Its own
+	// column, not part of Data, and never serialized to travellers.
+	Embedding []float64 `json:"-"`
 }
 
 type Trip struct {
@@ -343,6 +347,30 @@ type VibeAggregate struct {
 	Loud       float64 `json:"loud"`
 	Crowded    float64 `json:"crowded"`
 	SampleSize int     `json:"sampleSize"`
+}
+
+// GuideConversation is one traveller's ongoing chat with the Local Guide
+// assistant (see internal/http/guide.go) — a traveller can have many over
+// time, resumed via GET /guide/conversations/latest.
+type GuideConversation struct {
+	ID          string    `json:"id"`
+	TravellerID string    `json:"-"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+// GuideMessage is one turn in a GuideConversation. Only the user-visible
+// text is stored — intermediate tool-call/tool-result exchanges the model
+// used to arrive at an assistant reply are not persisted; each new user
+// message re-derives whatever tool calls it needs from the conversation's
+// prior plain-text turns, so there's nothing to replay.
+type GuideMessage struct {
+	ID             int64     `json:"-"`
+	ConversationID string    `json:"-"`
+	Role           string    `json:"role"` // "user" | "assistant"
+	Content        string    `json:"content"`
+	PlaceIDs       []string  `json:"placeIds,omitempty"` // places referenced/recommended in this turn
+	CreatedAt      time.Time `json:"createdAt"`
 }
 
 type Subscription struct {
