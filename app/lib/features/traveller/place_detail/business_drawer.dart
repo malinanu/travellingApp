@@ -13,6 +13,7 @@ import 'package:video_player/video_player.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/upload_service.dart';
 import '../../../core/theme/palette.dart';
+import '../../../core/utils/debounced_saver.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../core/widgets/pill.dart';
 import '../../../core/widgets/press_scale.dart';
@@ -592,11 +593,30 @@ class _VibeCheck extends ConsumerStatefulWidget {
 }
 
 class _VibeCheckState extends ConsumerState<_VibeCheck> {
-  bool _rating = false;
+  // Tapping a vibe segment used to fire an immediate network POST per tap —
+  // three dimensions rated in one visit meant three separate round-trips,
+  // even though the server's endpoint always accepted a full 3-dimension
+  // snapshot in one call. Taps are now purely local (instant, no network,
+  // any 1-5 value on any dimension in any order) and only reach the server
+  // as one combined request, debounced ~1s after the last tap and always
+  // forced on dispose() (the card closing) — see _setDraft/_flush below.
+  int? _draftProductive, _draftLoud, _draftCrowded;
+  bool _dirty = false;
+  // Seed the drafts from the provider's last-known `mine` exactly once, on
+  // the first build — never again, so a later unrelated provider update
+  // (e.g. this same place rated from another screen) can't clobber an
+  // in-progress local draft mid-session.
+  bool _seeded = false;
+  // dispose() can't ref.watch — these remember the latest values a build()
+  // saw, for a flush that might not run until the widget is going away.
+  LatLngAt? _lastDevicePos;
+  VibeAggregate? _lastVibe;
+  late final DebouncedSaver _saver;
 
   @override
   void initState() {
     super.initState();
+    _saver = DebouncedSaver(save: _flush);
     // devicePositionProvider is cached for the whole app session, not
     // re-checked on its own — without this, a traveller who was out of
     // range (or had location denied) when they last resolved a position
@@ -611,28 +631,59 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
     });
   }
 
-  Future<void> _tap(String vibeId, int value, VibeCheckin? previousMine, VibeAggregate currentVibe,
-      LatLngAt pos) async {
-    if (_rating) return;
-    setState(() => _rating = true);
+  @override
+  void dispose() {
+    if (_dirty) _saver.flush(); // fire-and-forget — widget is going away regardless
+    _saver.dispose();
+    super.dispose();
+  }
+
+  int? _draftFor(String vibeId) => switch (vibeId) {
+        'productive' => _draftProductive,
+        'loud' => _draftLoud,
+        'crowded' => _draftCrowded,
+        _ => null,
+      };
+
+  void _setDraft(String vibeId, int value) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      switch (vibeId) {
+        case 'productive':
+          _draftProductive = value;
+        case 'loud':
+          _draftLoud = value;
+        case 'crowded':
+          _draftCrowded = value;
+      }
+      _dirty = true;
+    });
+    _saver.schedule();
+  }
+
+  Future<void> _flush() async {
+    if (!_dirty || _lastDevicePos == null) return;
     try {
       await ref.read(vibeCheckInsProvider.notifier).rate(
             widget.place.id,
-            productive: vibeId == 'productive' ? value : null,
-            loud: vibeId == 'loud' ? value : null,
-            crowded: vibeId == 'crowded' ? value : null,
-            previousMine: previousMine,
-            currentVibe: currentVibe,
-            lat: pos.lat,
-            lng: pos.lng,
+            productive: _draftProductive ?? 0,
+            loud: _draftLoud ?? 0,
+            crowded: _draftCrowded ?? 0,
+            previousMine: null, // irrelevant — all 3 dimensions are always explicit now
+            currentVibe: _lastVibe ?? const VibeAggregate(),
+            lat: _lastDevicePos!.lat,
+            lng: _lastDevicePos!.lng,
           );
+      _dirty = false;
     } catch (e) {
+      // Best-effort — matches _DealCardState._trackView's fire-and-forget
+      // convention elsewhere in this file. Only surface an error if the
+      // card is still open to see it; a dispose()-triggered flush has
+      // nothing left to show it to.
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
       }
-    } finally {
-      if (mounted) setState(() => _rating = false);
     }
   }
 
@@ -654,11 +705,19 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
     final override = ref.watch(vibeCheckInsProvider)[widget.place.id];
     final vibe = override?.vibe ?? serverVibe;
     final mine = override?.mine ?? serverMine;
+    _lastVibe = vibe;
+    if (!_seeded) {
+      _draftProductive = _vibeMineFor(mine, 'productive');
+      _draftLoud = _vibeMineFor(mine, 'loud');
+      _draftCrowded = _vibeMineFor(mine, 'crowded');
+      _seeded = true;
+    }
 
     final devicePosAsync = ref.watch(devicePositionProvider);
     final resolved = devicePosAsync.valueOrNull;
     final devicePos = resolved?.$1;
     final locationResult = resolved?.$2;
+    _lastDevicePos = devicePos;
     // devicePositionProvider always eventually resolves to a real position
     // or the Weligama Bay fallback — it never stays null forever — so
     // "still loading" and "resolved but too far away" are two genuinely
@@ -715,11 +774,9 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
                     icon: spottoIcon(v.icon),
                     color: Color(v.color),
                     average: _vibeAverageFor(vibe, v.id),
-                    mine: _vibeMineFor(mine, v.id),
-                    enabled: withinGeofence && !_rating,
-                    onTap: !granted || devicePos == null
-                        ? null
-                        : (value) => _tap(v.id, value, mine, vibe, devicePos),
+                    mine: _draftFor(v.id),
+                    enabled: withinGeofence,
+                    onTap: !granted ? null : (value) => _setDraft(v.id, value),
                   ),
                 ),
               ],
@@ -769,9 +826,9 @@ class _VibeCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final double average; // 0-5
-  final int? mine; // 0-5, or null if never rated
+  final int? mine; // 0-5 (this session's local draft), or null if never rated
   final bool enabled;
-  final ValueChanged<int>? onTap; // submitted value: 1-5
+  final ValueChanged<int>? onTap; // drafted value: 1-5 — see _VibeCheckState._setDraft
 
   const _VibeCard({
     required this.label,
@@ -786,15 +843,13 @@ class _VibeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isMine = mine != null;
-    // Once you've rated, the bar shows YOUR rating, not the crowd average —
-    // VibeCheckInsNotifier.rate() optimistically updates `mine` instantly
-    // but deliberately leaves `average` untouched until the server's real
-    // aggregate reconciles (its own doc comment explains why: there's no
-    // way to correctly recompute an average locally without the true
-    // sample size). Driving the segment count from `average` even when
-    // isMine was the actual bug behind "I tap 6 and it shows something
-    // else, then a moment later it catches up" — `mine` has zero lag,
-    // `average` does.
+    // Once you've rated, the bar shows YOUR rating (this session's local
+    // draft — see _VibeCheckState), not the crowd average, which is a
+    // separately-tracked figure that only reconciles once the debounced/
+    // on-close flush actually reaches the server. Driving the segment
+    // count from `average` even when isMine was the original bug behind
+    // "I tap 6 and it shows something else" — `mine` is always immediate,
+    // `average` never is.
     final filled = (isMine ? mine!.toDouble() : average).round().clamp(0, 5);
     final segmentOn = isMine ? Colors.white : color;
     final segmentOff =
