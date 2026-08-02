@@ -111,11 +111,21 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 			log.Printf("guide: chat: %v", err)
 		}
 		s.recordGuideRequest(r.Context(), convID, c.Subject, status, err.Error(), latencyMs, meta)
+		// Includes conversationId even on failure — the conversation row
+		// already exists (created above), and without this the client has
+		// no way to learn its id and ends up creating a brand new
+		// conversation on every retry instead of continuing this one.
 		if status == "rate_limited" {
-			writeErr(w, http.StatusTooManyRequests, "Local Guide is busy right now — try again in a moment")
+			writeJSON(w, http.StatusTooManyRequests, map[string]any{
+				"error":          "Local Guide is busy right now — try again in a moment",
+				"conversationId": convID,
+			})
 			return
 		}
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error":          "internal error",
+			"conversationId": convID,
+		})
 		return
 	}
 	s.recordGuideRequest(r.Context(), convID, c.Subject, "ok", "", latencyMs, meta)

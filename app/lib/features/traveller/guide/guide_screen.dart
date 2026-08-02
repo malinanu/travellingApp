@@ -3,6 +3,7 @@
 // canned keyword-matcher. Conversations persist server-side, so history
 // is fetched on open via GET /guide/conversations/latest.
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -158,6 +159,16 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      // A rate-limited/errored request still creates its conversation row
+      // server-side and returns its id — without picking this up, every
+      // failed retry would spawn a brand new empty conversation instead of
+      // continuing this one.
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map && data['conversationId'] is String) {
+          _conversationId = data['conversationId'] as String;
+        }
+      }
       setState(() {
         _messages.add(_Msg(false, ApiClient.errorMessage(e)));
         _busy = false;

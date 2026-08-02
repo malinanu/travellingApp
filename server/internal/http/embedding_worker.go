@@ -18,8 +18,15 @@ import (
 // embeddingWorkerInterval — no tight latency requirement here (unlike
 // thumbnails, nothing in the UI is waiting on a place's embedding to
 // appear), so this paces gently against the free-tier embedding model's
-// rate limits.
-const embeddingWorkerInterval = 30 * time.Second
+// rate limits. Deliberately wide: OpenRouter's free (":free") models share
+// one account-wide daily cap (50/day unfunded, 1000/day after a one-time
+// $10 credit purchase — see openrouter.ai's rate-limit docs), and that
+// budget also has to cover live chat traffic from Local Guide itself. At
+// 30s this worker alone could burn most of an unfunded day's quota in the
+// ~20 minutes it takes to back through a few hundred places, right after
+// deploy, before anyone gets to actually chat. 20 minutes spreads that
+// same one-time backlog over most of a day instead.
+const embeddingWorkerInterval = 20 * time.Minute
 
 // embeddingBatchSize caps how many places one tick embeds; a bigger
 // backlog just spans more ticks.
