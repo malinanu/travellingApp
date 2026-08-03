@@ -24,6 +24,7 @@ import '../../../core/widgets/stat_chip.dart';
 import '../../../data/mock/places.dart' as data;
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
+import '../../../data/vendor_categories.dart';
 
 /// Shared cap for both the review-photo picker and the traveller-photo
 /// picker (see _ReviewsSectionState._pickPhoto and
@@ -577,6 +578,14 @@ class _HoursStatState extends State<_HoursStat> {
 /// bars); the server is what actually enforces it on submit.
 const kVibeCheckinGeofenceMeters = 150.0;
 
+/// data.vibes filtered to the dimensions meaningful for a place's category
+/// (see relevantVibeDimensions) — e.g. a beach bar shows Loud + Crowded
+/// only, no meaningless Productive slider.
+List<VibeTag> _relevantVibes(String categoryId) {
+  final relevant = relevantVibeDimensions(categoryId);
+  return [for (final v in data.vibes) if (relevant.contains(v.id)) v];
+}
+
 /// Reads one dimension's value out of a VibeAggregate/VibeCheckin by the
 /// shared vibe id (see data.vibes) — keeps _VibeCheck's build method from
 /// hardcoding a productive/loud/crowded switch three times over.
@@ -775,7 +784,10 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
           const SizedBox(height: 12),
           Row(
             children: [
-              for (final (i, v) in data.vibes.indexed) ...[
+              // Only show dimensions meaningful for this place's category
+              // (e.g. "productive" doesn't mean anything for a beach bar) —
+              // see relevantVibeDimensions.
+              for (final (i, v) in _relevantVibes(widget.place.categoryId).indexed) ...[
                 if (i > 0) const SizedBox(width: 8),
                 Expanded(
                   child: _VibeCard(

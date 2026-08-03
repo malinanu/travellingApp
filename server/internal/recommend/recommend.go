@@ -59,7 +59,12 @@ type Scored struct {
 // Data blob (see domain.Place's own doc comment: Data mirrors the Dart
 // Place model) — deliberately narrow, not a full mirror of every field.
 type facts struct {
-	Type       string   `json:"type"`
+	Type string `json:"type"`
+	// CategoryID is the canonical domain.VendorCategories id (set by
+	// syncVendorPlace, see internal/http/vendor.go), distinct from Type
+	// which is the display label. Lets matchesCategory do an exact id match
+	// instead of relying solely on fragile label substring matching.
+	CategoryID string   `json:"categoryId"`
 	Tags       []string `json:"tags"`
 	Styles     []string `json:"styles"`
 	PriceLevel string   `json:"priceLevel"`
@@ -171,6 +176,9 @@ func matchesCategory(f facts, categories []string) bool {
 		if want == "" {
 			continue
 		}
+		if strings.EqualFold(f.CategoryID, want) {
+			return true
+		}
 		if strings.Contains(strings.ToLower(f.Type), want) {
 			return true
 		}
@@ -200,7 +208,7 @@ const unknownDistance float64 = -1
 func score(f facts, distKm float64, prefs Preferences, weather string) (float64, []string) {
 	var reasons []string
 
-	vibe, hasVibePref := vibeScore(f.Vibe, prefs)
+	vibe, hasVibePref := vibeScore(f, prefs)
 	if hasVibePref {
 		reasons = append(reasons, "matches the vibe you're after")
 	}
@@ -279,17 +287,27 @@ func cosineSimilarity(a, b []float64) float64 {
 // avoids cosine's instability near zero-magnitude vectors (e.g. "I want it
 // quiet" targets loud≈1, a small-magnitude target — exactly where cosine
 // similarity gets unreliable).
-func vibeScore(v domain.VibeAggregate, prefs Preferences) (float64, bool) {
+//
+// Each dimension is also gated on domain.RelevantVibeDimensions(f.CategoryID)
+// — e.g. "productive" doesn't mean anything for a beach bar, so a
+// traveller's productivity preference is excluded from that candidate's
+// score entirely rather than compared against a meaningless average.
+func vibeScore(f facts, prefs Preferences) (float64, bool) {
+	relevant := map[string]bool{}
+	for _, d := range domain.RelevantVibeDimensions(f.CategoryID) {
+		relevant[d] = true
+	}
+	v := f.Vibe
 	total, dims := 0.0, 0
-	if prefs.DesiredProductive != nil {
+	if prefs.DesiredProductive != nil && relevant["productive"] {
 		total += 1 - abs(*prefs.DesiredProductive-v.Productive)/4
 		dims++
 	}
-	if prefs.DesiredLoud != nil {
+	if prefs.DesiredLoud != nil && relevant["loud"] {
 		total += 1 - abs(*prefs.DesiredLoud-v.Loud)/4
 		dims++
 	}
-	if prefs.DesiredCrowded != nil {
+	if prefs.DesiredCrowded != nil && relevant["crowded"] {
 		total += 1 - abs(*prefs.DesiredCrowded-v.Crowded)/4
 		dims++
 	}

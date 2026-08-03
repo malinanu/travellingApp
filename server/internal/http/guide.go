@@ -262,6 +262,17 @@ func (s *Server) guideTravellerStyles(ctx context.Context, travellerID string) [
 	return u.TravelStyle
 }
 
+// vendorCategoryIDs lists every real canonical category id, so the
+// search_places tool description stays in sync with domain.VendorCategories
+// automatically rather than drifting like the old free-text example did.
+func vendorCategoryIDs() []string {
+	ids := make([]string, 0, len(domain.VendorCategories))
+	for _, c := range domain.VendorCategories {
+		ids = append(ids, c.ID)
+	}
+	return ids
+}
+
 func guideTools() []openrouter.Tool {
 	return []openrouter.Tool{
 		{
@@ -275,7 +286,8 @@ func guideTools() []openrouter.Tool {
 					"properties": map[string]any{
 						"categories": map[string]any{
 							"type": "array", "items": map[string]any{"type": "string"},
-							"description": `e.g. ["cafe"], ["surf"]`,
+							"description": "Canonical category ids, e.g. [\"cafe\"], [\"surf-school\"]. Real options: " +
+								strings.Join(vendorCategoryIDs(), ", "),
 						},
 						"tags": map[string]any{
 							"type": "array", "items": map[string]any{"type": "string"},

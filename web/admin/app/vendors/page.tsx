@@ -15,9 +15,10 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  categoriesBySegment, VENDOR_SEGMENTS,
   resolveMediaUrl, timeAgo, uploadMedia, useAutoSave, validateFile, type AdminAuditLogEntry, type AdminVendorProfileGrant,
   type AdminVendorStats, type AdminVendorSummary, type AdminVendorTeam, type Claim, type Media,
-  type MediaRole, type Offer, type Review, type Vendor, type VendorProfile, type VendorStatus,
+  type MediaRole, type Offer, type Review, type Vendor, type VendorProfile, type VendorStatus, type VibeAggregate,
 } from '@spotto/shared';
 import Shell from '../../components/shell';
 import { InlineErrorBanner } from '../../components/route-status';
@@ -67,11 +68,6 @@ export default function VendorsPage() {
     for (const v of vendors) c[v.status] = (c[v.status] ?? 0) + 1;
     return c;
   }, [vendors]);
-
-  const categories = useMemo(
-    () => [...new Set(vendors.map((v) => v.category).filter(Boolean))].sort(),
-    [vendors],
-  );
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -168,7 +164,13 @@ export default function VendorsPage() {
             className="rounded-lg px-2.5 py-1.5 text-[13px] font-semibold outline-none"
             style={{ background: 'var(--bg)', border: '1px solid var(--line)' }}>
             <option value="all">All categories</option>
-            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            {VENDOR_SEGMENTS.map((segment) => (
+              <optgroup key={segment.id} label={segment.label}>
+                {categoriesBySegment(segment.id).map((c) => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </optgroup>
+            ))}
           </select>
         </div>
       </div>
@@ -680,6 +682,13 @@ function HistoryTab({ vendorId }: { vendorId: string }) {
 }
 
 function EditForm({ vendor, onDone, onSaved }: { vendor: Vendor; onDone: () => void; onSaved: () => void }) {
+  // Lazy per-vendor detail, same convention as VendorMonitor's stats query —
+  // not attached to the bulk vendor list, so opening the edit form is the
+  // only thing that fetches it.
+  const { data: vibe } = useQuery<VibeAggregate>({
+    queryKey: ['admin-vendor-vibe', vendor.id],
+    queryFn: () => api.get<VibeAggregate>(`/admin/vendors/${vendor.id}/vibe`),
+  });
   const p: VendorProfile = vendor.profile ?? {};
   const c = p.contact ?? {};
   const [f, setF] = useState({
@@ -739,7 +748,22 @@ function EditForm({ vendor, onDone, onSaved }: { vendor: Vendor; onDone: () => v
       <p className="text-[11.5px] font-bold text-muted uppercase mb-3">Admin edit — applies immediately, even for suspended vendors</p>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Name"><input className={input} style={inputStyle} value={f.name} onChange={(e) => set('name', e.target.value)} onBlur={autoSave.flush} /></Field>
-        <Field label="Category"><input className={input} style={inputStyle} value={f.category} onChange={(e) => set('category', e.target.value)} onBlur={autoSave.flush} /></Field>
+        <Field label="Category">
+          <select className={input} style={inputStyle} value={f.category} onChange={(e) => { set('category', e.target.value); autoSave.flush(); }}>
+            {VENDOR_SEGMENTS.map((segment) => (
+              <optgroup key={segment.id} label={segment.label}>
+                {categoriesBySegment(segment.id).map((c) => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <span className="text-[11px] font-semibold text-muted mt-1 block">
+            {vibe && vibe.sampleSize > 0
+              ? `Live vibe: ${vibe.productive.toFixed(1)} productive · ${vibe.loud.toFixed(1)} loud · ${vibe.crowded.toFixed(1)} crowded (${vibe.sampleSize} traveler${vibe.sampleSize === 1 ? '' : 's'})`
+              : 'Live vibe: no check-ins yet'}
+          </span>
+        </Field>
         <Field label="Town"><input className={input} style={inputStyle} value={f.town} onChange={(e) => set('town', e.target.value)} onBlur={autoSave.flush} /></Field>
         <Field label="Country"><input className={input} style={inputStyle} value={f.country} onChange={(e) => set('country', e.target.value)} onBlur={autoSave.flush} /></Field>
         <Field label="Priority">

@@ -24,6 +24,15 @@ func (s *Server) handleVendorBusiness(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Best-effort: a vendor with no synced place yet (never approved, or
+	// syncVendorPlace hasn't run) just gets no vibe data rather than a
+	// failed request — this is supplementary read-only info, not core to
+	// the response.
+	if place, err := s.Store.PlaceByVendorID(r.Context(), v.ID); err == nil {
+		if vibe, err := s.Store.VibeAggregate(r.Context(), place.ID); err == nil {
+			v.Vibe = &vibe
+		}
+	}
 	writeJSON(w, http.StatusOK, v)
 }
 
@@ -157,6 +166,10 @@ func (s *Server) handleUpdateVendorCategory(w http.ResponseWriter, r *http.Reque
 	}
 	if req.Category == "" {
 		writeErr(w, http.StatusBadRequest, "category is required")
+		return
+	}
+	if !domain.ValidCategoryID(req.Category) {
+		writeErr(w, http.StatusBadRequest, "unknown category")
 		return
 	}
 	if err := s.Store.UpdateVendorCategory(r.Context(), v.ID, req.Category); err != nil {
@@ -595,24 +608,15 @@ func wifiSpeedLabel(score float64) string {
 	}
 }
 
-// categoryOriginalLabels maps the original 6 lowercase category ids
-// (used by the vendor portal's onboarding wizard) to a traveller-friendly
-// display label. Every other category — the richer free-text set real/
-// seeded vendor applications carry (e.g. "Spa & Wellness") — already
-// stores its own display label as the id, so it passes through unchanged.
-// Mirrors web/vendor/lib/business-categories.ts's BUSINESS_CATEGORIES.
-var categoryOriginalLabels = map[string]string{
-	"restaurant": "Restaurant",
-	"cafe":       "Café",
-	"bar":        "Bar & Sunset",
-	"surf":       "Surf & Water",
-	"craft":      "Craft & Studio",
-	"shop":       "Shop",
-}
-
+// categoryLabel resolves a vendor category id to its display label via the
+// canonical domain.VendorCategories taxonomy (falling back through legacy
+// aliases for rows written before migration 024). Unrecognized values pass
+// through unchanged rather than erroring, same as before this taxonomy
+// existed. Mirrors web/packages/shared/src/vendor-categories.ts and
+// app/lib/data/vendor_categories.dart.
 func categoryLabel(category string) string {
-	if label, ok := categoryOriginalLabels[category]; ok {
-		return label
+	if c, ok := domain.CategoryByID(category); ok {
+		return c.Label
 	}
 	return category
 }
@@ -702,6 +706,7 @@ func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
 	data["lat"] = v.Lat
 	data["lng"] = v.Lng
 	data["type"] = categoryLabel(v.Category)
+	data["categoryId"] = v.Category
 
 	if headline != nil {
 		data["deal"] = map[string]any{

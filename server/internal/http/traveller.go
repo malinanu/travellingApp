@@ -248,9 +248,17 @@ func (s *Server) handleOfferView(w http.ResponseWriter, r *http.Request) {
 // enforced here server-side, not just hidden client-side.
 const vibeCheckinGeofenceMeters = 150.0
 
+// vibeCheckinCooldown is the minimum gap between one traveller's check-ins
+// for the same place — check-ins are otherwise unlimited (see
+// handleVibeCheckin's doc comment), so without this a traveller standing at
+// a place could resubmit every request and effectively overwrite the
+// aggregate at will.
+const vibeCheckinCooldown = 15 * time.Minute
+
 // handleVibeCheckin records one traveller's full vibe snapshot for a place —
 // always a new row (see Store.AddVibeCheckin), never an edit of a previous
-// check-in, so a traveller can re-rate a place on a later visit.
+// check-in, so a traveller can re-rate a place on a later visit. Gated by
+// vibeCheckinCooldown so the same traveller can't resubmit indefinitely.
 func (s *Server) handleVibeCheckin(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	placeID := chi.URLParam(r, "id")
@@ -283,6 +291,15 @@ func (s *Server) handleVibeCheckin(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(place.Data, &loc)
 	if geo.HaversineKm(req.Lat, req.Lng, loc.Lat, loc.Lng)*1000 > vibeCheckinGeofenceMeters {
 		writeErr(w, http.StatusForbidden, "you're too far from this place to rate its vibe")
+		return
+	}
+	if last, err := s.Store.MyLatestVibeCheckin(r.Context(), placeID, c.Subject); err == nil {
+		if wait := vibeCheckinCooldown - time.Since(last.CreatedAt); wait > 0 {
+			writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("you can rate this place again in %d minutes", int(wait.Minutes())+1))
+			return
+		}
+	} else if !errors.Is(err, postgres.ErrNotFound) {
+		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if err := s.Store.AddVibeCheckin(r.Context(), placeID, c.Subject, req.Productive, req.Loud, req.Crowded); err != nil {

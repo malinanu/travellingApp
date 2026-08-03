@@ -479,7 +479,7 @@ class _SpotCard extends StatelessWidget {
                           BoxShadow(color: SpottoColors.inkShadow, blurRadius: 6, offset: Offset(0, 2)),
                         ],
                       ),
-                      child: Icon(categoryIcon(place.type), size: 16, color: SpottoColors.accent),
+                      child: Icon(categoryIcon(place.categoryId), size: 16, color: SpottoColors.accent),
                     ),
                   ),
                   Positioned(

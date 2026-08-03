@@ -21,7 +21,7 @@ import AddressSearchField from '../../components/address-search-field';
 import LocationPickerAuto from '../../components/location-picker-auto';
 import { SpottoMark } from '../../components/shell';
 import { api } from '../../lib/api';
-import { BUSINESS_CATEGORIES } from '../../lib/business-categories';
+import { VENDOR_SEGMENTS, categoriesBySegment, categoryIconComponent } from '../../lib/business-categories';
 import { loadGoogleMaps } from '../../lib/google-maps';
 
 const REGISTER_STEPS = ['Find your business', 'Your account', 'Your business', 'A few details'];
@@ -40,15 +40,15 @@ const DEFAULT_PIN_LNG = 79.8612;
 const GOOGLE_TYPE_TO_CATEGORY: [string, string][] = [
   ['cafe', 'cafe'],
   ['restaurant', 'restaurant'],
-  ['bar', 'bar'], ['night_club', 'bar'],
-  ['bakery', 'Bakery'],
-  ['lodging', 'Hotel'],
-  ['spa', 'Spa & Wellness'],
-  ['gym', 'Yoga / Wellness'],
-  ['tourist_attraction', 'Tours / Activity'], ['travel_agency', 'Tours / Activity'],
-  ['meal_takeaway', 'Street Food'],
-  ['art_gallery', 'craft'],
-  ['store', 'shop'], ['clothing_store', 'shop'],
+  ['bar', 'bar-pub'], ['night_club', 'bar-pub'],
+  ['bakery', 'bakery'],
+  ['lodging', 'hotel'],
+  ['spa', 'spa-wellness'],
+  ['gym', 'yoga-studio'],
+  ['tourist_attraction', 'city-tour'], ['travel_agency', 'city-tour'],
+  ['meal_takeaway', 'street-food'],
+  ['art_gallery', 'pottery-workshop'],
+  ['store', 'artisan-shop'], ['clothing_store', 'artisan-shop'],
 ];
 
 function categoryFromGoogleTypes(types: string[] | undefined): string {
@@ -596,20 +596,29 @@ function LoginPageInner() {
             <Field label="Business name" value={businessName} onChange={setBusinessName} icon={Store} placeholder="e.g. Driftwood Coffee & Co-Work" autoFocus />
             <div>
               <span className="block text-[12.5px] font-extrabold mb-2 text-ink-soft">Category</span>
-              <div className="grid grid-cols-2 gap-2.5">
-                {BUSINESS_CATEGORIES.map((t) => {
-                  const Icon = t.icon;
-                  const on = category === t.id;
-                  return (
-                    <button key={t.id} type="button" onClick={() => setCategory(t.id)}
-                      className={`flex items-center gap-2.5 rounded-2xl px-3 py-3 text-left transition-all active:scale-[0.98] border-[1.5px] ${
-                        on ? 'bg-accent border-accent text-white' : 'bg-white border-line text-ink'
-                      }`}>
-                      <Icon size={18} />
-                      <span className="font-extrabold text-[12.5px] leading-tight">{t.label}</span>
-                    </button>
-                  );
-                })}
+              <div className="space-y-3.5">
+                {VENDOR_SEGMENTS.map((segment) => (
+                  <div key={segment.id}>
+                    <span className="block text-[11px] font-extrabold uppercase tracking-wide mb-1.5 text-ink-soft/70">
+                      {segment.label}
+                    </span>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {categoriesBySegment(segment.id).map((t) => {
+                        const Icon = categoryIconComponent(t);
+                        const on = category === t.id;
+                        return (
+                          <button key={t.id} type="button" onClick={() => setCategory(t.id)}
+                            className={`flex items-center gap-2.5 rounded-2xl px-3 py-3 text-left transition-all active:scale-[0.98] border-[1.5px] ${
+                              on ? 'bg-accent border-accent text-white' : 'bg-white border-line text-ink'
+                            }`}>
+                            <Icon size={18} />
+                            <span className="font-extrabold text-[12.5px] leading-tight">{t.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

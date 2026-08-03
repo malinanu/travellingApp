@@ -175,6 +175,12 @@ type Vendor struct {
 	// Joined fields (not columns), populated by admin map/near queries.
 	BadReviewCount int  `json:"badReviewCount,omitempty"`
 	Flagged        bool `json:"flagged,omitempty"`
+	// Vibe is the vendor's synced-place crowdsourced vibe reading —
+	// populated only by handleVendorBusiness (vendor's own view) and
+	// handleAdminVendorVibe (admin's view), nil everywhere else. Distinct
+	// from the vendor-entered Wi-Fi/speed "Connectivity & vibe" card in the
+	// profile page, which is self-reported, not traveller check-in data.
+	Vibe *VibeAggregate `json:"vibe,omitempty"`
 }
 
 type OfferStatus string

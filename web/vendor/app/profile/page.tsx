@@ -12,8 +12,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check, Clock, Facebook, FileText, Globe, Instagram,
-  KeyRound, Lock, MapPin, Phone, Plus, Save, ShieldCheck, Store, Sun,
-  Sunrise, Sunset, UtensilsCrossed, Waves, Wifi, X, LucideIcon,
+  KeyRound, Laptop, Lock, MapPin, Monitor, Phone, Plus, Save, ShieldCheck, Store, Sun,
+  Sunrise, Sunset, UtensilsCrossed, Users, Volume2, Waves, Wifi, X, LucideIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -26,7 +26,13 @@ import VendorPhotos from '../../components/vendor-photos';
 import VendorDocs from '../../components/vendor-docs';
 import VendorBRCertificate from '../../components/vendor-br-certificate';
 import { api } from '../../lib/api';
-import { BUSINESS_CATEGORIES, isSelectedCategory } from '../../lib/business-categories';
+import { VENDOR_SEGMENTS, categoriesBySegment, categoryById, isSelectedCategory, categoryIconComponent } from '../../lib/business-categories';
+
+const VIBE_DIMENSIONS: { id: 'productive' | 'loud' | 'crowded'; label: string; icon: LucideIcon }[] = [
+  { id: 'productive', label: 'Work-friendly', icon: Laptop },
+  { id: 'loud', label: 'Lively', icon: Volume2 },
+  { id: 'crowded', label: 'Crowded', icon: Users },
+];
 
 const TIME_SLOTS = [
   { id: 'morning', label: 'Morning', icon: Sunrise },
@@ -352,21 +358,30 @@ export default function ProfilePage() {
 
           <div className="card p-6">
             <CardHeader icon={Store} title="Business type" sub="What kind of spot are you?" />
-            <div className="grid grid-cols-3 gap-2 mb-4">
-              {BUSINESS_CATEGORIES.map((t) => {
-                const Icon = t.icon;
-                const on = isSelectedCategory(business?.category, t);
-                return (
-                  <button type="button" key={t.id} disabled={updateCategory.isPending}
-                    onClick={() => updateCategory.mutate(t.id)}
-                    className={`rounded-xl border px-2 py-2.5 flex flex-col items-center gap-1 text-[12px] font-extrabold text-center leading-tight transition-colors disabled:opacity-60 ${
-                      on ? 'border-accent bg-accent-tint text-accent' : 'border-line bg-sand hover:border-accent'
-                    }`}>
-                    <Icon size={17} />
-                    {t.label}
-                  </button>
-                );
-              })}
+            <div className="space-y-3 mb-4">
+              {VENDOR_SEGMENTS.map((segment) => (
+                <div key={segment.id}>
+                  <span className="block text-[10.5px] font-extrabold uppercase tracking-wide mb-1.5 text-muted">
+                    {segment.label}
+                  </span>
+                  <div className="grid grid-cols-3 gap-2">
+                    {categoriesBySegment(segment.id).map((t) => {
+                      const Icon = categoryIconComponent(t);
+                      const on = isSelectedCategory(business?.category, t);
+                      return (
+                        <button type="button" key={t.id} disabled={updateCategory.isPending}
+                          onClick={() => updateCategory.mutate(t.id)}
+                          className={`rounded-xl border px-2 py-2.5 flex flex-col items-center gap-1 text-[12px] font-extrabold text-center leading-tight transition-colors disabled:opacity-60 ${
+                            on ? 'border-accent bg-accent-tint text-accent' : 'border-line bg-sand hover:border-accent'
+                          }`}>
+                          <Icon size={17} />
+                          {t.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
             <div className="flex items-start gap-2 rounded-xl bg-sand p-3">
               <UtensilsCrossed size={15} className="text-accent shrink-0 mt-0.5" />
@@ -427,6 +442,35 @@ export default function ProfilePage() {
                 </span>
               </label>
             </div>
+          </div>
+
+          <div className="card p-6">
+            <CardHeader icon={Monitor} title="Live vibe" sub="What real travelers are saying right now — read-only" />
+            {business?.vibe && business.vibe.sampleSize > 0 ? (
+              <div className="grid grid-cols-3 gap-2.5">
+                {VIBE_DIMENSIONS
+                  .filter((d) => (categoryById(business.category)?.relevantVibeDimensions ?? ['productive', 'loud', 'crowded']).includes(d.id))
+                  .map((d) => {
+                    const Icon = d.icon;
+                    return (
+                      <div key={d.id} className="rounded-xl border border-line bg-sand py-3.5 flex flex-col items-center gap-1.5">
+                        <Icon size={18} className="text-accent" />
+                        <span className="font-extrabold text-[15px] text-ink">{business.vibe![d.id].toFixed(1)}</span>
+                        <span className="text-[11px] font-bold text-muted">{d.label}</span>
+                      </div>
+                    );
+                  })}
+              </div>
+            ) : (
+              <p className="text-[12.5px] text-muted font-semibold">
+                No live vibe check-ins yet — travelers rate this from your business page once they've visited.
+              </p>
+            )}
+            {business?.vibe && business.vibe.sampleSize > 0 && (
+              <p className="text-[11px] text-muted font-semibold mt-2.5">
+                From {business.vibe.sampleSize} traveler{business.vibe.sampleSize === 1 ? '' : 's'} in the last 30 days
+              </p>
+            )}
           </div>
 
           <div className="card p-6">

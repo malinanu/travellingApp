@@ -21,6 +21,7 @@ import '../../../core/widgets/spotto_icons.dart';
 import '../../../data/mock/places.dart' as data;
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
+import '../../../data/vendor_categories.dart';
 import '../group/group_sheet.dart';
 import '../place_detail/business_drawer.dart';
 import '../weather/activity_rules.dart';
@@ -198,29 +199,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
   List<Place> _filterPlaces(List<Place> places, Set<String> favoriteIds) {
     switch (_selectedCategory) {
-      case 'Cafés':
-        return places
-            .where((p) =>
-                p.type.toLowerCase().contains('caf') ||
-                p.type.toLowerCase().contains('coffee') ||
-                p.icon == 'Coffee' ||
-                p.name.toLowerCase().contains('cafe'))
-            .toList();
-      case 'Food':
-        return places
-            .where((p) =>
-                p.type.toLowerCase().contains('food') ||
-                p.type.toLowerCase().contains('restaurant') ||
-                p.icon == 'Utensils')
-            .toList();
-      case 'Beaches':
-        return places
-            .where((p) =>
-                p.type.toLowerCase().contains('beach') ||
-                p.type.toLowerCase().contains('surf') ||
-                p.icon == 'Waves' ||
-                p.name.toLowerCase().contains('beach'))
-            .toList();
+      case 'Hospitality':
+        return _placesInSegment(places, VendorSegment.hospitality);
+      case 'Activities':
+        return _placesInSegment(places, VendorSegment.activity);
+      case 'Independent':
+        return _placesInSegment(places, VendorSegment.independent);
+      case 'Events':
+        return _placesInSegment(places, VendorSegment.events);
       case 'Deals':
         return places.where((p) => p.deal.active).toList();
       case 'Favorites':
@@ -228,6 +214,22 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       default:
         return places;
     }
+  }
+
+  List<Place> _placesInSegment(List<Place> places, VendorSegment segment) =>
+      places.where((p) => categoryById(p.categoryId)?.segment == segment).toList();
+
+  /// Map-pin vibe badge icon for [p] — the category's primary relevant
+  /// dimension (see relevantVibeDimensions), or null if there's no real
+  /// vibe sample yet (an unrated place shows no badge, never a guess).
+  IconData? _vibeBadgeIcon(Place p) {
+    if (p.vibe.sampleSize <= 0) return null;
+    final dims = relevantVibeDimensions(p.categoryId);
+    if (dims.isEmpty) return null;
+    for (final v in data.vibes) {
+      if (v.id == dims.first) return spottoIcon(v.icon);
+    }
+    return null;
   }
 
   void _onSearchQueryChanged(String query) async {
@@ -333,7 +335,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           userInterests.any((style) => p.styles.contains(style));
 
       final color = SpottoColors.pinTones[p.color] ?? SpottoColors.accent;
-      final icon = categoryIcon(p.type);
+      final icon = categoryIcon(p.categoryId);
 
       final isSelected = _selectedPlaceId == p.id;
       final showBanner = isSelected ||
@@ -362,8 +364,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           ),
         );
       } else {
-        final key =
-            'pin|${color.toARGB32()}|${icon.codePoint}|${p.deal.active}|$pinEmphasized';
+        final vibeIcon = _vibeBadgeIcon(p);
+        final key = 'pin|${color.toARGB32()}|${icon.codePoint}|${p.deal.active}|'
+            '$pinEmphasized|${vibeIcon?.codePoint}';
         icon_ = _resolveBitmap(
           key: key,
           slotSize: _kPinSlotSize,
@@ -373,6 +376,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             icon: icon,
             hasDeal: p.deal.active,
             emphasized: pinEmphasized,
+            vibeIcon: vibeIcon,
           ),
         );
       }
@@ -633,9 +637,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   child: Row(
                     children: [
                       _categoryChip('All', Icons.apps_rounded),
-                      _categoryChip('Cafés', Icons.coffee_rounded),
-                      _categoryChip('Food', Icons.restaurant_rounded),
-                      _categoryChip('Beaches', Icons.beach_access_rounded),
+                      _categoryChip('Hospitality', Icons.coffee_rounded),
+                      _categoryChip('Activities', Icons.hiking_rounded),
+                      _categoryChip('Independent', Icons.storefront_rounded),
+                      _categoryChip('Events', Icons.celebration_rounded),
                       _categoryChip('Deals', Icons.local_offer_rounded),
                       _categoryChip('Favorites', Icons.favorite_rounded),
                     ],

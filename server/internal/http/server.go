@@ -302,6 +302,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/vendors/{id}/redemptions", s.handleAdminVendorRedemptions)
 		r.Get("/admin/vendors/{id}/team", s.handleAdminVendorTeam)
 		r.Get("/admin/vendors/{id}/audit", s.handleAdminVendorAudit)
+		r.Get("/admin/vendors/{id}/vibe", s.handleAdminVendorVibe)
 		r.Get("/admin/vendors/{id}/media", s.handleVendorMedia)
 		r.Patch("/admin/vendors/{id}", s.handleAdminVendorEdit)
 		r.Post("/admin/vendors/{id}/takedown", s.handleAdminVendorTakedown)

@@ -121,6 +121,27 @@ func (s *Server) handleAdminVendorStats(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// handleAdminVendorVibe returns the crowdsourced Current Vibe reading for a
+// vendor's synced place — lazy per-vendor detail, same convention as
+// handleAdminVendorStats/Offers/Redemptions, not attached to the bulk
+// GET /admin/vendors list to avoid adding an N+1 query there. Best-effort:
+// a vendor with no synced place yet (never approved, or syncVendorPlace
+// hasn't run) gets a zero-value vibe rather than an error, same as the
+// vendor's own GET /vendor/business view.
+func (s *Server) handleAdminVendorVibe(w http.ResponseWriter, r *http.Request) {
+	place, err := s.Store.PlaceByVendorID(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		writeJSON(w, http.StatusOK, domain.VibeAggregate{})
+		return
+	}
+	vibe, err := s.Store.VibeAggregate(r.Context(), place.ID)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, vibe)
+}
+
 // handleAdminVendorSummary powers the Vendors page's aggregate band — the
 // network-wide roll-up across every vendor (status breakdown, redemptions,
 // check-ins, rating, offers, subscriptions).
@@ -249,6 +270,10 @@ func (s *Server) handleAdminVendorEdit(w http.ResponseWriter, r *http.Request) {
 		v.Name, changed = *req.Name, append(changed, "name")
 	}
 	if req.Category != nil {
+		if !domain.ValidCategoryID(*req.Category) {
+			writeErr(w, http.StatusBadRequest, "unknown category")
+			return
+		}
 		v.Category, changed = *req.Category, append(changed, "category")
 	}
 	if req.Town != nil {

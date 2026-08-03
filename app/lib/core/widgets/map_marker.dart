@@ -125,6 +125,11 @@ class PlacePinMarker extends StatelessWidget {
   final IconData icon;
   final bool hasDeal;
   final bool emphasized;
+  // Small badge showing the place's current live vibe reading (the
+  // category's primary relevant dimension — see relevantVibeDimensions),
+  // null when there's no real sample yet so an unrated place shows no
+  // badge rather than implying data that doesn't exist.
+  final IconData? vibeIcon;
 
   const PlacePinMarker({
     super.key,
@@ -132,6 +137,7 @@ class PlacePinMarker extends StatelessWidget {
     required this.icon,
     required this.hasDeal,
     required this.emphasized,
+    this.vibeIcon,
   });
 
   @override
@@ -173,6 +179,22 @@ class PlacePinMarker extends StatelessWidget {
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white, width: 2),
                 ),
+              ),
+            ),
+          if (vibeIcon != null)
+            Positioned(
+              bottom: -1,
+              right: -1,
+              child: Container(
+                width: 16,
+                height: 16,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color, width: 1.5),
+                ),
+                child: Icon(vibeIcon, size: 9, color: color),
               ),
             ),
         ],

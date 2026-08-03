@@ -174,6 +174,10 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			u.VendorRole = domain.VendorRoleStaff
 		}
 	} else if role == domain.RoleVendor {
+		if !domain.ValidCategoryID(req.Category) {
+			writeErr(w, http.StatusBadRequest, "unknown business category")
+			return
+		}
 		// Vendor registration creates a pending vendor gated until admin approval.
 		v := domain.Vendor{
 			ID:          newID("ven"),

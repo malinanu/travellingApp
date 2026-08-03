@@ -154,6 +154,7 @@ class Place {
   final String id;
   final String name;
   final String type;
+  final String categoryId; // canonical vendor-category id, see data/vendor_categories.dart
   final String region; // display name, e.g. "Galle" — '' for older/seed data
   final String regionId; // e.g. "galle" — matches server/internal/geo.Regions
   final String address; // full street address, from Google Places imports
@@ -214,6 +215,7 @@ class Place {
     required this.id,
     required this.name,
     required this.type,
+    this.categoryId = '',
     this.region = '',
     this.regionId = '',
     this.address = '',
@@ -277,6 +279,7 @@ class Place {
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       type: json['type'] as String? ?? '',
+      categoryId: json['categoryId'] as String? ?? '',
       region: json['region'] as String? ?? '',
       regionId: json['regionId'] as String? ?? '',
       address: json['address'] as String? ?? '',

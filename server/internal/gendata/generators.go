@@ -89,10 +89,11 @@ func genVendorsAndPlaces(ctx context.Context, store *postgres.Store, passwordHas
 	vendors := make([]domain.Vendor, 0, n)
 	vendorUsers := make([]domain.User, 0, n)
 	places := make([]domain.Place, 0, n+12)
+	vendorCategories := domain.OnboardableCategories()
 
 	for i := 0; i < n; i++ {
 		region := regions[gofakeit.Number(0, len(regions)-1)]
-		category := gofakeit.RandomString(vendorCategories)
+		category := vendorCategories[gofakeit.Number(0, len(vendorCategories)-1)].ID
 		status := weightedVendorStatus()
 		id := newID("ven")
 		var wifi *float64

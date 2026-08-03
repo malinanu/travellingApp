@@ -67,6 +67,20 @@ const _iconMap = <String, IconData>{
   'Check': Icons.check,
   'Plus': Icons.add,
   'X': Icons.close,
+  // Vendor-category taxonomy icons (see data/vendor_categories.dart) not
+  // already covered above.
+  'Building2': Icons.apartment,
+  'BedSingle': Icons.bed,
+  'Anchor': Icons.anchor,
+  'ChefHat': Icons.local_dining,
+  'Hammer': Icons.handyman,
+  'Shirt': Icons.checkroom,
+  'Leaf': Icons.eco,
+  'PawPrint': Icons.pets,
+  'Ship': Icons.directions_boat,
+  'PartyPopper': Icons.celebration,
+  'HeartHandshake': Icons.handshake,
+  'Plane': Icons.flight,
 };
 
 IconData spottoIcon(String name) => _iconMap[name] ?? Icons.circle_outlined;

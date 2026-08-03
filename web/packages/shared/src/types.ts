@@ -162,6 +162,22 @@ export interface Vendor {
   brCertVerifiedAt?: string;
   badReviewCount?: number;
   flagged?: boolean;
+  /** Crowdsourced Current Vibe reading for this vendor's synced place —
+   * only present from GET /vendor/business (vendor's own view) and the
+   * admin per-vendor vibe endpoint, undefined everywhere else. Distinct
+   * from the vendor-entered Wi-Fi/speed "Connectivity & vibe" card, which
+   * is self-reported, not traveller check-in data. */
+  vibe?: VibeAggregate;
+}
+
+/** Current Vibe reading for a place — 1-5 per dimension (0 = no data yet),
+ * averaged from real traveller check-ins. See sampleSize for how many
+ * distinct travellers contributed within the rolling window. */
+export interface VibeAggregate {
+  productive: number;
+  loud: number;
+  crowded: number;
+  sampleSize: number;
 }
 
 /** A traveller's rating/text for a Place; 1-2 star reviews count against the

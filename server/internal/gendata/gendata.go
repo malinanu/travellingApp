@@ -66,12 +66,6 @@ var (
 	travelStyles = []string{"nomad", "surf", "backpacker", "luxury"}
 	interestPool = []string{"coffee", "coworking", "nightlife", "surf", "yoga", "food", "beach", "music"}
 
-	vendorCategories = []string{
-		"Cafe", "Coworking Café", "Surf School", "Restaurant", "Bar",
-		"Yoga / Wellness", "Spa & Wellness", "Hostel", "Hotel",
-		"Pottery Workshop", "Batik Atelier", "Tours / Activity",
-		"Street Food", "Bakery", "Dive Shop",
-	}
 	poiTypes = []string{"Beach", "Viewpoint", "Local Market", "Street Food", "Hotel", "Hostel", "Restaurant", "Bar & Gallery"}
 
 	placeIcons  = []string{"Coffee", "Waves", "Martini", "Palette", "Brush", "UtensilsCrossed", "BedDouble", "Backpack", "Flower2", "Mountain", "ShoppingBasket", "Wine"}
