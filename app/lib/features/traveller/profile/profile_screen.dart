@@ -494,6 +494,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const SizedBox(height: 22),
 
                   sectionCard(context, 'Account', [
+                    profRow(context, Icons.event_available_outlined, 'My Bookings',
+                        sub: 'Upcoming & past bookings',
+                        onTap: () => context.push('/t/bookings')),
+                    const Divider(height: 1),
                     profRow(context, Icons.lock_outline, 'Password & security',
                         sub: 'Change password, 2FA',
                         onTap: () => setState(() => _sub = 'security')),

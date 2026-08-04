@@ -35,6 +35,8 @@ export const VENDOR_SEGMENTS: VendorSegmentInfo[] = [
   { id: 'brand', label: 'Brand Partner' },
 ];
 
+export type BookingType = 'session' | 'table' | 'stay';
+
 export interface VendorCategory {
   id: string;
   label: string;
@@ -45,40 +47,45 @@ export interface VendorCategory {
    * (e.g. "productive" doesn't mean anything for a beach bar). Omitted for
    * non-venue categories (brand partners) where vibe is irrelevant. */
   relevantVibeDimensions?: string[];
+  /** Which real-booking flow this category's vendors use, if any — undefined
+   * means not bookable (walk-in businesses, brand partners, event
+   * categories — Events isn't a shipped feature yet). Mirrors
+   * server/internal/domain/vendor_category.go's BookingType exactly. */
+  bookingType?: BookingType;
 }
 
 export const VENDOR_CATEGORIES: VendorCategory[] = [
   // Hospitality vendors — cafes, restaurants, bars, hotels, beach clubs.
-  { id: 'cafe', label: 'Café', segment: 'hospitality', icon: 'Coffee', relevantVibeDimensions: ['productive', 'loud', 'crowded'] },
-  { id: 'coworking-cafe', label: 'Coworking Café', segment: 'hospitality', icon: 'Laptop', relevantVibeDimensions: ['productive', 'loud', 'crowded'] },
-  { id: 'restaurant', label: 'Restaurant', segment: 'hospitality', icon: 'UtensilsCrossed', relevantVibeDimensions: ['loud', 'crowded'] },
+  { id: 'cafe', label: 'Café', segment: 'hospitality', icon: 'Coffee', relevantVibeDimensions: ['productive', 'loud', 'crowded'], bookingType: 'table' },
+  { id: 'coworking-cafe', label: 'Coworking Café', segment: 'hospitality', icon: 'Laptop', relevantVibeDimensions: ['productive', 'loud', 'crowded'], bookingType: 'table' },
+  { id: 'restaurant', label: 'Restaurant', segment: 'hospitality', icon: 'UtensilsCrossed', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
   { id: 'street-food', label: 'Street Food', segment: 'hospitality', icon: 'Soup', relevantVibeDimensions: ['crowded'] },
   { id: 'bakery', label: 'Bakery', segment: 'hospitality', icon: 'Cookie', relevantVibeDimensions: ['crowded'] },
-  { id: 'bar-pub', label: 'Bar & Pub', segment: 'hospitality', icon: 'Martini', relevantVibeDimensions: ['loud', 'crowded'] },
-  { id: 'club', label: 'Club / Nightlife', segment: 'hospitality', icon: 'Music', relevantVibeDimensions: ['loud', 'crowded'] },
-  { id: 'hotel', label: 'Hotel', segment: 'hospitality', icon: 'Building2', relevantVibeDimensions: ['crowded'] },
-  { id: 'hostel', label: 'Hostel / Guesthouse', segment: 'hospitality', icon: 'BedSingle', relevantVibeDimensions: ['loud', 'crowded'] },
-  { id: 'resort', label: 'Resort', segment: 'hospitality', icon: 'Palmtree', relevantVibeDimensions: ['crowded'] },
-  { id: 'beach-club', label: 'Beach Club', segment: 'hospitality', icon: 'Waves', relevantVibeDimensions: ['loud', 'crowded'] },
+  { id: 'bar-pub', label: 'Bar & Pub', segment: 'hospitality', icon: 'Martini', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
+  { id: 'club', label: 'Club / Nightlife', segment: 'hospitality', icon: 'Music', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
+  { id: 'hotel', label: 'Hotel', segment: 'hospitality', icon: 'Building2', relevantVibeDimensions: ['crowded'], bookingType: 'stay' },
+  { id: 'hostel', label: 'Hostel / Guesthouse', segment: 'hospitality', icon: 'BedSingle', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'stay' },
+  { id: 'resort', label: 'Resort', segment: 'hospitality', icon: 'Palmtree', relevantVibeDimensions: ['crowded'], bookingType: 'stay' },
+  { id: 'beach-club', label: 'Beach Club', segment: 'hospitality', icon: 'Waves', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
 
   // Activity and experience providers — surf/dive schools, yoga, tours.
-  { id: 'surf-school', label: 'Surf School', segment: 'activity', icon: 'Waves', relevantVibeDimensions: ['crowded'] },
-  { id: 'dive-school', label: 'Diving / Dive Shop', segment: 'activity', icon: 'Anchor', relevantVibeDimensions: ['crowded'] },
-  { id: 'yoga-studio', label: 'Yoga Studio', segment: 'activity', icon: 'Flower2', relevantVibeDimensions: ['loud', 'crowded'] },
-  { id: 'spa-wellness', label: 'Spa & Wellness', segment: 'activity', icon: 'Sparkles', relevantVibeDimensions: ['loud', 'crowded'] },
-  { id: 'cooking-class', label: 'Cooking Class', segment: 'activity', icon: 'ChefHat', relevantVibeDimensions: ['crowded'] },
-  { id: 'pottery-workshop', label: 'Pottery Workshop', segment: 'activity', icon: 'Hammer', relevantVibeDimensions: ['crowded'] },
-  { id: 'batik-atelier', label: 'Batik / Textile Atelier', segment: 'activity', icon: 'Shirt', relevantVibeDimensions: ['crowded'] },
-  { id: 'spice-trail', label: 'Spice Trail', segment: 'activity', icon: 'Leaf', relevantVibeDimensions: ['crowded'] },
-  { id: 'safari-wildlife', label: 'Safari & Wildlife', segment: 'activity', icon: 'PawPrint', relevantVibeDimensions: ['crowded'] },
-  { id: 'boat-trip', label: 'Boat Trip', segment: 'activity', icon: 'Ship', relevantVibeDimensions: ['crowded'] },
-  { id: 'city-tour', label: 'City / Cultural Tour', segment: 'activity', icon: 'Compass', relevantVibeDimensions: ['crowded'] },
+  { id: 'surf-school', label: 'Surf School', segment: 'activity', icon: 'Waves', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'dive-school', label: 'Diving / Dive Shop', segment: 'activity', icon: 'Anchor', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'yoga-studio', label: 'Yoga Studio', segment: 'activity', icon: 'Flower2', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'session' },
+  { id: 'spa-wellness', label: 'Spa & Wellness', segment: 'activity', icon: 'Sparkles', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'session' },
+  { id: 'cooking-class', label: 'Cooking Class', segment: 'activity', icon: 'ChefHat', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'pottery-workshop', label: 'Pottery Workshop', segment: 'activity', icon: 'Hammer', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'batik-atelier', label: 'Batik / Textile Atelier', segment: 'activity', icon: 'Shirt', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'spice-trail', label: 'Spice Trail', segment: 'activity', icon: 'Leaf', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'safari-wildlife', label: 'Safari & Wildlife', segment: 'activity', icon: 'PawPrint', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'boat-trip', label: 'Boat Trip', segment: 'activity', icon: 'Ship', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'city-tour', label: 'City / Cultural Tour', segment: 'activity', icon: 'Compass', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
 
   // Independent local providers — guides, artisans, tailors, solo hosts.
-  { id: 'tour-guide', label: 'Tour / Walking Guide', segment: 'independent', icon: 'Compass', relevantVibeDimensions: ['crowded'] },
+  { id: 'tour-guide', label: 'Tour / Walking Guide', segment: 'independent', icon: 'Compass', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
   { id: 'artisan-shop', label: 'Local Artisan / Craft Shop', segment: 'independent', icon: 'Palette', relevantVibeDimensions: ['crowded'] },
   { id: 'tailor-clothing', label: 'Tailor / Local Clothing', segment: 'independent', icon: 'Shirt', relevantVibeDimensions: ['crowded'] },
-  { id: 'experience-host', label: 'Independent Experience Host', segment: 'independent', icon: 'Backpack', relevantVibeDimensions: ['crowded'] },
+  { id: 'experience-host', label: 'Independent Experience Host', segment: 'independent', icon: 'Backpack', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
 
   // Event promoters — festivals, parties, competitions, community events.
   { id: 'festival-event', label: 'Festival', segment: 'events', icon: 'PartyPopper', relevantVibeDimensions: ['loud', 'crowded'] },
@@ -110,4 +117,10 @@ export function categoriesBySegment(segment: VendorSegment): VendorCategory[] {
  * admin dropdown should offer. */
 export function onboardableCategories(): VendorCategory[] {
   return VENDOR_CATEGORIES.filter((c) => c.segment !== 'future');
+}
+
+/** Whether this category's vendors can take real bookings through the
+ * platform — drives the vendor portal's Services/Bookings nav visibility. */
+export function isBookableCategory(category: string | undefined): boolean {
+  return !!categoryById(category)?.bookingType;
 }

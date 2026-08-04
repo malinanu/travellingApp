@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/repositories/repositories.dart';
 import '../features/traveller/auth/auth_screen.dart';
+import '../features/traveller/bookings/my_bookings_screen.dart';
 import '../features/traveller/guide/guide_screen.dart';
 import '../features/traveller/onboarding/onboarding_screen.dart';
 import '../features/traveller/profile/profile_screen.dart';
@@ -25,6 +26,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/t/guide', builder: (context, state) => const GuideScreen()),
       GoRoute(path: '/t/profile', builder: (context, state) => const ProfileScreen()),
       GoRoute(path: '/t/weather', builder: (context, state) => const WeatherScreen()),
+      GoRoute(path: '/t/bookings', builder: (context, state) => const MyBookingsScreen()),
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => TravellerShell(shell: shell),
         redirect: (context, state) {

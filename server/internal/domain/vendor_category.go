@@ -32,6 +32,12 @@ type VendorCategory struct {
 	Segment                VendorSegment
 	Icon                   string
 	RelevantVibeDimensions []string
+	// BookingType is which BookingType (see booking.go) this category's
+	// vendors can take real bookings for — "" means not bookable in this
+	// phase (walk-in businesses, brand partners, and Events — Events isn't
+	// a built feature yet; ticket booking can reuse this same system once
+	// it ships). See BookingTypeByCategory/IsBookableCategory.
+	BookingType BookingType
 }
 
 // VendorCategories is the single canonical taxonomy — the source of truth
@@ -40,36 +46,36 @@ type VendorCategory struct {
 // Replaces what used to be 5 independently hardcoded, drifting lists.
 var VendorCategories = []VendorCategory{
 	// Hospitality vendors — cafes, restaurants, bars, hotels, beach clubs.
-	{ID: "cafe", Label: "Café", Segment: SegmentHospitality, Icon: "Coffee", RelevantVibeDimensions: []string{"productive", "loud", "crowded"}},
-	{ID: "coworking-cafe", Label: "Coworking Café", Segment: SegmentHospitality, Icon: "Laptop", RelevantVibeDimensions: []string{"productive", "loud", "crowded"}},
-	{ID: "restaurant", Label: "Restaurant", Segment: SegmentHospitality, Icon: "UtensilsCrossed", RelevantVibeDimensions: []string{"loud", "crowded"}},
+	{ID: "cafe", Label: "Café", Segment: SegmentHospitality, Icon: "Coffee", RelevantVibeDimensions: []string{"productive", "loud", "crowded"}, BookingType: BookingTypeTable},
+	{ID: "coworking-cafe", Label: "Coworking Café", Segment: SegmentHospitality, Icon: "Laptop", RelevantVibeDimensions: []string{"productive", "loud", "crowded"}, BookingType: BookingTypeTable},
+	{ID: "restaurant", Label: "Restaurant", Segment: SegmentHospitality, Icon: "UtensilsCrossed", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeTable},
 	{ID: "street-food", Label: "Street Food", Segment: SegmentHospitality, Icon: "Soup", RelevantVibeDimensions: []string{"crowded"}},
 	{ID: "bakery", Label: "Bakery", Segment: SegmentHospitality, Icon: "Cookie", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "bar-pub", Label: "Bar & Pub", Segment: SegmentHospitality, Icon: "Martini", RelevantVibeDimensions: []string{"loud", "crowded"}},
-	{ID: "club", Label: "Club / Nightlife", Segment: SegmentHospitality, Icon: "Music", RelevantVibeDimensions: []string{"loud", "crowded"}},
-	{ID: "hotel", Label: "Hotel", Segment: SegmentHospitality, Icon: "Building2", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "hostel", Label: "Hostel / Guesthouse", Segment: SegmentHospitality, Icon: "BedSingle", RelevantVibeDimensions: []string{"loud", "crowded"}},
-	{ID: "resort", Label: "Resort", Segment: SegmentHospitality, Icon: "Palmtree", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "beach-club", Label: "Beach Club", Segment: SegmentHospitality, Icon: "Waves", RelevantVibeDimensions: []string{"loud", "crowded"}},
+	{ID: "bar-pub", Label: "Bar & Pub", Segment: SegmentHospitality, Icon: "Martini", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeTable},
+	{ID: "club", Label: "Club / Nightlife", Segment: SegmentHospitality, Icon: "Music", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeTable},
+	{ID: "hotel", Label: "Hotel", Segment: SegmentHospitality, Icon: "Building2", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeStay},
+	{ID: "hostel", Label: "Hostel / Guesthouse", Segment: SegmentHospitality, Icon: "BedSingle", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeStay},
+	{ID: "resort", Label: "Resort", Segment: SegmentHospitality, Icon: "Palmtree", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeStay},
+	{ID: "beach-club", Label: "Beach Club", Segment: SegmentHospitality, Icon: "Waves", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeTable},
 
 	// Activity and experience providers — surf/dive schools, yoga, tours.
-	{ID: "surf-school", Label: "Surf School", Segment: SegmentActivity, Icon: "Waves", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "dive-school", Label: "Diving / Dive Shop", Segment: SegmentActivity, Icon: "Anchor", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "yoga-studio", Label: "Yoga Studio", Segment: SegmentActivity, Icon: "Flower2", RelevantVibeDimensions: []string{"loud", "crowded"}},
-	{ID: "spa-wellness", Label: "Spa & Wellness", Segment: SegmentActivity, Icon: "Sparkles", RelevantVibeDimensions: []string{"loud", "crowded"}},
-	{ID: "cooking-class", Label: "Cooking Class", Segment: SegmentActivity, Icon: "ChefHat", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "pottery-workshop", Label: "Pottery Workshop", Segment: SegmentActivity, Icon: "Hammer", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "batik-atelier", Label: "Batik / Textile Atelier", Segment: SegmentActivity, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "spice-trail", Label: "Spice Trail", Segment: SegmentActivity, Icon: "Leaf", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "safari-wildlife", Label: "Safari & Wildlife", Segment: SegmentActivity, Icon: "PawPrint", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "boat-trip", Label: "Boat Trip", Segment: SegmentActivity, Icon: "Ship", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "city-tour", Label: "City / Cultural Tour", Segment: SegmentActivity, Icon: "Compass", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "surf-school", Label: "Surf School", Segment: SegmentActivity, Icon: "Waves", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
+	{ID: "dive-school", Label: "Diving / Dive Shop", Segment: SegmentActivity, Icon: "Anchor", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
+	{ID: "yoga-studio", Label: "Yoga Studio", Segment: SegmentActivity, Icon: "Flower2", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeSession},
+	{ID: "spa-wellness", Label: "Spa & Wellness", Segment: SegmentActivity, Icon: "Sparkles", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeSession},
+	{ID: "cooking-class", Label: "Cooking Class", Segment: SegmentActivity, Icon: "ChefHat", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
+	{ID: "pottery-workshop", Label: "Pottery Workshop", Segment: SegmentActivity, Icon: "Hammer", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
+	{ID: "batik-atelier", Label: "Batik / Textile Atelier", Segment: SegmentActivity, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
+	{ID: "spice-trail", Label: "Spice Trail", Segment: SegmentActivity, Icon: "Leaf", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
+	{ID: "safari-wildlife", Label: "Safari & Wildlife", Segment: SegmentActivity, Icon: "PawPrint", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
+	{ID: "boat-trip", Label: "Boat Trip", Segment: SegmentActivity, Icon: "Ship", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
+	{ID: "city-tour", Label: "City / Cultural Tour", Segment: SegmentActivity, Icon: "Compass", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
 
 	// Independent local providers — guides, artisans, tailors, solo hosts.
-	{ID: "tour-guide", Label: "Tour / Walking Guide", Segment: SegmentIndependent, Icon: "Compass", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "tour-guide", Label: "Tour / Walking Guide", Segment: SegmentIndependent, Icon: "Compass", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
 	{ID: "artisan-shop", Label: "Local Artisan / Craft Shop", Segment: SegmentIndependent, Icon: "Palette", RelevantVibeDimensions: []string{"crowded"}},
 	{ID: "tailor-clothing", Label: "Tailor / Local Clothing", Segment: SegmentIndependent, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "experience-host", Label: "Independent Experience Host", Segment: SegmentIndependent, Icon: "Backpack", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "experience-host", Label: "Independent Experience Host", Segment: SegmentIndependent, Icon: "Backpack", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
 
 	// Event promoters — festivals, parties, competitions, community events.
 	{ID: "festival-event", Label: "Festival", Segment: SegmentEvents, Icon: "PartyPopper", RelevantVibeDimensions: []string{"loud", "crowded"}},
@@ -184,4 +190,21 @@ func RelevantVibeDimensions(categoryID string) []string {
 		return c.RelevantVibeDimensions
 	}
 	return []string{"productive", "loud", "crowded"}
+}
+
+// BookingTypeByCategory returns which BookingType a category's vendors can
+// take real bookings for, or "" if the category isn't bookable at all
+// (unknown/blank id, or a category with no BookingType set — e.g. brand
+// partners, event categories, or walk-in-only categories like bakeries).
+func BookingTypeByCategory(categoryID string) BookingType {
+	if c, ok := CategoryByID(categoryID); ok {
+		return c.BookingType
+	}
+	return ""
+}
+
+// IsBookableCategory reports whether categoryID's vendors can take real
+// bookings through the platform.
+func IsBookableCategory(categoryID string) bool {
+	return BookingTypeByCategory(categoryID) != ""
 }

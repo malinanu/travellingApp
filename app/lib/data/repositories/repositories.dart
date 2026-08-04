@@ -731,6 +731,107 @@ class ClaimsNotifier extends Notifier<Map<String, String>> {
 
 final claimsProvider = NotifierProvider<ClaimsNotifier, Map<String, String>>(ClaimsNotifier.new);
 
+// ── bookings (real, auto-confirmed commitments — see server's booking.go) ─
+
+/// A place's active bookable services — empty for a non-bookable place.
+final placeServicesProvider =
+    FutureProvider.family<List<BookableService>, String>((ref, placeId) async {
+  final res = await ref.read(apiProvider).dio.get('/places/$placeId/services');
+  return [
+    for (final s in (res.data as List)) BookableService.fromJson((s as Map).cast<String, dynamic>()),
+  ];
+});
+
+/// Raw availability response for one service — `query` is the caller-built
+/// query string (`date=2026-08-10` for session/table, `checkIn=...&checkOut=...`
+/// for stay), since the two service shapes need different params (see
+/// server's handleServiceAvailability). UI reads `slots` or `remaining` out
+/// of the decoded map depending on the service's type.
+final serviceAvailabilityProvider = FutureProvider.family<
+    Map<String, dynamic>, ({String placeId, String serviceId, String query})>((ref, args) async {
+  final res = await ref
+      .read(apiProvider)
+      .dio
+      .get('/places/${args.placeId}/services/${args.serviceId}/availability?${args.query}');
+  return (res.data as Map).cast<String, dynamic>();
+});
+
+/// The traveller's own bookings — no optimistic write (unlike claims'
+/// single key-flip, a booking is a genuinely new record with real fields),
+/// so [create] just appends the server's authoritative response on success.
+class BookingsNotifier extends Notifier<List<Booking>> {
+  @override
+  List<Booking> build() {
+    Future.microtask(_pull);
+    final cached = ref.read(localStoreProvider).getJsonList(StoreKeys.bookings);
+    return cached == null
+        ? []
+        : [for (final b in cached) Booking.fromJson((b as Map).cast<String, dynamic>())];
+  }
+
+  Future<void> _pull() async {
+    if (!ref.read(authProvider)) return;
+    try {
+      final res = await ref.read(apiProvider).dio.get('/me/bookings');
+      state = [
+        for (final b in (res.data as List)) Booking.fromJson((b as Map).cast<String, dynamic>()),
+      ];
+      _persist();
+    } catch (_) {}
+  }
+
+  void _persist() => ref.read(localStoreProvider).setJsonList(
+        StoreKeys.bookings,
+        [for (final b in state) b.toJson()],
+      );
+
+  /// Creates a real booking. Throws on failure (caller shows the error via
+  /// ApiClient.errorMessage) — same convention as ClaimsNotifier.claim.
+  Future<Booking> create({
+    required String placeId,
+    required String serviceId,
+    DateTime? startAt,
+    DateTime? checkIn,
+    DateTime? checkOut,
+    required int partySize,
+    String note = '',
+  }) async {
+    final res = await ref.read(apiProvider).dio.post('/bookings', data: {
+      'placeId': placeId,
+      'serviceId': serviceId,
+      if (startAt != null) 'startAt': startAt.toUtc().toIso8601String(),
+      if (checkIn != null) 'checkIn': checkIn.toIso8601String().split('T').first,
+      if (checkOut != null) 'checkOut': checkOut.toIso8601String().split('T').first,
+      'partySize': partySize,
+      'note': note,
+    });
+    final booking = Booking.fromJson((res.data as Map).cast<String, dynamic>());
+    state = [booking, ...state];
+    _persist();
+    return booking;
+  }
+
+  /// Optimistic status flip + rollback on failure — same technique as
+  /// VibeCheckInsNotifier.rate.
+  Future<void> cancel(String bookingId) async {
+    final previous = state;
+    state = [
+      for (final b in state)
+        if (b.id == bookingId) b.copyWith(status: 'cancelled') else b,
+    ];
+    _persist();
+    try {
+      await ref.read(apiProvider).dio.post('/bookings/$bookingId/cancel');
+    } catch (e) {
+      state = previous;
+      _persist();
+      rethrow;
+    }
+  }
+}
+
+final bookingsProvider = NotifierProvider<BookingsNotifier, List<Booking>>(BookingsNotifier.new);
+
 // ── weather (server-owned, real via Tomorrow.io) ───────────────────
 
 /// Best-effort device position for weather, rounded to 2dp (~1.1km) so

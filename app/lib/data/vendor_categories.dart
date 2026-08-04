@@ -24,53 +24,61 @@ const vendorSegments = <VendorSegmentInfo>[
   VendorSegmentInfo(VendorSegment.brand, 'Brand Partner'),
 ];
 
+/// Which real-booking flow a category's vendors use, if any — null means
+/// not bookable (walk-in businesses, brand partners, event categories —
+/// Events isn't a shipped feature yet). Mirrors
+/// server/internal/domain/vendor_category.go's BookingType exactly.
+enum BookingType { session, table, stay }
+
 class VendorCategory {
   final String id;
   final String label;
   final VendorSegment segment;
   final String icon; // Lucide/spottoIcon name, see core/widgets/spotto_icons.dart
   final List<String> relevantVibeDimensions; // subset of productive/loud/crowded
+  final BookingType? bookingType;
   const VendorCategory({
     required this.id,
     required this.label,
     required this.segment,
     required this.icon,
     this.relevantVibeDimensions = const [],
+    this.bookingType,
   });
 }
 
 const vendorCategories = <VendorCategory>[
   // Hospitality vendors — cafes, restaurants, bars, hotels, beach clubs.
-  VendorCategory(id: 'cafe', label: 'Café', segment: VendorSegment.hospitality, icon: 'Coffee', relevantVibeDimensions: ['productive', 'loud', 'crowded']),
-  VendorCategory(id: 'coworking-cafe', label: 'Coworking Café', segment: VendorSegment.hospitality, icon: 'Laptop', relevantVibeDimensions: ['productive', 'loud', 'crowded']),
-  VendorCategory(id: 'restaurant', label: 'Restaurant', segment: VendorSegment.hospitality, icon: 'UtensilsCrossed', relevantVibeDimensions: ['loud', 'crowded']),
+  VendorCategory(id: 'cafe', label: 'Café', segment: VendorSegment.hospitality, icon: 'Coffee', relevantVibeDimensions: ['productive', 'loud', 'crowded'], bookingType: BookingType.table),
+  VendorCategory(id: 'coworking-cafe', label: 'Coworking Café', segment: VendorSegment.hospitality, icon: 'Laptop', relevantVibeDimensions: ['productive', 'loud', 'crowded'], bookingType: BookingType.table),
+  VendorCategory(id: 'restaurant', label: 'Restaurant', segment: VendorSegment.hospitality, icon: 'UtensilsCrossed', relevantVibeDimensions: ['loud', 'crowded'], bookingType: BookingType.table),
   VendorCategory(id: 'street-food', label: 'Street Food', segment: VendorSegment.hospitality, icon: 'Soup', relevantVibeDimensions: ['crowded']),
   VendorCategory(id: 'bakery', label: 'Bakery', segment: VendorSegment.hospitality, icon: 'Cookie', relevantVibeDimensions: ['crowded']),
-  VendorCategory(id: 'bar-pub', label: 'Bar & Pub', segment: VendorSegment.hospitality, icon: 'Martini', relevantVibeDimensions: ['loud', 'crowded']),
-  VendorCategory(id: 'club', label: 'Club / Nightlife', segment: VendorSegment.hospitality, icon: 'Music', relevantVibeDimensions: ['loud', 'crowded']),
-  VendorCategory(id: 'hotel', label: 'Hotel', segment: VendorSegment.hospitality, icon: 'Building2', relevantVibeDimensions: ['crowded']),
-  VendorCategory(id: 'hostel', label: 'Hostel / Guesthouse', segment: VendorSegment.hospitality, icon: 'BedSingle', relevantVibeDimensions: ['loud', 'crowded']),
-  VendorCategory(id: 'resort', label: 'Resort', segment: VendorSegment.hospitality, icon: 'Palmtree', relevantVibeDimensions: ['crowded']),
-  VendorCategory(id: 'beach-club', label: 'Beach Club', segment: VendorSegment.hospitality, icon: 'Waves', relevantVibeDimensions: ['loud', 'crowded']),
+  VendorCategory(id: 'bar-pub', label: 'Bar & Pub', segment: VendorSegment.hospitality, icon: 'Martini', relevantVibeDimensions: ['loud', 'crowded'], bookingType: BookingType.table),
+  VendorCategory(id: 'club', label: 'Club / Nightlife', segment: VendorSegment.hospitality, icon: 'Music', relevantVibeDimensions: ['loud', 'crowded'], bookingType: BookingType.table),
+  VendorCategory(id: 'hotel', label: 'Hotel', segment: VendorSegment.hospitality, icon: 'Building2', relevantVibeDimensions: ['crowded'], bookingType: BookingType.stay),
+  VendorCategory(id: 'hostel', label: 'Hostel / Guesthouse', segment: VendorSegment.hospitality, icon: 'BedSingle', relevantVibeDimensions: ['loud', 'crowded'], bookingType: BookingType.stay),
+  VendorCategory(id: 'resort', label: 'Resort', segment: VendorSegment.hospitality, icon: 'Palmtree', relevantVibeDimensions: ['crowded'], bookingType: BookingType.stay),
+  VendorCategory(id: 'beach-club', label: 'Beach Club', segment: VendorSegment.hospitality, icon: 'Waves', relevantVibeDimensions: ['loud', 'crowded'], bookingType: BookingType.table),
 
   // Activity and experience providers — surf/dive schools, yoga, tours.
-  VendorCategory(id: 'surf-school', label: 'Surf School', segment: VendorSegment.activity, icon: 'Waves', relevantVibeDimensions: ['crowded']),
-  VendorCategory(id: 'dive-school', label: 'Diving / Dive Shop', segment: VendorSegment.activity, icon: 'Anchor', relevantVibeDimensions: ['crowded']),
-  VendorCategory(id: 'yoga-studio', label: 'Yoga Studio', segment: VendorSegment.activity, icon: 'Flower2', relevantVibeDimensions: ['loud', 'crowded']),
-  VendorCategory(id: 'spa-wellness', label: 'Spa & Wellness', segment: VendorSegment.activity, icon: 'Sparkles', relevantVibeDimensions: ['loud', 'crowded']),
-  VendorCategory(id: 'cooking-class', label: 'Cooking Class', segment: VendorSegment.activity, icon: 'ChefHat', relevantVibeDimensions: ['crowded']),
-  VendorCategory(id: 'pottery-workshop', label: 'Pottery Workshop', segment: VendorSegment.activity, icon: 'Hammer', relevantVibeDimensions: ['crowded']),
-  VendorCategory(id: 'batik-atelier', label: 'Batik / Textile Atelier', segment: VendorSegment.activity, icon: 'Shirt', relevantVibeDimensions: ['crowded']),
-  VendorCategory(id: 'spice-trail', label: 'Spice Trail', segment: VendorSegment.activity, icon: 'Leaf', relevantVibeDimensions: ['crowded']),
-  VendorCategory(id: 'safari-wildlife', label: 'Safari & Wildlife', segment: VendorSegment.activity, icon: 'PawPrint', relevantVibeDimensions: ['crowded']),
-  VendorCategory(id: 'boat-trip', label: 'Boat Trip', segment: VendorSegment.activity, icon: 'Ship', relevantVibeDimensions: ['crowded']),
-  VendorCategory(id: 'city-tour', label: 'City / Cultural Tour', segment: VendorSegment.activity, icon: 'Compass', relevantVibeDimensions: ['crowded']),
+  VendorCategory(id: 'surf-school', label: 'Surf School', segment: VendorSegment.activity, icon: 'Waves', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
+  VendorCategory(id: 'dive-school', label: 'Diving / Dive Shop', segment: VendorSegment.activity, icon: 'Anchor', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
+  VendorCategory(id: 'yoga-studio', label: 'Yoga Studio', segment: VendorSegment.activity, icon: 'Flower2', relevantVibeDimensions: ['loud', 'crowded'], bookingType: BookingType.session),
+  VendorCategory(id: 'spa-wellness', label: 'Spa & Wellness', segment: VendorSegment.activity, icon: 'Sparkles', relevantVibeDimensions: ['loud', 'crowded'], bookingType: BookingType.session),
+  VendorCategory(id: 'cooking-class', label: 'Cooking Class', segment: VendorSegment.activity, icon: 'ChefHat', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
+  VendorCategory(id: 'pottery-workshop', label: 'Pottery Workshop', segment: VendorSegment.activity, icon: 'Hammer', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
+  VendorCategory(id: 'batik-atelier', label: 'Batik / Textile Atelier', segment: VendorSegment.activity, icon: 'Shirt', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
+  VendorCategory(id: 'spice-trail', label: 'Spice Trail', segment: VendorSegment.activity, icon: 'Leaf', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
+  VendorCategory(id: 'safari-wildlife', label: 'Safari & Wildlife', segment: VendorSegment.activity, icon: 'PawPrint', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
+  VendorCategory(id: 'boat-trip', label: 'Boat Trip', segment: VendorSegment.activity, icon: 'Ship', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
+  VendorCategory(id: 'city-tour', label: 'City / Cultural Tour', segment: VendorSegment.activity, icon: 'Compass', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
 
   // Independent local providers — guides, artisans, tailors, solo hosts.
-  VendorCategory(id: 'tour-guide', label: 'Tour / Walking Guide', segment: VendorSegment.independent, icon: 'Compass', relevantVibeDimensions: ['crowded']),
+  VendorCategory(id: 'tour-guide', label: 'Tour / Walking Guide', segment: VendorSegment.independent, icon: 'Compass', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
   VendorCategory(id: 'artisan-shop', label: 'Local Artisan / Craft Shop', segment: VendorSegment.independent, icon: 'Palette', relevantVibeDimensions: ['crowded']),
   VendorCategory(id: 'tailor-clothing', label: 'Tailor / Local Clothing', segment: VendorSegment.independent, icon: 'Shirt', relevantVibeDimensions: ['crowded']),
-  VendorCategory(id: 'experience-host', label: 'Independent Experience Host', segment: VendorSegment.independent, icon: 'Backpack', relevantVibeDimensions: ['crowded']),
+  VendorCategory(id: 'experience-host', label: 'Independent Experience Host', segment: VendorSegment.independent, icon: 'Backpack', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
 
   // Event promoters — festivals, parties, competitions, community events.
   VendorCategory(id: 'festival-event', label: 'Festival', segment: VendorSegment.events, icon: 'PartyPopper', relevantVibeDimensions: ['loud', 'crowded']),
@@ -108,3 +116,7 @@ List<String> relevantVibeDimensions(String categoryId) {
   if (c != null && c.relevantVibeDimensions.isNotEmpty) return c.relevantVibeDimensions;
   return const ['productive', 'loud', 'crowded'];
 }
+
+/// Whether this category's vendors can take real bookings through the
+/// platform, and which flow — null means not bookable.
+BookingType? bookingTypeFor(String categoryId) => categoryById(categoryId)?.bookingType;

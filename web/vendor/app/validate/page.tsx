@@ -76,7 +76,9 @@ export default function ValidatePage() {
             <>
               <div className="card p-5">
                 <h3 className="font-extrabold text-[15px] mb-1">Enter code manually</h3>
-                <p className="text-[13px] text-muted font-semibold mb-3">If the camera won&rsquo;t focus.</p>
+                <p className="text-[13px] text-muted font-semibold mb-3">
+                  If the camera won&rsquo;t focus. Works for both offer codes (SPOTTO-XXXX) and booking check-ins (BOOK-XXXX).
+                </p>
                 <form
                   className="flex gap-2"
                   onSubmit={(e) => {
@@ -150,13 +152,26 @@ function ResultCard({ r, code, onReset }: { r: ValidateResponse; code: string; o
           <p className="text-[12.5px] text-muted font-bold">{r.claim.code}</p>
         </div>
       )}
+      {r.result === 'valid' && r.booking && (
+        <div className={`${base} bg-accent-tint border border-accent/30`}>
+          <p className="flex items-center gap-2 text-accent font-extrabold text-lg">
+            <CheckCircle2 size={22} /> Checked in
+          </p>
+          <p className="mt-3 font-extrabold text-[15px]">
+            {r.booking.travellerName || 'Traveller'}
+            {r.booking.travellerCountry ? ` · ${r.booking.travellerCountry}` : ''}
+          </p>
+          <p className="mt-2 text-[14px] font-semibold">{r.booking.serviceName} · party of {r.booking.partySize}</p>
+          <p className="text-[12.5px] text-muted font-bold">{r.booking.code}</p>
+        </div>
+      )}
       {r.result === 'already_redeemed' && (
         <div className={`${base} bg-[#fdf0cd] border border-sun/50`}>
           <p className="flex items-center gap-2 text-[#a97b00] font-extrabold text-lg">
-            <CircleSlash size={22} /> Already redeemed
+            <CircleSlash size={22} /> {r.booking ? 'Already checked in' : 'Already redeemed'}
           </p>
           <p className="mt-2 text-[14px] font-semibold">
-            {code} was used {timeAgo(r.redeemedAt ?? r.claim?.redeemedAt)}. Each code works once.
+            {code} was used {timeAgo(r.redeemedAt ?? r.claim?.redeemedAt ?? r.booking?.checkedInAt)}. Each code works once.
           </p>
         </div>
       )}

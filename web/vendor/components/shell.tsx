@@ -5,7 +5,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  BarChart3, Bell, ChevronDown, LayoutDashboard, Lock, Menu, QrCode, Rocket, Search,
+  BarChart3, Bell, CalendarCheck, CalendarClock, ChevronDown, LayoutDashboard, Lock, Menu, QrCode, Rocket, Search,
   Store, Tag, Ticket, TrendingUp, UtensilsCrossed, Star, Clock, Wallet, LogOut,
   LucideIcon,
 } from 'lucide-react';
@@ -13,7 +13,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-import type { User, Vendor, VendorNotification } from '@spotto/shared';
+import { isBookableCategory, type User, type Vendor, type VendorNotification } from '@spotto/shared';
 import { api } from '../lib/api';
 
 // staffHidden marks nav items staff has zero access to on the backend
@@ -22,10 +22,15 @@ import { api } from '../lib/api';
 // that only make sense once the business is actually live to travelers
 // (running offers, growth tools, redeeming codes, reports) — pending/
 // edits-status vendors can still set up Dashboard/Menu/Profile/Account.
-const NAV: { href: string; label: string; icon: LucideIcon; foodOnly?: boolean; staffHidden?: boolean; approvedOnly?: boolean }[] = [
+// bookableOnly marks nav items only relevant to categories with a real
+// BookingType (see @spotto/shared's isBookableCategory) — a bakery or a
+// brand partner never gets a Services/Bookings tab.
+const NAV: { href: string; label: string; icon: LucideIcon; foodOnly?: boolean; staffHidden?: boolean; approvedOnly?: boolean; bookableOnly?: boolean }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/offers', label: 'Offers', icon: Tag, approvedOnly: true },
   { href: '/menu', label: 'Menu', icon: UtensilsCrossed, foodOnly: true, staffHidden: true },
+  { href: '/services', label: 'Services', icon: CalendarCheck, bookableOnly: true, staffHidden: true, approvedOnly: true },
+  { href: '/bookings', label: 'Bookings', icon: CalendarClock, bookableOnly: true, approvedOnly: true },
   { href: '/growth', label: 'Growth', icon: Rocket, staffHidden: true, approvedOnly: true },
   { href: '/validate', label: 'Validate', icon: QrCode, approvedOnly: true },
   { href: '/reports', label: 'Reports', icon: BarChart3, staffHidden: true, approvedOnly: true },
@@ -44,7 +49,7 @@ export function isFoodCategory(category?: string) {
 }
 
 const NOTIF_ICONS: Record<string, LucideIcon> = {
-  Ticket, Star, Clock, TrendingUp, Wallet,
+  Ticket, Star, Clock, TrendingUp, Wallet, Calendar: CalendarCheck,
 };
 
 function toneStyle(tone: string) {
@@ -214,8 +219,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const isApproved = !me?.vendorStatus || me.vendorStatus === 'approved';
   const isFood = isFoodCategory(business?.category);
+  const isBookable = isBookableCategory(business?.category);
   const isStaff = me?.vendorRole === 'staff';
-  const visibleNav = NAV.filter((n) => (!n.foodOnly || isFood) && (!n.staffHidden || !isStaff) && (!n.approvedOnly || isApproved));
+  const visibleNav = NAV.filter((n) =>
+    (!n.foodOnly || isFood) && (!n.bookableOnly || isBookable) && (!n.staffHidden || !isStaff) && (!n.approvedOnly || isApproved));
   const title = NAV.find((n) => pathname.startsWith(n.href))?.label ??
     (pathname.startsWith('/account') ? 'Account' : '');
 

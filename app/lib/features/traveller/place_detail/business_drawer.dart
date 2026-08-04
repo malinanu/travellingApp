@@ -301,6 +301,9 @@ class BusinessDrawerBody extends ConsumerWidget {
                 const SizedBox(height: 14),
               ],
 
+              // real booking (session/table/stay — see placeServicesProvider)
+              _BookingSection(place: place),
+
               // vibe check
               _VibeCheck(place: place),
               const SizedBox(height: 14),
@@ -1093,6 +1096,462 @@ class _DealCardState extends ConsumerState<_DealCard> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+/// Real booking flow — shown when a place has at least one active bookable
+/// service (see placeServicesProvider), completely data-driven (not gated
+/// by category), mirroring _DealCard's unclaimed/claimed two-state pattern:
+/// a form to pick a slot/date-range + party size, then a QR/code
+/// confirmation once booked.
+class _BookingSection extends ConsumerStatefulWidget {
+  final Place place;
+  const _BookingSection({required this.place});
+
+  @override
+  ConsumerState<_BookingSection> createState() => _BookingSectionState();
+}
+
+class _BookingSectionState extends ConsumerState<_BookingSection> {
+  String? _selectedServiceId;
+  DateTime _selectedDate = DateTime.now();
+  DateTime? _selectedSlotStart;
+  DateTime? _checkIn;
+  DateTime? _checkOut;
+  int _partySize = 2;
+  bool _submitting = false;
+  Booking? _confirmed;
+
+  @override
+  Widget build(BuildContext context) {
+    final servicesAsync = ref.watch(placeServicesProvider(widget.place.id));
+    return servicesAsync.when(
+      data: (services) {
+        if (services.isEmpty) return const SizedBox.shrink();
+        final service = services.firstWhere(
+          (s) => s.id == _selectedServiceId,
+          orElse: () => services.first,
+        );
+        _selectedServiceId ??= service.id;
+        if (_partySize < service.partySizeMin) _partySize = service.partySizeMin;
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: _confirmed != null
+              ? _BookingConfirmedCard(
+                  booking: _confirmed!,
+                  onDone: () => setState(() => _confirmed = null),
+                )
+              : _BookingForm(
+                  place: widget.place,
+                  services: services,
+                  selected: service,
+                  onSelectService: (id) => setState(() {
+                    _selectedServiceId = id;
+                    _selectedSlotStart = null;
+                  }),
+                  selectedDate: _selectedDate,
+                  onSelectDate: (d) => setState(() {
+                    _selectedDate = d;
+                    _selectedSlotStart = null;
+                  }),
+                  selectedSlotStart: _selectedSlotStart,
+                  onSelectSlot: (s) => setState(() => _selectedSlotStart = s),
+                  checkIn: _checkIn,
+                  checkOut: _checkOut,
+                  onCheckIn: (d) => setState(() => _checkIn = d),
+                  onCheckOut: (d) => setState(() => _checkOut = d),
+                  partySize: _partySize,
+                  onPartySize: (n) => setState(() => _partySize = n),
+                  submitting: _submitting,
+                  onSubmit: _submit,
+                ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+    );
+  }
+
+  Future<void> _submit(BookableService service) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (service.type == 'stay') {
+      if (_checkIn == null || _checkOut == null) return;
+    } else if (_selectedSlotStart == null) {
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      final booking = await ref.read(bookingsProvider.notifier).create(
+            placeId: widget.place.id,
+            serviceId: service.id,
+            startAt: service.type == 'stay' ? null : _selectedSlotStart,
+            checkIn: service.type == 'stay' ? _checkIn : null,
+            checkOut: service.type == 'stay' ? _checkOut : null,
+            partySize: _partySize,
+          );
+      if (mounted) {
+        setState(() {
+          _confirmed = booking;
+          _submitting = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _submitting = false);
+      messenger.showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
+    }
+  }
+}
+
+class _BookingForm extends StatelessWidget {
+  final Place place;
+  final List<BookableService> services;
+  final BookableService selected;
+  final ValueChanged<String> onSelectService;
+  final DateTime selectedDate;
+  final ValueChanged<DateTime> onSelectDate;
+  final DateTime? selectedSlotStart;
+  final ValueChanged<DateTime> onSelectSlot;
+  final DateTime? checkIn;
+  final DateTime? checkOut;
+  final ValueChanged<DateTime> onCheckIn;
+  final ValueChanged<DateTime> onCheckOut;
+  final int partySize;
+  final ValueChanged<int> onPartySize;
+  final bool submitting;
+  final Future<void> Function(BookableService) onSubmit;
+
+  const _BookingForm({
+    required this.place,
+    required this.services,
+    required this.selected,
+    required this.onSelectService,
+    required this.selectedDate,
+    required this.onSelectDate,
+    required this.selectedSlotStart,
+    required this.onSelectSlot,
+    required this.checkIn,
+    required this.checkOut,
+    required this.onCheckIn,
+    required this.onCheckOut,
+    required this.partySize,
+    required this.onPartySize,
+    required this.submitting,
+    required this.onSubmit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final isStay = selected.type == 'stay';
+    final canSubmit = isStay ? (checkIn != null && checkOut != null) : selectedSlotStart != null;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: SpottoColors.sand,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.event_available_outlined, size: 14, color: SpottoColors.muted),
+              const SizedBox(width: 5),
+              Text('BOOK',
+                  style: text.labelSmall?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (services.length > 1) ...[
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final s in services)
+                  ChoiceChip(
+                    label: Text(s.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                    selected: s.id == selected.id,
+                    onSelected: (_) => onSelectService(s.id),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ] else
+            Text(selected.name, style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+          if (selected.priceLabel.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, bottom: 8),
+              child: Text(selected.priceLabel,
+                  style: text.bodySmall?.copyWith(color: SpottoColors.muted, fontWeight: FontWeight.w700)),
+            ),
+          if (isStay) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: _DateButton(
+                    label: 'Check-in',
+                    value: checkIn,
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now().add(const Duration(days: 1)),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (picked != null) onCheckIn(picked);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _DateButton(
+                    label: 'Check-out',
+                    value: checkOut,
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: (checkIn ?? DateTime.now()).add(const Duration(days: 1)),
+                        firstDate: checkIn ?? DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 366)),
+                      );
+                      if (picked != null) onCheckOut(picked);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            SizedBox(
+              height: 40,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: 14,
+                separatorBuilder: (_, _) => const SizedBox(width: 6),
+                itemBuilder: (context, i) {
+                  final d = DateTime.now().add(Duration(days: i));
+                  final on = d.year == selectedDate.year &&
+                      d.month == selectedDate.month &&
+                      d.day == selectedDate.day;
+                  return PressScale(
+                    onTap: () => onSelectDate(d),
+                    child: Container(
+                      width: 52,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: on ? SpottoColors.accent : Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: on ? SpottoColors.accent : SpottoColors.line),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(_weekdayShort(d.weekday),
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: on ? Colors.white : SpottoColors.muted)),
+                          Text('${d.day}',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: on ? Colors.white : SpottoColors.ink)),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            _SlotPicker(
+              place: place,
+              service: selected,
+              date: selectedDate,
+              selected: selectedSlotStart,
+              onSelect: onSelectSlot,
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Text(isStay ? 'Guests' : 'Party size',
+                  style: text.bodySmall?.copyWith(fontWeight: FontWeight.w800)),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline, size: 20),
+                onPressed: partySize > (isStay ? 1 : selected.partySizeMin)
+                    ? () => onPartySize(partySize - 1)
+                    : null,
+              ),
+              Text('$partySize', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline, size: 20),
+                onPressed: partySize < (isStay ? 20 : selected.partySizeMax)
+                    ? () => onPartySize(partySize + 1)
+                    : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: canSubmit && !submitting ? () => onSubmit(selected) : null,
+              child: Text(submitting ? 'Booking…' : 'Book now'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _weekdayShort(int weekday) => const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1];
+
+class _DateButton extends StatelessWidget {
+  final String label;
+  final DateTime? value;
+  final VoidCallback onTap;
+  const _DateButton({required this.label, required this.value, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return PressScale(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: SpottoColors.line),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: SpottoColors.muted)),
+            Text(
+              value == null ? 'Select' : '${value!.month}/${value!.day}/${value!.year}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SlotPicker extends ConsumerWidget {
+  final Place place;
+  final BookableService service;
+  final DateTime date;
+  final DateTime? selected;
+  final ValueChanged<DateTime> onSelect;
+  const _SlotPicker({
+    required this.place,
+    required this.service,
+    required this.date,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dateStr =
+        '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    final async = ref.watch(
+      serviceAvailabilityProvider((placeId: place.id, serviceId: service.id, query: 'date=$dateStr')),
+    );
+    return async.when(
+      data: (data) {
+        final slots = [
+          for (final s in (data['slots'] as List? ?? const []))
+            BookingSlot.fromJson((s as Map).cast<String, dynamic>()),
+        ];
+        if (slots.isEmpty) {
+          return const Text('No availability this day',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: SpottoColors.muted));
+        }
+        return Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final slot in slots)
+              PressScale(
+                onTap: slot.remaining > 0 ? () => onSelect(slot.start) : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: selected == slot.start
+                        ? SpottoColors.accent
+                        : (slot.remaining > 0 ? Colors.white : SpottoColors.line.withValues(alpha: 0.4)),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: selected == slot.start ? SpottoColors.accent : SpottoColors.line),
+                  ),
+                  child: Text(
+                    '${slot.start.hour.toString().padLeft(2, '0')}:${slot.start.minute.toString().padLeft(2, '0')}',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: selected == slot.start
+                          ? Colors.white
+                          : (slot.remaining > 0 ? SpottoColors.ink : SpottoColors.muted),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+      loading: () => const SizedBox(
+        height: 32,
+        child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
+      ),
+      error: (_, _) => const Text('Could not load availability',
+          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: SpottoColors.muted)),
+    );
+  }
+}
+
+class _BookingConfirmedCard extends StatelessWidget {
+  final Booking booking;
+  final VoidCallback onDone;
+  const _BookingConfirmedCard({required this.booking, required this.onDone});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: SpottoColors.ink, borderRadius: BorderRadius.circular(16)),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+            child: QrImageView(data: booking.code, size: 64, gapless: false),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Booked — show at check-in',
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white70)),
+                const SizedBox(height: 3),
+                Text(booking.code,
+                    style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 0.5)),
+                const SizedBox(height: 3),
+                Text('Party of ${booking.partySize}',
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.white70)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

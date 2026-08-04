@@ -314,7 +314,73 @@ export type ValidateResult = 'valid' | 'already_redeemed' | 'wrong_vendor' | 'un
 export interface ValidateResponse {
   result: ValidateResult;
   claim?: Claim;
+  /** Set instead of `claim` when the scanned/entered code is a BOOK- code
+   * (booking check-in) rather than a SPOTTO- code (offer redemption) — see
+   * server's handleValidate prefix dispatch. */
+  booking?: Booking;
   redeemedAt?: string;
+}
+
+export type BookingServiceType = 'session' | 'table' | 'stay';
+export type BookingStatus = 'confirmed' | 'cancelled' | 'completed' | 'no_show';
+
+export interface ServiceAvailabilityWindow {
+  start: string; // "HH:MM"
+  end: string;
+}
+export type ServiceAvailabilityDoc = Record<string, ServiceAvailabilityWindow[]>;
+
+/** One bookable thing a vendor offers (e.g. "Beginner surf lesson", "Deluxe
+ * Room"). No payment is collected anywhere in this platform — price is
+ * display-only, vendor collects payment in person. */
+export interface BookableService {
+  id: string;
+  vendorId: string;
+  type: BookingServiceType;
+  name: string;
+  description: string;
+  /** session/table only — how long one booking occupies capacity. */
+  durationMins?: number;
+  /** How many bookings may hold this service concurrently (concurrent
+   * session/table bookings, or total rooms of this type for stay). */
+  capacity: number;
+  partySizeMin?: number; // session/table only
+  partySizeMax?: number; // session/table only
+  guestsPerRoom?: number; // stay only
+  priceLabel: string;
+  /** Weekly availability rule for session/table — undefined for stay
+   * (stay availability is capacity-only) or when unset (falls back to the
+   * vendor's own Hours on the server). */
+  availability?: ServiceAvailabilityDoc;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A traveller's real, auto-confirmed commitment against a BookableService.
+ * No payment collected — vendor checks the traveller in via the same
+ * BOOK-XXXX QR/code flow offers use for redemption. */
+export interface Booking {
+  id: string;
+  code: string;
+  vendorId: string;
+  serviceId: string;
+  type: BookingServiceType;
+  placeId: string;
+  travellerId: string;
+  startAt: string;
+  endAt: string;
+  partySize: number;
+  status: BookingStatus;
+  note?: string;
+  createdAt: string;
+  cancelledAt?: string;
+  cancelledBy?: 'traveller' | 'vendor';
+  checkedInAt?: string;
+  serviceName?: string;
+  travellerName?: string;
+  travellerCountry?: string;
+  vendorName?: string;
 }
 
 export interface VendorNotification {

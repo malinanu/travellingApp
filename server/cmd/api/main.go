@@ -30,6 +30,7 @@ func main() {
 	go srv.StartHolidayScheduler(ctx)
 	go srv.StartWeatherScheduler(ctx)
 	go srv.StartBRCertScheduler(ctx)
+	go srv.StartBookingReminderScheduler(ctx)
 	go srv.StartThumbnailWorker(ctx)
 	go srv.StartEmbeddingWorker(ctx)
 

@@ -510,6 +510,142 @@ class ReviewPhoto {
       );
 }
 
+/// One bookable thing a vendor offers (e.g. "Beginner surf lesson", "Deluxe
+/// Room") — see GET /places/{id}/services. No payment is collected
+/// anywhere in this platform; [priceLabel] is display-only, the vendor
+/// collects payment in person.
+class BookableService {
+  final String id;
+  final String vendorId;
+  final String type; // session | table | stay — see data/vendor_categories.dart's BookingType
+  final String name;
+  final String description;
+  final int durationMins; // session/table only
+  final int capacity;
+  final int partySizeMin; // session/table only
+  final int partySizeMax; // session/table only
+  final int guestsPerRoom; // stay only
+  final String priceLabel;
+  final bool active;
+
+  const BookableService({
+    required this.id,
+    required this.vendorId,
+    required this.type,
+    required this.name,
+    this.description = '',
+    this.durationMins = 0,
+    this.capacity = 1,
+    this.partySizeMin = 1,
+    this.partySizeMax = 1,
+    this.guestsPerRoom = 1,
+    this.priceLabel = '',
+    this.active = true,
+  });
+
+  factory BookableService.fromJson(Map<String, dynamic> json) => BookableService(
+        id: json['id'] as String? ?? '',
+        vendorId: json['vendorId'] as String? ?? '',
+        type: json['type'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        description: json['description'] as String? ?? '',
+        durationMins: (json['durationMins'] as num?)?.toInt() ?? 0,
+        capacity: (json['capacity'] as num?)?.toInt() ?? 1,
+        partySizeMin: (json['partySizeMin'] as num?)?.toInt() ?? 1,
+        partySizeMax: (json['partySizeMax'] as num?)?.toInt() ?? 1,
+        guestsPerRoom: (json['guestsPerRoom'] as num?)?.toInt() ?? 1,
+        priceLabel: json['priceLabel'] as String? ?? '',
+        active: json['active'] as bool? ?? true,
+      );
+}
+
+/// One open time window a service is bookable within on a given weekday
+/// (see BookableService.availability — server-computed, this app only
+/// consumes the resulting slot list from GET .../availability, never the
+/// raw weekly rule).
+class BookingSlot {
+  final DateTime start;
+  final DateTime end;
+  final int remaining;
+  const BookingSlot({required this.start, required this.end, required this.remaining});
+
+  factory BookingSlot.fromJson(Map<String, dynamic> json) => BookingSlot(
+        start: DateTime.tryParse(json['start'] as String? ?? '') ?? DateTime.now(),
+        end: DateTime.tryParse(json['end'] as String? ?? '') ?? DateTime.now(),
+        remaining: (json['remaining'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// A traveller's real, auto-confirmed commitment against a [BookableService].
+/// No payment collected — the vendor checks the traveller in via a
+/// BOOK-XXXX QR/code, the same mechanism offer redemption uses (see
+/// ClaimsNotifier) — [code] is that check-in code.
+class Booking {
+  final String id;
+  final String code;
+  final String vendorId;
+  final String serviceId;
+  final String type;
+  final String placeId;
+  final String startAt;
+  final String endAt;
+  final int partySize;
+  final String status; // confirmed | cancelled | completed | no_show
+  final String note;
+  final String createdAt;
+  final String serviceName;
+  final String vendorName;
+
+  const Booking({
+    required this.id,
+    required this.code,
+    required this.vendorId,
+    required this.serviceId,
+    required this.type,
+    required this.placeId,
+    required this.startAt,
+    required this.endAt,
+    this.partySize = 1,
+    this.status = 'confirmed',
+    this.note = '',
+    this.createdAt = '',
+    this.serviceName = '',
+    this.vendorName = '',
+  });
+
+  factory Booking.fromJson(Map<String, dynamic> json) => Booking(
+        id: json['id'] as String? ?? '',
+        code: json['code'] as String? ?? '',
+        vendorId: json['vendorId'] as String? ?? '',
+        serviceId: json['serviceId'] as String? ?? '',
+        type: json['type'] as String? ?? '',
+        placeId: json['placeId'] as String? ?? '',
+        startAt: json['startAt'] as String? ?? '',
+        endAt: json['endAt'] as String? ?? '',
+        partySize: (json['partySize'] as num?)?.toInt() ?? 1,
+        status: json['status'] as String? ?? 'confirmed',
+        note: json['note'] as String? ?? '',
+        createdAt: json['createdAt'] as String? ?? '',
+        serviceName: json['serviceName'] as String? ?? '',
+        vendorName: json['vendorName'] as String? ?? '',
+      );
+
+  /// Round-trips for LocalStore caching (see BookingsNotifier) — never sent
+  /// back to the server, which only ever receives a fresh POST /bookings.
+  Map<String, dynamic> toJson() => {
+        'id': id, 'code': code, 'vendorId': vendorId, 'serviceId': serviceId, 'type': type,
+        'placeId': placeId, 'startAt': startAt, 'endAt': endAt, 'partySize': partySize,
+        'status': status, 'note': note, 'createdAt': createdAt,
+        'serviceName': serviceName, 'vendorName': vendorName,
+      };
+
+  Booking copyWith({String? status}) => Booking(
+        id: id, code: code, vendorId: vendorId, serviceId: serviceId, type: type, placeId: placeId,
+        startAt: startAt, endAt: endAt, partySize: partySize, status: status ?? this.status,
+        note: note, createdAt: createdAt, serviceName: serviceName, vendorName: vendorName,
+      );
+}
+
 /// A traveller-contributed photo for a place (media role "contrib" — see
 /// GET /places/{id}/photos, which returns full Media rows server-side).
 /// Keeps just what the UI needs: `id` to delete it, `uploadedBy` to gate

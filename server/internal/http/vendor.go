@@ -844,6 +844,12 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "code required")
 		return
 	}
+	// BOOK-XXXX vs SPOTTO-XXXX namespaces make the code type unambiguous —
+	// no new scanner UI needed, see handleBookingCheckIn.
+	if strings.HasPrefix(code, "BOOK-") {
+		s.handleBookingCheckIn(w, r, v, code)
+		return
+	}
 
 	claim, err := s.Store.ClaimByCode(r.Context(), code)
 	if errors.Is(err, postgres.ErrNotFound) {

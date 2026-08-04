@@ -56,3 +56,15 @@ func newClaimCode() string {
 	}
 	return "SPOTTO-" + string(out)
 }
+
+// newBookingCode returns BOOK-XXXX — a distinct namespace from
+// newClaimCode's SPOTTO-XXXX so handleValidate can dispatch on prefix alone.
+func newBookingCode() string {
+	b := make([]byte, 4)
+	rand.Read(b)
+	out := make([]byte, 4)
+	for i, v := range b {
+		out[i] = codeAlphabet[int(v)%len(codeAlphabet)]
+	}
+	return "BOOK-" + string(out)
+}
