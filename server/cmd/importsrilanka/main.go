@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spotto/server/internal/auth"
@@ -35,6 +36,42 @@ func randomID(prefix string) string {
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
 	return prefix + "_" + hex.EncodeToString(b)
+}
+
+// categoryForSpot maps an imported OSM/Google spot's data.type + data.tags
+// to a real vendor category id. Only food and cafe types correspond to an
+// actual bookable business in the taxonomy; everything else (landmarks,
+// viewpoints, temples, parks, wildlife, beaches) is non-commercial tourist
+// geography with no equivalent category, so it's left blank — the same
+// "unknown category" sentinel domain.CategoryByID/IsBookableCategory
+// already fall back to gracefully, rather than the nonsensical "General".
+func categoryForSpot(data map[string]any) string {
+	t, _ := data["type"].(string)
+	tagSet := map[string]bool{}
+	if raw, ok := data["tags"].([]any); ok {
+		for _, v := range raw {
+			if s, ok := v.(string); ok {
+				tagSet[strings.ToLower(s)] = true
+			}
+		}
+	}
+	switch t {
+	case "cafe":
+		return "cafe"
+	case "food":
+		switch {
+		case tagSet["bakery"] && !tagSet["restaurant"] && !tagSet["cafe"]:
+			return "bakery"
+		case tagSet["bar"] && !tagSet["restaurant"] && !tagSet["cafe"]:
+			return "bar-pub"
+		case tagSet["cafe"] && !tagSet["restaurant"]:
+			return "cafe"
+		default:
+			return "restaurant"
+		}
+	default:
+		return ""
+	}
 }
 
 func main() {
@@ -138,6 +175,7 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 		}
 		data["region"] = region.Name
 		data["regionId"] = region.ID
+		category := categoryForSpot(data)
 		enrichedData, err := json.Marshal(data)
 		if err != nil {
 			return fmt.Errorf("marshal place data for %s: %w", p.ID, err)
@@ -154,7 +192,7 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 				wifi_score=EXCLUDED.wifi_score, flags=EXCLUDED.flags, note=EXCLUDED.note,
 				tier=EXCLUDED.tier, profile=EXCLUDED.profile, menu=EXCLUDED.menu,
 				submitted_at=EXCLUDED.submitted_at, lat=EXCLUDED.lat, lng=EXCLUDED.lng`,
-			vendorID, p.Name+" Vendor", "General", region.Name, "LK", ptr(region.ID), "Admin",
+			vendorID, p.Name+" Vendor", category, region.Name, "LK", ptr(region.ID), "Admin",
 			domain.VendorApproved, "normal", true, 0, nil, []byte(`[]`), "", "Premium",
 			[]byte(`{}`), []byte(`{}`), now.AddDate(0, -1, 0), lat, lng,
 		); err != nil {
