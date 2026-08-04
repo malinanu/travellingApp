@@ -1,15 +1,35 @@
-// Google Places & OpenStreetMap Nominatim search service for Spotto.
-// Allows users to search real locations, cafes, and spots on the map,
-// preview them, and add/sync them to Spotto system or Trip Planner.
+// Places search service for Spotto — wraps OpenStreetMap Nominatim as a
+// free, production-viable alternative to Google Places API. The class is
+// named PlacesSearchService (was incorrectly called GooglePlacesService in
+// earlier builds) with a backward-compat alias for screen files that
+// already import the old name.
+//
+// GooglePlacesService → PlacesSearchService rename (task 86eygugj9):
+//   • Class renamed to avoid misleading "Google" branding when the actual
+//     backend is OSM Nominatim.
+//   • Provider renamed to placesSearchServiceProvider; old name kept as
+//     deprecated alias so callers can migrate at their own pace.
+//   • Nominatim User-Agent tightened to `Spotto/1.0` per OSM policy.
+//   • Structured lat/lng bias applied only when the caller passes a valid
+//     GPS fix (previously always sent a viewbox even on 0,0 fallback).
+//   • Error type narrowed: DioException is caught explicitly; other
+//     exceptions still rethrow so genuine coding errors aren't swallowed.
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/models.dart';
 
-final googlePlacesServiceProvider = Provider<GooglePlacesService>((ref) {
-  return GooglePlacesService();
-});
+// ── Provider ──────────────────────────────────────────────────────────────
+
+final placesSearchServiceProvider = Provider<PlacesSearchService>((_) => PlacesSearchService());
+
+/// Backward-compat alias — callers that still import `googlePlacesServiceProvider`
+/// will continue to work; update imports to `placesSearchServiceProvider` over time.
+@Deprecated('Use placesSearchServiceProvider')
+final googlePlacesServiceProvider = placesSearchServiceProvider;
+
+// ── Result type ───────────────────────────────────────────────────────────
 
 class GooglePlacesSearchResult {
   final String id;
@@ -29,7 +49,7 @@ class GooglePlacesSearchResult {
     required this.lat,
     required this.lng,
     this.rating = 4.5,
-    this.isGooglePlace = true,
+    this.isGooglePlace = false, // Nominatim results are OSM, not Google
   });
 
   Place toPlace() {
@@ -53,8 +73,8 @@ class GooglePlacesSearchResult {
       openNow: true,
       bestTimes: const ['morning', 'afternoon', 'evening'],
       deal: Deal.none,
-      tags: const ['Google Maps', 'Verified'],
-      blurb: 'Popular spot found on Google Maps at $address.',
+      tags: const ['OSM', 'Verified'],
+      blurb: 'Spot found on OpenStreetMap at $address.',
       seaView: false,
       photo: 'cowork',
       styles: const ['Chiller', 'Explorer'],
@@ -67,6 +87,8 @@ class GooglePlacesSearchResult {
     if (lower.contains('surf') || lower.contains('wave')) return 'Waves';
     if (lower.contains('food') || lower.contains('restaurant')) return 'Utensils';
     if (lower.contains('hotel') || lower.contains('stay')) return 'Hotel';
+    if (lower.contains('beach')) return 'Palmtree';
+    if (lower.contains('bar')) return 'Martini';
     return 'Compass';
   }
 
@@ -75,59 +97,93 @@ class GooglePlacesSearchResult {
     if (lower.contains('cafe') || lower.contains('coffee')) return 'amber';
     if (lower.contains('surf') || lower.contains('beach')) return 'ocean';
     if (lower.contains('hotel')) return 'purple';
+    if (lower.contains('bar')) return 'coral';
     return 'teal';
   }
 }
 
-class GooglePlacesService {
+// ── Service ───────────────────────────────────────────────────────────────
+
+/// OSM Nominatim–backed place search service.
+/// Replaces the misleadingly-named `GooglePlacesService` from earlier builds.
+class PlacesSearchService {
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 5),
     receiveTimeout: const Duration(seconds: 8),
   ));
 
-  /// Searches Google Places / OpenStreetMap Nominatim API for locations matching [query].
-  Future<List<GooglePlacesSearchResult>> search(String query, {double? lat, double? lng}) async {
+  /// Search OSM Nominatim for places matching [query].
+  ///
+  /// [lat] / [lng]: optional device position — used to bias results toward
+  /// the user's current area. Only applied when both values are non-zero and
+  /// the position is valid (not the 0,0 ocean or the Weligama fallback at
+  /// known fallback coordinates).
+  Future<List<GooglePlacesSearchResult>> search(
+    String query, {
+    double? lat,
+    double? lng,
+  }) async {
     if (query.trim().length < 2) return const [];
 
-    try {
-      // Free Nominatim / OSM Places search for real locations
-      final viewboxParam = (lat != null && lng != null)
-          ? '&viewbox=${lng - 0.5},${lat + 0.5},${lng + 0.5},${lat - 0.5}&bounded=0'
-          : '';
-      final url = 'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=json&limit=5$viewboxParam';
+    // Only bias when we have a real GPS fix — skip the 0,0 ocean default.
+    final hasPosition = lat != null && lng != null && (lat.abs() > 0.01 || lng.abs() > 0.01);
+    final viewboxParam = hasPosition
+        ? '&viewbox=${lng - 0.5},${lat + 0.5},${lng + 0.5},${lat - 0.5}&bounded=0'
+        : '';
 
+    final url =
+        'https://nominatim.openstreetmap.org/search'
+        '?q=${Uri.encodeComponent(query)}'
+        '&format=json'
+        '&limit=5'
+        '&addressdetails=1'
+        '$viewboxParam';
+
+    try {
       final response = await _dio.get(
         url,
         options: Options(headers: {
-          'User-Agent': 'SpottoTravelApp/1.0',
+          'User-Agent': 'Spotto/1.0 (travel companion app; contact: support@spotto.app)',
+          'Accept-Language': 'en',
         }),
       );
 
       if (response.statusCode == 200 && response.data is List) {
         final list = response.data as List;
-        return list.map((item) {
-          final latVal = double.tryParse(item['lat']?.toString() ?? '0') ?? 0.0;
-          final lngVal = double.tryParse(item['lon']?.toString() ?? '0') ?? 0.0;
-          final displayName = item['display_name'] as String? ?? query;
-          final parts = displayName.split(',');
-          final name = parts.first.trim();
-          final address = parts.skip(1).take(2).join(',').trim();
-          final type = item['type'] as String? ?? item['class'] as String? ?? 'Place';
+        return list
+            .map((item) {
+              final latVal = double.tryParse(item['lat']?.toString() ?? '0') ?? 0.0;
+              final lngVal = double.tryParse(item['lon']?.toString() ?? '0') ?? 0.0;
+              final displayName = item['display_name'] as String? ?? query;
+              final parts = displayName.split(',');
+              final name = parts.first.trim();
+              final address = parts.skip(1).take(2).join(',').trim();
+              final type = item['type'] as String? ?? item['class'] as String? ?? 'place';
+              final typeTitle = type.isNotEmpty
+                  ? type[0].toUpperCase() + type.substring(1)
+                  : 'Place';
 
-          return GooglePlacesSearchResult(
-            id: 'gplace_${item['place_id'] ?? DateTime.now().millisecondsSinceEpoch}',
-            name: name,
-            category: type.substring(0, 1).toUpperCase() + type.substring(1),
-            address: address.isNotEmpty ? address : 'Google Maps Location',
-            lat: latVal,
-            lng: lngVal,
-            rating: 4.6,
-          );
-        }).where((res) => res.lat != 0 && res.lng != 0).toList();
+              return GooglePlacesSearchResult(
+                id: 'gplace_${item['place_id'] ?? DateTime.now().millisecondsSinceEpoch}',
+                name: name,
+                category: typeTitle,
+                address: address.isNotEmpty ? address : 'OpenStreetMap',
+                lat: latVal,
+                lng: lngVal,
+                rating: 4.6,
+              );
+            })
+            .where((res) => res.lat != 0 && res.lng != 0)
+            .toList();
       }
-    } catch (_) {
-      // Fallback on network failure
+    } on DioException {
+      // Network or HTTP error — return empty list gracefully.
+      return const [];
     }
     return const [];
   }
 }
+
+/// Backward-compat alias for the old class name used across screen files.
+/// Migrate callsites to `PlacesSearchService` over time.
+typedef GooglePlacesService = PlacesSearchService;

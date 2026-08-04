@@ -2,9 +2,11 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -180,6 +182,16 @@ func (s *Server) handleAdminVendorRedemptions(w http.ResponseWriter, r *http.Req
 		claims = []domain.Claim{}
 	}
 	writeJSON(w, http.StatusOK, claims)
+}
+
+// handleAdminDeleteReview allows an admin to delete an abusive or fake review.
+func (s *Server) handleAdminDeleteReview(w http.ResponseWriter, r *http.Request) {
+	reviewID := chi.URLParam(r, "id")
+	if err := s.Store.DeleteReview(r.Context(), reviewID); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // adminVendorTeamResponse is the vendor-detail Team tab payload: staff roster,
@@ -500,4 +512,45 @@ func (s *Server) handlePublishAudioGuide(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"published": req.Published})
+}
+
+// handleAdminFeedSSE streams real-time admin live feed updates using Server-Sent Events (SSE).
+func (s *Server) handleAdminFeedSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			feed, err := s.Store.FeedItems(r.Context(), 0, "", 50)
+			if err != nil {
+				continue
+			}
+			data, _ := json.Marshal(feed)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
+}
+
+// handleAdminVoidClaim allows admins to void or reverse an offer claim/redemption.
+func (s *Server) handleAdminVoidClaim(w http.ResponseWriter, r *http.Request) {
+	claimID := chi.URLParam(r, "id")
+	if err := s.Store.VoidClaim(r.Context(), claimID); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

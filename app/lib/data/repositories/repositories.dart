@@ -169,6 +169,41 @@ class AuthNotifier extends Notifier<bool> {
     }
   }
 
+  Future<String?> appleAuth(String appleId, {String? email, String? name}) async {
+    try {
+      final res = await ref.read(apiProvider).dio.post('/auth/apple', data: {
+        'appleId': appleId,
+        if (email != null) 'email': email,
+        if (name != null) 'name': name,
+      });
+      await _adoptSession(res.data as Map<String, dynamic>);
+      return null;
+    } catch (e) {
+      return ApiClient.errorMessage(e);
+    }
+  }
+
+  Future<String?> forgotPassword(String email) async {
+    try {
+      await ref.read(apiProvider).dio.post('/auth/forgot-password', data: {'email': email});
+      return null;
+    } catch (e) {
+      return ApiClient.errorMessage(e);
+    }
+  }
+
+  Future<String?> resetPassword(String token, String newPassword) async {
+    try {
+      await ref.read(apiProvider).dio.post('/auth/reset-password', data: {
+        'token': token,
+        'newPassword': newPassword,
+      });
+      return null;
+    } catch (e) {
+      return ApiClient.errorMessage(e);
+    }
+  }
+
   Future<void> _adoptSession(Map<String, dynamic> data) async {
     final store = ref.read(localStoreProvider);
     await store.setToken(data['token'] as String);
@@ -640,6 +675,25 @@ class TripNotifier extends Notifier<Trip> {
 
   void removeCollaborator(String id) =>
       update(state.copyWith(collaborators: state.collaborators.where((c) => c != id).toList()));
+
+  // ── inspiration links ──────────────────────────────────────────────
+
+  void addInspiration(InspirationLink link) {
+    if (state.inspirations.any((l) => l.url == link.url)) return; // dedupe by URL
+    update(state.copyWith(inspirations: [link, ...state.inspirations]));
+  }
+
+  void removeInspiration(String id) {
+    update(state.copyWith(inspirations: state.inspirations.where((l) => l.id != id).toList()));
+  }
+
+  void editInspirationNote(String id, String note) {
+    update(state.copyWith(
+      inspirations: [
+        for (final l in state.inspirations) l.id == id ? l.copyWith(note: note) : l,
+      ],
+    ));
+  }
 }
 
 final tripProvider = NotifierProvider<TripNotifier, Trip>(TripNotifier.new);
@@ -716,7 +770,7 @@ class ClaimsNotifier extends Notifier<Map<String, String>> {
     if (existing != null) return existing;
     final res = await ref.read(apiProvider).dio.post('/claims', data: {
       'placeId': placeId,
-      if (offerId != null) 'offerId': offerId,
+      if (offerId case final id?) 'offerId': id,
       'offerLabel': offerLabel,
       'offerValue': offerValue,
     });
@@ -858,16 +912,63 @@ final currentWeatherProvider = FutureProvider<WeatherSnapshot>((ref) async {
   return ref.watch(weatherSnapshotProvider(at).future);
 });
 
+/// Single batched provider that fetches weather for Current Location + all Pinned Locations
+/// in ONE single POST /weather/batch API request to minimize network traffic and API costs.
+final batchedWeatherDeckProvider = FutureProvider<Map<String, WeatherSnapshot>>((ref) async {
+  final currentAt = await ref.watch(weatherLocationProvider.future);
+  final pins = ref.watch(weatherPinsProvider);
+
+  final locations = <Map<String, dynamic>>[
+    {'id': 'current', 'lat': currentAt.lat, 'lng': currentAt.lng},
+    for (final pin in pins) {'id': pin.id, 'lat': pin.lat, 'lng': pin.lng},
+  ];
+
+  try {
+    final res = await ref.read(apiProvider).dio.post('/weather/batch', data: {
+      'locations': locations,
+    });
+    final rawResults = (res.data as Map)['results'] as Map? ?? {};
+    final out = <String, WeatherSnapshot>{};
+    for (final entry in rawResults.entries) {
+      final id = entry.key.toString();
+      final val = entry.value;
+      if (val is Map) {
+        out[id] = WeatherSnapshot.fromJson(val.cast<String, dynamic>());
+      }
+    }
+    return out;
+  } catch (_) {
+    final out = <String, WeatherSnapshot>{};
+    final curSnap = await ref.read(weatherSnapshotProvider(currentAt).future);
+    out['current'] = curSnap;
+    for (final pin in pins) {
+      final at = (lat: pin.lat, lng: pin.lng);
+      final snap = await ref.read(weatherSnapshotProvider(at).future);
+      out[pin.id] = snap;
+    }
+    return out;
+  }
+});
+
 /// Legacy sunny|cloudy|rainy string derived from live data — drives
-/// guide_screen.dart's weather-aware greeting/suggestion chips locally
-/// (the real chat backend derives its own weather condition server-side,
-/// from lat/lng, for what it actually tells the model — see
-/// server/internal/http/guide.go's guideWeatherCondition).
+/// guide_screen.dart's weather-aware greeting/suggestion chips locally.
 final weatherConditionProvider = Provider<String>((ref) {
   return ref.watch(currentWeatherProvider).maybeWhen(
         data: (s) => s.now.condition,
         orElse: () => 'sunny',
       );
+});
+
+final paymentMethodsProvider = FutureProvider<List<PaymentCard>>((ref) async {
+  try {
+    final res = await ref.read(apiProvider).dio.get('/me/payment-methods');
+    if (res.data is List) {
+      return (res.data as List)
+          .map((e) => PaymentCard.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    }
+  } catch (_) {}
+  return const [];
 });
 
 /// Locations the traveller has pinned on the Weather screen to swipe

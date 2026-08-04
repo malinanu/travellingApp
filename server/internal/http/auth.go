@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -99,6 +100,11 @@ type registerReq struct {
 	// to "LK" in Store.UpsertVendor, matching every vendor that predates
 	// this field.
 	BusinessCountry string `json:"businessCountry,omitempty"`
+	// GooglePlaceID is the Google Maps Place ID from the registration
+	// wizard's "Find your business" Places search — captured so we can
+	// cache it on the vendor row for later Place Details enrichment (see
+	// internal/placedetails) instead of only having it in the JSONB blob.
+	GooglePlaceID string `json:"googlePlaceId,omitempty"`
 	// InviteCode joins an existing vendor as the invite's assigned role
 	// (staff or manager) instead of creating a new pending vendor — see
 	// the team-invite flow in handleRegister.
@@ -120,8 +126,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	req.Name = sanitizeText(req.Name, 100)
 	if req.Email == "" || len(req.Password) < 10 {
 		writeErr(w, http.StatusBadRequest, "email and a password of at least 10 characters are required")
+		return
+	}
+	if !validateTextLength(w, "Email", req.Email, 254) || !validateTextLength(w, "Password", req.Password, 128) || !validateTextLength(w, "Name", req.Name, 100) {
 		return
 	}
 	if isWeakPassword(req.Password, req.Email) {
@@ -179,20 +189,25 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Vendor registration creates a pending vendor gated until admin approval.
+		var googlePlaceID *string
+		if req.GooglePlaceID != "" {
+			googlePlaceID = &req.GooglePlaceID
+		}
 		v := domain.Vendor{
-			ID:          newID("ven"),
-			Name:        req.BusinessName,
-			Category:    req.Category,
-			Town:        req.Town,
-			Owner:       req.Name,
-			Status:      domain.VendorPending,
-			Priority:    "normal",
-			Flags:       []string{},
-			Tier:        "Free",
-			SubmittedAt: time.Now(),
-			Lat:         req.Lat,
-			Lng:         req.Lng,
-			Country:     req.BusinessCountry,
+			ID:            newID("ven"),
+			Name:          req.BusinessName,
+			Category:      req.Category,
+			Town:          req.Town,
+			Owner:         req.Name,
+			Status:        domain.VendorPending,
+			Priority:      "normal",
+			Flags:         []string{},
+			Tier:          "Free",
+			SubmittedAt:   time.Now(),
+			Lat:           req.Lat,
+			Lng:           req.Lng,
+			Country:       req.BusinessCountry,
+			GooglePlaceID: googlePlaceID,
 		}
 		if v.Name == "" {
 			v.Name = req.Name
@@ -419,6 +434,8 @@ func (s *Server) handleUpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	var req struct {
 		ShareLocation bool `json:"shareLocation"`
+		PublicProfile bool `json:"publicProfile"`
+		ShowActivity  bool `json:"showActivity"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -427,7 +444,7 @@ func (s *Server) handleUpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"shareLocation": req.ShareLocation})
+	writeJSON(w, http.StatusOK, req)
 }
 
 // handleUpdateMyContact updates the account page's editable identity
@@ -651,4 +668,113 @@ func (s *Server) requireEditableVendor(w http.ResponseWriter, r *http.Request) (
 		return v, false
 	}
 	return v, true
+}
+
+// handleDeleteAccount removes the user account and associated personal data.
+func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	if err := s.Store.DeleteUser(r.Context(), c.Subject); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}
+
+// handleExportData returns an archive of user profile data and activity.
+func (s *Server) handleExportData(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	u, err := s.Store.UserByID(r.Context(), c.Subject)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user":        u,
+		"exported_at": time.Now().UTC(),
+	})
+}
+
+// handleAppleAuth handles Sign in with Apple logins & registrations.
+func (s *Server) handleAppleAuth(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		AppleID       string `json:"appleId"`
+		Email         string `json:"email"`
+		Name          string `json:"name"`
+		IdentityToken string `json:"identityToken"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+
+	if req.AppleID == "" {
+		writeErr(w, http.StatusBadRequest, "appleId required")
+		return
+	}
+
+	// 1. Check if user already exists by appleId
+	u, err := s.Store.GetUserByAppleID(r.Context(), req.AppleID)
+	if err == nil {
+		token, err := s.Tokens.Issue(u)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "token generation failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": u})
+		return
+	}
+
+	// 2. Check if user exists by email
+	if req.Email != "" {
+		existing, err := s.Store.UserByEmail(r.Context(), req.Email)
+		if err == nil {
+			_ = s.Store.LinkUserAppleID(r.Context(), existing.ID, req.AppleID)
+			token, err := s.Tokens.Issue(existing)
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "token generation failed")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": existing})
+			return
+		}
+	}
+
+	// 3. Register new user via Apple
+	name := sanitizeText(req.Name, 100)
+	if name == "" {
+		name = "Apple User"
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if email == "" {
+		email = fmt.Sprintf("apple_%s@privaterelay.appleid.com", req.AppleID)
+	}
+
+	newUser := domain.User{
+		ID:        newID("usr"),
+		Email:     email,
+		Name:      name,
+		Role:      domain.RoleTraveller,
+		AppleID:   &req.AppleID,
+		CreatedAt: time.Now(),
+	}
+
+	if err := s.Store.CreateUser(r.Context(), newUser); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not create user account")
+		return
+	}
+
+	_ = s.Store.LinkUserAppleID(r.Context(), newUser.ID, req.AppleID)
+
+	u, err = s.Store.UserByID(r.Context(), newUser.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	token, err := s.Tokens.Issue(u)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "token generation failed")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"token": token, "user": u})
 }

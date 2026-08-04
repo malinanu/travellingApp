@@ -25,6 +25,46 @@ class WifiInfo {
       );
 }
 
+class PaymentCard {
+  final String id;
+  final String brand;
+  final String last4;
+  final int expMonth;
+  final int expYear;
+  final String holderName;
+  final bool isDefault;
+
+  const PaymentCard({
+    required this.id,
+    required this.brand,
+    required this.last4,
+    required this.expMonth,
+    required this.expYear,
+    required this.holderName,
+    required this.isDefault,
+  });
+
+  factory PaymentCard.fromJson(Map<String, dynamic> json) => PaymentCard(
+        id: json['id'] as String? ?? '',
+        brand: json['brand'] as String? ?? 'Card',
+        last4: json['last4'] as String? ?? '0000',
+        expMonth: (json['expMonth'] as num?)?.toInt() ?? 12,
+        expYear: (json['expYear'] as num?)?.toInt() ?? 2026,
+        holderName: json['holderName'] as String? ?? '',
+        isDefault: json['isDefault'] as bool? ?? false,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'brand': brand,
+        'last4': last4,
+        'expMonth': expMonth,
+        'expYear': expYear,
+        'holderName': holderName,
+        'isDefault': isDefault,
+      };
+}
+
 class ContactInfo {
   final String? phone;
   final String? website;

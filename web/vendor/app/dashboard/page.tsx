@@ -90,7 +90,38 @@ export default function DashboardPage() {
             className="btn-accent rounded-xl px-4 py-2.5 font-extrabold text-[14px] flex items-center gap-2 active:scale-[0.98] transition-transform shrink-0 whitespace-nowrap">
             <Plus size={18} strokeWidth={2.5} /> New offer
           </Link>
-        </div>
+        {business?.status === 'edits' && (
+          <div className="rounded-2xl p-5 bg-[#fff8e6] border border-[#f6b81e] text-[#a97b00]">
+            <h3 className="font-extrabold text-[16px] mb-1">Edits requested by Spotto admin</h3>
+            <p className="text-[13.5px] font-medium mb-3">
+              {business.note ? business.note : 'Please update your business profile details before your listing can go live.'}
+            </p>
+            <Link href="/profile" className="btn-accent rounded-xl px-4 py-2 text-[13px] font-extrabold inline-flex items-center gap-1.5">
+              Update Profile &amp; Resubmit
+            </Link>
+          </div>
+        )}
+
+        {business?.status === 'rejected' && (
+          <div className="rounded-2xl p-5 bg-coral/10 border border-coral/30 text-coral">
+            <h3 className="font-extrabold text-[16px] mb-1">Application not approved</h3>
+            <p className="text-[13.5px] font-medium mb-3">
+              {business.note ? business.note : 'Your business application did not meet our listing criteria. If you believe this is an error, please reach out to support.'}
+            </p>
+            <a href="mailto:support@spotto.dev" className="btn-accent rounded-xl px-4 py-2 text-[13px] font-extrabold inline-flex items-center gap-1.5">
+              Contact Support
+            </a>
+          </div>
+        )}
+
+        {business?.status === 'pending' && (
+          <div className="rounded-2xl p-5 bg-accent-tint border border-accent/20 text-accent">
+            <h3 className="font-extrabold text-[16px] mb-1">Application under review</h3>
+            <p className="text-[13.5px] font-medium">
+              Your business listing is currently being reviewed by the Spotto team. Reviews typically take less than 24 hours.
+            </p>
+          </div>
+        )}
 
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           {(dash?.kpis ?? []).map((k) => {

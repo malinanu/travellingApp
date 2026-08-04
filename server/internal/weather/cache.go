@@ -39,11 +39,11 @@ func NewCache() *Cache {
 	return &Cache{entries: make(map[string]cacheEntry)}
 }
 
-// CellKey rounds lat/lng to the nearest 0.5° so nearby requests share one
-// cache entry instead of fragmenting by exact GPS coordinate.
+// CellKey rounds lat/lng to the nearest 0.2° (~20km) so all users in the same region
+// share the exact same cached weather snapshot instead of fragmenting by exact GPS coordinate.
 func CellKey(lat, lng float64) string {
-	round := func(v float64) float64 { return math.Round(v*2) / 2 }
-	return fmt.Sprintf("%.1f,%.1f", round(lat), round(lng))
+	round := func(v float64) float64 { return math.Round(v*5) / 5 }
+	return fmt.Sprintf("%.2f,%.2f", round(lat), round(lng))
 }
 
 func (c *Cache) Get(key string) (*Snapshot, bool) {

@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/upload_service.dart';
 import '../../../core/theme/palette.dart';
+import '../../../core/theme/theme_mode_provider.dart';
 import '../../../core/utils/debounced_saver.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/spotto_icons.dart';
@@ -490,6 +491,67 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                       ),
                     ],
+                  ]),
+                  const SizedBox(height: 22),
+
+                  sectionCard(context, 'Appearance', [
+                    Builder(builder: (ctx) {
+                      final mode = ref.watch(themeModeProvider);
+                      final modeLabel = switch (mode) {
+                        ThemeMode.dark => 'Dark',
+                        ThemeMode.light => 'Light',
+                        ThemeMode.system => 'System',
+                      };
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            iconTile(Icons.brightness_4_outlined),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Theme', style: text.titleSmall),
+                                  Text('$modeLabel mode',
+                                      style: text.bodySmall
+                                          ?.copyWith(color: SpottoColors.muted)),
+                                ],
+                              ),
+                            ),
+                            SegmentedButton<ThemeMode>(
+                              style: SegmentedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                visualDensity: VisualDensity.compact,
+                                selectedBackgroundColor: SpottoColors.accent,
+                                selectedForegroundColor: Colors.white,
+                                foregroundColor: SpottoColors.muted,
+                              ),
+                              segments: const [
+                                ButtonSegment(
+                                  value: ThemeMode.system,
+                                  icon: Icon(Icons.brightness_auto, size: 15),
+                                  tooltip: 'System',
+                                ),
+                                ButtonSegment(
+                                  value: ThemeMode.light,
+                                  icon: Icon(Icons.light_mode, size: 15),
+                                  tooltip: 'Light',
+                                ),
+                                ButtonSegment(
+                                  value: ThemeMode.dark,
+                                  icon: Icon(Icons.dark_mode, size: 15),
+                                  tooltip: 'Dark',
+                                ),
+                              ],
+                              selected: {mode},
+                              onSelectionChanged: (s) =>
+                                  ref.read(themeModeProvider.notifier).setMode(s.first),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
                   ]),
                   const SizedBox(height: 22),
 

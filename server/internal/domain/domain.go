@@ -53,9 +53,41 @@ type User struct {
 	// GoogleID links this account to a Google identity for OAuth sign-in;
 	// nil for accounts that have never signed in with Google.
 	GoogleID *string `json:"-"`
+	AppleID  *string `json:"-"`
 	// AvatarURL is the public R2 URL of the account's profile picture, or
 	// "" to fall back to initials.
 	AvatarURL string `json:"avatarUrl"`
+}
+
+type UserPushToken struct {
+	ID          string    `json:"id"`
+	UserID      string    `json:"userId"`
+	DeviceToken string    `json:"deviceToken"`
+	Platform    string    `json:"platform"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type PaymentMethod struct {
+	ID         string    `json:"id"`
+	UserID     string    `json:"userId"`
+	Brand      string    `json:"brand"`
+	Last4      string    `json:"last4"`
+	ExpMonth   int       `json:"expMonth"`
+	ExpYear    int       `json:"expYear"`
+	HolderName string    `json:"holderName"`
+	IsDefault  bool      `json:"isDefault"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+type PaymentTransaction struct {
+	ID          string    `json:"id"`
+	UserID      string    `json:"userId"`
+	VendorID    *string   `json:"vendorId,omitempty"`
+	AmountCents int       `json:"amountCents"`
+	Currency    string    `json:"currency"`
+	Status      string    `json:"status"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 // Media is one uploaded object stored in Cloudflare R2 — see internal/media
@@ -160,6 +192,13 @@ type Vendor struct {
 	SubmittedAt time.Time       `json:"submittedAt"`
 	Lat         float64         `json:"lat"`
 	Lng         float64         `json:"lng"`
+	// GooglePlaceID is the Google Maps Place ID captured when the vendor
+	// found their business via the registration wizard's Google Places
+	// search — nil when the owner typed everything manually. Stored as a
+	// first-class column (not only inside places.data JSONB) so that
+	// enrichWithPlaceDetails can look up live details for vendor-registered
+	// places and so duplicate Google-listing registrations can be caught.
+	GooglePlaceID *string `json:"googlePlaceId,omitempty"`
 	// BRCertNumber is the vendor's Business Registration certificate number
 	// (e.g. "PV00334782") — Gemini-suggested from the uploaded "br_cert"
 	// media (see internal/gemini), always editable by the vendor before/

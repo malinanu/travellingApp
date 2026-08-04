@@ -36,7 +36,8 @@ class _GroupSheetState extends ConsumerState<_GroupSheet> {
   String? _justAdded;
 
   void _copy(String link) {
-    Clipboard.setData(ClipboardData(text: 'https://$link'));
+    final fullUrl = link.startsWith('http') ? link : 'https://$link';
+    Clipboard.setData(ClipboardData(text: fullUrl));
     setState(() => _copied = true);
     Future.delayed(const Duration(milliseconds: 1800), () {
       if (mounted) setState(() => _copied = false);

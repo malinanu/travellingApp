@@ -23,6 +23,7 @@ const DISCOUNT_TYPES: { id: string; apiType: string; label: string; icon: Lucide
   { id: 'amount', apiType: 'Amount', label: 'Amount off', icon: BadgeDollarSign },
   { id: 'freebie', apiType: 'Freebie', label: 'Freebie', icon: Gift },
   { id: 'bundle', apiType: 'Bundle', label: 'Bundle', icon: Package },
+  { id: 'event', apiType: 'Event', label: 'Event / Party', icon: Calendar },
 ];
 
 const DURATIONS = [
@@ -277,16 +278,20 @@ function OffersPageInner() {
                 <label className="text-[13px] font-extrabold">Offer title</label>
                 <span className="text-[11.5px] text-muted font-semibold">what travelers see</span>
               </div>
-              <input className="input" placeholder="e.g. 20% off coffee" value={title} onChange={(e) => setTitle(e.target.value)} />
+              <input className={`input ${!title.trim() ? 'border-coral/50' : ''}`} placeholder="e.g. 20% off coffee" value={title} onChange={(e) => setTitle(e.target.value)} />
+              {!title.trim() && <p className="text-[11.5px] font-extrabold text-coral mt-1">Title is required</p>}
             </div>
             <div className="w-28">
               {typeId === 'pct' && (
                 <>
                   <label className="block text-[13px] font-extrabold mb-1.5">Percent</label>
                   <div className="relative">
-                    <input className="input pr-7" type="number" min={0} max={100} value={percent} onChange={(e) => setPercent(e.target.value)} />
+                    <input className={`input pr-7 ${Number(percent) < 1 || Number(percent) > 100 ? 'border-coral/50' : ''}`} type="number" min={1} max={100} value={percent} onChange={(e) => setPercent(e.target.value)} />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted font-bold text-[13px]">%</span>
                   </div>
+                  {(Number(percent) < 1 || Number(percent) > 100) && (
+                    <p className="text-[11.5px] font-extrabold text-coral mt-1">1–100%</p>
+                  )}
                 </>
               )}
               {typeId === 'amount' && (

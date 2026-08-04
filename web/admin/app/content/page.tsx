@@ -13,10 +13,18 @@ import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
 
 const TABS: { id: FeedStatus | 'all'; label: string }[] = [
-  { id: 'all', label: 'All' },
+  { id: 'all', label: 'All Statuses' },
   { id: 'ok', label: 'OK' },
   { id: 'review', label: 'Needs review' },
   { id: 'flag', label: 'Flagged' },
+];
+
+const CONTENT_TYPES = [
+  { id: 'all', label: 'All Content' },
+  { id: 'Review', label: 'Reviews' },
+  { id: 'Photo', label: 'Photos' },
+  { id: 'Checkin', label: 'Check-ins' },
+  { id: 'Offer', label: 'Offers' },
 ];
 
 const STATUS_STYLE: Record<FeedStatus, string> = {
@@ -29,6 +37,7 @@ export default function ContentPage() {
   const qc = useQueryClient();
   const [live, setLive] = useState(true);
   const [tab, setTab] = useState<FeedStatus | 'all'>('all');
+  const [contentType, setContentType] = useState<string>('all');
 
   const { data: items = [], isError } = useQuery<FeedItem[]>({
     queryKey: ['admin-feed'],
@@ -50,14 +59,45 @@ export default function ContentPage() {
     onError: (_e, _v, ctx) => ctx?.prev && qc.setQueryData(['admin-feed'], ctx.prev),
   });
 
-  const filtered = items.filter((i) => tab === 'all' || i.status === tab);
+  const filtered = items.filter(
+    (i) => (tab === 'all' || i.status === tab) && (contentType === 'all' || i.type === contentType),
+  );
 
   return (
     <Shell>
       {isError && <InlineErrorBanner message="Couldn't load the content feed — try refreshing." />}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex gap-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex flex-wrap gap-1.5">
           {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className="btn text-[13px] font-bold"
+              style={{
+                background: tab === t.id ? 'var(--accent)' : 'var(--surface)',
+                color: tab === t.id ? '#fff' : 'var(--ink)',
+                borderColor: tab === t.id ? 'var(--accent)' : 'var(--line)',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+          <div className="w-[1px] h-6 bg-line self-center mx-1" />
+          {CONTENT_TYPES.map((ct) => (
+            <button
+              key={ct.id}
+              onClick={() => setContentType(ct.id)}
+              className="btn text-[13px] font-bold"
+              style={{
+                background: contentType === ct.id ? 'var(--ink)' : 'var(--surface)',
+                color: contentType === ct.id ? '#fff' : 'var(--ink)',
+                borderColor: contentType === ct.id ? 'var(--ink)' : 'var(--line)',
+              }}
+            >
+              {ct.label}
+            </button>
+          ))}
+        </div>
             <button
               key={t.id}
               onClick={() => setTab(t.id)}

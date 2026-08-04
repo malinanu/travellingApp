@@ -46,12 +46,9 @@ type Server struct {
 	TomorrowIOAPIKey string
 	// GeminiAPIKey enables BR-certificate OCR pre-fill (see
 	// internal/gemini) — empty means the br-cert scheduler's OCR sweep is
-	// a no-op.
+	// a no-op. It also powers the Local Guide chat/embeddings; empty means
+	// POST /guide/chat reports itself unconfigured (501).
 	GeminiAPIKey string
-	// OpenRouterAPIKey powers the Local Guide chat (see
-	// internal/openrouter) — empty means POST /guide/chat reports itself
-	// unconfigured (501) instead.
-	OpenRouterAPIKey string
 	// WeatherCache holds recent Tomorrow.io responses keyed by a coarse
 	// lat/lng cell (see internal/weather/cache.go) to stay within the free
 	// tier's tight rate limit.
@@ -78,6 +75,7 @@ type Server struct {
 	totpLimit     *loginLimiter // guards /auth/2fa/login-verify (key: ip+userID)
 	resetLimit    *loginLimiter // guards /auth/forgot-password (key: ip+email)
 	grantPinLimit *loginLimiter // guards /vendor/profile-grants/{id}/redeem (key: ip+userID) — a 6-digit PIN only has 10^6 possibilities
+	guideLimit    *rateLimiter  // guards /guide/chat (key: userID or clientIP)
 	oauthCodes    *authCodeStore
 }
 
@@ -96,7 +94,6 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		GoogleCalendarAPIKey: cfg.GoogleCalendarAPIKey,
 		TomorrowIOAPIKey:     cfg.TomorrowIOAPIKey,
 		GeminiAPIKey:         cfg.GeminiAPIKey,
-		OpenRouterAPIKey:     cfg.OpenRouterAPIKey,
 		WeatherCache:         weather.NewCache(),
 		// Same key as GoogleCalendarAPIKey — see its doc comment.
 		GooglePlacesAPIKey: cfg.GoogleCalendarAPIKey,
@@ -105,6 +102,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		totpLimit:          newLoginLimiter(5, 15*time.Minute),
 		resetLimit:         newLoginLimiter(5, 15*time.Minute),
 		grantPinLimit:      newLoginLimiter(5, 15*time.Minute),
+		guideLimit:         newRateLimiter(15, 1*time.Minute),
 		oauthCodes:         newAuthCodeStore(),
 	}
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
@@ -145,12 +143,24 @@ func (s *Server) Authenticated(next http.Handler) http.Handler {
 	})
 }
 
+func maxBytesMiddleware(maxBytes int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Body != nil {
+				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func (s *Server) Router(cfg config.Config) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(realIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(maxBytesMiddleware(10 * 1024 * 1024))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -159,8 +169,20 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		MaxAge:           300,
 	}))
 
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("API-Version", "v1")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("X-XSS-Protection", "0")
+			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)")
+			next.ServeHTTP(w, r)
+		})
+	})
+
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": "v1"})
 	})
 
 	// Proxies a private R2 object read — deliberately outside the
@@ -171,6 +193,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	// because object keys contain slashes (e.g. vendor/ven_x/m_y.jpg).
 	r.Get("/media/raw/*", s.handleMediaRaw)
 
+	r.Get("/healthz", s.handleHealthz)
+	r.Get("/readyz", s.handleReadyz)
+
 	r.Post("/auth/register", s.handleRegister)
 	r.Post("/auth/login", s.handleLogin)
 	r.Post("/auth/2fa/login-verify", s.handleTwoFactorLoginVerify)
@@ -178,22 +203,35 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Post("/auth/reset-password", s.handleResetPassword)
 	r.Get("/auth/google/login", s.handleGoogleLogin)
 	r.Get("/auth/google/callback", s.handleGoogleCallback)
+	r.Post("/auth/apple", s.handleAppleAuth)
 	r.Post("/auth/exchange", s.handleAuthExchange)
 
 	// Authenticated (any role).
 	r.Group(func(r chi.Router) {
 		r.Use(s.Authenticated)
 		r.Get("/me", s.handleMe)
+		r.Delete("/me", s.handleDeleteAccount)
+		r.Get("/me/export", s.handleExportData)
 		r.Put("/me", s.handleUpdateMe)
 		r.Put("/me/privacy", s.handleUpdatePrivacy)
 		r.Put("/me/contact", s.handleUpdateMyContact)
 		r.Put("/me/notification-prefs", s.handleUpdateNotificationPrefs)
+		r.Post("/me/push-token", s.handleRegisterPushToken)
+		r.Delete("/me/push-token", s.handleUnregisterPushToken)
+		r.Get("/me/payment-methods", s.handleListPaymentMethods)
+		r.Post("/me/payment-methods", s.handleCreatePaymentMethod)
+		r.Delete("/me/payment-methods/{id}", s.handleDeletePaymentMethod)
+		r.Post("/me/payment-methods/{id}/default", s.handleSetDefaultPaymentMethod)
+		r.Post("/vendor/subscription/checkout", s.handleVendorSubscriptionCheckout)
 		r.Put("/auth/password", s.handleChangePassword)
 		r.Post("/auth/2fa/setup", s.handleTwoFactorSetup)
 		r.Post("/auth/2fa/enable", s.handleTwoFactorEnable)
 		r.Post("/auth/2fa/disable", s.handleTwoFactorDisable)
 
 		r.Get("/weather", s.handleWeather)
+		r.Post("/weather/batch", s.handleWeatherBatch)
+		r.Get("/trips", s.handleListTrips)
+		r.Post("/trips", s.handleSaveTrip)
 		r.Get("/places", s.handlePlaces)
 		r.Get("/places/{id}", s.handlePlace)
 		r.Get("/places/{id}/reviews", s.handlePlaceReviews)
@@ -309,9 +347,11 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/vendors/map", s.handleAdminVendorsMap)
 		r.Get("/admin/vendors/near", s.handleAdminVendorsNear)
 		r.Get("/admin/vendors/{id}/reviews", s.handleAdminVendorReviews)
+		r.Delete("/admin/reviews/{id}", s.handleAdminDeleteReview)
 		r.Get("/admin/vendors/{id}/stats", s.handleAdminVendorStats)
 		r.Get("/admin/vendors/{id}/offers", s.handleAdminVendorOffers)
 		r.Get("/admin/vendors/{id}/redemptions", s.handleAdminVendorRedemptions)
+		r.Post("/admin/claims/{id}/void", s.handleAdminVoidClaim)
 		r.Get("/admin/vendors/{id}/team", s.handleAdminVendorTeam)
 		r.Get("/admin/vendors/{id}/audit", s.handleAdminVendorAudit)
 		r.Get("/admin/vendors/{id}/vibe", s.handleAdminVendorVibe)
@@ -319,6 +359,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Patch("/admin/vendors/{id}", s.handleAdminVendorEdit)
 		r.Post("/admin/vendors/{id}/takedown", s.handleAdminVendorTakedown)
 		r.Get("/admin/feed", s.handleAdminFeed)
+		r.Get("/admin/feed/sse", s.handleAdminFeedSSE)
 		r.Post("/admin/feed/{id}/approve", s.feedResolveHandler("approved"))
 		r.Post("/admin/feed/{id}/remove", s.feedResolveHandler("removed"))
 		r.Post("/admin/feed/{id}/warn", s.feedResolveHandler("warned"))
@@ -347,3 +388,16 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 
 	return r
 }
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	if err := s.Store.Pool.Ping(r.Context()); err != nil {
+		writeErr(w, http.StatusServiceUnavailable, "database connection failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}
+

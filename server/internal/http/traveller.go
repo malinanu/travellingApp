@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -27,6 +28,11 @@ import (
 func (s *Server) placeJSON(ctx context.Context, p domain.Place) map[string]any {
 	m := map[string]any{}
 	json.Unmarshal(p.Data, &m)
+	delete(m, "apiKey")
+	delete(m, "googleApiKey")
+	delete(m, "key")
+	delete(m, "secret")
+	delete(m, "token")
 	m["id"] = p.ID
 	m["name"] = p.Name
 	if p.VendorID != nil {
@@ -72,43 +78,87 @@ func (s *Server) handlePlaces(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	out := make([]map[string]any, 0, len(places))
-	for _, p := range places {
-		out = append(out, s.placeJSON(r.Context(), p))
+
+	categoryFilter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("category")))
+	searchFilter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("search")))
+	if searchFilter == "" {
+		searchFilter = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 	}
 
-	// Optional traveller position — when present, sort nearest-first and
-	// inject a human-readable distance instead of leaving Place.distance
-	// blank (real imported places never set one).
+	out := make([]map[string]any, 0, len(places))
+	for _, p := range places {
+		m := s.placeJSON(r.Context(), p)
+
+		if categoryFilter != "" {
+			pCat, _ := m["category"].(string)
+			pSub, _ := m["subcategory"].(string)
+			if !strings.EqualFold(pCat, categoryFilter) && !strings.EqualFold(pSub, categoryFilter) {
+				continue
+			}
+		}
+
+		if searchFilter != "" {
+			pName, _ := m["name"].(string)
+			pCat, _ := m["category"].(string)
+			pDesc, _ := m["description"].(string)
+			pTown, _ := m["town"].(string)
+			match := strings.Contains(strings.ToLower(pName), searchFilter) ||
+				strings.Contains(strings.ToLower(pCat), searchFilter) ||
+				strings.Contains(strings.ToLower(pDesc), searchFilter) ||
+				strings.Contains(strings.ToLower(pTown), searchFilter)
+			if !match {
+				continue
+			}
+		}
+
+		out = append(out, m)
+	}
+
 	lat, latErr := strconv.ParseFloat(r.URL.Query().Get("lat"), 64)
 	lng, lngErr := strconv.ParseFloat(r.URL.Query().Get("lng"), 64)
+	maxDistStr := r.URL.Query().Get("maxDistanceKm")
+	if maxDistStr == "" {
+		maxDistStr = r.URL.Query().Get("radiusKm")
+	}
+	maxDist, maxDistErr := strconv.ParseFloat(maxDistStr, 64)
+
 	if latErr == nil && lngErr == nil {
 		type withDist struct {
 			m    map[string]any
 			dist float64
 			has  bool
 		}
-		withDists := make([]withDist, len(out))
-		for i, m := range out {
+		withDists := make([]withDist, 0, len(out))
+		for _, m := range out {
 			pLat, latOk := m["lat"].(float64)
 			pLng, lngOk := m["lng"].(float64)
 			wd := withDist{m: m}
 			if latOk && lngOk && (pLat != 0 || pLng != 0) {
 				wd.dist = geo.HaversineKm(lat, lng, pLat, pLng)
 				wd.has = true
+				if maxDistErr == nil && maxDist > 0 && wd.dist > maxDist {
+					continue
+				}
 				m["distance"] = fmt.Sprintf("%.1f km away", wd.dist)
 				m["distanceKm"] = wd.dist
 			}
-			withDists[i] = wd
+			withDists = append(withDists, wd)
 		}
 		sort.SliceStable(withDists, func(i, j int) bool {
 			if withDists[i].has != withDists[j].has {
-				return withDists[i].has // known-distance places sort before unknown
+				return withDists[i].has
 			}
 			return withDists[i].dist < withDists[j].dist
 		})
+		out = make([]map[string]any, len(withDists))
 		for i, wd := range withDists {
 			out[i] = wd.m
+		}
+	}
+
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 && limit < len(out) {
+			out = out[:limit]
 		}
 	}
 
@@ -367,6 +417,10 @@ func (s *Server) handleCreateReview(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "rating must be between 1 and 5")
 		return
 	}
+	req.Text = sanitizeText(req.Text, 2000)
+	if !validateTextLength(w, "Review text", req.Text, 2000) {
+		return
+	}
 	place, err := s.Store.PlaceByID(r.Context(), placeID)
 	if err != nil {
 		storeErr(w, err)
@@ -384,6 +438,9 @@ func (s *Server) handleCreateReview(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.UpsertReview(r.Context(), review); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
+	}
+	if place.VendorID != nil {
+		go s.TriggerReviewNotification(context.Background(), *place.VendorID, "Traveller", req.Rating)
 	}
 	// On edit, ON CONFLICT kept the original row's id — return the real
 	// stored id so the client attaches photos to the right review.
@@ -430,10 +487,15 @@ func (s *Server) handleCreateClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if existing, err := s.Store.ClaimForTravellerPlace(r.Context(), c.Subject, req.PlaceID); err == nil &&
-		existing.Status == domain.ClaimClaimed {
-		writeJSON(w, http.StatusOK, existing)
-		return
+	if existing, err := s.Store.ClaimForTravellerPlace(r.Context(), c.Subject, req.PlaceID); err == nil {
+		if existing.Status == domain.ClaimClaimed {
+			writeJSON(w, http.StatusOK, existing)
+			return
+		}
+		if existing.Status == domain.ClaimRedeemed {
+			writeErr(w, http.StatusBadRequest, "you have already redeemed an offer at this spot")
+			return
+		}
 	}
 
 	place, err := s.Store.PlaceByID(r.Context(), req.PlaceID)
@@ -458,6 +520,10 @@ func (s *Server) handleCreateClaim(w http.ResponseWriter, r *http.Request) {
 	if req.OfferID != "" {
 		if o, err := s.Store.OfferByID(r.Context(), req.OfferID); err == nil &&
 			place.VendorID != nil && o.VendorID == *place.VendorID {
+			if o.Limit > 0 && o.Claimed >= o.Limit {
+				writeErr(w, http.StatusBadRequest, "this offer has reached its claim limit")
+				return
+			}
 			claim.OfferID = &o.ID
 		}
 	}
@@ -466,6 +532,9 @@ func (s *Server) handleCreateClaim(w http.ResponseWriter, r *http.Request) {
 		claim.Code = newClaimCode()
 		err = s.Store.CreateClaim(r.Context(), claim)
 		if err == nil {
+			if place.VendorID != nil {
+				go s.TriggerClaimNotification(context.Background(), *place.VendorID, "Traveller", req.OfferLabel)
+			}
 			writeJSON(w, http.StatusCreated, claim)
 			return
 		}
@@ -641,4 +710,31 @@ func (s *Server) handleNearbyTravellers(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, nearby)
+}
+
+// handleListTrips returns all saved trips for the authenticated traveler.
+func (s *Server) handleListTrips(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	trips, err := s.Store.TripsByOwner(r.Context(), c.Subject)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, trips)
+}
+
+// handleSaveTrip saves or updates a traveler's trip itinerary.
+func (s *Server) handleSaveTrip(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	var trip domain.Trip
+	if !readJSON(w, r, &trip) {
+		return
+	}
+	trip.OwnerID = c.Subject
+	trip.UpdatedAt = time.Now().UTC()
+	if err := s.Store.UpsertTrip(r.Context(), trip); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, trip)
 }

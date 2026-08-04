@@ -9,6 +9,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
 import '../../../data/repositories/repositories.dart';
+import 'payment_methods_screen.dart';
 import 'profile_screen.dart';
 
 class _SubPage extends StatelessWidget {
@@ -473,7 +474,9 @@ class PaymentPage extends StatelessWidget {
         ]),
         const SizedBox(height: 22),
         sectionCard(context, null, [
-          profRow(context, Icons.add_card, 'Add payment method', onTap: () {}),
+          profRow(context, Icons.credit_card, 'Manage payment cards', onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const PaymentMethodsScreen()));
+          }),
         ]),
       ],
     );

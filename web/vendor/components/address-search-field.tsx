@@ -25,6 +25,7 @@ import { loadGoogleMaps } from '../lib/google-maps';
 import { categoryFromGoogleTypes, hoursFromLegacyPeriods } from '../lib/google-place-mapping';
 
 export interface PlaceDetails {
+  placeId?: string;
   phone?: string;
   website?: string;
   category?: string;
@@ -84,7 +85,7 @@ export default function AddressSearchField({
       const { Autocomplete } = await g.maps.importLibrary('places') as google.maps.PlacesLibrary;
       autocomplete = new Autocomplete(inputRef.current, {
         fields: [
-          'formatted_address', 'geometry', 'address_components',
+          'place_id', 'formatted_address', 'geometry', 'address_components',
           'international_phone_number', 'website', 'opening_hours', 'types',
         ],
         componentRestrictions: { country: 'lk' },
@@ -96,6 +97,7 @@ export default function AddressSearchField({
         const town = townFromLegacyAddressComponents(place.address_components) || place.formatted_address || '';
         if (town) onChangeRef.current(town);
         onPlaceDetailsRef.current?.({
+          placeId: place.place_id,
           phone: place.international_phone_number,
           website: place.website,
           category: categoryFromGoogleTypes(place.types),

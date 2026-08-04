@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/api/google_places_service.dart';
+import '../../../core/api/map_tile_cache.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/category_icons.dart';
 import '../../../core/widgets/map_marker.dart';
@@ -196,6 +197,36 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   String _selectedCategory = 'All';
   double _currentZoom = 15.0;
   String? _selectedPlaceId;
+
+  bool _isCachingTiles = false;
+  int _cacheProgress = 0;
+  int _cacheTotal = 0;
+
+  Future<void> _downloadOfflineTiles() async {
+    setState(() { _isCachingTiles = true; _cacheProgress = 0; _cacheTotal = 1; });
+    // Cache messenger ref before any await so we don't use BuildContext
+    // across an async gap (lint: use_build_context_synchronously).
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final result = await prefetchMapTiles(
+        onProgress: (done, total) {
+          if (mounted) setState(() { _cacheProgress = done; _cacheTotal = total; });
+        },
+      );
+      if (!mounted) return;
+      final sizeMb = (await mapTileCacheSizeBytes() / (1024 * 1024)).toStringAsFixed(1);
+      messenger.showSnackBar(SnackBar(
+        content: Text(
+          result.hasErrors
+            ? '⚠ Downloaded ${result.downloaded} tiles (${result.failed} failed). $sizeMb MB cached.'
+            : '✓ ${result.downloaded} tiles downloaded · $sizeMb MB · Weligama area offline!',
+        ),
+        duration: const Duration(seconds: 4),
+      ));
+    } finally {
+      if (mounted) setState(() => _isCachingTiles = false);
+    }
+  }
 
   List<Place> _filterPlaces(List<Place> places, Set<String> favoriteIds) {
     switch (_selectedCategory) {
@@ -858,6 +889,42 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           bottom: 150,
           child: _LocationCompassButton(
               mode: _locationMode, onTap: _onLocationButtonTap),
+        ),
+
+        // Offline map cache button
+        Positioned(
+          right: 16,
+          bottom: 202,
+          child: PressScale(
+            scale: 0.92,
+            onTap: _isCachingTiles ? null : _downloadOfflineTiles,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: const [
+                  BoxShadow(
+                    color: SpottoColors.inkShadow,
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: _isCachingTiles
+                  ? Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: CircularProgressIndicator(
+                        value: _cacheTotal > 0 ? _cacheProgress / _cacheTotal : null,
+                        strokeWidth: 2.5,
+                        color: SpottoColors.accent,
+                      ),
+                    )
+                  : const Icon(Icons.download_for_offline_rounded,
+                      size: 20, color: SpottoColors.accent),
+            ),
+          ),
         ),
 
         // bottom: daily quest chip + time filter pills

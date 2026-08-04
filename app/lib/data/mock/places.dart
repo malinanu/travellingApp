@@ -19,6 +19,12 @@ const interests = [
   Interest(id: 'beach', label: 'Beaches', icon: 'Palmtree'),
   Interest(id: 'music', label: 'Live Music', icon: 'Music'),
   Interest(id: 'hiking', label: 'Hiking', icon: 'Mountain'),
+  Interest(id: 'vegan', label: 'Vegan / Plant-based', icon: 'Flower2'),
+  Interest(id: 'halal', label: 'Halal Food', icon: 'UtensilsCrossed'),
+  Interest(id: 'gluten-free', label: 'Gluten-Free', icon: 'UtensilsCrossed'),
+  Interest(id: 'wifi', label: 'Fast Wi-Fi', icon: 'Wifi'),
+  Interest(id: 'outlets', label: 'Power Outlets', icon: 'Zap'),
+  Interest(id: 'quiet', label: 'Quiet Zone', icon: 'Volume2'),
 ];
 
 const places = [

@@ -15,6 +15,7 @@ import '../place_detail/business_drawer.dart';
 import 'widgets/add_stop_sheet.dart';
 import 'widgets/calendar_month.dart';
 import 'widgets/confirm_delete_dialog.dart';
+import 'widgets/inspiration_sheet.dart';
 import 'widgets/my_trips_sheet.dart';
 import 'widgets/new_trip_sheet.dart';
 import 'widgets/stop_card.dart';
@@ -45,17 +46,7 @@ class _TripScreenState extends ConsumerState<TripScreen> {
     setState(() => _dayIx = (_dayIx + dir).clamp(0, days - 1));
   }
 
-  Future<void> _newTrip() async {
-    final startDate = await showNewTripSheet(context, ref);
-    if (startDate != null) {
-      final d = DateTime.parse(startDate);
-      setState(() {
-        _dayIx = 0;
-        _dayView = false;
-        _calMonth = DateTime(d.year, d.month, 1);
-      });
-    }
-  }
+
 
   Future<void> _removeStop(TripStop stop, String name) async {
     final ok = await showConfirmDeleteDialog(context, name, tripWho(stop.by));
@@ -117,6 +108,8 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                       ),
                       _myTripsButton(ref),
                       const SizedBox(width: 8),
+                      _inspirationButton(trip),
+                      const SizedBox(width: 8),
                       _collabButton(trip),
                     ],
                   ),
@@ -161,6 +154,51 @@ class _TripScreenState extends ConsumerState<TripScreen> {
     );
   }
 
+  Widget _inspirationButton(Trip trip) {
+    final count = trip.inspirations.length;
+    return PressScale(
+      scale: 0.92,
+      onTap: () => showInspirationSheet(context),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [
+                BoxShadow(color: Color(0x1A103D3A), blurRadius: 10, offset: Offset(0, 2))
+              ],
+            ),
+            child: const Icon(Icons.bookmark_add_rounded, size: 18, color: SpottoColors.accent),
+          ),
+          if (count > 0)
+            Positioned(
+              right: -3,
+              top: -3,
+              child: Container(
+                width: 17,
+                height: 17,
+                decoration: const BoxDecoration(
+                  color: SpottoColors.accent,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    count > 9 ? '9+' : '$count',
+                    style: const TextStyle(
+                        fontSize: 9, color: Colors.white, fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _collabButton(Trip trip) {
     final members = [data.me, ...trip.collaborators.map(tripWho).nonNulls].take(3).toList();
     return PressScale(
@@ -200,22 +238,7 @@ class _TripScreenState extends ConsumerState<TripScreen> {
     );
   }
 
-  Widget _iconButton(IconData icon, VoidCallback onTap) => PressScale(
-        scale: 0.95,
-        onTap: onTap,
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: const [
-              BoxShadow(color: Color(0x1A103D3A), blurRadius: 10, offset: Offset(0, 2))
-            ],
-          ),
-          child: Icon(icon, size: 19, color: SpottoColors.ink),
-        ),
-      );
+
 
   Widget _daySubHeader(TextTheme text, Trip trip) {
     final dt = tripDayDate(trip.startDate, _dayIx);

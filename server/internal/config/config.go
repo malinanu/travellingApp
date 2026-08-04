@@ -48,16 +48,10 @@ type Config struct {
 	// GoogleCalendarAPIKey above.
 	TomorrowIOAPIKey string
 	// GeminiAPIKey enables BR-certificate OCR pre-fill (see
-	// internal/gemini, get a free key from Google AI Studio). Unset means
-	// the br-cert scheduler's OCR sweep is a no-op — vendors can still type
-	// their certificate number in manually and get it verified — same
-	// unconfigured convention as TomorrowIOAPIKey.
+	// internal/gemini) and powers the Local Guide chat/embeddings
+	// (see internal/http/guide.go, internal/recommend). Unset means
+	// these features are unconfigured (no OCR, 501 for guide endpoints).
 	GeminiAPIKey string
-	// OpenRouterAPIKey powers the Local Guide chat (see internal/openrouter,
-	// get a free key from openrouter.ai). Unset means POST /guide/chat
-	// reports itself unconfigured (501) rather than failing startup — same
-	// unconfigured convention as TomorrowIOAPIKey.
-	OpenRouterAPIKey string
 	// VendorAppURL is the base URL of the vendor Next.js app, used to build
 	// links embedded in emails (invite accept, password reset).
 	VendorAppURL string
@@ -124,7 +118,6 @@ func Load() Config {
 		GoogleCalendarAPIKey: getenv("GOOGLE_CALENDAR_API_KEY", ""),
 		TomorrowIOAPIKey:     getenv("TOMORROW_IO_API_KEY", ""),
 		GeminiAPIKey:         getenv("GEMINI_API_KEY", ""),
-		OpenRouterAPIKey:     getenv("OPENROUTER_API_KEY", ""),
 		VendorAppURL:         getenv("VENDOR_APP_URL", "http://localhost:3000"),
 		AdminAppURL:          getenv("ADMIN_APP_URL", "http://localhost:3001"),
 		SuperAdminEmails:     splitNonEmpty(getenv("SUPER_ADMIN_EMAILS", "")),

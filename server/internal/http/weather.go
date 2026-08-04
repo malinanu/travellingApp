@@ -12,21 +12,12 @@ import (
 )
 
 // handleWeather serves real conditions for the app's Discover-tab bar and
-// Weather screen. Two cache layers guard Tomorrow.io's tight free-tier
-// limit (25 req/hour, 500/day): internal/weather.Cache in memory (fast
-// path), backed by the weather_cache Postgres table (see migrations/013_
-// weather_cache.sql) so a process restart — which happens on every deploy,
-// since importsrilanka runs before the API starts — doesn't throw away a
-// still-valid cached response and force an immediate re-fetch.
+// Weather screen.
 func (s *Server) handleWeather(w http.ResponseWriter, r *http.Request) {
 	lat, latErr := strconv.ParseFloat(r.URL.Query().Get("lat"), 64)
 	lng, lngErr := strconv.ParseFloat(r.URL.Query().Get("lng"), 64)
 	if latErr != nil || lngErr != nil {
 		writeErr(w, http.StatusBadRequest, "lat and lng query params are required")
-		return
-	}
-	if s.TomorrowIOAPIKey == "" {
-		writeErr(w, http.StatusNotImplemented, "weather not configured")
 		return
 	}
 
@@ -38,14 +29,35 @@ func (s *Server) handleWeather(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, snap)
 }
 
+// handleWeatherBatch retrieves weather for multiple locations in a single API request,
+// saving network overhead and API call costs.
+func (s *Server) handleWeatherBatch(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Locations []struct {
+			ID  string  `json:"id"`
+			Lat float64 `json:"lat"`
+			Lng float64 `json:"lng"`
+		} `json:"locations"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	results := make(map[string]*weather.Snapshot)
+	for _, loc := range req.Locations {
+		snap, _, err := s.getOrFetchWeather(r.Context(), loc.Lat, loc.Lng)
+		if err == nil && snap != nil {
+			results[loc.ID] = snap
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
 // getOrFetchWeather is the single three-tier cache path shared by
 // handleWeather (live traveller requests) and the background scheduler
 // (weather_scheduler.go): in-memory cache, then the Postgres-backed cache
 // (survives a process restart, e.g. every deploy), and only then a real
-// Tomorrow.io call — so nothing bypasses the cache and burns free-tier
-// quota (25 req/hour, 500/day) on a cell that's already warm. fromCache
-// reports whether a live Tomorrow.io call was avoided, for the scheduler's
-// "warmed vs skipped" accounting.
+// Tomorrow.io or Open-Meteo call — so nothing burns quota on a cell that's
+// already warm.
 func (s *Server) getOrFetchWeather(ctx context.Context, lat, lng float64) (snap *weather.Snapshot, fromCache bool, err error) {
 	key := weather.CellKey(lat, lng)
 	if cached, ok := s.WeatherCache.Get(key); ok {

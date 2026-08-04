@@ -55,9 +55,6 @@ func (s *Server) StartWeatherScheduler(ctx context.Context) {
 }
 
 func (s *Server) runWeatherWarm(ctx context.Context) {
-	if s.TomorrowIOAPIKey == "" {
-		return // unconfigured — same graceful no-op as handleWeather
-	}
 	cells, err := s.Store.DistinctVendorCells(ctx)
 	if err != nil {
 		log.Printf("weather scheduler: list vendor cells: %v", err)

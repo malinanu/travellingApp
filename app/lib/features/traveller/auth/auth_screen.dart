@@ -9,7 +9,7 @@ import '../../../core/theme/palette.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../data/repositories/repositories.dart';
 
-enum _Mode { login, register }
+enum _Mode { login, register, forgot }
 
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
@@ -23,7 +23,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
+  bool _agreeTos = false;
   bool _busy = false;
+  bool _forgotSent = false;
   String? _error;
 
   @override
@@ -41,9 +43,49 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       _error = null;
     });
     final auth = ref.read(authProvider.notifier);
+    if (mode == _Mode.forgot) {
+      final err = await auth.forgotPassword(_email.text.trim());
+      if (!mounted) return;
+      if (err != null) {
+        setState(() {
+          _busy = false;
+          _error = err;
+        });
+        return;
+      }
+      setState(() {
+        _busy = false;
+        _forgotSent = true;
+      });
+      return;
+    }
+
     final err = mode == _Mode.login
         ? await auth.login(_email.text.trim(), _password.text)
         : await auth.register(_name.text.trim(), _email.text.trim(), _password.text);
+    if (!mounted) return;
+    if (err != null) {
+      setState(() {
+        _busy = false;
+        _error = err;
+      });
+      return;
+    }
+    final hasPrefs = ref.read(prefsProvider) != null;
+    context.go(hasPrefs ? '/t' : '/t/onboarding');
+  }
+
+  Future<void> _signInWithApple() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final err = await ref.read(authProvider.notifier).appleAuth(
+          'apple_sub_${DateTime.now().millisecondsSinceEpoch}',
+          email: _email.text.trim().isNotEmpty ? _email.text.trim() : null,
+          name: _name.text.trim().isNotEmpty ? _name.text.trim() : null,
+        );
     if (!mounted) return;
     if (err != null) {
       setState(() {
@@ -60,6 +102,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final isLogin = mode == _Mode.login;
+    final isForgot = mode == _Mode.forgot;
+
     return Scaffold(
       body: Column(
         children: [
@@ -93,27 +137,99 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(isLogin ? 'Welcome back' : 'Create your account',
-                      style: text.headlineSmall),
+                  Text(
+                    isForgot
+                        ? 'Reset password'
+                        : isLogin
+                            ? 'Welcome back'
+                            : 'Create your account',
+                    style: text.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  if (isForgot)
+                    Text(
+                      'We will email you instructions to reset your password.',
+                      style: text.bodyMedium?.copyWith(color: SpottoColors.muted),
+                    ),
                   const SizedBox(height: 16),
-                  if (!isLogin) ...[
+
+                  if (_forgotSent && isForgot) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: SpottoColors.accentTint,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        'Check your inbox — password reset link sent!',
+                        style: text.bodyMedium?.copyWith(
+                            color: SpottoColors.ink, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ] else ...[
+                    if (!isLogin && !isForgot) ...[
+                      TextField(
+                          controller: _name,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: const InputDecoration(hintText: 'Name')),
+                      const SizedBox(height: 12),
+                    ],
                     TextField(
-                        controller: _name,
-                        textCapitalization: TextCapitalization.words,
-                        decoration: const InputDecoration(hintText: 'Name')),
-                    const SizedBox(height: 12),
+                        controller: _email,
+                        keyboardType: TextInputType.emailAddress,
+                        autocorrect: false,
+                        decoration: const InputDecoration(hintText: 'Email')),
+                    if (!isForgot) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                          controller: _password,
+                          obscureText: true,
+                          onSubmitted: (_) => _submit(),
+                          decoration: const InputDecoration(hintText: 'Password')),
+                    ],
+                    if (isLogin) ...[
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => setState(() {
+                            mode = _Mode.forgot;
+                            _error = null;
+                            _forgotSent = false;
+                          }),
+                          child: Text('Forgot password?',
+                              style: text.bodySmall?.copyWith(
+                                color: SpottoColors.accent,
+                                fontWeight: FontWeight.bold,
+                              )),
+                        ),
+                      ),
+                    ],
+                    if (!isLogin && !isForgot) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: Checkbox(
+                              value: _agreeTos,
+                              onChanged: (v) => setState(() => _agreeTos = v ?? false),
+                              activeColor: SpottoColors.accent,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'I agree to the Terms of Service & Privacy Policy',
+                              style: text.bodySmall?.copyWith(color: SpottoColors.inkSoft),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
-                  TextField(
-                      controller: _email,
-                      keyboardType: TextInputType.emailAddress,
-                      autocorrect: false,
-                      decoration: const InputDecoration(hintText: 'Email')),
-                  const SizedBox(height: 12),
-                  TextField(
-                      controller: _password,
-                      obscureText: true,
-                      onSubmitted: (_) => _submit(),
-                      decoration: const InputDecoration(hintText: 'Password')),
+
                   if (_error != null) ...[
                     const SizedBox(height: 12),
                     Text(_error!,
@@ -121,28 +237,54 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                             ?.copyWith(color: const Color(0xFFB3261E))),
                   ],
                   const SizedBox(height: 20),
-                  FilledButton(
-                    onPressed: _busy ? null : _submit,
-                    child: _busy
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                        : Text(isLogin ? 'Sign in' : 'Create account'),
-                  ),
+                  if (!_forgotSent || !isForgot) ...[
+                    FilledButton(
+                      onPressed: (_busy || (!isLogin && !isForgot && !_agreeTos)) ? null : _submit,
+                      child: _busy
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : Text(isForgot
+                              ? 'Send reset link'
+                              : isLogin
+                                  ? 'Sign in'
+                                  : 'Create account'),
+                    ),
+                    if (!isForgot) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _busy ? null : _signInWithApple,
+                        icon: const Icon(Icons.apple, size: 20, color: Colors.black),
+                        label: const Text('Sign in with Apple',
+                            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          side: const BorderSide(color: Colors.black26),
+                        ),
+                      ),
+                    ],
+                  ],
                   const SizedBox(height: 20),
                   Center(
                     child: TextButton(
                       onPressed: _busy
                           ? null
                           : () => setState(() {
-                                mode = isLogin ? _Mode.register : _Mode.login;
+                                mode = isForgot
+                                    ? _Mode.login
+                                    : isLogin
+                                        ? _Mode.register
+                                        : _Mode.login;
                                 _error = null;
+                                _forgotSent = false;
                               }),
                       child: Text(
-                          isLogin
-                              ? 'New here? Create an account'
-                              : 'Have an account? Sign in',
+                          isForgot
+                              ? '← Back to sign in'
+                              : isLogin
+                                  ? 'New here? Create an account'
+                                  : 'Have an account? Sign in',
                           style: text.labelLarge
                               ?.copyWith(color: SpottoColors.accent)),
                     ),

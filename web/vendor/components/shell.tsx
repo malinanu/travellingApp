@@ -284,7 +284,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </span>
             <span className="min-w-0">
               <span className="block truncate font-extrabold text-[13px]">{business?.name ?? '…'}</span>
-              <span className="block text-[11.5px] text-muted font-semibold truncate">{business?.tier ?? ''} plan</span>
+              <span className="block text-[11px] text-accent font-extrabold truncate">
+                {business?.town ?? 'Weligama'} (Main Branch)
+              </span>
             </span>
           </Link>
         </div>

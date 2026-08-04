@@ -45,7 +45,7 @@ export default function BookingsPage() {
   const qc = useQueryClient();
   const { data: me } = useMe();
   const isStaff = me?.vendorRole === 'staff';
-  const { data: bookings = [] } = useQuery<Booking[]>({
+  const { data: bookings = [], isError, isLoading } = useQuery<Booking[]>({
     queryKey: ['vendor-bookings'],
     queryFn: () => api.get<Booking[]>('/vendor/bookings'),
   });
@@ -93,10 +93,21 @@ export default function BookingsPage() {
         Check a traveler in by scanning their BOOK-XXXX code on the Validate page — actions here cover cancellations and manual status corrections.
       </p>
 
-      <div className="space-y-2.5">
-        {visible.length === 0 && (
-          <p className="text-[13px] text-muted font-semibold py-8 text-center">No bookings in this view.</p>
-        )}
+      {isError && (
+        <div className="rounded-xl p-4 mb-4 bg-coral/10 text-coral font-bold text-[13.5px]">
+          Couldn&apos;t load bookings. Please try refreshing.
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="py-12 text-center text-muted font-semibold text-[13.5px]">
+          Loading bookings…
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {visible.length === 0 && (
+            <p className="text-[13px] text-muted font-semibold py-8 text-center">No bookings in this view.</p>
+          )}
         {visible.map((b) => {
           const Icon = TYPE_ICON[b.type] ?? Calendar;
           const tone = STATUS_TONE[b.status] ?? STATUS_TONE.confirmed;
@@ -140,6 +151,7 @@ export default function BookingsPage() {
           );
         })}
       </div>
+      )}
     </Shell>
   );
 }

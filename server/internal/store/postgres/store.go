@@ -153,6 +153,16 @@ func (s *Store) LinkUserGoogleID(ctx context.Context, userID, googleID string) e
 	return err
 }
 
+func (s *Store) GetUserByAppleID(ctx context.Context, appleID string) (domain.User, error) {
+	row := s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE apple_id = $1`, appleID)
+	return scanUser(row)
+}
+
+func (s *Store) LinkUserAppleID(ctx context.Context, userID, appleID string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE users SET apple_id=$2 WHERE id=$1`, userID, appleID)
+	return err
+}
+
 // UsersByIDs resolves group member IDs to full profiles (used to show real
 // names/emails instead of bare IDs on the trip-invite sheet). Silently
 // drops any ID that no longer matches a user rather than erroring — a
@@ -215,6 +225,18 @@ func (s *Store) UpdateUserLocation(ctx context.Context, id string, lat, lng floa
 		`UPDATE users SET lat=$2, lng=$3, location_updated_at=now() WHERE id=$1`,
 		id, lat, lng)
 	return err
+}
+
+// DeleteUser deletes a user record by ID.
+func (s *Store) DeleteUser(ctx context.Context, id string) error {
+	res, err := s.Pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // NearbyTraveller is the coarse, privacy-conscious shape returned by
@@ -633,7 +655,7 @@ func (s *Store) UserTokenVersion(ctx context.Context, id string) (int, error) {
 
 // ---- vendors ----
 
-const vendorCols = `id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng, br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at`
+const vendorCols = `id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng, br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at, google_place_id`
 
 func scanVendor(row pgx.Row) (domain.Vendor, error) {
 	var v domain.Vendor
@@ -642,7 +664,7 @@ func scanVendor(row pgx.Row) (domain.Vendor, error) {
 		&v.Priority, &v.Docs, &v.Photos, &v.WifiScore, &flags, &v.Note, &v.Tier,
 		&v.Profile, &v.Menu, &v.SubmittedAt, &v.Lat, &v.Lng,
 		&v.BRCertNumber, &v.BRCertOCRStatus, &v.BRCertVerifyStatus, &v.BRCertCompanyName,
-		&v.BRCertMessage, &v.BRCertAttempts, &v.BRCertVerifiedAt)
+		&v.BRCertMessage, &v.BRCertAttempts, &v.BRCertVerifiedAt, &v.GooglePlaceID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, ErrNotFound
 	}
@@ -663,8 +685,8 @@ func (s *Store) UpsertVendor(ctx context.Context, v domain.Vendor) error {
 	}
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO vendors (id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng,
-			br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+			br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at, google_place_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
 		ON CONFLICT (id) DO UPDATE SET
 			name=EXCLUDED.name, category=EXCLUDED.category, town=EXCLUDED.town, country=EXCLUDED.country,
 			region_id=EXCLUDED.region_id, owner=EXCLUDED.owner, status=EXCLUDED.status,
@@ -675,12 +697,12 @@ func (s *Store) UpsertVendor(ctx context.Context, v domain.Vendor) error {
 			br_cert_number=EXCLUDED.br_cert_number, br_cert_ocr_status=EXCLUDED.br_cert_ocr_status,
 			br_cert_verify_status=EXCLUDED.br_cert_verify_status, br_cert_company_name=EXCLUDED.br_cert_company_name,
 			br_cert_message=EXCLUDED.br_cert_message, br_cert_attempts=EXCLUDED.br_cert_attempts,
-			br_cert_verified_at=EXCLUDED.br_cert_verified_at`,
+			br_cert_verified_at=EXCLUDED.br_cert_verified_at, google_place_id=EXCLUDED.google_place_id`,
 		v.ID, v.Name, v.Category, v.Town, v.Country, v.RegionID, v.Owner, v.Status, v.Priority,
 		v.Docs, v.Photos, v.WifiScore, jsonb(v.Flags), v.Note, v.Tier,
 		orEmptyObj(v.Profile), orEmptyObj(v.Menu), v.SubmittedAt, v.Lat, v.Lng,
 		v.BRCertNumber, v.BRCertOCRStatus, v.BRCertVerifyStatus, v.BRCertCompanyName,
-		v.BRCertMessage, v.BRCertAttempts, v.BRCertVerifiedAt)
+		v.BRCertMessage, v.BRCertAttempts, v.BRCertVerifiedAt, v.GooglePlaceID)
 	return err
 }
 
@@ -755,7 +777,7 @@ func (s *Store) VendorsNear(ctx context.Context, lat, lng, radiusKm float64) ([]
 }
 
 func vendorColsPrefixed() string {
-	return "id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng, br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at"
+	return "id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng, br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at, google_place_id"
 }
 
 func scanVendorWithBadCount(row pgx.Row) (domain.Vendor, int, error) {
@@ -766,7 +788,7 @@ func scanVendorWithBadCount(row pgx.Row) (domain.Vendor, int, error) {
 		&v.Priority, &v.Docs, &v.Photos, &v.WifiScore, &flags, &v.Note, &v.Tier,
 		&v.Profile, &v.Menu, &v.SubmittedAt, &v.Lat, &v.Lng,
 		&v.BRCertNumber, &v.BRCertOCRStatus, &v.BRCertVerifyStatus, &v.BRCertCompanyName,
-		&v.BRCertMessage, &v.BRCertAttempts, &v.BRCertVerifiedAt, &badCount)
+		&v.BRCertMessage, &v.BRCertAttempts, &v.BRCertVerifiedAt, &v.GooglePlaceID, &badCount)
 	if err != nil {
 		return v, 0, err
 	}
@@ -2204,6 +2226,18 @@ func (s *Store) UpsertReview(ctx context.Context, rv domain.Review) error {
 	return err
 }
 
+// DeleteReview deletes a review by ID (e.g. for content moderation).
+func (s *Store) DeleteReview(ctx context.Context, id string) error {
+	res, err := s.Pool.Exec(ctx, `DELETE FROM reviews WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) ReviewsByPlace(ctx context.Context, placeID string) ([]domain.Review, error) {
 	rows, err := s.Pool.Query(ctx,
 		`SELECT `+reviewCols+reviewFrom+`WHERE r.place_id=$1 ORDER BY r.created_at DESC`, placeID)
@@ -2265,6 +2299,39 @@ func (s *Store) ReviewsByVendor(ctx context.Context, vendorID string) ([]domain.
 			return nil, err
 		}
 		out = append(out, rv)
+	}
+	return out, rows.Err()
+}
+
+// VoidClaim deletes or voids a claim record by ID for admin correction.
+func (s *Store) VoidClaim(ctx context.Context, claimID string) error {
+	res, err := s.Pool.Exec(ctx, `DELETE FROM claims WHERE id=$1`, claimID)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+
+// TripsByOwner retrieves all trips owned by a traveler.
+func (s *Store) TripsByOwner(ctx context.Context, ownerID string) ([]domain.Trip, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT name, code, start_date, collab, days FROM trips WHERE owner_id=$1 ORDER BY updated_at DESC`, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.Trip{}
+	for rows.Next() {
+		var t domain.Trip
+		t.OwnerID = ownerID
+		if err := rows.Scan(&t.Name, &t.Code, &t.StartDate, &t.Collab, &t.Days); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
 	}
 	return out, rows.Err()
 }
@@ -2778,4 +2845,99 @@ func (s *Store) CountAdminKPIBase(ctx context.Context) (pendingVendors int, live
 	}
 	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM feed_items`).Scan(&liveFeed)
 	return
+}
+
+// ---- push notification tokens ----
+
+func (s *Store) UpsertUserPushToken(ctx context.Context, token domain.UserPushToken) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO user_push_tokens (id, user_id, device_token, platform, updated_at)
+		VALUES ($1, $2, $3, $4, now())
+		ON CONFLICT (user_id, device_token) DO UPDATE SET
+			platform = EXCLUDED.platform, updated_at = now()`,
+		token.ID, token.UserID, token.DeviceToken, token.Platform,
+	)
+	return err
+}
+
+func (s *Store) DeleteUserPushToken(ctx context.Context, userID, deviceToken string) error {
+	_, err := s.Pool.Exec(ctx, `DELETE FROM user_push_tokens WHERE user_id = $1 AND device_token = $2`, userID, deviceToken)
+	return err
+}
+
+func (s *Store) UserPushTokens(ctx context.Context, userID string) ([]string, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT device_token FROM user_push_tokens WHERE user_id = $1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tokens []string
+	for rows.Next() {
+		var tok string
+		if err := rows.Scan(&tok); err == nil {
+			tokens = append(tokens, tok)
+		}
+	}
+	return tokens, nil
+}
+
+// ---- payment methods & transactions ----
+
+func (s *Store) CreatePaymentMethod(ctx context.Context, pm domain.PaymentMethod) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO payment_methods (id, user_id, brand, last4, exp_month, exp_year, holder_name, is_default, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())`,
+		pm.ID, pm.UserID, pm.Brand, pm.Last4, pm.ExpMonth, pm.ExpYear, pm.HolderName, pm.IsDefault,
+	)
+	return err
+}
+
+func (s *Store) PaymentMethodsByUser(ctx context.Context, userID string) ([]domain.PaymentMethod, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT id, user_id, brand, last4, exp_month, exp_year, holder_name, is_default, created_at
+		FROM payment_methods WHERE user_id = $1 ORDER BY is_default DESC, created_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var methods []domain.PaymentMethod
+	for rows.Next() {
+		var pm domain.PaymentMethod
+		if err := rows.Scan(&pm.ID, &pm.UserID, &pm.Brand, &pm.Last4, &pm.ExpMonth, &pm.ExpYear, &pm.HolderName, &pm.IsDefault, &pm.CreatedAt); err == nil {
+			methods = append(methods, pm)
+		}
+	}
+	return methods, nil
+}
+
+func (s *Store) DeletePaymentMethod(ctx context.Context, userID, id string) error {
+	_, err := s.Pool.Exec(ctx, `DELETE FROM payment_methods WHERE id = $1 AND user_id = $2`, id, userID)
+	return err
+}
+
+func (s *Store) SetDefaultPaymentMethod(ctx context.Context, userID, id string) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `UPDATE payment_methods SET is_default = false WHERE user_id = $1`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE payment_methods SET is_default = true WHERE id = $1 AND user_id = $2`, id, userID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) CreatePaymentTransaction(ctx context.Context, tx domain.PaymentTransaction) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO payment_transactions (id, user_id, vendor_id, amount_cents, currency, status, description, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+		tx.ID, tx.UserID, tx.VendorID, tx.AmountCents, tx.Currency, tx.Status, tx.Description,
+	)
+	return err
 }

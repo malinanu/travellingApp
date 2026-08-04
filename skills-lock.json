@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "ClickUp Automation": {
+      "source": "claude-office-skills/skills",
+      "sourceType": "github",
+      "skillPath": "clickup-automation/SKILL.md",
+      "computedHash": "f8db7f859e576262b50d8258f0a671822b3f31845b7d8d0ad9fc973e7932ec29"
+    },
     "brandkit": {
       "source": "Leonxlnx/taste-skill",
       "sourceType": "github",
@@ -54,6 +60,12 @@
       "sourceType": "github",
       "skillPath": "skills/imagegen-frontend-web/SKILL.md",
       "computedHash": "27255c7c50181e58add156b2aa2bd5325285b85f04027e4c8b73742d98d7be0a"
+    },
+    "impeccable": {
+      "source": "pbakaus/impeccable",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/impeccable/SKILL.md",
+      "computedHash": "c32e9c5477ac69855e9295c1d2a107cdaa47595408a7336ae3e9f1ea84e2e36a"
     },
     "industrial-brutalist-ui": {
       "source": "Leonxlnx/taste-skill",

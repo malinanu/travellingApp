@@ -27,7 +27,7 @@ import (
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
-	"github.com/spotto/server/internal/openrouter"
+	"github.com/spotto/server/internal/gemini"
 	"github.com/spotto/server/internal/recommend"
 )
 
@@ -55,11 +55,22 @@ Guidelines:
 - "Current weather where they are" above is only for the traveller's own location. If they ask about weather somewhere else by name (e.g. "is it going to rain in Ella today?"), call get_weather with that place name instead of guessing.`
 
 func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
-	if s.OpenRouterAPIKey == "" {
+	if s.GeminiAPIKey == "" {
 		writeErr(w, http.StatusNotImplemented, "local guide is not configured")
 		return
 	}
 	c := auth.FromContext(r.Context())
+	limitKey := c.Subject
+	if limitKey == "" {
+		limitKey = clientIP(r)
+	}
+	if s.guideLimit != nil && !s.guideLimit.allowInc(limitKey) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"error": "Local Guide rate limit exceeded — please wait a moment before sending another message",
+		})
+		return
+	}
+
 	var req struct {
 		ConversationID string  `json:"conversationId"`
 		Message        string  `json:"message"`
@@ -72,6 +83,9 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	req.Message = strings.TrimSpace(req.Message)
 	if req.Message == "" {
 		writeErr(w, http.StatusBadRequest, "message is required")
+		return
+	}
+	if !validateTextLength(w, "Message", req.Message, 1000) {
 		return
 	}
 
@@ -105,7 +119,7 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	latencyMs := int(time.Since(start).Milliseconds())
 	if err != nil {
 		status := "error"
-		if errors.Is(err, openrouter.ErrRateLimited) {
+		if errors.Is(err, gemini.ErrRateLimited) {
 			status = "rate_limited"
 		} else {
 			log.Printf("guide: chat: %v", err)
@@ -207,22 +221,22 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 		stylesText = strings.Join(styles, ", ")
 	}
 
-	messages := []openrouter.Message{
+	messages := []gemini.Message{
 		{Role: "system", Content: fmt.Sprintf(guideSystemPromptTemplate, stylesText, weatherCondition)},
 	}
 	if len(history) > guideMaxHistoryMessages {
 		history = history[len(history)-guideMaxHistoryMessages:]
 	}
 	for _, m := range history {
-		messages = append(messages, openrouter.Message{Role: m.Role, Content: m.Content})
+		messages = append(messages, gemini.Message{Role: m.Role, Content: m.Content})
 	}
-	messages = append(messages, openrouter.Message{Role: "user", Content: userMessage})
+	messages = append(messages, gemini.Message{Role: "user", Content: userMessage})
 
 	tools := guideTools()
 	var placeIDs []string
 
 	for range guideMaxToolRounds {
-		resp, err := openrouter.Complete(ctx, s.OpenRouterAPIKey, messages, tools)
+		resp, err := gemini.Complete(ctx, s.GeminiAPIKey, messages, tools)
 		if err != nil {
 			return "", nil, meta, err
 		}
@@ -237,7 +251,7 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 			if usedSemantic {
 				meta.UsedSemanticQuery = true
 			}
-			messages = append(messages, openrouter.Message{Role: "tool", ToolCallID: tc.ID, Content: result})
+			messages = append(messages, gemini.Message{Role: "tool", ToolCallID: tc.ID, Content: result})
 		}
 	}
 	return "", nil, meta, fmt.Errorf("guide: exceeded %d tool-calling rounds", guideMaxToolRounds)
@@ -273,11 +287,11 @@ func vendorCategoryIDs() []string {
 	return ids
 }
 
-func guideTools() []openrouter.Tool {
-	return []openrouter.Tool{
+func guideTools() []gemini.Tool {
+	return []gemini.Tool{
 		{
 			Type: "function",
-			Function: openrouter.ToolFunction{
+			Function: gemini.ToolFunction{
 				Name: "search_places",
 				Description: "Search for real places matching the traveller's preferences. " +
 					"Always use this before recommending specific places — never invent one.",
@@ -314,7 +328,7 @@ func guideTools() []openrouter.Tool {
 		},
 		{
 			Type: "function",
-			Function: openrouter.ToolFunction{
+			Function: gemini.ToolFunction{
 				Name:        "get_place_details",
 				Description: "Get full details for one specific place by id (blurb, hours, contact) to describe it more richly.",
 				Parameters: map[string]any{
@@ -326,7 +340,7 @@ func guideTools() []openrouter.Tool {
 		},
 		{
 			Type: "function",
-			Function: openrouter.ToolFunction{
+			Function: gemini.ToolFunction{
 				Name: "get_weather",
 				Description: "Get the current weather/rain forecast for a named place in Sri Lanka " +
 					"(town, landmark, or attraction), for when the traveller asks about somewhere other " +
@@ -347,7 +361,7 @@ func guideTools() []openrouter.Tool {
 // runGuideTool executes one tool call and returns its JSON result (fed
 // back to the model as a "tool" message), any place ids it surfaced, and
 // whether it used a free-text semantic query (search_places only).
-func (s *Server) runGuideTool(ctx context.Context, tc openrouter.ToolCall, lat, lng float64, weather string) (result string, placeIDs []string, usedSemanticQuery bool) {
+func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, lat, lng float64, weather string) (result string, placeIDs []string, usedSemanticQuery bool) {
 	switch tc.Function.Name {
 	case "search_places":
 		var args struct {
@@ -383,7 +397,7 @@ func (s *Server) runGuideTool(ctx context.Context, tc openrouter.ToolCall, lat, 
 		// same graceful-degradation convention as guideWeatherCondition.
 		var queryEmbedding []float64
 		if q := strings.TrimSpace(args.Query); q != "" {
-			if vecs, err := openrouter.Embed(ctx, s.OpenRouterAPIKey, []string{q}); err != nil {
+			if vecs, err := gemini.Embed(ctx, s.GeminiAPIKey, []string{q}); err != nil {
 				log.Printf("guide: embed query: %v", err)
 			} else {
 				queryEmbedding = vecs[0]
@@ -493,3 +507,4 @@ func dedupe(ids []string) []string {
 	}
 	return out
 }
+

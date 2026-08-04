@@ -20,6 +20,7 @@ export default function VendorPhotos({ vendorId }: { vendorId: string }) {
     queryFn: () => api.get<Media[]>('/vendor/media'),
   });
 
+  const avatar = media.find((m) => m.role === 'avatar');
   const cover = media.find((m) => m.role === 'cover');
   const gallery = media.filter((m) => m.role === 'gallery');
   const promo = media.find((m) => m.role === 'promo');
@@ -64,6 +65,19 @@ export default function VendorPhotos({ vendorId }: { vendorId: string }) {
       </div>
 
       {error && <p className="text-[13px] font-bold text-coral mb-3">{error}</p>}
+
+      {/* Avatar */}
+      <p className="text-[11.5px] font-extrabold uppercase text-muted mb-1.5">Avatar logo</p>
+      <div className="w-24 mb-4">
+        <UploadTile
+          busy={busy === 'avatar'}
+          media={avatar}
+          onPick={(f) => upload(f, 'avatar', 'image')}
+          onRemove={avatar ? () => remove.mutate(avatar.id) : undefined}
+          accept="image/*"
+          aspect="aspect-square"
+        />
+      </div>
 
       {/* Cover */}
       <p className="text-[11.5px] font-extrabold uppercase text-muted mb-1.5">Cover photo</p>

@@ -11,7 +11,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/spotto/server/internal/openrouter"
+	"github.com/spotto/server/internal/gemini"
 	"github.com/spotto/server/internal/recommend"
 )
 
@@ -20,7 +20,7 @@ import (
 // appear), so this paces gently against the free-tier embedding model's
 // rate limits. Deliberately wide: OpenRouter's free (":free") models share
 // one account-wide daily cap (50/day unfunded, 1000/day after a one-time
-// $10 credit purchase — see openrouter.ai's rate-limit docs), and that
+// $10 credit purchase — see gemini.ai's rate-limit docs), and that
 // budget also has to cover live chat traffic from Local Guide itself. At
 // 30s this worker alone could burn most of an unfunded day's quota in the
 // ~20 minutes it takes to back through a few hundred places, right after
@@ -48,7 +48,7 @@ func (s *Server) StartEmbeddingWorker(ctx context.Context) {
 }
 
 func (s *Server) runEmbeddingSweep(ctx context.Context) {
-	if s.OpenRouterAPIKey == "" {
+	if s.GeminiAPIKey == "" {
 		return // local guide unconfigured
 	}
 	places, err := s.Store.PlacesMissingEmbedding(ctx, embeddingBatchSize)
@@ -65,7 +65,7 @@ func (s *Server) runEmbeddingSweep(ctx context.Context) {
 		texts[i] = recommend.SummarizeForEmbedding(p)
 	}
 
-	embeddings, err := openrouter.Embed(ctx, s.OpenRouterAPIKey, texts)
+	embeddings, err := gemini.Embed(ctx, s.GeminiAPIKey, texts)
 	if err != nil {
 		// Transient (rate limit/network) — left NULL, picked up again next
 		// tick, same as the thumbnail worker's transient-failure handling.
@@ -83,3 +83,4 @@ func (s *Server) runEmbeddingSweep(ctx context.Context) {
 	}
 	log.Printf("embedding worker: %d/%d places embedded", done, len(places))
 }
+

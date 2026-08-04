@@ -1,21 +1,19 @@
-// Package weather fetches real conditions from Tomorrow.io for the app's
-// Weather screen and Discover-tab bar. See internal/http/weather.go for the
-// caching HTTP handler that wraps Fetch — this package is just the API call
-// and response shaping, no caching of its own.
+// Package weather fetches real conditions from Tomorrow.io or Open-Meteo for the
+// app's Weather screen and Discover-tab bar. See internal/http/weather.go for
+// the caching HTTP handler that wraps Fetch.
 package weather
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"time"
 )
 
-// HourlyPoint is one hour of forecast, already unit-converted and with a
-// weatherCode reduced to the app's existing three-icon vocabulary (see
-// conditionFor) — the Flutter client needs no Tomorrow.io-specific mapping.
+// HourlyPoint is one hour of forecast.
 type HourlyPoint struct {
 	Time              time.Time `json:"time"`
 	Temp              float64   `json:"temp"`
@@ -29,8 +27,7 @@ type HourlyPoint struct {
 	CloudCoverPct     int       `json:"cloudCover"`
 }
 
-// Now is the first hourly entry, plus a couple of fields only meaningful as
-// a live snapshot (feels-like, pressure, visibility) rather than per-hour.
+// Now is current conditions.
 type Now struct {
 	Temp              float64 `json:"temp"`
 	FeelsLike         float64 `json:"feelsLike"`
@@ -58,9 +55,6 @@ type Snapshot struct {
 	FetchedAt time.Time     `json:"fetchedAt"`
 }
 
-// tomorrowResponse mirrors only the fields of Tomorrow.io's v4 forecast
-// response (https://api.tomorrow.io/v4/weather/forecast) that Snapshot
-// needs — see https://docs.tomorrow.io/reference/weather-forecast.
 type tomorrowResponse struct {
 	Timelines struct {
 		Hourly []struct {
@@ -69,13 +63,13 @@ type tomorrowResponse struct {
 				Temperature              float64 `json:"temperature"`
 				TemperatureApparent      float64 `json:"temperatureApparent"`
 				Humidity                 float64 `json:"humidity"`
-				WindSpeed                float64 `json:"windSpeed"` // m/s
+				WindSpeed                float64 `json:"windSpeed"`
 				WindDirection            float64 `json:"windDirection"`
 				UVIndex                  float64 `json:"uvIndex"`
 				Visibility               float64 `json:"visibility"`
 				PressureSurfaceLevel     float64 `json:"pressureSurfaceLevel"`
 				PrecipitationProbability float64 `json:"precipitationProbability"`
-				PrecipitationIntensity   float64 `json:"precipitationIntensity"` // mm/hr
+				PrecipitationIntensity   float64 `json:"precipitationIntensity"`
 				CloudCover               float64 `json:"cloudCover"`
 				WeatherCode              int     `json:"weatherCode"`
 			} `json:"values"`
@@ -92,11 +86,51 @@ type tomorrowResponse struct {
 	} `json:"timelines"`
 }
 
-// Fetch calls Tomorrow.io's forecast endpoint once and shapes the result
-// into a Snapshot — current conditions (the first hourly entry), the next
-// 24 hours, and today's high/low/sunrise/sunset (from the first daily
-// entry), so a single request covers everything the app needs.
+type openMeteoResponse struct {
+	Current struct {
+		Time                string  `json:"time"`
+		Temperature2m       float64 `json:"temperature_2m"`
+		ApparentTemperature float64 `json:"apparent_temperature"`
+		RelativeHumidity2m  int     `json:"relative_humidity_2m"`
+		WindSpeed10m        float64 `json:"wind_speed_10m"`
+		WindDirection10m    int     `json:"wind_direction_10m"`
+		Precipitation       float64 `json:"precipitation"`
+		CloudCover          int     `json:"cloud_cover"`
+		PressureMsl         float64 `json:"pressure_msl"`
+		WeatherCode         int     `json:"weather_code"`
+	} `json:"current"`
+	Hourly struct {
+		Time                     []string  `json:"time"`
+		Temperature2m            []float64 `json:"temperature_2m"`
+		PrecipitationProbability []int     `json:"precipitation_probability"`
+		Precipitation            []float64 `json:"precipitation"`
+		WeatherCode              []int     `json:"weather_code"`
+		CloudCover               []int     `json:"cloud_cover"`
+		WindSpeed10m             []float64 `json:"wind_speed_10m"`
+		UVIndex                  []float64 `json:"uv_index"`
+	} `json:"hourly"`
+	Daily struct {
+		Temperature2mMax []float64 `json:"temperature_2m_max"`
+		Temperature2mMin []float64 `json:"temperature_2m_min"`
+		Sunrise          []string  `json:"sunrise"`
+		Sunset           []string  `json:"sunset"`
+	} `json:"daily"`
+}
+
+/// Fetch retrieves weather forecast. Tries Tomorrow.io if apiKey is set, otherwise
+/// or on failure, falls back to Open-Meteo API (100% free, 0 API key required).
 func Fetch(ctx context.Context, apiKey string, lat, lng float64) (*Snapshot, error) {
+	if apiKey != "" {
+		snap, err := fetchTomorrow(ctx, apiKey, lat, lng)
+		if err == nil {
+			return snap, nil
+		}
+		log.Printf("weather: Tomorrow.io failed (%v), falling back to Open-Meteo for (%f,%f)", err, lat, lng)
+	}
+	return FetchOpenMeteo(ctx, lat, lng)
+}
+
+func fetchTomorrow(ctx context.Context, apiKey string, lat, lng float64) (*Snapshot, error) {
 	q := url.Values{
 		"location":  {fmt.Sprintf("%f,%f", lat, lng)},
 		"timesteps": {"1h,1d"},
@@ -105,9 +139,6 @@ func Fetch(ctx context.Context, apiKey string, lat, lng float64) (*Snapshot, err
 	}
 	reqURL := "https://api.tomorrow.io/v4/weather/forecast?" + q.Encode()
 
-	// Bounded independently of the caller's own context — a slow/hanging
-	// Tomorrow.io response shouldn't be able to hold this goroutine open
-	// indefinitely just because the request's context has no deadline.
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 
@@ -121,12 +152,12 @@ func Fetch(ctx context.Context, apiKey string, lat, lng float64) (*Snapshot, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("tomorrow.io: unexpected status %d", res.StatusCode)
+		return nil, fmt.Errorf("tomorrow.io: status %d", res.StatusCode)
 	}
 
 	var parsed tomorrowResponse
 	if err := json.NewDecoder(res.Body).Decode(&parsed); err != nil {
-		return nil, fmt.Errorf("tomorrow.io: decode response: %w", err)
+		return nil, fmt.Errorf("tomorrow.io: decode: %w", err)
 	}
 	if len(parsed.Timelines.Hourly) == 0 {
 		return nil, fmt.Errorf("tomorrow.io: empty hourly timeline")
@@ -183,11 +214,141 @@ func Fetch(ctx context.Context, apiKey string, lat, lng float64) (*Snapshot, err
 	return snap, nil
 }
 
-// conditionFor reduces Tomorrow.io's ~30 weather codes
-// (https://docs.tomorrow.io/reference/data-layers-weather-codes) to the
-// app's existing 3-icon vocabulary (Sun/CloudSun/CloudRain already exist in
-// app/lib/core/widgets/spotto_icons.dart) so the client needs no new icon
-// map — only the human label is kept from the finer-grained code.
+/// FetchOpenMeteo fetches real weather from Open-Meteo API (100% free, no API key required).
+func FetchOpenMeteo(ctx context.Context, lat, lng float64) (*Snapshot, error) {
+	reqURL := fmt.Sprintf(
+		"https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f"+
+			"&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m"+
+			"&hourly=temperature_2m,precipitation_probability,precipitation,weather_code,cloud_cover,wind_speed_10m,uv_index"+
+			"&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset"+
+			"&timezone=Asia%%2FColombo&forecast_days=2",
+		lat, lng,
+	)
+
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("open-meteo: status %d", res.StatusCode)
+	}
+
+	var parsed openMeteoResponse
+	if err := json.NewDecoder(res.Body).Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("open-meteo: decode: %w", err)
+	}
+
+	c := parsed.Current
+	condition, label, icon := conditionForWMO(c.WeatherCode)
+	now := Now{
+		Temp:              c.Temperature2m,
+		FeelsLike:         c.ApparentTemperature,
+		Humidity:          c.RelativeHumidity2m,
+		WindSpeedKmh:      c.WindSpeed10m,
+		WindDirection:     c.WindDirection10m,
+		UVIndex:           5.0,
+		VisibilityKm:      10.0,
+		PressureHpa:       c.PressureMsl,
+		PrecipProbability: int(c.Precipitation * 10),
+		CloudCoverPct:     c.CloudCover,
+		Condition:         condition,
+		ConditionLabel:    label,
+		Icon:              icon,
+	}
+	if len(parsed.Hourly.UVIndex) > 0 {
+		now.UVIndex = parsed.Hourly.UVIndex[0]
+	}
+
+	hourly := make([]HourlyPoint, 0, 24)
+	for i := 0; i < len(parsed.Hourly.Time) && i < 24; i++ {
+		t, _ := time.Parse("2006-01-02T15:04", parsed.Hourly.Time[i])
+		code := parsed.Hourly.WeatherCode[i]
+		hCond, hLabel, hIcon := conditionForWMO(code)
+		precipProb := 0
+		if i < len(parsed.Hourly.PrecipitationProbability) {
+			precipProb = parsed.Hourly.PrecipitationProbability[i]
+		}
+		uv := 0.0
+		if i < len(parsed.Hourly.UVIndex) {
+			uv = parsed.Hourly.UVIndex[i]
+		}
+		precipMm := 0.0
+		if i < len(parsed.Hourly.Precipitation) {
+			precipMm = parsed.Hourly.Precipitation[i]
+		}
+		windSpeed := 0.0
+		if i < len(parsed.Hourly.WindSpeed10m) {
+			windSpeed = parsed.Hourly.WindSpeed10m[i]
+		}
+		cloudCover := 0
+		if i < len(parsed.Hourly.CloudCover) {
+			cloudCover = parsed.Hourly.CloudCover[i]
+		}
+		temp := 0.0
+		if i < len(parsed.Hourly.Temperature2m) {
+			temp = parsed.Hourly.Temperature2m[i]
+		}
+
+		hourly = append(hourly, HourlyPoint{
+			Time:              t,
+			Temp:              temp,
+			Condition:         hCond,
+			ConditionLabel:    hLabel,
+			Icon:              hIcon,
+			PrecipProbability: precipProb,
+			PrecipMm:          precipMm,
+			WindSpeedKmh:      windSpeed,
+			UVIndex:           uv,
+			CloudCoverPct:     cloudCover,
+		})
+	}
+
+	snap := &Snapshot{Now: now, Hourly: hourly, FetchedAt: time.Now()}
+	if len(parsed.Daily.Temperature2mMax) > 0 {
+		snap.High = parsed.Daily.Temperature2mMax[0]
+		snap.Low = parsed.Daily.Temperature2mMin[0]
+	}
+	if len(parsed.Daily.Sunrise) > 0 {
+		snap.Sunrise, _ = time.Parse("2006-01-02T15:04", parsed.Daily.Sunrise[0])
+	}
+	if len(parsed.Daily.Sunset) > 0 {
+		snap.Sunset, _ = time.Parse("2006-01-02T15:04", parsed.Daily.Sunset[0])
+	}
+
+	return snap, nil
+}
+
+func conditionForWMO(code int) (condition, label, icon string) {
+	switch code {
+	case 0:
+		return "sunny", "Clear", "Sun"
+	case 1:
+		return "sunny", "Mainly Clear", "Sun"
+	case 2:
+		return "cloudy", "Partly Cloudy", "CloudSun"
+	case 3:
+		return "cloudy", "Overcast", "CloudSun"
+	case 45, 48:
+		return "cloudy", "Foggy", "CloudSun"
+	case 51, 53, 55:
+		return "rainy", "Drizzle", "CloudRain"
+	case 61, 63, 65, 80, 81, 82:
+		return "rainy", "Rain", "CloudRain"
+	case 95, 96, 99:
+		return "rainy", "Thunderstorm", "CloudRain"
+	default:
+		return "cloudy", "Partly Cloudy", "CloudSun"
+	}
+}
+
 func conditionFor(code int) (condition, label, icon string) {
 	switch code {
 	case 1000:

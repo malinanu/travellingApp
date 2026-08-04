@@ -1,6 +1,9 @@
 package httpapi
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestClampVibe(t *testing.T) {
 	ptr := func(f float64) *float64 { return &f }
@@ -26,3 +29,19 @@ func TestClampVibe(t *testing.T) {
 		})
 	}
 }
+
+func TestGuideRateLimiting(t *testing.T) {
+	limiter := newRateLimiter(3, 1*time.Minute)
+	key := "user_test_123"
+
+	for i := 1; i <= 3; i++ {
+		if !limiter.allowInc(key) {
+			t.Errorf("request %d should be allowed", i)
+		}
+	}
+
+	if limiter.allowInc(key) {
+		t.Errorf("request 4 should be rate limited")
+	}
+}
+

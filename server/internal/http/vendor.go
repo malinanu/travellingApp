@@ -632,11 +632,21 @@ func formatHourLabel(hhmm string) string {
 	return t.Format("3:04 PM")
 }
 
-// isOpenNow does a naive same-day/overnight comparison of the current
-// local time against open/close — there's no vendor timezone tracked
-// anywhere else in this app either, so this matches existing precision.
+var sriLankaLocation *time.Location
+
+func init() {
+	loc, err := time.LoadLocation("Asia/Colombo")
+	if err == nil {
+		sriLankaLocation = loc
+	} else {
+		sriLankaLocation = time.FixedZone("Asia/Colombo", 5*3600+1800)
+	}
+}
+
+// isOpenNow compares the current vendor local time (Asia/Colombo UTC+5:30)
+// against open/close hours.
 func isOpenNow(open, close string) bool {
-	now := time.Now().Format("15:04")
+	now := time.Now().In(sriLankaLocation).Format("15:04")
 	if close > open {
 		return now >= open && now < close
 	}
@@ -656,6 +666,11 @@ func weekdayKey(t time.Time) string { return weekdayKeys[t.Weekday()] }
 // vendorProfileDoc.HolidayOverrides), otherwise today's weekday entry in
 // Hours is used (or "closed today" if absent/marked closed).
 func todayHoursAndOpenNow(profile vendorProfileDoc, now time.Time) (string, bool) {
+	if now.IsZero() {
+		now = time.Now().In(sriLankaLocation)
+	} else {
+		now = now.In(sriLankaLocation)
+	}
 	todayDate := now.Format("2006-01-02")
 	for _, ov := range profile.HolidayOverrides {
 		if ov.Date == todayDate && ov.Closed {
@@ -707,6 +722,15 @@ func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
 	data["lng"] = v.Lng
 	data["type"] = categoryLabel(v.Category)
 	data["categoryId"] = v.Category
+
+	// Propagate the vendor's Google Place ID into the place's JSONB so
+	// that enrichWithPlaceDetails (traveller.go) can look up live phone/
+	// website/accessibility data for vendor-registered places, not just
+	// the importsrilanka-seeded ones.
+	if v.GooglePlaceID != nil && *v.GooglePlaceID != "" {
+		data["source"] = "google_places"
+		data["sourceId"] = *v.GooglePlaceID
+	}
 
 	if headline != nil {
 		data["deal"] = map[string]any{

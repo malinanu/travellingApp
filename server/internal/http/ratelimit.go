@@ -118,3 +118,56 @@ func clientIP(r *http.Request) string {
 func writeTooManyRequests(w http.ResponseWriter) {
 	writeErr(w, http.StatusTooManyRequests, "too many attempts — try again later")
 }
+
+type rateLimiter struct {
+	mu       sync.Mutex
+	requests map[string]*requestWindow
+	max      int
+	window   time.Duration
+}
+
+type requestWindow struct {
+	count   int
+	resetAt time.Time
+}
+
+func newRateLimiter(max int, window time.Duration) *rateLimiter {
+	l := &rateLimiter{requests: make(map[string]*requestWindow), max: max, window: window}
+	go l.cleanupLoop()
+	return l
+}
+
+func (l *rateLimiter) allowInc(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	w, ok := l.requests[key]
+	if !ok || now.After(w.resetAt) {
+		l.requests[key] = &requestWindow{
+			count:   1,
+			resetAt: now.Add(l.window),
+		}
+		return true
+	}
+	if w.count >= l.max {
+		return false
+	}
+	w.count++
+	return true
+}
+
+func (l *rateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		l.mu.Lock()
+		now := time.Now()
+		for k, w := range l.requests {
+			if now.After(w.resetAt) {
+				delete(l.requests, k)
+			}
+		}
+		l.mu.Unlock()
+	}
+}
+

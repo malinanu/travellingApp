@@ -128,26 +128,105 @@ class TripDay {
       );
 }
 
+/// A saved social-inspiration link attached to a trip.
+/// Supports Instagram, TikTok, YouTube, and any generic website URL.
+class InspirationLink {
+  final String id;
+  final String url;
+  final String title; // user-entered label (auto-extracted from hostname on add)
+  final String platform; // 'instagram' | 'tiktok' | 'youtube' | 'web'
+  final String note; // optional personal note
+  final String addedAt; // ISO-8601
+  const InspirationLink({
+    required this.id,
+    required this.url,
+    required this.title,
+    required this.platform,
+    this.note = '',
+    required this.addedAt,
+  });
+
+  InspirationLink copyWith({String? note, String? title}) => InspirationLink(
+        id: id,
+        url: url,
+        title: title ?? this.title,
+        platform: platform,
+        note: note ?? this.note,
+        addedAt: addedAt,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'url': url,
+        'title': title,
+        'platform': platform,
+        'note': note,
+        'addedAt': addedAt,
+      };
+
+  factory InspirationLink.fromJson(Map<String, dynamic> json) => InspirationLink(
+        id: json['id'] as String,
+        url: json['url'] as String,
+        title: json['title'] as String? ?? '',
+        platform: json['platform'] as String? ?? 'web',
+        note: json['note'] as String? ?? '',
+        addedAt: json['addedAt'] as String? ?? '',
+      );
+
+  /// Infer the platform from the URL hostname.
+  static String platformOf(String url) {
+    final lower = url.toLowerCase();
+    if (lower.contains('instagram.com')) return 'instagram';
+    if (lower.contains('tiktok.com')) return 'tiktok';
+    if (lower.contains('youtube.com') || lower.contains('youtu.be')) return 'youtube';
+    return 'web';
+  }
+
+  /// Extract a display title from the URL hostname.
+  static String titleOf(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final host = uri.host.replaceFirst('www.', '');
+      if (host.contains('instagram.com')) return 'Instagram post';
+      if (host.contains('tiktok.com')) return 'TikTok video';
+      if (host.contains('youtube.com') || host.contains('youtu.be')) return 'YouTube video';
+      return host.isNotEmpty ? host : url;
+    } catch (_) {
+      return url;
+    }
+  }
+}
+
 class Trip {
   final String name;
   final String code;
   final String startDate; // yyyy-MM-dd
   final List<String> collaborators;
   final List<TripDay> days;
+  final List<InspirationLink> inspirations;
   const Trip({
     required this.name,
     required this.code,
     required this.startDate,
     required this.collaborators,
     required this.days,
+    this.inspirations = const [],
   });
 
-  Trip copyWith({String? name, String? startDate, List<String>? collaborators, List<TripDay>? days}) => Trip(
+  Trip copyWith({
+    String? name,
+    String? startDate,
+    List<String>? collaborators,
+    List<TripDay>? days,
+    List<InspirationLink>? inspirations,
+  }) =>
+      Trip(
         name: name ?? this.name,
         code: code,
         startDate: startDate ?? this.startDate,
         collaborators: collaborators ?? this.collaborators,
         days: days ?? this.days,
+        inspirations: inspirations ?? this.inspirations,
       );
 
   Map<String, dynamic> toJson() => {
@@ -156,6 +235,7 @@ class Trip {
         'startDate': startDate,
         'collaborators': collaborators,
         'days': days.map((d) => d.toJson()).toList(),
+        'inspirations': inspirations.map((l) => l.toJson()).toList(),
       };
   factory Trip.fromJson(Map<String, dynamic> json) => Trip(
         name: json['name'] as String,
@@ -163,6 +243,11 @@ class Trip {
         startDate: json['startDate'] as String,
         collaborators: (json['collaborators'] as List).cast<String>(),
         days: (json['days'] as List).map((d) => TripDay.fromJson(d as Map<String, dynamic>)).toList(),
+        inspirations: json['inspirations'] == null
+            ? const []
+            : (json['inspirations'] as List)
+                .map((l) => InspirationLink.fromJson(l as Map<String, dynamic>))
+                .toList(),
       );
 }
 

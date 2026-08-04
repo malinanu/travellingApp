@@ -178,6 +178,7 @@ function LoginPageInner() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
+  const [agreeTos, setAgreeTos] = useState(false);
 
   const [name, setName] = useState('');
   const [businessName, setBusinessName] = useState('');
@@ -197,6 +198,7 @@ function LoginPageInner() {
   const [businessContact, setBusinessContact] = useState<{ phone: string; website: string } | null>(null);
   const [businessHours, setBusinessHours] = useState<Record<string, { open: string; close: string }> | null>(null);
   const [businessCountry, setBusinessCountry] = useState('');
+  const [googlePlaceId, setGooglePlaceId] = useState('');
   const [skippedSearch, setSkippedSearch] = useState(false);
   const businessSearchInputRef = useRef<HTMLInputElement>(null);
   const mapDivRef = useRef<HTMLDivElement>(null);
@@ -280,7 +282,7 @@ function LoginPageInner() {
       const { Autocomplete } = await g.maps.importLibrary('places') as google.maps.PlacesLibrary;
       autocomplete = new Autocomplete(businessSearchInputRef.current, {
         fields: [
-          'name', 'formatted_address', 'address_components',
+          'place_id', 'name', 'formatted_address', 'address_components',
           'international_phone_number', 'website', 'geometry', 'opening_hours', 'types',
         ],
         componentRestrictions: { country: 'lk' },
@@ -306,6 +308,7 @@ function LoginPageInner() {
             : null,
         );
         setBusinessHours(hoursFromLegacyPeriods(place.opening_hours?.periods));
+        setGooglePlaceId(place.place_id ?? '');
 
         if (mapDivRef.current) {
           const map = new g.maps.Map(mapDivRef.current, {
@@ -367,6 +370,7 @@ function LoginPageInner() {
         ...(businessContact ? { contact: businessContact } : {}),
         ...(businessHours ? { hours: businessHours } : {}),
         ...(businessCountry ? { businessCountry } : {}),
+        ...(googlePlaceId ? { googlePlaceId } : {}),
       });
       if (isTwoFactorRequired(res)) {
         setTwoFactorToken(res.twoFactorToken);
@@ -673,6 +677,12 @@ function LoginPageInner() {
                 placeholder="One or two lines on what makes it special…"
                 className="w-full rounded-2xl px-3.5 py-3 bg-white border-[1.5px] border-line outline-none text-[15px] font-bold resize-none text-ink" />
             </label>
+            <label className="flex items-start gap-2.5 mt-4 cursor-pointer">
+              <input type="checkbox" checked={agreeTos} onChange={(e) => setAgreeTos(e.target.checked)} className="mt-0.5 rounded border-line accent-accent w-4 h-4" />
+              <span className="text-[13px] text-muted font-semibold">
+                I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-accent underline font-extrabold">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-accent underline font-extrabold">Privacy Policy</a>.
+              </span>
+            </label>
           </div>
         )}
 
@@ -687,7 +697,7 @@ function LoginPageInner() {
           )}
           <div className="flex-1">
             <Primary
-              disabled={busy || (registerStep === 1 && (!name || !email || password.length < 10)) || (registerStep === 2 && !businessName)}
+              disabled={busy || (registerStep === 1 && (!name || !email || password.length < 10)) || (registerStep === 2 && !businessName) || (registerStep === 3 && !agreeTos)}
               icon={busy ? null : registerStep === 3 ? Check : ArrowRight}
               onClick={() => (registerStep === 3 ? submitRegister() : setRegisterStep((s) => s + 1))}
             >

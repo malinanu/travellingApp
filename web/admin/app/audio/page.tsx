@@ -128,6 +128,9 @@ function NewGuideDrawer({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        <label className="block text-[13px] font-bold mb-1.5">Audio file (MP3 / WAV)</label>
+        <input className="input mb-4" type="file" accept="audio/*" />
+
         <label className="block text-[13px] font-bold mb-1.5">Depths</label>
         <div className="space-y-2 mb-5">
           {DEPTHS.map((d) => {

@@ -349,6 +349,14 @@ function VendorMonitor({
       )}
 
       <div className="flex gap-3 mt-6">
+        <a
+          href={`http://localhost:3002/dashboard?impersonate=${vendor.id}`}
+          target="_blank"
+          rel="noreferrer"
+          className="btn py-2.5 flex items-center justify-center gap-2 text-accent font-extrabold"
+        >
+          <Eye size={16} /> View as vendor
+        </a>
         {vendor.status === 'pending' || vendor.status === 'edits' ? (
           <>
             <button className="btn btn-primary flex-1 py-2.5 flex items-center justify-center gap-2"
@@ -485,10 +493,17 @@ function OverviewTab({ vendor, stats }: { vendor: Vendor; stats?: AdminVendorSta
 }
 
 function ReviewsTab({ vendorId }: { vendorId: string }) {
+  const qc = useQueryClient();
   const { data: reviews = [], isError, isLoading } = useQuery<Review[]>({
     queryKey: ['admin-vendor-reviews', vendorId],
     queryFn: () => api.get<Review[]>(`/admin/vendors/${vendorId}/reviews?all=1`),
   });
+
+  const deleteReview = useMutation({
+    mutationFn: (id: string) => api.del(`/admin/reviews/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-vendor-reviews', vendorId] }),
+  });
+
   if (isError) return <InlineErrorBanner message="Couldn't load reviews." />;
   if (isLoading) return <TabEmpty label="Loading reviews…" />;
   if (reviews.length === 0) return <TabEmpty label="No reviews yet." />;
@@ -513,10 +528,20 @@ function ReviewsTab({ vendorId }: { vendorId: string }) {
           <div key={rv.id} className="rounded-xl p-3.5" style={{ background: 'var(--bg)', border: '1px solid var(--line)' }}>
             <div className="flex items-center justify-between">
               <p className="font-bold text-[13px]">{rv.travellerName || 'Traveller'}</p>
-              <span className="flex items-center gap-0.5 text-[12.5px] font-bold"
-                style={{ color: rv.rating <= 2 ? '#e11d48' : '#a97b00' }}>
-                {rv.rating}<Star size={12} />
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-0.5 text-[12.5px] font-bold"
+                  style={{ color: rv.rating <= 2 ? '#e11d48' : '#a97b00' }}>
+                  {rv.rating}<Star size={12} />
+                </span>
+                <button
+                  onClick={() => deleteReview.mutate(rv.id)}
+                  disabled={deleteReview.isPending}
+                  className="p-1 hover:text-coral transition-colors text-muted"
+                  aria-label="Delete review"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             </div>
             {rv.text && <p className="text-[13px] font-medium mt-1 leading-relaxed">{rv.text}</p>}
             <p className="text-[11px] text-muted font-semibold mt-1">{timeAgo(rv.createdAt)}</p>
@@ -565,10 +590,17 @@ function OffersTab({ vendorId }: { vendorId: string }) {
 }
 
 function ActivityTab({ vendorId, stats }: { vendorId: string; stats?: AdminVendorStats }) {
+  const qc = useQueryClient();
   const { data: claims = [], isError, isLoading } = useQuery<Claim[]>({
     queryKey: ['admin-vendor-redemptions', vendorId],
     queryFn: () => api.get<Claim[]>(`/admin/vendors/${vendorId}/redemptions`),
   });
+
+  const voidClaim = useMutation({
+    mutationFn: (id: string) => api.post(`/admin/claims/${id}/void`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-vendor-redemptions', vendorId] }),
+  });
+
   return (
     <>
       <div className="grid grid-cols-3 gap-3 mb-4">
@@ -588,7 +620,16 @@ function ActivityTab({ vendorId, stats }: { vendorId: string; stats?: AdminVendo
                 {c.travellerCountry ? <span className="text-muted font-semibold"> · {c.travellerCountry}</span> : null}</p>
               <p className="text-[11.5px] text-muted font-semibold">{c.offerLabel || c.code}</p>
             </div>
-            <p className="text-[11.5px] text-muted font-semibold">{c.redeemedAt ? timeAgo(c.redeemedAt) : ''}</p>
+            <div className="flex items-center gap-3">
+              <p className="text-[11.5px] text-muted font-semibold">{c.redeemedAt ? timeAgo(c.redeemedAt) : ''}</p>
+              <button
+                onClick={() => voidClaim.mutate(c.id)}
+                disabled={voidClaim.isPending}
+                className="text-[11px] font-extrabold text-coral border border-coral/30 hover:bg-coral/10 rounded-lg px-2 py-1 transition-colors"
+              >
+                Void
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -747,7 +788,10 @@ function EditForm({ vendor, onDone, onSaved }: { vendor: Vendor; onDone: () => v
     <div className="mt-5 rounded-xl p-4" style={{ background: 'var(--bg)', border: '1px solid var(--line)' }}>
       <p className="text-[11.5px] font-bold text-muted uppercase mb-3">Admin edit — applies immediately, even for suspended vendors</p>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Name"><input className={input} style={inputStyle} value={f.name} onChange={(e) => set('name', e.target.value)} onBlur={autoSave.flush} /></Field>
+        <Field label="Name">
+          <input className={input} style={inputStyle} value={f.name} onChange={(e) => set('name', e.target.value)} onBlur={autoSave.flush} />
+          {!f.name.trim() && <span className="text-[11px] font-extrabold text-coral mt-1 block">Name is required</span>}
+        </Field>
         <Field label="Category">
           <select className={input} style={inputStyle} value={f.category} onChange={(e) => { set('category', e.target.value); autoSave.flush(); }}>
             {VENDOR_SEGMENTS.map((segment) => (
@@ -764,7 +808,10 @@ function EditForm({ vendor, onDone, onSaved }: { vendor: Vendor; onDone: () => v
               : 'Live vibe: no check-ins yet'}
           </span>
         </Field>
-        <Field label="Town"><input className={input} style={inputStyle} value={f.town} onChange={(e) => set('town', e.target.value)} onBlur={autoSave.flush} /></Field>
+        <Field label="Town">
+          <input className={input} style={inputStyle} value={f.town} onChange={(e) => set('town', e.target.value)} onBlur={autoSave.flush} />
+          {!f.town.trim() && <span className="text-[11px] font-extrabold text-coral mt-1 block">Town is required</span>}
+        </Field>
         <Field label="Country"><input className={input} style={inputStyle} value={f.country} onChange={(e) => set('country', e.target.value)} onBlur={autoSave.flush} /></Field>
         <Field label="Priority">
           <select className={input} style={inputStyle} value={f.priority} onChange={(e) => set('priority', e.target.value)}>

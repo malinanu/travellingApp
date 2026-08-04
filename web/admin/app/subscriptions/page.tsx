@@ -20,7 +20,7 @@ const STATE_STYLE: Record<string, string> = {
 export default function SubscriptionsPage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<(typeof STATE_TABS)[number]>('all');
-  const { data: subs = [], isError } = useQuery<Subscription[]>({
+  const { data: subs = [], isError, isLoading } = useQuery<Subscription[]>({
     queryKey: ['admin-subs'],
     queryFn: () => api.get<Subscription[]>('/admin/subscriptions'),
   });

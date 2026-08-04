@@ -182,19 +182,29 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 		}
 		p.Data = enrichedData
 
+		// Extract the Google Place ID from the spot's data (if present) and
+		// write it into the vendor row's first-class column so that
+		// enrichWithPlaceDetails can look up live details without fishing
+		// it out of the JSONB blob at runtime.
+		var googlePlaceID *string
+		if sid, ok := data["sourceId"].(string); ok && sid != "" {
+			googlePlaceID = &sid
+		}
+
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO vendors (id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+			INSERT INTO vendors (id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng, google_place_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 			ON CONFLICT (id) DO UPDATE SET
 				name=EXCLUDED.name, category=EXCLUDED.category, town=EXCLUDED.town, country=EXCLUDED.country,
 				region_id=EXCLUDED.region_id, owner=EXCLUDED.owner, status=EXCLUDED.status,
 				priority=EXCLUDED.priority, docs=EXCLUDED.docs, photos=EXCLUDED.photos,
 				wifi_score=EXCLUDED.wifi_score, flags=EXCLUDED.flags, note=EXCLUDED.note,
 				tier=EXCLUDED.tier, profile=EXCLUDED.profile, menu=EXCLUDED.menu,
-				submitted_at=EXCLUDED.submitted_at, lat=EXCLUDED.lat, lng=EXCLUDED.lng`,
+				submitted_at=EXCLUDED.submitted_at, lat=EXCLUDED.lat, lng=EXCLUDED.lng,
+				google_place_id=EXCLUDED.google_place_id`,
 			vendorID, p.Name+" Vendor", category, region.Name, "LK", ptr(region.ID), "Admin",
 			domain.VendorApproved, "normal", true, 0, nil, []byte(`[]`), "", "Premium",
-			[]byte(`{}`), []byte(`{}`), now.AddDate(0, -1, 0), lat, lng,
+			[]byte(`{}`), []byte(`{}`), now.AddDate(0, -1, 0), lat, lng, googlePlaceID,
 		); err != nil {
 			return fmt.Errorf("upsert vendor %s: %w", vendorID, err)
 		}

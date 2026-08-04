@@ -69,6 +69,17 @@ export default function ReportsPage() {
   const town = business?.town ?? 'your area';
   const category = business?.category ?? 'business';
 
+  const downloadCSV = () => {
+    const headers = 'Day,Views,Redemptions\n';
+    const rows = (r?.week ?? []).map((w) => `${w.day},${w.views},${w.redemptions}`).join('\n');
+    const blob = new Blob([headers + rows], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `spotto-weekly-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+  };
+
   return (
     <Shell>
       <div className="flex items-start justify-between mb-5">
@@ -78,12 +89,20 @@ export default function ReportsPage() {
             {dateRangeLabel()} · {town} {category.toLowerCase()} category
           </p>
         </div>
-        <button
-          className="rounded-xl border border-line bg-white px-4 py-2.5 font-extrabold text-[13.5px] flex items-center gap-2 hover:border-accent transition-colors"
-          onClick={() => window.print()}
-        >
-          <Download size={16} /> Export PDF
-        </button>
+        <div className="flex gap-2">
+          <button
+            className="rounded-xl border border-line bg-white px-3.5 py-2.5 font-extrabold text-[13.5px] flex items-center gap-1.5 hover:border-accent transition-colors"
+            onClick={downloadCSV}
+          >
+            <Download size={15} /> Export CSV
+          </button>
+          <button
+            className="rounded-xl border border-line bg-white px-3.5 py-2.5 font-extrabold text-[13.5px] flex items-center gap-1.5 hover:border-accent transition-colors"
+            onClick={() => window.print()}
+          >
+            <Download size={15} /> Export PDF
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">

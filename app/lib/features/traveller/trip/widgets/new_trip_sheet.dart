@@ -53,7 +53,6 @@ class _NewTripSheetState extends ConsumerState<_NewTripSheet> {
     return diff > 0 ? diff : 1;
   }
 
-  String _formatDate(DateTime dt) => DateFormat('EEE, MMM d, yyyy').format(dt);
 
   @override
   Widget build(BuildContext context) {

@@ -148,10 +148,14 @@ export default function GrowthPage() {
                 <p className="text-[11.5px] text-muted font-semibold">Nudge them in and you close {g?.stampCard?.buckets?.[0]?.count ?? 0} rewards today.</p>
               </div>
               <button
-                onClick={() => { setNudged(true); setTimeout(() => setNudged(false), 2000); }}
-                className="rounded-xl bg-accent text-white px-3.5 py-2 font-extrabold text-[12.5px] flex items-center gap-1.5 shrink-0"
+                onClick={() => {
+                  setNudged(true);
+                  setTimeout(() => setNudged(false), 2500);
+                }}
+                disabled={nudged}
+                className="rounded-xl bg-accent text-white px-3.5 py-2 font-extrabold text-[12.5px] flex items-center gap-1.5 shrink-0 active:scale-95 transition-transform"
               >
-                <UserPlus size={14} /> {nudged ? 'Nudged!' : 'Nudge all'}
+                <UserPlus size={14} /> {nudged ? '✓ Nudge sent!' : 'Nudge all'}
               </button>
             </div>
 
@@ -182,7 +186,7 @@ export default function GrowthPage() {
                   </p>
                 </div>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer shrink-0" title="Coming soon">
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
                 <input type="checkbox" className="sr-only peer" checked={promoteOn} onChange={(e) => setPromoteOn(e.target.checked)} />
                 <span className={`w-10 h-6 rounded-full relative transition-colors ${promoteOn ? 'bg-accent' : 'bg-line'}`}>
                   <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${promoteOn ? 'left-[22px]' : 'left-0.5'}`} />
