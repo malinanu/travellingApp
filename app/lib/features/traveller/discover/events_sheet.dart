@@ -45,9 +45,9 @@ class EventsSheet extends ConsumerWidget {
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.7,
-      decoration: const BoxDecoration(
-        color: SpottoColors.sand,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         children: [
@@ -107,7 +107,7 @@ class EventsSheet extends ConsumerWidget {
                         child: Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: SpottoColors.line),
                           ),
@@ -145,7 +145,7 @@ class EventsSheet extends ConsumerWidget {
                                 Text(
                                   item.deal.label!,
                                   style: text.bodyMedium?.copyWith(
-                                    color: SpottoColors.ink,
+                                    color: Theme.of(context).colorScheme.onSurface,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),

@@ -88,7 +88,7 @@ class _WeatherScreenState extends ConsumerState<WeatherScreen> {
     final batchAsync = ref.watch(batchedWeatherDeckProvider);
 
     return Scaffold(
-      backgroundColor: SpottoColors.sand,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
           PageView.builder(
@@ -160,9 +160,9 @@ class _WeatherPage extends StatelessWidget {
         isPinned: isPinned,
         onLocationTap: onLocationTap,
       ),
-      loading: () => const Scaffold(
-        backgroundColor: SpottoColors.sand,
-        body: Center(child: CircularProgressIndicator(color: SpottoColors.accent)),
+      loading: () => Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary)),
       ),
       error: (err, stack) => _WeatherErrorState(
         locationName: locationName,
@@ -339,9 +339,9 @@ class _WeatherPageContentState extends ConsumerState<_WeatherPageContent> {
             // Main Content Body
             SliverToBoxAdapter(
               child: Container(
-                decoration: const BoxDecoration(
-                  color: SpottoColors.sand,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
                 ),
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
                 child: Column(
@@ -514,9 +514,9 @@ class _StatsGrid extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(it.label, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: SpottoColors.muted)),
+                  Text(it.label, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodySmall?.color ?? SpottoColors.muted)),
                   const SizedBox(height: 2),
-                  Text(it.val, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: SpottoColors.ink)),
+                  Text(it.val, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
                 ],
               ),
             ],
@@ -570,7 +570,7 @@ class _WeatherErrorState extends StatelessWidget {
     final text = Theme.of(context).textTheme;
 
     return Scaffold(
-      backgroundColor: SpottoColors.sand,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,

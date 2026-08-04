@@ -191,15 +191,15 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     final places = ref.watch(placesProvider);
 
     return Scaffold(
-      backgroundColor: SpottoColors.sand,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
             // header
             Container(
               padding: const EdgeInsets.fromLTRB(20, 10, 16, 12),
-              decoration: const BoxDecoration(
-                color: Colors.white,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
                 boxShadow: [
                   BoxShadow(color: Color(0x40103D3A), blurRadius: 16, offset: Offset(0, 2), spreadRadius: -8)
                 ],
@@ -248,9 +248,9 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                     child: Container(
                       width: 36,
                       height: 36,
-                      decoration: const BoxDecoration(
-                          color: SpottoColors.sand, shape: BoxShape.circle),
-                      child: const Icon(Icons.close, size: 19, color: SpottoColors.ink),
+                      decoration: BoxDecoration(
+                          color: Theme.of(context).scaffoldBackgroundColor, shape: BoxShape.circle),
+                      child: Icon(Icons.close, size: 19, color: Theme.of(context).colorScheme.onSurface),
                     ),
                   ),
                 ],
@@ -281,7 +281,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 10),
                             decoration: BoxDecoration(
-                              color: m.mine ? SpottoColors.accent : Colors.white,
+                              color: m.mine ? SpottoColors.accent : Theme.of(context).colorScheme.surface,
                               borderRadius: BorderRadius.only(
                                 topLeft: const Radius.circular(20),
                                 topRight: const Radius.circular(20),
@@ -301,7 +301,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                                 fontSize: 14.5,
                                 height: 1.5,
                                 fontWeight: FontWeight.w500,
-                                color: m.mine ? Colors.white : SpottoColors.ink,
+                                color: m.mine ? Colors.white : Theme.of(context).colorScheme.onSurface,
                               ),
                             ),
                           ),
@@ -315,7 +315,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                               child: Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: Theme.of(context).colorScheme.surface,
                                   borderRadius: BorderRadius.circular(16),
                                   boxShadow: const [
                                     BoxShadow(
@@ -342,10 +342,10 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(place.name,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                                 fontSize: 12.5,
                                                 fontWeight: FontWeight.w800,
-                                                color: SpottoColors.ink)),
+                                                color: Theme.of(context).colorScheme.onSurface)),
                                         const Text('View details →',
                                             style: TextStyle(
                                                 fontSize: 11,
@@ -380,15 +380,15 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(color: SpottoColors.line, width: 1.5),
                           ),
                           child: Text(s,
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w700,
-                                  color: SpottoColors.ink)),
+                                  color: Theme.of(context).colorScheme.onSurface)),
                         ),
                       ),
                   ],
@@ -400,7 +400,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
               child: Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(28),
                   boxShadow: const [
                     BoxShadow(color: Color(0x33103D3A), blurRadius: 18, offset: Offset(0, 4), spreadRadius: -8)
@@ -426,10 +426,10 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                           contentPadding:
                               EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         ),
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 14.5,
                             fontWeight: FontWeight.w500,
-                            color: SpottoColors.ink),
+                            color: Theme.of(context).colorScheme.onSurface),
                       ),
                     ),
                     PressScale(
@@ -487,8 +487,8 @@ class _TypingBubbleState extends State<_TypingBubble>
       alignment: Alignment.centerLeft,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: const BoxDecoration(
-          color: Colors.white,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.only(
             topLeft: Radius.circular(20),
             topRight: Radius.circular(20),

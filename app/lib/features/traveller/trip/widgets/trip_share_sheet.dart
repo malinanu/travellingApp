@@ -134,7 +134,7 @@ class _TripShareSheetState extends ConsumerState<_TripShareSheet> {
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 10),
                                   decoration: BoxDecoration(
-                                    color: Colors.white,
+                                    color: Theme.of(context).colorScheme.surface,
                                     borderRadius: BorderRadius.circular(16),
                                   ),
                                   child: Row(
@@ -221,7 +221,7 @@ class _TripShareSheetState extends ConsumerState<_TripShareSheet> {
                           width: 36,
                           height: 36,
                           decoration: BoxDecoration(
-                            color: SpottoColors.sand,
+                            color: Theme.of(context).scaffoldBackgroundColor,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: const Icon(Icons.person_remove_outlined,
@@ -302,7 +302,7 @@ class _TripShareSheetState extends ConsumerState<_TripShareSheet> {
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: faded ? Colors.white.withValues(alpha: 0.6) : Colors.white,
+            color: faded ? Theme.of(context).colorScheme.surface.withValues(alpha: 0.6) : Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: SpottoColors.line, width: 1.5),
           ),
@@ -336,7 +336,7 @@ class _TripShareSheetState extends ConsumerState<_TripShareSheet> {
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: onTap == null ? SpottoColors.sand : SpottoColors.accent,
+            color: onTap == null ? Theme.of(context).scaffoldBackgroundColor : SpottoColors.accent,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
@@ -457,7 +457,7 @@ class _TripInvitationDialog extends ConsumerWidget {
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: SpottoColors.sand,
+                      color: Theme.of(context).scaffoldBackgroundColor,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
