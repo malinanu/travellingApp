@@ -13,13 +13,13 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
   @override
   ThemeMode build() {
     // Read persisted value synchronously from the already-initialised store.
-    final raw = ref.read(localStoreProvider).prefs.getString(_kThemeModeKey);
+    final raw = ref.read(localStoreProvider).getString(_kThemeModeKey);
     return _fromString(raw);
   }
 
   void setMode(ThemeMode mode) {
     state = mode;
-    ref.read(localStoreProvider).prefs.setString(_kThemeModeKey, _toString(mode));
+    ref.read(localStoreProvider).setString(_kThemeModeKey, _toString(mode));
   }
 
   void toggle() {

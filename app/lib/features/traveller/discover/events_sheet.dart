@@ -140,10 +140,10 @@ class EventsSheet extends ConsumerWidget {
                                   ),
                                 ],
                               ),
-                              if (p.deal.active && p.deal.label != null) ...[
+                              if (item.deal.active && item.deal.label != null) ...[
                                 const SizedBox(height: 8),
                                 Text(
-                                  p.deal.label!,
+                                  item.deal.label!,
                                   style: text.bodyMedium?.copyWith(
                                     color: SpottoColors.ink,
                                     fontWeight: FontWeight.w600,

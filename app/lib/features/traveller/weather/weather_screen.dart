@@ -228,7 +228,7 @@ class _WeatherPageContentState extends ConsumerState<_WeatherPageContent> {
         Positioned.fill(
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 600),
-            decoration: BoxDecoration(gradient: mood.gradient),
+            decoration: BoxDecoration(gradient: heroGradient(mood)),
           ),
         ),
 
@@ -350,7 +350,7 @@ class _WeatherPageContentState extends ConsumerState<_WeatherPageContent> {
                     const SizedBox(height: 20),
 
                     // 2. Hourly forecast timeline
-                    _HourlyForecastCard(hourly: snap.Hourly),
+                    _HourlyForecastCard(hourly: snap.hourly),
                     const SizedBox(height: 20),
 
                     // 3. Stats 6-cell grid
