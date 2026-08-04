@@ -98,20 +98,7 @@ export default function ContentPage() {
             </button>
           ))}
         </div>
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className="btn"
-              style={{
-                background: tab === t.id ? 'var(--accent)' : 'var(--surface)',
-                color: tab === t.id ? '#fff' : 'var(--ink)',
-                borderColor: tab === t.id ? 'var(--accent)' : 'var(--line)',
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+
         <button className="btn flex items-center gap-2" onClick={() => setLive((l) => !l)}>
           {live ? <Pause size={14} /> : <Play size={14} />} {live ? 'Live' : 'Paused'}
         </button>
