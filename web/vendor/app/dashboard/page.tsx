@@ -90,6 +90,7 @@ export default function DashboardPage() {
             className="btn-accent rounded-xl px-4 py-2.5 font-extrabold text-[14px] flex items-center gap-2 active:scale-[0.98] transition-transform shrink-0 whitespace-nowrap">
             <Plus size={18} strokeWidth={2.5} /> New offer
           </Link>
+        </div>
         {business?.status === 'edits' && (
           <div className="rounded-2xl p-5 bg-[#fff8e6] border border-[#f6b81e] text-[#a97b00]">
             <h3 className="font-extrabold text-[16px] mb-1">Edits requested by Spotto admin</h3>
