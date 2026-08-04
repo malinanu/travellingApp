@@ -11,6 +11,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:path_provider/path_provider.dart';
 
 // ── Bounding boxes ────────────────────────────────────────────────────────
 
@@ -180,12 +181,18 @@ Future<void> clearMapTileCache() =>
     MapTileCacheManager().manager.emptyCache();
 
 /// Returns approximate disk size of the tile cache in bytes.
+
 Future<int> mapTileCacheSizeBytes() async {
-  final info = await MapTileCacheManager().manager.store.getCacheDirectory();
-  if (!await info.exists()) return 0;
-  int total = 0;
-  await for (final entity in info.list(recursive: true)) {
-    if (entity is File) total += await entity.length();
+  try {
+    final tempDir = await getTemporaryDirectory();
+    final cacheDir = Directory('${tempDir.path}/spotto_map_tiles');
+    if (!await cacheDir.exists()) return 0;
+    int total = 0;
+    await for (final entity in cacheDir.list(recursive: true)) {
+      if (entity is File) total += await entity.length();
+    }
+    return total;
+  } catch (e) {
+    return 0;
   }
-  return total;
 }

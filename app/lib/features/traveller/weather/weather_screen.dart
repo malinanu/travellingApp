@@ -219,7 +219,7 @@ class _WeatherPageContentState extends ConsumerState<_WeatherPageContent> {
     final snap = widget.snap;
     final prefs = ref.watch(prefsProvider);
     final mainStyle = (prefs?.styles ?? const ['nomad']).first;
-    final mood = moodFor(snap.now.condition, snap.now.cloudCoverPct, DateTime.now());
+    final mood = moodFor(snap, at: DateTime.now());
     final text = Theme.of(context).textTheme;
 
     return Stack(
@@ -299,7 +299,7 @@ class _WeatherPageContentState extends ConsumerState<_WeatherPageContent> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              '${snap.now.Temp.round()}°',
+                              '${snap.now.temp.round()}°',
                               style: text.displayLarge?.copyWith(
                                 fontSize: 64,
                                 color: Colors.white,
@@ -314,14 +314,14 @@ class _WeatherPageContentState extends ConsumerState<_WeatherPageContent> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    snap.now.ConditionLabel,
+                                    snap.now.conditionLabel,
                                     style: text.titleMedium?.copyWith(
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                   Text(
-                                    'H: ${snap.High.round()}°  L: ${snap.Low.round()}°',
+                                    'H: ${snap.high.round()}°  L: ${snap.low.round()}°',
                                     style: text.bodySmall?.copyWith(color: Colors.white70),
                                   ),
                                 ],
@@ -344,9 +344,8 @@ class _WeatherPageContentState extends ConsumerState<_WeatherPageContent> {
                   borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
                 ),
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
-                child: StaggerIn(
+                child: Column(
                   children: [
-                    // 1. Activity suitability rule engine
                     _ActivityRuleCard(snap: snap, style: mainStyle),
                     const SizedBox(height: 20),
 
@@ -375,7 +374,26 @@ class _ActivityRuleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rule = evaluateActivity(style, snap);
+    final category = resolveCategory(UserPrefs(styles: [style], interests: []));
+    final rating = rateHour(
+      category, 
+      snap.hourly.isNotEmpty 
+          ? snap.hourly.first 
+          : HourlyPoint(
+              time: DateTime.now(), temp: snap.now.temp, condition: snap.now.condition, 
+              conditionLabel: snap.now.conditionLabel, icon: snap.now.icon, 
+              precipProbability: snap.now.precipProbability, precipMm: 0, 
+              windSpeed: snap.now.windSpeed, uvIndex: snap.now.uvIndex, cloudCover: snap.now.cloudCover
+            )
+    );
+    final tone = rating.level == Suitability.good ? SpottoColors.accent : (rating.level == Suitability.fair ? const Color(0xFFD97706) : const Color(0xFFE11D48));
+    final rule = (
+      tone: tone, 
+      icon: categoryIconName(category), 
+      title: categoryLabel(category), 
+      scoreText: '${rating.score}/100', 
+      tip: rating.level == Suitability.good ? 'Great conditions right now.' : 'Affected by: ${rating.reason}'
+    );
     final text = Theme.of(context).textTheme;
 
     return SpottoCard(
@@ -438,14 +456,14 @@ class _HourlyForecastCard extends StatelessWidget {
               separatorBuilder: (_, __) => const SizedBox(width: 16),
               itemBuilder: (context, i) {
                 final item = hourly[i];
-                final timeStr = DateFormat('h a').format(item.Time);
+                final timeStr = DateFormat('h a').format(item.time);
                 return Column(
                   children: [
                     Text(timeStr, style: text.labelSmall?.copyWith(color: SpottoColors.muted)),
                     const SizedBox(height: 6),
-                    Icon(spottoIcon(item.Icon), size: 20, color: SpottoColors.accent),
+                    Icon(spottoIcon(item.icon), size: 20, color: SpottoColors.accent),
                     const SizedBox(height: 6),
-                    Text('${item.Temp.round()}°', style: text.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    Text('${item.temp.round()}°', style: text.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
                   ],
                 );
               },
@@ -466,12 +484,12 @@ class _StatsGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final n = snap.now;
     final items = [
-      (label: 'FEELS LIKE', val: '${n.FeelsLike.round()}°', icon: Icons.thermostat),
-      (label: 'HUMIDITY', val: '${n.Humidity}%', icon: Icons.water_drop_outlined),
-      (label: 'WIND', val: '${n.WindSpeedKmh.round()} km/h', icon: Icons.air),
-      (label: 'UV INDEX', val: n.UVIndex.toStringAsFixed(1), icon: Icons.wb_sunny_outlined),
-      (label: 'PRECIPITATION', val: '${n.PrecipProbability}%', icon: Icons.umbrella_outlined),
-      (label: 'PRESSURE', val: '${n.PressureHpa.round()} hPa', icon: Icons.compress),
+      (label: 'FEELS LIKE', val: '${n.feelsLike.round()}°', icon: Icons.thermostat),
+      (label: 'HUMIDITY', val: '${n.humidity}%', icon: Icons.water_drop_outlined),
+      (label: 'WIND', val: '${n.windSpeed.round()} km/h', icon: Icons.air),
+      (label: 'UV INDEX', val: n.uvIndex.toStringAsFixed(1), icon: Icons.wb_sunny_outlined),
+      (label: 'PRECIPITATION', val: '${n.precipProbability}%', icon: Icons.umbrella_outlined),
+      (label: 'PRESSURE', val: '${n.pressure.round()} hPa', icon: Icons.compress),
     ];
 
     return GridView.builder(
