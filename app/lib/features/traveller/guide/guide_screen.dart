@@ -141,13 +141,19 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     _input.clear();
     _scrollDown();
 
-    final pos = ref.read(devicePositionProvider).value?.$1;
+    // Await rather than a bare .value read: on a cold start (e.g. the
+    // traveller opens Guide before the location permission dialog has been
+    // answered — the iOS system prompt in particular can sit for a while),
+    // the provider hasn't resolved yet and .value would silently be null,
+    // sending this message with no location context at all. bestEffortPosition
+    // already caps every branch with its own timeout, so this can't hang.
+    final pos = (await ref.read(devicePositionProvider.future)).$1;
     try {
       final res = await ref.read(apiProvider).dio.post('/guide/chat', data: {
         if (_conversationId != null) 'conversationId': _conversationId,
         'message': q,
-        if (pos != null) 'lat': pos.lat,
-        if (pos != null) 'lng': pos.lng,
+        'lat': pos.lat,
+        'lng': pos.lng,
       });
       final body = (res.data as Map).cast<String, dynamic>();
       if (!mounted) return;
