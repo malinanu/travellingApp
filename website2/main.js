@@ -1,24 +1,46 @@
 /* Spotto "First Light" — orchestration.
    One rAF loop drives the Three.js render AND all DOM text-beat opacity by
    polling window.scrollY once per frame (not a scroll event listener).
-   Falls back to a static, already-complete screen under reduced-motion or
-   when WebGL is unavailable. */
+   Falls back to a static, already-complete screen under reduced-motion,
+   when WebGL is unavailable, or if the GPU context is later lost. */
 
-const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const mql = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 const track = document.querySelector('.track');
 const canvas = document.getElementById('scene-canvas');
 const stories = [...document.querySelectorAll('.story')];
 
+// Set once boot() has a running scene, so useFallback() can tear it down
+// cleanly (stop the rAF loop, release GPU resources) from any trigger:
+// reduced-motion toggled on mid-session, or the WebGL context dropping.
+let stopScene = null;
+
 function useFallback() {
   document.body.classList.add('is-fallback');
+  // The fallback is a single full-viewport screen, not a scrollable track —
+  // switching to it mid-flight (a live reduced-motion toggle or a lost GPU
+  // context, both possible well after the user has scrolled) would otherwise
+  // leave the viewport scrolled into the fallback content instead of at its
+  // top, overlapping its stacked text.
+  window.scrollTo(0, 0);
+  if (stopScene) {
+    stopScene();
+    stopScene = null;
+  }
 }
 
-if (reduceMotion) {
+if (mql.matches) {
   useFallback();
 } else {
   boot();
 }
+
+// Live listener, not just the one-time check above — a user (or an
+// automated test) can toggle the OS-level reduced-motion setting while the
+// tab is open.
+mql.addEventListener('change', (e) => {
+  if (e.matches) useFallback();
+});
 
 async function boot() {
   let createScene;
@@ -32,7 +54,7 @@ async function boot() {
 
   let sceneApi;
   try {
-    sceneApi = createScene(canvas);
+    sceneApi = createScene(canvas, { onContextLost: () => useFallback() });
   } catch (e) {
     console.info('Spotto First Light: WebGL unavailable, using static fallback.', e.message);
     useFallback();
@@ -55,6 +77,11 @@ async function boot() {
 
   let last = performance.now();
   let raf = requestAnimationFrame(frame);
+  stopScene = () => {
+    cancelAnimationFrame(raf);
+    window.removeEventListener('resize', resize);
+    sceneApi.dispose();
+  };
 
   function frame(now) {
     raf = requestAnimationFrame(frame);

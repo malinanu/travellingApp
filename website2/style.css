@@ -78,6 +78,7 @@ a { color: inherit; text-decoration: none; }
 
 .beat {
   min-height: 100vh;
+  min-height: 100dvh; /* avoids a jump when mobile browser chrome collapses/expands */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -186,6 +187,7 @@ body.is-fallback .fallback {
   position: relative;
   z-index: 1;
   min-height: 100vh;
+  min-height: 100dvh;
   flex-direction: column;
   align-items: center;
   justify-content: center;
