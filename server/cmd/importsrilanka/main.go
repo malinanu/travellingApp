@@ -4,13 +4,18 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -39,13 +44,6 @@ func randomID(prefix string) string {
 	return prefix + "_" + hex.EncodeToString(b)
 }
 
-// categoryForSpot maps an imported OSM/Google spot's data.type + data.tags
-// to a real vendor category id. Only food and cafe types correspond to an
-// actual bookable business in the taxonomy; everything else (landmarks,
-// viewpoints, temples, parks, wildlife, beaches) is non-commercial tourist
-// geography with no equivalent category, so it's left blank — the same
-// "unknown category" sentinel domain.CategoryByID/IsBookableCategory
-// already fall back to gracefully, rather than the nonsensical "General".
 func categoryForSpot(data map[string]any) string {
 	t, _ := data["type"].(string)
 	tagSet := map[string]bool{}
@@ -105,18 +103,9 @@ func main() {
 	}
 	log.Println("Successfully imported Sri Lanka spots!")
 
-	// Best-effort, outside the main transaction: give each vendor a cover
-	// photo pulled from the place's real source photos. Never fails the
-	// run — a bad/slow photo just gets skipped and logged, since this
-	// step runs on every deploy and must not block the API from starting.
-	uploadCoverPhotos(ctx, store, cfg, spots)
+	uploadCoverPhotos(ctx, store, cfg, spots, jsonPath)
 }
 
-// runImport wipes existing places (and dependent rows) and reloads them —
-// along with a per-place vendor + owner account — in ONE transaction, so a
-// failure partway through leaves the previous data untouched instead of a
-// half-migrated table. Every write is an idempotent upsert, so re-running
-// this against unchanged data is a safe no-op, not an error.
 func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place) error {
 	tx, err := store.Pool.Begin(ctx)
 	if err != nil {
@@ -144,8 +133,6 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 		return fmt.Errorf("hash password: %w", err)
 	}
 
-	// central Sri Lanka — only used as a fallback if a place is somehow
-	// missing lat/lng in its own data.
 	const fallbackLat, fallbackLng = 7.8731, 80.7718
 
 	for _, p := range spots {
@@ -164,11 +151,6 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 			lat, lng = coords.Lat, coords.Lng
 		}
 
-		// Every vendor used to get a hardcoded region_id="colombo"/town="Sri
-		// Lanka" regardless of where the place actually is — resolve the real
-		// nearest region from its own coordinates instead, and mirror it into
-		// the place's data blob too (self-contained JSONB, same as lat/lng),
-		// so the traveller-facing API can expose it with no extra join.
 		region := geo.NearestRegion(lat, lng)
 		var data map[string]any
 		if err := json.Unmarshal(p.Data, &data); err != nil || data == nil {
@@ -177,16 +159,26 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 		data["region"] = region.Name
 		data["regionId"] = region.ID
 		category := categoryForSpot(data)
+
+		// Extract formatted data fields into vendor profile
+		profile := map[string]any{}
+		if hours, ok := data["hours"]; ok {
+			profile["hours"] = hours
+		}
+		if blurb, ok := data["blurb"]; ok {
+			profile["blurb"] = blurb
+		}
+		if contact, ok := data["contact"]; ok {
+			profile["contact"] = contact
+		}
+		profileBytes, _ := json.Marshal(profile)
+
 		enrichedData, err := json.Marshal(data)
 		if err != nil {
 			return fmt.Errorf("marshal place data for %s: %w", p.ID, err)
 		}
 		p.Data = enrichedData
 
-		// Extract the Google Place ID from the spot's data (if present) and
-		// write it into the vendor row's first-class column so that
-		// enrichWithPlaceDetails can look up live details without fishing
-		// it out of the JSONB blob at runtime.
 		var googlePlaceID *string
 		if sid, ok := data["sourceId"].(string); ok && sid != "" {
 			googlePlaceID = &sid
@@ -205,7 +197,7 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 				google_place_id=EXCLUDED.google_place_id`,
 			vendorID, p.Name+" Vendor", category, region.Name, "LK", ptr(region.ID), "Admin",
 			domain.VendorApproved, "normal", true, 0, nil, []byte(`[]`), "", "Premium",
-			[]byte(`{}`), []byte(`{}`), now.AddDate(0, -1, 0), lat, lng, googlePlaceID,
+			profileBytes, []byte(`{}`), now.AddDate(0, -1, 0), lat, lng, googlePlaceID,
 		); err != nil {
 			return fmt.Errorf("upsert vendor %s: %w", vendorID, err)
 		}
@@ -237,25 +229,9 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 	return nil
 }
 
-// maxSourcePhotosPerPlace caps how many of a place's scraped Google Places
-// photos get re-uploaded to R2 — Google Places itself returns at most a
-// handful of photo references per place (sri_lanka_spots.json has up to 5),
-// so this is "all of them", not an arbitrary truncation.
 const maxSourcePhotosPerPlace = 5
 
-// uploadCoverPhotos gives each vendor a real photo gallery pulled from its
-// place's data.sourcePhotos (captured from Google Places when the dataset
-// was fetched, but until now only sourcePhotos[0] was ever used — the rest
-// were fetched and paid for, then discarded). Runs after runImport's
-// transaction has already committed, so slow/failed network calls here
-// can't hold the places table locked or block the API from starting —
-// every failure is logged and skipped, never fatal. Idempotent: a vendor
-// that already has a "cover" media row skips the fetch/upload, but every
-// vendor still gets cover+gallery mirrored into places.data below — so a
-// prior deploy that uploaded media without mirroring it (or a place row
-// rebuilt by runImport since) gets self-healed on every run rather than
-// only on first upload.
-func uploadCoverPhotos(ctx context.Context, store *postgres.Store, cfg config.Config, spots []domain.Place) {
+func uploadCoverPhotos(ctx context.Context, store *postgres.Store, cfg config.Config, spots []domain.Place, jsonPath string) {
 	if cfg.R2AccountID == "" || cfg.R2AccessKeyID == "" || cfg.R2SecretAccessKey == "" || cfg.R2Bucket == "" {
 		log.Println("importsrilanka: R2 not configured, skipping cover photo upload")
 		return
@@ -276,28 +252,27 @@ func uploadCoverPhotos(ctx context.Context, store *postgres.Store, cfg config.Co
 		case cover != "":
 			skipped++
 		default:
-			cover, gallery, err = uploadVendorPhotos(ctx, store, client, r2, vendorID, p.Data, cfg.GoogleCalendarAPIKey)
+			var coverThumb, coverMicro string
+			var galleryThumbs []string
+			cover, coverThumb, coverMicro, gallery, galleryThumbs, err = uploadVendorPhotos(ctx, store, client, r2, vendorID, p.Data, cfg.GoogleCalendarAPIKey, jsonPath)
 			if err != nil {
 				log.Printf("importsrilanka: %v", err)
 				failed++
 				continue
 			}
 			if cover == "" {
-				continue // no sourcePhotos to use
+				continue
 			}
 			uploaded++
-		}
 
-		if err := mirrorPhotosIntoPlace(ctx, store, vendorID, cover, gallery); err != nil {
-			log.Printf("importsrilanka: mirror photos into place for %s: %v", vendorID, err)
+			if err := mirrorPhotosIntoPlace(ctx, store, vendorID, cover, coverThumb, coverMicro, gallery, galleryThumbs); err != nil {
+				log.Printf("importsrilanka: mirror photos into place for %s: %v", vendorID, err)
+			}
 		}
 	}
 	log.Printf("importsrilanka: cover photos - uploaded %d, skipped %d (already had one), failed %d\n", uploaded, skipped, failed)
 }
 
-// existingVendorPhotos returns a vendor's already-uploaded cover + gallery
-// media, if any — lets uploadCoverPhotos skip re-fetching from Google on
-// every run while still re-mirroring into places.data (self-heal).
 func existingVendorPhotos(ctx context.Context, store *postgres.Store, vendorID string) (cover string, gallery []string, err error) {
 	rows, err := store.Pool.Query(ctx,
 		`SELECT role, url FROM media WHERE owner_type='vendor' AND owner_id=$1 AND role IN ('cover','gallery') ORDER BY created_at ASC`,
@@ -322,36 +297,41 @@ func existingVendorPhotos(ctx context.Context, store *postgres.Store, vendorID s
 	return cover, gallery, rows.Err()
 }
 
-// uploadVendorPhotos fetches up to maxSourcePhotosPerPlace of
-// placeData.sourcePhotos, uploads each to R2, and records it as a vendor
-// media row (the first as role "cover", the rest as role "gallery" —
-// matching the live vendor-upload convention in internal/http/vendor.go).
-// A single photo failing (rejected type, oversize, network blip) doesn't
-// sink the rest; returns ("", nil, nil) if the place has no source photos.
-func uploadVendorPhotos(ctx context.Context, store *postgres.Store, client *http.Client, r2 *media.R2, vendorID string, placeData []byte, apiKey string) (cover string, gallery []string, err error) {
+type PhotoResult struct {
+	URL        string
+	ThumbKey   string
+	MicroThumb string
+}
+
+func uploadVendorPhotos(ctx context.Context, store *postgres.Store, client *http.Client, r2 *media.R2, vendorID string, placeData []byte, apiKey, jsonPath string) (string, string, string, []string, []string, error) {
 	var pd struct {
 		SourcePhotos []string `json:"sourcePhotos"`
 	}
 	if err := json.Unmarshal(placeData, &pd); err != nil || len(pd.SourcePhotos) == 0 {
-		return "", nil, nil
+		return "", "", "", nil, nil, nil
 	}
 
+	var cover, coverThumb, coverMicro string
+	var gallery, galleryThumbs []string
+
 	n := min(len(pd.SourcePhotos), maxSourcePhotosPerPlace)
-	gallery = []string{}
 	for i := 0; i < n; i++ {
 		role := "gallery"
 		if i == 0 {
 			role = "cover"
 		}
-		url, uploadErr := uploadOnePhoto(ctx, store, client, r2, vendorID, role, pd.SourcePhotos[i], apiKey)
+		res, uploadErr := uploadOnePhoto(ctx, store, client, r2, vendorID, role, pd.SourcePhotos[i], apiKey, jsonPath)
 		if uploadErr != nil {
 			log.Printf("importsrilanka: photo %d for %s: %v", i, vendorID, uploadErr)
 			continue
 		}
 		if role == "cover" {
-			cover = url
+			cover = res.URL
+			coverThumb = r2.PublicURL(res.ThumbKey)
+			coverMicro = res.MicroThumb
 		} else {
-			gallery = append(gallery, url)
+			gallery = append(gallery, res.URL)
+			galleryThumbs = append(galleryThumbs, r2.PublicURL(res.ThumbKey))
 		}
 	}
 	if cover != "" || len(gallery) > 0 {
@@ -363,44 +343,58 @@ func uploadVendorPhotos(ctx context.Context, store *postgres.Store, client *http
 			log.Printf("importsrilanka: update photos count for %s: %v", vendorID, err)
 		}
 	}
-	return cover, gallery, nil
+	return cover, coverThumb, coverMicro, gallery, galleryThumbs, nil
 }
 
-// uploadOnePhoto fetches sourceURL, uploads it to R2, and records it as a
-// vendor media row with the given role.
-func uploadOnePhoto(ctx context.Context, store *postgres.Store, client *http.Client, r2 *media.R2, vendorID, role, sourceURL, apiKey string) (string, error) {
-	body, contentType, err := fetchImage(ctx, client, sourceURL, apiKey)
+func uploadOnePhoto(ctx context.Context, store *postgres.Store, client *http.Client, r2 *media.R2, vendorID, role, sourceURL, apiKey, jsonPath string) (PhotoResult, error) {
+	body, contentType, err := fetchImage(ctx, client, sourceURL, apiKey, jsonPath)
 	if err != nil {
-		return "", fmt.Errorf("fetch photo for %s: %w", vendorID, err)
+		return PhotoResult{}, fmt.Errorf("fetch photo for %s: %w", vendorID, err)
 	}
 
 	ext, kind, maxSize, ok := media.Resolve(contentType)
 	if !ok || int64(len(body)) > maxSize {
-		return "", fmt.Errorf("photo for %s rejected (type=%s size=%d)", vendorID, contentType, len(body))
+		return PhotoResult{}, fmt.Errorf("photo for %s rejected (type=%s size=%d)", vendorID, contentType, len(body))
+	}
+
+	thumbs, err := media.GenerateThumbnails(bytes.NewReader(body))
+	if err != nil {
+		return PhotoResult{}, fmt.Errorf("thumbnails for %s: %w", vendorID, err)
+	}
+
+	srcImg, _, err := image.DecodeConfig(bytes.NewReader(body))
+	if err != nil {
+		log.Printf("importsrilanka: warn: decode config for %s failed: %v", vendorID, err)
+	}
+	width, height := 0, 0
+	if err == nil {
+		width, height = srcImg.Width, srcImg.Height
 	}
 
 	key := fmt.Sprintf("vendor/%s/%s%s", vendorID, randomID("m"), ext)
 	if err := putToR2(ctx, client, r2, key, contentType, body); err != nil {
-		return "", fmt.Errorf("upload to R2 for %s: %w", vendorID, err)
+		return PhotoResult{}, fmt.Errorf("upload to R2 for %s: %w", vendorID, err)
 	}
+
+	thumbKey := fmt.Sprintf("vendor/%s/%s_thumb.jpg", vendorID, randomID("m"))
+	if err := putToR2(ctx, client, r2, thumbKey, "image/jpeg", thumbs.Thumb); err != nil {
+		return PhotoResult{}, fmt.Errorf("upload thumb to R2 for %s: %w", vendorID, err)
+	}
+
+	microBase64 := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(thumbs.Micro)
 
 	url := r2.PublicURL(key)
 	if _, err := store.Pool.Exec(ctx, `
-		INSERT INTO media (id, owner_type, owner_id, kind, role, object_key, url, content_type, size, width, height, uploaded_by, status, sort, created_at)
-		VALUES ($1,'vendor',$2,$3,$4,$5,$6,$7,0,0,'system-import','ready',0,now())`,
-		randomID("m"), vendorID, kind, role, key, url, contentType, len(body),
+		INSERT INTO media (id, owner_type, owner_id, kind, role, object_key, url, content_type, size, width, height, thumb_key, micro_thumb, uploaded_by, status, sort, created_at)
+		VALUES ($1,'vendor',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'system-import','ready',0,now())`,
+		randomID("m"), vendorID, kind, role, key, url, contentType, len(body), width, height, thumbKey, microBase64,
 	); err != nil {
-		return "", fmt.Errorf("insert media row for %s: %w", vendorID, err)
+		return PhotoResult{}, fmt.Errorf("insert media row for %s: %w", vendorID, err)
 	}
-	return url, nil
+	return PhotoResult{URL: url, ThumbKey: thumbKey, MicroThumb: microBase64}, nil
 }
 
-// mirrorPhotosIntoPlace writes cover/gallery into the vendor's
-// place.data.cover/data.gallery, matching what syncVendorPlace does for the
-// live HTTP vendor-media-upload path (server/internal/http/vendor.go). The
-// import script is a separate main package without access to that server
-// code, so it replicates the same JSON patch directly here.
-func mirrorPhotosIntoPlace(ctx context.Context, store *postgres.Store, vendorID, cover string, gallery []string) error {
+func mirrorPhotosIntoPlace(ctx context.Context, store *postgres.Store, vendorID, cover, coverThumb, coverMicro string, gallery, galleryThumbs []string) error {
 	var placeID string
 	var raw []byte
 	if err := store.Pool.QueryRow(ctx,
@@ -412,7 +406,10 @@ func mirrorPhotosIntoPlace(ctx context.Context, store *postgres.Store, vendorID,
 	data := map[string]any{}
 	_ = json.Unmarshal(raw, &data)
 	data["cover"] = cover
+	data["coverThumb"] = coverThumb
+	data["coverMicro"] = coverMicro
 	data["gallery"] = gallery
+	data["galleryThumbs"] = galleryThumbs
 
 	updated, err := json.Marshal(data)
 	if err != nil {
@@ -424,24 +421,44 @@ func mirrorPhotosIntoPlace(ctx context.Context, store *postgres.Store, vendorID,
 	return nil
 }
 
-func fetchImage(ctx context.Context, client *http.Client, url, apiKey string) ([]byte, string, error) {
-	if apiKey != "" && strings.Contains(url, "google") {
+func fetchImage(ctx context.Context, client *http.Client, urlStr, apiKey, jsonPath string) ([]byte, string, error) {
+	if strings.HasPrefix(urlStr, "/images/") || strings.HasPrefix(urlStr, "images/") {
+		baseDir := filepath.Dir(jsonPath)
+		if strings.HasPrefix(urlStr, "/") {
+			urlStr = urlStr[1:]
+		}
+		path := filepath.Join(baseDir, urlStr)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return nil, "", err
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		contentType := "image/jpeg"
+		if ext == ".png" {
+			contentType = "image/png"
+		} else if ext == ".webp" {
+			contentType = "image/webp"
+		}
+		return body, contentType, nil
+	}
+
+	if apiKey != "" && strings.Contains(urlStr, "google") {
 		re := regexp.MustCompile(`([?&])key=[^&]*`)
-		if re.MatchString(url) {
-			url = re.ReplaceAllString(url, "${1}key="+apiKey)
+		if re.MatchString(urlStr) {
+			urlStr = re.ReplaceAllString(urlStr, "${1}key="+apiKey)
 		} else {
-			if strings.Contains(url, "?") {
-				url += "&key=" + apiKey
+			if strings.Contains(urlStr, "?") {
+				urlStr += "&key=" + apiKey
 			} else {
-				url += "?key=" + apiKey
+				urlStr += "?key=" + apiKey
 			}
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
 	if err != nil {
 		return nil, "", err
 	}
-	if apiKey != "" && strings.Contains(url, "google") {
+	if apiKey != "" && strings.Contains(urlStr, "google") {
 		req.Header.Set("x-goog-api-key", apiKey)
 	}
 	resp, err := client.Do(req)
@@ -450,9 +467,9 @@ func fetchImage(ctx context.Context, client *http.Client, url, apiKey string) ([
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("unexpected status %d for %s", resp.StatusCode, url)
+		return nil, "", fmt.Errorf("unexpected status %d for %s", resp.StatusCode, urlStr)
 	}
-	const maxBody = 8<<20 + 1 // one byte over the 8MB image cap, to detect oversize
+	const maxBody = 8<<20 + 1
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
 		return nil, "", err

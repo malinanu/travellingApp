@@ -11,7 +11,7 @@ CREATE TABLE vendor_categories (
 
 -- Insert existing categories from vendors as placeholders
 INSERT INTO vendor_categories (id, label, segment, icon, relevant_vibe_dimensions, booking_type)
-SELECT DISTINCT category, category, 'General', 'storefront', '{}', NULL
+SELECT DISTINCT category, category, 'General', 'storefront', '{}'::text[], NULL
 FROM vendors
 WHERE category IS NOT NULL AND category != ''
 ON CONFLICT (id) DO NOTHING;
