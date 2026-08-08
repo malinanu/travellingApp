@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -275,7 +276,7 @@ func uploadCoverPhotos(ctx context.Context, store *postgres.Store, cfg config.Co
 		case cover != "":
 			skipped++
 		default:
-			cover, gallery, err = uploadVendorPhotos(ctx, store, client, r2, vendorID, p.Data)
+			cover, gallery, err = uploadVendorPhotos(ctx, store, client, r2, vendorID, p.Data, cfg.GoogleCalendarAPIKey)
 			if err != nil {
 				log.Printf("importsrilanka: %v", err)
 				failed++
@@ -327,7 +328,7 @@ func existingVendorPhotos(ctx context.Context, store *postgres.Store, vendorID s
 // matching the live vendor-upload convention in internal/http/vendor.go).
 // A single photo failing (rejected type, oversize, network blip) doesn't
 // sink the rest; returns ("", nil, nil) if the place has no source photos.
-func uploadVendorPhotos(ctx context.Context, store *postgres.Store, client *http.Client, r2 *media.R2, vendorID string, placeData []byte) (cover string, gallery []string, err error) {
+func uploadVendorPhotos(ctx context.Context, store *postgres.Store, client *http.Client, r2 *media.R2, vendorID string, placeData []byte, apiKey string) (cover string, gallery []string, err error) {
 	var pd struct {
 		SourcePhotos []string `json:"sourcePhotos"`
 	}
@@ -342,7 +343,7 @@ func uploadVendorPhotos(ctx context.Context, store *postgres.Store, client *http
 		if i == 0 {
 			role = "cover"
 		}
-		url, uploadErr := uploadOnePhoto(ctx, store, client, r2, vendorID, role, pd.SourcePhotos[i])
+		url, uploadErr := uploadOnePhoto(ctx, store, client, r2, vendorID, role, pd.SourcePhotos[i], apiKey)
 		if uploadErr != nil {
 			log.Printf("importsrilanka: photo %d for %s: %v", i, vendorID, uploadErr)
 			continue
@@ -367,8 +368,8 @@ func uploadVendorPhotos(ctx context.Context, store *postgres.Store, client *http
 
 // uploadOnePhoto fetches sourceURL, uploads it to R2, and records it as a
 // vendor media row with the given role.
-func uploadOnePhoto(ctx context.Context, store *postgres.Store, client *http.Client, r2 *media.R2, vendorID, role, sourceURL string) (string, error) {
-	body, contentType, err := fetchImage(ctx, client, sourceURL)
+func uploadOnePhoto(ctx context.Context, store *postgres.Store, client *http.Client, r2 *media.R2, vendorID, role, sourceURL, apiKey string) (string, error) {
+	body, contentType, err := fetchImage(ctx, client, sourceURL, apiKey)
 	if err != nil {
 		return "", fmt.Errorf("fetch photo for %s: %w", vendorID, err)
 	}
@@ -423,7 +424,19 @@ func mirrorPhotosIntoPlace(ctx context.Context, store *postgres.Store, vendorID,
 	return nil
 }
 
-func fetchImage(ctx context.Context, client *http.Client, url string) ([]byte, string, error) {
+func fetchImage(ctx context.Context, client *http.Client, url, apiKey string) ([]byte, string, error) {
+	if apiKey != "" && strings.Contains(url, "googleapis.com") {
+		re := regexp.MustCompile(`([?&])key=[^&]*`)
+		if re.MatchString(url) {
+			url = re.ReplaceAllString(url, "${1}key="+apiKey)
+		} else {
+			if strings.Contains(url, "?") {
+				url += "&key=" + apiKey
+			} else {
+				url += "?key=" + apiKey
+			}
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, "", err
