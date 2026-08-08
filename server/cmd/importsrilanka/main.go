@@ -425,7 +425,7 @@ func mirrorPhotosIntoPlace(ctx context.Context, store *postgres.Store, vendorID,
 }
 
 func fetchImage(ctx context.Context, client *http.Client, url, apiKey string) ([]byte, string, error) {
-	if apiKey != "" && strings.Contains(url, "googleapis.com") {
+	if apiKey != "" && strings.Contains(url, "google") {
 		re := regexp.MustCompile(`([?&])key=[^&]*`)
 		if re.MatchString(url) {
 			url = re.ReplaceAllString(url, "${1}key="+apiKey)
@@ -441,13 +441,16 @@ func fetchImage(ctx context.Context, client *http.Client, url, apiKey string) ([
 	if err != nil {
 		return nil, "", err
 	}
+	if apiKey != "" && strings.Contains(url, "google") {
+		req.Header.Set("x-goog-api-key", apiKey)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("unexpected status %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("unexpected status %d for %s", resp.StatusCode, url)
 	}
 	const maxBody = 8<<20 + 1 // one byte over the 8MB image cap, to detect oversize
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
