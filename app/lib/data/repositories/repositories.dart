@@ -577,6 +577,45 @@ class TripNotifier extends Notifier<Trip> {
     update(state.copyWith(days: days));
   }
 
+  /// Move a stop from one index to another, possibly crossing days.
+  void moveStopBetweenDays(int oldDayIx, int oldStopIx, int newDayIx, int newStopIx) {
+    if (oldDayIx < 0 || oldDayIx >= state.days.length || newDayIx < 0 || newDayIx >= state.days.length) return;
+    
+    final oldStops = [...state.days[oldDayIx].stops];
+    if (oldStopIx < 0 || oldStopIx >= oldStops.length) return;
+    
+    final stop = oldStops.removeAt(oldStopIx);
+    
+    if (oldDayIx == newDayIx) {
+      if (newStopIx > oldStops.length) newStopIx = oldStops.length;
+      oldStops.insert(newStopIx, stop);
+      
+      final days = [...state.days];
+      days[oldDayIx] = days[oldDayIx].copyWith(stops: oldStops);
+      update(state.copyWith(days: days));
+    } else {
+      final newStops = [...state.days[newDayIx].stops];
+      if (newStopIx > newStops.length) newStopIx = newStops.length;
+      
+      int time = 9 * 60;
+      if (newStops.isNotEmpty) {
+        if (newStopIx == 0) {
+          time = newStops.first.time - 60;
+        } else if (newStopIx >= newStops.length) {
+          time = newStops.last.time + 60;
+        } else {
+          time = (newStops[newStopIx - 1].time + newStops[newStopIx].time) ~/ 2;
+        }
+      }
+      
+      newStops.insert(newStopIx, stop.copyWith(time: time));
+      
+      final days = [...state.days];
+      days[oldDayIx] = days[oldDayIx].copyWith(stops: oldStops);
+      days[newDayIx] = days[newDayIx].copyWith(stops: newStops);
+      update(state.copyWith(days: days));
+    }
+  }
   /// New stop from the catalog: 90 min after the last stop (clamped to
   /// 23:30), or the item's suggested time on an empty day.
   void addCatalogStop(int dayIndex, TripCatalogItem item) {
@@ -1092,17 +1131,33 @@ class CheckInsNotifier extends Notifier<Set<String>> {
     return saved?.cast<String>().toSet() ?? {};
   }
 
-  void checkIn(String placeId) {
+  Future<void> checkIn(String placeId) async {
     if (state.contains(placeId)) return;
     state = {...state, placeId};
     ref.read(localStoreProvider).setJsonList(StoreKeys.checkIns, state.toList());
     if (ref.read(authProvider)) {
-      ref.read(apiProvider).dio.post('/checkins', data: {'placeId': placeId}).ignore();
+      try {
+        await ref.read(apiProvider).dio.post('/checkins', data: {'placeId': placeId});
+        // Refresh the daily quest progress
+        ref.invalidate(dailyQuestProvider);
+      } catch (_) {
+        // Optimistic, ignore errors for MVP
+      }
     }
   }
 }
 
 final checkInsProvider = NotifierProvider<CheckInsNotifier, Set<String>>(CheckInsNotifier.new);
+
+final dailyQuestProvider = FutureProvider<DailyQuest>((ref) async {
+  if (!ref.watch(authProvider)) return const DailyQuest(goal: 2, progress: 0, rewardDescription: 'Free Ceylon Tea', isComplete: false);
+  try {
+    final res = await ref.read(apiProvider).dio.get('/me/quest');
+    return DailyQuest.fromJson((res.data as Map).cast<String, dynamic>());
+  } catch (e) {
+    return const DailyQuest(goal: 2, progress: 0, rewardDescription: 'Free Ceylon Tea', isComplete: false);
+  }
+});
 
 /// Bookmarked / favorited places for the traveller — local-only (no server
 /// endpoint yet), persisted so bookmarks survive an app restart.

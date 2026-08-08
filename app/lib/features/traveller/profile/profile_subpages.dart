@@ -341,8 +341,8 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
         const SizedBox(height: 22),
         sectionCard(context, 'Devices', [
           for (final (i, d) in const [
-            (name: 'Pixel 9', meta: 'Weligama · Active now', icon: Icons.smartphone, current: true),
-            (name: 'MacBook Air · Safari', meta: 'Colombo · Yesterday', icon: Icons.laptop_mac, current: false),
+            (name: 'Pixel 9', meta: 'Active now', icon: Icons.smartphone, current: true),
+            (name: 'MacBook Air · Safari', meta: 'Yesterday', icon: Icons.laptop_mac, current: false),
           ].indexed) ...[
             if (i > 0) const Divider(height: 1),
             Padding(

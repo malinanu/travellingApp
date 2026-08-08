@@ -44,56 +44,29 @@ type VendorCategory struct {
 // mirrored by web/packages/shared/src/vendor-categories.ts (web/vendor,
 // web/admin) and app/lib/data/vendor_categories.dart (the Flutter app).
 // Replaces what used to be 5 independently hardcoded, drifting lists.
-var VendorCategories = []VendorCategory{
-	// Hospitality vendors — cafes, restaurants, bars, hotels, beach clubs.
-	{ID: "cafe", Label: "Café", Segment: SegmentHospitality, Icon: "Coffee", RelevantVibeDimensions: []string{"productive", "loud", "crowded"}, BookingType: BookingTypeTable},
-	{ID: "coworking-cafe", Label: "Coworking Café", Segment: SegmentHospitality, Icon: "Laptop", RelevantVibeDimensions: []string{"productive", "loud", "crowded"}, BookingType: BookingTypeTable},
-	{ID: "restaurant", Label: "Restaurant", Segment: SegmentHospitality, Icon: "UtensilsCrossed", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeTable},
-	{ID: "street-food", Label: "Street Food", Segment: SegmentHospitality, Icon: "Soup", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "bakery", Label: "Bakery", Segment: SegmentHospitality, Icon: "Cookie", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "bar-pub", Label: "Bar & Pub", Segment: SegmentHospitality, Icon: "Martini", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeTable},
-	{ID: "club", Label: "Club / Nightlife", Segment: SegmentHospitality, Icon: "Music", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeTable},
-	{ID: "hotel", Label: "Hotel", Segment: SegmentHospitality, Icon: "Building2", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeStay},
-	{ID: "hostel", Label: "Hostel / Guesthouse", Segment: SegmentHospitality, Icon: "BedSingle", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeStay},
-	{ID: "resort", Label: "Resort", Segment: SegmentHospitality, Icon: "Palmtree", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeStay},
-	{ID: "beach-club", Label: "Beach Club", Segment: SegmentHospitality, Icon: "Waves", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeTable},
+var VendorCategories []VendorCategory
 
-	// Activity and experience providers — surf/dive schools, yoga, tours.
-	{ID: "surf-school", Label: "Surf School", Segment: SegmentActivity, Icon: "Waves", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
-	{ID: "dive-school", Label: "Diving / Dive Shop", Segment: SegmentActivity, Icon: "Anchor", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
-	{ID: "yoga-studio", Label: "Yoga Studio", Segment: SegmentActivity, Icon: "Flower2", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeSession},
-	{ID: "spa-wellness", Label: "Spa & Wellness", Segment: SegmentActivity, Icon: "Sparkles", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: BookingTypeSession},
-	{ID: "cooking-class", Label: "Cooking Class", Segment: SegmentActivity, Icon: "ChefHat", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
-	{ID: "pottery-workshop", Label: "Pottery Workshop", Segment: SegmentActivity, Icon: "Hammer", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
-	{ID: "batik-atelier", Label: "Batik / Textile Atelier", Segment: SegmentActivity, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
-	{ID: "spice-trail", Label: "Spice Trail", Segment: SegmentActivity, Icon: "Leaf", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
-	{ID: "safari-wildlife", Label: "Safari & Wildlife", Segment: SegmentActivity, Icon: "PawPrint", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
-	{ID: "boat-trip", Label: "Boat Trip", Segment: SegmentActivity, Icon: "Ship", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
-	{ID: "city-tour", Label: "City / Cultural Tour", Segment: SegmentActivity, Icon: "Compass", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
+func InitVendorCategories(categories []VendorCategory) {
+	VendorCategories = categories
+}
 
-	// Independent local providers — guides, artisans, tailors, solo hosts.
-	{ID: "tour-guide", Label: "Tour / Walking Guide", Segment: SegmentIndependent, Icon: "Compass", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
-	{ID: "artisan-shop", Label: "Local Artisan / Craft Shop", Segment: SegmentIndependent, Icon: "Palette", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "tailor-clothing", Label: "Tailor / Local Clothing", Segment: SegmentIndependent, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "experience-host", Label: "Independent Experience Host", Segment: SegmentIndependent, Icon: "Backpack", RelevantVibeDimensions: []string{"crowded"}, BookingType: BookingTypeSession},
+func AddVendorCategory(category VendorCategory) {
+	for i, c := range VendorCategories {
+		if c.ID == category.ID {
+			VendorCategories[i] = category
+			return
+		}
+	}
+	VendorCategories = append(VendorCategories, category)
+}
 
-	// Event promoters — festivals, parties, competitions, community events.
-	{ID: "festival-event", Label: "Festival", Segment: SegmentEvents, Icon: "PartyPopper", RelevantVibeDimensions: []string{"loud", "crowded"}},
-	{ID: "party-promoter", Label: "Party Promotion", Segment: SegmentEvents, Icon: "PartyPopper", RelevantVibeDimensions: []string{"loud", "crowded"}},
-	{ID: "surf-competition", Label: "Surf Competition", Segment: SegmentEvents, Icon: "Waves", RelevantVibeDimensions: []string{"loud", "crowded"}},
-	{ID: "community-charity-event", Label: "Community / Charity Event", Segment: SegmentEvents, Icon: "HeartHandshake", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "music-night", Label: "Music Night", Segment: SegmentEvents, Icon: "Music", RelevantVibeDimensions: []string{"loud", "crowded"}},
-
-	// Brand partners — sponsors, not physical venues, so vibe is irrelevant.
-	{ID: "beverage-brand", Label: "Beverage Brand", Segment: SegmentBrand, Icon: "GlassWater"},
-	{ID: "alcohol-brand", Label: "Beer & Alcohol Brand", Segment: SegmentBrand, Icon: "Wine"},
-	{ID: "food-brand", Label: "Food Brand", Segment: SegmentBrand, Icon: "UtensilsCrossed"},
-	{ID: "lifestyle-brand", Label: "Lifestyle Brand", Segment: SegmentBrand, Icon: "Sparkles"},
-	{ID: "tourism-company", Label: "Tourism Company", Segment: SegmentBrand, Icon: "Plane"},
-
-	// Future partners (accommodation/flight/insurance/transfer/booking
-	// platforms) deliberately have no categories — affiliate-only per the
-	// business plan, not an active onboarding type. See OnboardableCategories.
+func RemoveVendorCategory(id string) {
+	for i, c := range VendorCategories {
+		if c.ID == id {
+			VendorCategories = append(VendorCategories[:i], VendorCategories[i+1:]...)
+			return
+		}
+	}
 }
 
 // legacyCategoryAliases maps every free-text category string the app has

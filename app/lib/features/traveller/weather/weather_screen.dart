@@ -12,6 +12,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import 'package:lottie/lottie.dart';
+
 import '../../../core/api/api_client.dart';
 import '../../../core/api/google_places_service.dart';
 import '../../../core/theme/mood.dart';
@@ -23,6 +25,22 @@ import '../../../data/mock/sri_lanka_locations.dart';
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import 'activity_rules.dart';
+
+String _getWeatherLottie(String backendIcon, DateTime time, DateTime sunrise, DateTime sunset) {
+  final bool isDay = time.isAfter(sunrise) && time.isBefore(sunset);
+  final suffix = isDay ? '-day' : '-night';
+  
+  switch (backendIcon) {
+    case 'Sun':
+      return 'assets/weather/clear$suffix.json';
+    case 'CloudSun':
+      return 'assets/weather/partly-cloudy$suffix.json';
+    case 'CloudRain':
+      return 'assets/weather/rain.json'; // Rain animation is generic in Meteocons, but we can also use thunderstorms etc if needed
+    default:
+      return 'assets/weather/partly-cloudy$suffix.json';
+  }
+}
 
 class WeatherScreen extends ConsumerStatefulWidget {
   const WeatherScreen({super.key});
@@ -298,6 +316,13 @@ class _WeatherPageContentState extends ConsumerState<_WeatherPageContent> {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
+                            Lottie.asset(
+                              _getWeatherLottie(snap.now.icon, DateTime.now(), snap.sunrise, snap.sunset),
+                              width: 90,
+                              height: 90,
+                              fit: BoxFit.contain,
+                            ),
+                            const SizedBox(width: 8),
                             Text(
                               '${snap.now.temp.round()}°',
                               style: text.displayLarge?.copyWith(
@@ -346,15 +371,24 @@ class _WeatherPageContentState extends ConsumerState<_WeatherPageContent> {
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
                 child: Column(
                   children: [
-                    _ActivityRuleCard(snap: snap, style: mainStyle),
+                    StaggerIn(
+                      index: 0,
+                      child: _ActivityRuleCard(snap: snap, style: mainStyle),
+                    ),
                     const SizedBox(height: 20),
 
                     // 2. Hourly forecast timeline
-                    _HourlyForecastCard(hourly: snap.hourly),
+                    StaggerIn(
+                      index: 1,
+                      child: _HourlyForecastCard(snap: snap),
+                    ),
                     const SizedBox(height: 20),
 
                     // 3. Stats 6-cell grid
-                    _StatsGrid(snap: snap),
+                    StaggerIn(
+                      index: 2,
+                      child: _StatsGrid(snap: snap),
+                    ),
                   ],
                 ),
               ),
@@ -434,9 +468,9 @@ class _ActivityRuleCard extends StatelessWidget {
 }
 
 class _HourlyForecastCard extends StatelessWidget {
-  const _HourlyForecastCard({required this.hourly});
+  const _HourlyForecastCard({required this.snap});
 
-  final List<HourlyPoint> hourly;
+  final WeatherSnapshot snap;
 
   @override
   Widget build(BuildContext context) {
@@ -449,20 +483,25 @@ class _HourlyForecastCard extends StatelessWidget {
           Text('24-Hour Forecast', style: text.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           SizedBox(
-            height: 90,
+            height: 100, // increased slightly to accommodate lottie
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: hourly.length,
+              itemCount: snap.hourly.length,
               separatorBuilder: (_, __) => const SizedBox(width: 16),
               itemBuilder: (context, i) {
-                final item = hourly[i];
+                final item = snap.hourly[i];
                 final timeStr = DateFormat('h a').format(item.time);
                 return Column(
                   children: [
                     Text(timeStr, style: text.labelSmall?.copyWith(color: SpottoColors.muted)),
-                    const SizedBox(height: 6),
-                    Icon(spottoIcon(item.icon), size: 20, color: SpottoColors.accent),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 2),
+                    Lottie.asset(
+                      _getWeatherLottie(item.icon, item.time, snap.sunrise, snap.sunset),
+                      width: 44,
+                      height: 44,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(height: 2),
                     Text('${item.temp.round()}°', style: text.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
                   ],
                 );

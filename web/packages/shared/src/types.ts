@@ -398,6 +398,7 @@ export interface DashboardBlob {
   week?: { day: string; views: number; redemptions: number }[];
   popular?: { h: number; v: number }[];
   trend?: { wk: string; you: number; cat: number }[];
+  questClaimsToday?: number;
 }
 
 export interface GrowthBlob {

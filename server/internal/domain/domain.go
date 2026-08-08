@@ -222,6 +222,40 @@ type Vendor struct {
 	Vibe *VibeAggregate `json:"vibe,omitempty"`
 }
 
+type DailyQuest struct {
+	Goal              int    `json:"goal"`
+	Progress          int    `json:"progress"`
+	RewardDescription string `json:"rewardDescription"`
+	IsComplete        bool   `json:"isComplete"`
+	SponsorName       string `json:"sponsorName,omitempty"`
+	SponsorID         string `json:"sponsorId,omitempty"`
+}
+
+type VendorSponsorship struct {
+	VendorID          string    `json:"vendorId"`
+	RewardDescription string    `json:"rewardDescription"`
+	RewardLimit       int       `json:"rewardLimit"`
+	IsActive          bool      `json:"isActive"`
+	Status            string    `json:"status"` // pending, approved, rejected
+	CreatedAt         time.Time `json:"createdAt"`
+}
+
+type QuestSchedule struct {
+	Date              string `json:"date"`
+	VendorID          string `json:"vendorId"`
+	Goal              int    `json:"goal"`
+	SponsorName       string `json:"sponsorName,omitempty"`
+	RewardDescription string `json:"rewardDescription,omitempty"`
+}
+
+type QuestClaim struct {
+	ID          string    `json:"id"`
+	TravellerID string    `json:"travellerId"`
+	VendorID    string    `json:"vendorId"`
+	Date        string    `json:"date"`
+	ClaimedAt   time.Time `json:"claimedAt"`
+}
+
 type OfferStatus string
 
 const (

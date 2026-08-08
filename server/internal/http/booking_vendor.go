@@ -33,9 +33,9 @@ func (s *Server) handleVendorServices(w http.ResponseWriter, r *http.Request) {
 // offer a "session" service).
 func validateServiceType(category string, t domain.BookingType) error {
 	switch t {
-	case domain.BookingTypeSession, domain.BookingTypeTable, domain.BookingTypeStay:
+	case domain.BookingTypeSession, domain.BookingTypeTable, domain.BookingTypeStay, domain.BookingTypeRental:
 	default:
-		return errors.New("type must be session, table, or stay")
+		return errors.New("type must be session, table, stay, or rental")
 	}
 	if allowed := domain.BookingTypeByCategory(category); allowed == "" {
 		return errors.New("vendor category does not support bookings")

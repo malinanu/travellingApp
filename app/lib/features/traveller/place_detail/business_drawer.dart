@@ -1245,6 +1245,7 @@ class _BookingForm extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final isStay = selected.type == 'stay';
+    final isRental = selected.type == 'rental';
     final canSubmit = isStay ? (checkIn != null && checkOut != null) : selectedSlotStart != null;
 
     return Container(
@@ -1377,7 +1378,7 @@ class _BookingForm extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              Text(isStay ? 'Guests' : 'Party size',
+              Text(isRental ? 'Quantity' : isStay ? 'Guests' : 'Party size',
                   style: text.bodySmall?.copyWith(fontWeight: FontWeight.w800)),
               const Spacer(),
               IconButton(

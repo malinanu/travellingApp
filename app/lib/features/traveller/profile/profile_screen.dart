@@ -327,11 +327,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w800,
                                     color: SpottoColors.accent)),
-                            const Text(' · Weligama',
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: SpottoColors.muted)),
                           ],
                         ),
                       ),

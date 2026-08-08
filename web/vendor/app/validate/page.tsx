@@ -20,7 +20,7 @@ const DEMO_CODES = ['SPOTTO-DRIF', 'SPOTTO-X4K9', 'SPOTTO-88Q2'];
 
 export default function ValidatePage() {
   const qc = useQueryClient();
-  const [code, setCode] = useState('SPOTTO-');
+  const [code, setCode] = useState('SPOTTO-'); // Start with SPOTTO- by default, though QUEST- and BOOK- are valid too
   const [result, setResult] = useState<ValidateResponse | null>(null);
   // Guards the scanner's onDecode against re-firing on every animation
   // frame while the same code is still in view — resets whenever the
@@ -77,7 +77,7 @@ export default function ValidatePage() {
               <div className="card p-5">
                 <h3 className="font-extrabold text-[15px] mb-1">Enter code manually</h3>
                 <p className="text-[13px] text-muted font-semibold mb-3">
-                  If the camera won&rsquo;t focus. Works for both offer codes (SPOTTO-XXXX) and booking check-ins (BOOK-XXXX).
+                  If the camera won&rsquo;t focus. Works for offer codes (SPOTTO-XXXX), booking check-ins (BOOK-XXXX) and quest rewards (QUEST-XXXX).
                 </p>
                 <form
                   className="flex gap-2"
@@ -139,7 +139,7 @@ function ResultCard({ r, code, onReset }: { r: ValidateResponse; code: string; o
       {r.result === 'valid' && r.claim && (
         <div className={`${base} bg-accent-tint border border-accent/30`}>
           <p className="flex items-center gap-2 text-accent font-extrabold text-lg">
-            <CheckCircle2 size={22} /> Valid — redeemed just now
+            <CheckCircle2 size={22} /> Valid — {code.startsWith('QUEST-') ? 'Quest reward claimed' : 'redeemed just now'}
           </p>
           <p className="mt-3 font-extrabold text-[15px]">
             {r.claim.travellerName || 'Traveller'}
@@ -149,7 +149,7 @@ function ResultCard({ r, code, onReset }: { r: ValidateResponse; code: string; o
             <p className="text-[13px] text-muted font-bold capitalize">{r.claim.travellerStyle}</p>
           )}
           <p className="mt-2 text-[14px] font-semibold">{r.claim.offerLabel}</p>
-          <p className="text-[12.5px] text-muted font-bold">{r.claim.code}</p>
+          <p className="text-[12.5px] text-muted font-bold">{r.claim.code || code}</p>
         </div>
       )}
       {r.result === 'valid' && r.booking && (
@@ -168,10 +168,10 @@ function ResultCard({ r, code, onReset }: { r: ValidateResponse; code: string; o
       {r.result === 'already_redeemed' && (
         <div className={`${base} bg-[#fdf0cd] border border-sun/50`}>
           <p className="flex items-center gap-2 text-[#a97b00] font-extrabold text-lg">
-            <CircleSlash size={22} /> {r.booking ? 'Already checked in' : 'Already redeemed'}
+            <CircleSlash size={22} /> {r.booking ? 'Already checked in' : code.startsWith('QUEST-') ? 'Already claimed today' : 'Already redeemed'}
           </p>
           <p className="mt-2 text-[14px] font-semibold">
-            {code} was used {timeAgo(r.redeemedAt ?? r.claim?.redeemedAt ?? r.booking?.checkedInAt)}. Each code works once.
+            {code} was used {r.redeemedAt || r.claim?.redeemedAt || r.booking?.checkedInAt ? timeAgo(r.redeemedAt ?? r.claim?.redeemedAt ?? r.booking?.checkedInAt) : 'recently'}. Each code works once.
           </p>
         </div>
       )}

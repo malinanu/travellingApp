@@ -25,6 +25,19 @@ func Run(ctx context.Context, s *postgres.Store) error {
 	if err != nil {
 		return err
 	}
+	// ── Vendor Categories ────────────────────────────────────────────────────────
+	for _, c := range InitialCategories {
+		if err := s.CreateVendorCategory(ctx, c); err != nil {
+			return fmt.Errorf("create category %s: %w", c.ID, err)
+		}
+	}
+
+	// Update domain memory cache so validation passes during the rest of the seed run
+	cats, err := s.GetVendorCategories(ctx)
+	if err != nil {
+		return fmt.Errorf("get categories: %w", err)
+	}
+	domain.InitVendorCategories(cats)
 
 	// ── Vendors ──────────────────────────────────────────────────────────
 	driftwoodID := "ven_driftwood"

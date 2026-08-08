@@ -469,6 +469,48 @@ func (s *Server) handleCheckin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
 }
 
+func (s *Server) handleGetQuest(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	
+	// Check progress today
+	progress, err := s.Store.GetDailyQuestProgress(r.Context(), c.Subject)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to get quest progress")
+		return
+	}
+
+	// Fetch the schedule for today
+	today := time.Now().UTC().Format("2006-01-02")
+	schedule, err := s.Store.GetQuestSchedule(r.Context(), today)
+	if err != nil && err != postgres.ErrNotFound {
+		writeErr(w, http.StatusInternalServerError, "failed to get quest schedule")
+		return
+	}
+
+	goal := 5
+	rewardDesc := "Mystery Reward"
+	sponsorName := "Spotto"
+	sponsorID := "system"
+
+	if err == nil {
+		goal = schedule.Goal
+		rewardDesc = schedule.RewardDescription
+		sponsorName = schedule.SponsorName
+		sponsorID = schedule.VendorID
+	}
+
+	quest := domain.DailyQuest{
+		Goal:              goal,
+		Progress:          progress,
+		RewardDescription: rewardDesc,
+		IsComplete:        progress >= goal,
+		SponsorName:       sponsorName,
+		SponsorID:         sponsorID,
+	}
+
+	writeJSON(w, http.StatusOK, quest)
+}
+
 // handleCreateClaim issues a unique single-use SPOTTO code, idempotent per
 // traveller+place (re-claiming returns the existing unredeemed code).
 func (s *Server) handleCreateClaim(w http.ResponseWriter, r *http.Request) {

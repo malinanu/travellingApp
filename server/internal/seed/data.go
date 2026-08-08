@@ -4,6 +4,51 @@
 // offset from now.
 package seed
 
+import "github.com/spotto/server/internal/domain"
+
+var InitialCategories = []domain.VendorCategory{
+	{ID: "cafe", Label: "Café", Segment: domain.SegmentHospitality, Icon: "Coffee", RelevantVibeDimensions: []string{"productive", "loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "coworking-cafe", Label: "Coworking Café", Segment: domain.SegmentHospitality, Icon: "Laptop", RelevantVibeDimensions: []string{"productive", "loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "restaurant", Label: "Restaurant", Segment: domain.SegmentHospitality, Icon: "UtensilsCrossed", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "street-food", Label: "Street Food", Segment: domain.SegmentHospitality, Icon: "Soup", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "bakery", Label: "Bakery", Segment: domain.SegmentHospitality, Icon: "Cookie", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "bar-pub", Label: "Bar & Pub", Segment: domain.SegmentHospitality, Icon: "Martini", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "club", Label: "Club / Nightlife", Segment: domain.SegmentHospitality, Icon: "Music", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "hotel", Label: "Hotel", Segment: domain.SegmentHospitality, Icon: "Building2", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeStay},
+	{ID: "hostel", Label: "Hostel / Guesthouse", Segment: domain.SegmentHospitality, Icon: "BedSingle", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeStay},
+	{ID: "resort", Label: "Resort", Segment: domain.SegmentHospitality, Icon: "Palmtree", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeStay},
+	{ID: "beach-club", Label: "Beach Club", Segment: domain.SegmentHospitality, Icon: "Waves", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "surf-school", Label: "Surf School", Segment: domain.SegmentActivity, Icon: "Waves", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "dive-school", Label: "Diving / Dive Shop", Segment: domain.SegmentActivity, Icon: "Anchor", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "yoga-studio", Label: "Yoga Studio", Segment: domain.SegmentActivity, Icon: "Flower2", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "spa-wellness", Label: "Spa & Wellness", Segment: domain.SegmentActivity, Icon: "Sparkles", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "cooking-class", Label: "Cooking Class", Segment: domain.SegmentActivity, Icon: "ChefHat", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "pottery-workshop", Label: "Pottery Workshop", Segment: domain.SegmentActivity, Icon: "Hammer", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "batik-atelier", Label: "Batik / Textile Atelier", Segment: domain.SegmentActivity, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "spice-trail", Label: "Spice Trail", Segment: domain.SegmentActivity, Icon: "Leaf", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "safari-wildlife", Label: "Safari & Wildlife", Segment: domain.SegmentActivity, Icon: "PawPrint", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "boat-trip", Label: "Boat Trip", Segment: domain.SegmentActivity, Icon: "Ship", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "city-tour", Label: "City / Cultural Tour", Segment: domain.SegmentActivity, Icon: "Compass", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "surf-rental", Label: "Surfboard Rental", Segment: domain.SegmentActivity, Icon: "Waves", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeRental},
+	{ID: "bike-rental", Label: "Bicycle Rental", Segment: domain.SegmentActivity, Icon: "Bike", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeRental},
+	{ID: "scooter-rental", Label: "Scooter Rental", Segment: domain.SegmentActivity, Icon: "Bike", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeRental},
+	{ID: "kayak-rental", Label: "Kayak / Canoe Rental", Segment: domain.SegmentActivity, Icon: "Anchor", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeRental},
+	{ID: "tour-guide", Label: "Tour / Walking Guide", Segment: domain.SegmentIndependent, Icon: "Compass", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "artisan-shop", Label: "Local Artisan / Craft Shop", Segment: domain.SegmentIndependent, Icon: "Palette", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "tailor-clothing", Label: "Tailor / Local Clothing", Segment: domain.SegmentIndependent, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "experience-host", Label: "Independent Experience Host", Segment: domain.SegmentIndependent, Icon: "Backpack", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "festival-event", Label: "Festival", Segment: domain.SegmentEvents, Icon: "PartyPopper", RelevantVibeDimensions: []string{"loud", "crowded"}},
+	{ID: "party-promoter", Label: "Party Promotion", Segment: domain.SegmentEvents, Icon: "PartyPopper", RelevantVibeDimensions: []string{"loud", "crowded"}},
+	{ID: "surf-competition", Label: "Surf Competition", Segment: domain.SegmentEvents, Icon: "Waves", RelevantVibeDimensions: []string{"loud", "crowded"}},
+	{ID: "community-charity-event", Label: "Community / Charity Event", Segment: domain.SegmentEvents, Icon: "HeartHandshake", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "music-night", Label: "Music Night", Segment: domain.SegmentEvents, Icon: "Music", RelevantVibeDimensions: []string{"loud", "crowded"}},
+	{ID: "beverage-brand", Label: "Beverage Brand", Segment: domain.SegmentBrand, Icon: "GlassWater"},
+	{ID: "alcohol-brand", Label: "Beer & Alcohol Brand", Segment: domain.SegmentBrand, Icon: "Wine"},
+	{ID: "food-brand", Label: "Food Brand", Segment: domain.SegmentBrand, Icon: "UtensilsCrossed"},
+	{ID: "lifestyle-brand", Label: "Lifestyle Brand", Segment: domain.SegmentBrand, Icon: "Sparkles"},
+	{ID: "tourism-company", Label: "Tourism Company", Segment: domain.SegmentBrand, Icon: "Plane"},
+}
+
 // placeDriftwoodData …placeBatikData mirror the Dart Place model in
 // app/lib/data/mock/places.dart (id/name/vendorId live on the row).
 const placeDriftwoodData = `{

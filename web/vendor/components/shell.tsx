@@ -28,6 +28,7 @@ import { api } from '../lib/api';
 const NAV: { href: string; label: string; icon: LucideIcon; foodOnly?: boolean; staffHidden?: boolean; approvedOnly?: boolean; bookableOnly?: boolean }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/offers', label: 'Offers', icon: Tag, approvedOnly: true },
+  { href: '/sponsorship', label: 'Sponsorship', icon: Star, approvedOnly: true, staffHidden: true },
   { href: '/menu', label: 'Menu', icon: UtensilsCrossed, foodOnly: true, staffHidden: true },
   { href: '/services', label: 'Services', icon: CalendarCheck, bookableOnly: true, staffHidden: true, approvedOnly: true },
   { href: '/bookings', label: 'Bookings', icon: CalendarClock, bookableOnly: true, approvedOnly: true },

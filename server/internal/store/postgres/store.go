@@ -2554,6 +2554,19 @@ func (s *Store) AddCheckin(ctx context.Context, placeID, travellerID string) err
 	return err
 }
 
+func (s *Store) GetDailyQuestProgress(ctx context.Context, travellerID string) (int, error) {
+	var count int
+	// Count unique places checked into by this traveller today (local time proxy by using current_date).
+	// To be robust across timezones, this uses UTC CURRENT_DATE in Postgres, 
+	// which is acceptable for a simple MVP quest.
+	err := s.Pool.QueryRow(ctx,
+		`SELECT COUNT(DISTINCT place_id) 
+		 FROM checkins 
+		 WHERE traveller_id = $1 
+		 AND created_at >= CURRENT_DATE`, travellerID).Scan(&count)
+	return count, err
+}
+
 // ---- vendor notifications ----
 
 func (s *Store) UpsertVendorNotification(ctx context.Context, vendorID string, n domain.VendorNotification) error {
@@ -2940,4 +2953,115 @@ func (s *Store) CreatePaymentTransaction(ctx context.Context, tx domain.PaymentT
 		tx.ID, tx.UserID, tx.VendorID, tx.AmountCents, tx.Currency, tx.Status, tx.Description,
 	)
 	return err
+}
+
+func (s *Store) GetVendorSponsorship(ctx context.Context, vendorID string) (domain.VendorSponsorship, error) {
+	var v domain.VendorSponsorship
+	err := s.Pool.QueryRow(ctx, `
+		SELECT vendor_id, reward_description, reward_limit, is_active, status, created_at
+		FROM vendor_sponsorships WHERE vendor_id = $1`, vendorID).
+		Scan(&v.VendorID, &v.RewardDescription, &v.RewardLimit, &v.IsActive, &v.Status, &v.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return domain.VendorSponsorship{}, ErrNotFound
+	}
+	return v, err
+}
+
+func (s *Store) UpsertVendorSponsorship(ctx context.Context, v domain.VendorSponsorship) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO vendor_sponsorships (vendor_id, reward_description, reward_limit, is_active, status, created_at)
+		VALUES ($1, $2, $3, $4, 'pending', now())
+		ON CONFLICT (vendor_id) DO UPDATE SET
+			status = CASE WHEN vendor_sponsorships.reward_description != EXCLUDED.reward_description THEN 'pending' ELSE vendor_sponsorships.status END,
+			reward_description = EXCLUDED.reward_description,
+			reward_limit = EXCLUDED.reward_limit,
+			is_active = EXCLUDED.is_active`,
+		v.VendorID, v.RewardDescription, v.RewardLimit, v.IsActive)
+	return err
+}
+
+func (s *Store) CreateQuestClaim(ctx context.Context, claim domain.QuestClaim) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO quest_claims (id, traveller_id, vendor_id, date, claimed_at)
+		VALUES ($1, $2, $3, $4, now())`,
+		claim.ID, claim.TravellerID, claim.VendorID, claim.Date)
+	return err
+}
+
+func (s *Store) GetQuestClaimsCount(ctx context.Context, vendorID, date string) (int, error) {
+	var count int
+	err := s.Pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM quest_claims WHERE vendor_id = $1 AND date = $2`,
+		vendorID, date).Scan(&count)
+	return count, err
+}
+
+func (s *Store) ListVendorSponsorshipsByStatus(ctx context.Context, status string) ([]domain.VendorSponsorship, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT vendor_id, reward_description, reward_limit, is_active, status, created_at
+		FROM vendor_sponsorships WHERE status = $1 ORDER BY created_at DESC`, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var res []domain.VendorSponsorship
+	for rows.Next() {
+		var v domain.VendorSponsorship
+		if err := rows.Scan(&v.VendorID, &v.RewardDescription, &v.RewardLimit, &v.IsActive, &v.Status, &v.CreatedAt); err != nil {
+			return nil, err
+		}
+		res = append(res, v)
+	}
+	return res, rows.Err()
+}
+
+func (s *Store) UpdateVendorSponsorshipStatus(ctx context.Context, vendorID, status string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE vendor_sponsorships SET status = $1 WHERE vendor_id = $2`, status, vendorID)
+	return err
+}
+
+func (s *Store) GetQuestSchedule(ctx context.Context, date string) (domain.QuestSchedule, error) {
+	var q domain.QuestSchedule
+	err := s.Pool.QueryRow(ctx, `
+		SELECT d.date, d.vendor_id, d.goal, v.name, vs.reward_description
+		FROM daily_quests d
+		JOIN vendors v ON v.id = d.vendor_id
+		JOIN vendor_sponsorships vs ON vs.vendor_id = d.vendor_id
+		WHERE d.date = $1`, date).
+		Scan(&q.Date, &q.VendorID, &q.Goal, &q.SponsorName, &q.RewardDescription)
+	if err == pgx.ErrNoRows {
+		return domain.QuestSchedule{}, ErrNotFound
+	}
+	return q, err
+}
+
+func (s *Store) SetQuestSchedule(ctx context.Context, q domain.QuestSchedule) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO daily_quests (date, vendor_id, goal, created_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (date) DO UPDATE SET vendor_id = EXCLUDED.vendor_id, goal = EXCLUDED.goal`,
+		q.Date, q.VendorID, q.Goal)
+	return err
+}
+
+func (s *Store) ListQuestSchedules(ctx context.Context) ([]domain.QuestSchedule, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT d.date, d.vendor_id, d.goal, v.name, vs.reward_description
+		FROM daily_quests d
+		JOIN vendors v ON v.id = d.vendor_id
+		JOIN vendor_sponsorships vs ON vs.vendor_id = d.vendor_id
+		ORDER BY d.date DESC LIMIT 30`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var res []domain.QuestSchedule
+	for rows.Next() {
+		var q domain.QuestSchedule
+		if err := rows.Scan(&q.Date, &q.VendorID, &q.Goal, &q.SponsorName, &q.RewardDescription); err != nil {
+			return nil, err
+		}
+		res = append(res, q)
+	}
+	return res, rows.Err()
 }

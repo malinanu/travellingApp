@@ -358,7 +358,7 @@ export default function ProfilePage() {
 
           <div className="card p-6">
             <CardHeader icon={Store} title="Business type" sub="What kind of spot are you?" />
-            <div className="space-y-3 mb-4">
+            <div className="space-y-4 mb-4 max-h-[360px] overflow-y-auto pr-1">
               {VENDOR_SEGMENTS.map((segment) => (
                 <div key={segment.id}>
                   <span className="block text-[10.5px] font-extrabold uppercase tracking-wide mb-1.5 text-muted">

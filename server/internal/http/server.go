@@ -77,6 +77,7 @@ type Server struct {
 	grantPinLimit *loginLimiter // guards /vendor/profile-grants/{id}/redeem (key: ip+userID) — a 6-digit PIN only has 10^6 possibilities
 	guideLimit    *rateLimiter  // guards /guide/chat (key: userID or clientIP)
 	oauthCodes    *authCodeStore
+	GroupHub      *GroupHub
 }
 
 func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server {
@@ -104,6 +105,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		grantPinLimit:      newLoginLimiter(5, 15*time.Minute),
 		guideLimit:         newRateLimiter(15, 1*time.Minute),
 		oauthCodes:         newAuthCodeStore(),
+		GroupHub:           NewGroupHub(),
 	}
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
 		s.GoogleOAuth = &oauth2.Config{
@@ -194,7 +196,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Get("/media/raw/*", s.handleMediaRaw)
 
 	r.Get("/healthz", s.handleHealthz)
+	r.Get("/api/categories", s.handleAdminCategories)
 	r.Get("/readyz", s.handleReadyz)
+	r.Get("/ws/group", s.handleGroupWS)
 
 	r.Post("/auth/register", s.handleRegister)
 	r.Post("/auth/login", s.handleLogin)
@@ -253,6 +257,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Post("/places/{id}/vibe-checkin", s.handleVibeCheckin)
 		r.Post("/places/{id}/reviews", s.handleCreateReview)
 		r.Post("/checkins", s.handleCheckin)
+		r.Get("/me/quest", s.handleGetQuest)
 		r.Post("/claims", s.handleCreateClaim)
 		r.Get("/me/claims", s.handleMyClaims)
 		r.Post("/bookings", s.handleCreateBooking)
@@ -280,6 +285,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Patch("/vendor/business/category", s.handleUpdateVendorCategory)
 		r.Patch("/vendor/business/identity", s.handleUpdateVendorIdentity)
 		r.Patch("/vendor/business/br-cert-number", s.handleUpdateVendorBRCertNumber)
+		r.Get("/vendor/sponsorship", s.handleGetSponsorship)
+		r.Put("/vendor/sponsorship", s.handlePutSponsorship)
 		r.Get("/vendor/menu", s.handleVendorMenu)
 		r.Get("/vendor/offers", s.handleVendorOffers)
 		r.Get("/vendor/offers/{id}/claims", s.handleOfferClaims)
@@ -377,6 +384,19 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/local-guide/stats", s.handleAdminGuideStats)
 		r.Get("/admin/local-guide/conversations", s.handleAdminGuideConversations)
 		r.Get("/admin/local-guide/conversations/{id}", s.handleAdminGuideConversationDetail)
+
+		// Quests
+		r.Get("/admin/quests/sponsorships/pending", s.handleAdminListPendingSponsorships)
+		r.Get("/admin/quests/sponsorships/approved", s.handleAdminListApprovedSponsorships)
+		r.Post("/admin/quests/sponsorships/{vendor_id}/status", s.handleAdminUpdateSponsorshipStatus)
+		r.Get("/admin/quests/schedules", s.handleAdminListQuestSchedules)
+		r.Post("/admin/quests/schedules", s.handleAdminSetQuestSchedule)
+
+		// Categories
+		r.Get("/admin/categories", s.handleAdminCategories)
+		r.Post("/admin/categories", s.handleAdminCreateCategory)
+		r.Put("/admin/categories/{id}", s.handleAdminUpdateCategory)
+		r.Delete("/admin/categories/{id}", s.handleAdminDeleteCategory)
 
 		// Cross-admin history of destructive actions — restricted further
 		// to super-admins, since it names which specific admin did what.

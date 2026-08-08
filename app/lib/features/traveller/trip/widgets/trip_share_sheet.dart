@@ -441,7 +441,7 @@ class _TripInvitationDialog extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text('Hosted by you · Weligama, Sri Lanka',
+                const Text('Hosted by you',
                     style: TextStyle(
                         fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.white)),
               ],

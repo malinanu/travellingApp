@@ -24,6 +24,8 @@ import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import '../../../data/vendor_categories.dart';
 import '../group/group_sheet.dart';
+import '../group/group_ws_provider.dart';
+import 'quest_sheet.dart';
 import '../place_detail/business_drawer.dart';
 import '../weather/activity_rules.dart';
 
@@ -219,7 +221,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         content: Text(
           result.hasErrors
             ? '⚠ Downloaded ${result.downloaded} tiles (${result.failed} failed). $sizeMb MB cached.'
-            : '✓ ${result.downloaded} tiles downloaded · $sizeMb MB · Weligama area offline!',
+            : '✓ ${result.downloaded} tiles downloaded · $sizeMb MB · Map area offline!',
         ),
         duration: const Duration(seconds: 4),
       ));
@@ -350,6 +352,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     required Set<String> favoriteIds,
     required Set<String> tripCalendarPlaceNames,
     required List<String> userInterests,
+    required Map<String, LatLng> liveLocations,
   }) {
     final markers = <Marker>{};
 
@@ -429,7 +432,11 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     // 2. Group members markers
     if (groupMode) {
       for (final m in members) {
-        if (m.lat == 0 && m.lng == 0) continue;
+        final livePos = liveLocations[m.id];
+        final lat = livePos?.latitude ?? m.lat;
+        final lng = livePos?.longitude ?? m.lng;
+        if (lat == 0 && lng == 0) continue;
+        
         final key = 'avatar|${m.initial}|${m.color}';
         final icon = _resolveBitmap(
           key: key,
@@ -441,7 +448,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         markers.add(
           Marker(
             markerId: MarkerId('member_${m.id}'),
-            position: LatLng(m.lat, m.lng),
+            position: LatLng(lat, lng),
             icon: icon,
             anchor: const Offset(0.5, 0.5),
             onTap: () {
@@ -490,6 +497,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final places = ref.watch(placesProvider);
     final favorites = ref.watch(favoritesProvider);
     final trip = ref.watch(tripProvider);
+    final liveLocations = ref.watch(groupLiveLocationsProvider);
 
     final favoriteIds = favorites;
     final Set<String> tripCalendarPlaceNames = trip.days
@@ -508,6 +516,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         _lastKnownLatLng =
             LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng);
       }
+      if (_lastKnownLatLng != null) {
+        ref.read(groupLiveLocationsProvider.notifier).sendLocation(_lastKnownLatLng!);
+      }
       _maybeCenterOnDevice();
       if (next.hasValue) ref.invalidate(locationPermissionProvider);
     });
@@ -520,6 +531,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       favoriteIds: favoriteIds,
       tripCalendarPlaceNames: tripCalendarPlaceNames,
       userInterests: userInterests,
+      liveLocations: liveLocations,
     );
 
     final localResults = _searchResults(places);
@@ -934,7 +946,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           bottom: 16,
           child: Column(
             children: [
-              _QuestChip(checkIns: ref.watch(checkInsProvider).length),
+              const _QuestChip(),
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(6),
@@ -1106,24 +1118,21 @@ class _LocationCompassButton extends StatelessWidget {
   }
 }
 
-class _QuestChip extends StatelessWidget {
-  final int checkIns;
-  const _QuestChip({required this.checkIns});
-
-  static const goal = 2;
+class _QuestChip extends ConsumerWidget {
+  const _QuestChip();
 
   @override
-  Widget build(BuildContext context) {
-    final done = checkIns.clamp(0, goal);
-    final complete = done >= goal;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final questAsync = ref.watch(dailyQuestProvider);
+    final quest = questAsync.value ?? const DailyQuest(goal: 2, progress: 0, rewardDescription: 'Free Ceylon Tea', isComplete: false);
+
+    final done = quest.progress.clamp(0, quest.goal);
+    final complete = quest.isComplete;
+    final goal = quest.goal;
 
     return PressScale(
       scale: 0.98,
-      onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(complete
-            ? 'Quest complete! Show this at any partner café for your free Ceylon tea.'
-            : 'Check in at Clay & Co Pottery Studio and Sea Salt Batik Atelier to finish today\'s quest.'),
-      )),
+      onTap: () => showQuestSheet(context),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
@@ -1147,8 +1156,8 @@ class _QuestChip extends StatelessWidget {
                 children: [
                   Text(
                     complete
-                        ? 'Free Ceylon Tea unlocked!'
-                        : 'Daily quest · visit $goal artisan spots',
+                        ? '${quest.rewardDescription} unlocked!'
+                        : 'Daily quest · visit $goal spots',
                     style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w800,

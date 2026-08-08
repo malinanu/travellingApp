@@ -35,7 +35,7 @@ export const VENDOR_SEGMENTS: VendorSegmentInfo[] = [
   { id: 'brand', label: 'Brand Partner' },
 ];
 
-export type BookingType = 'session' | 'table' | 'stay';
+export type BookingType = 'session' | 'table' | 'stay' | 'rental';
 
 export interface VendorCategory {
   id: string;
@@ -80,6 +80,12 @@ export const VENDOR_CATEGORIES: VendorCategory[] = [
   { id: 'safari-wildlife', label: 'Safari & Wildlife', segment: 'activity', icon: 'PawPrint', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
   { id: 'boat-trip', label: 'Boat Trip', segment: 'activity', icon: 'Ship', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
   { id: 'city-tour', label: 'City / Cultural Tour', segment: 'activity', icon: 'Compass', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+
+  // Equipment rentals.
+  { id: 'surf-rental', label: 'Surfboard Rental', segment: 'activity', icon: 'Waves', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
+  { id: 'bike-rental', label: 'Bicycle Rental', segment: 'activity', icon: 'Bike', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
+  { id: 'scooter-rental', label: 'Scooter Rental', segment: 'activity', icon: 'Bike', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
+  { id: 'kayak-rental', label: 'Kayak / Canoe Rental', segment: 'activity', icon: 'Anchor', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
 
   // Independent local providers — guides, artisans, tailors, solo hosts.
   { id: 'tour-guide', label: 'Tour / Walking Guide', segment: 'independent', icon: 'Compass', relevantVibeDimensions: ['crowded'], bookingType: 'session' },

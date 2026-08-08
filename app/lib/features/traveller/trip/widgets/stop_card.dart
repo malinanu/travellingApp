@@ -22,6 +22,7 @@ class StopCard extends StatelessWidget {
   final VoidCallback onDown;
   final VoidCallback onRemove;
   final VoidCallback? onOpen; // null when not a Spotto place
+  final bool builderMode;
 
   const StopCard({
     super.key,
@@ -35,6 +36,7 @@ class StopCard extends StatelessWidget {
     required this.onDown,
     required this.onRemove,
     this.onOpen,
+    this.builderMode = false,
   });
 
   Future<void> _pickTime(BuildContext context) async {
@@ -169,14 +171,21 @@ class StopCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              arrow(Icons.keyboard_arrow_up, first, onUp),
-              const SizedBox(height: 2),
-              arrow(Icons.keyboard_arrow_down, last, onDown),
-            ],
-          ),
+          if (builderMode)
+            const SizedBox(
+              width: 28,
+              height: 48,
+              child: Icon(Icons.drag_indicator, size: 22, color: SpottoColors.muted),
+            )
+          else
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                arrow(Icons.keyboard_arrow_up, first, onUp),
+                const SizedBox(height: 2),
+                arrow(Icons.keyboard_arrow_down, last, onDown),
+              ],
+            ),
           const SizedBox(width: 4),
           PressScale(
             scale: 0.9,

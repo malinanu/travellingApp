@@ -25,6 +25,35 @@ class WifiInfo {
       );
 }
 
+class DailyQuest {
+  final int goal;
+  final int progress;
+  final String rewardDescription;
+  final bool isComplete;
+  final String? sponsorName;
+  final String? sponsorId;
+
+  const DailyQuest({
+    required this.goal,
+    required this.progress,
+    required this.rewardDescription,
+    required this.isComplete,
+    this.sponsorName,
+    this.sponsorId,
+  });
+
+  factory DailyQuest.fromJson(Map<String, dynamic> json) {
+    return DailyQuest(
+      goal: json['goal'] as int? ?? 2,
+      progress: json['progress'] as int? ?? 0,
+      rewardDescription: json['rewardDescription'] as String? ?? 'Reward',
+      isComplete: json['isComplete'] as bool? ?? false,
+      sponsorName: json['sponsorName'] as String?,
+      sponsorId: json['sponsorId'] as String?,
+    );
+  }
+}
+
 class PaymentCard {
   final String id;
   final String brand;

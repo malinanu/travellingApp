@@ -122,7 +122,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     children: [
                       Text('Spotto',
                           style: text.displaySmall?.copyWith(color: Colors.white)),
-                      Text('Weligama, in your pocket',
+                      Text('Sri Lanka, in your pocket',
                           style: text.bodyLarge
                               ?.copyWith(color: Colors.white.withValues(alpha: 0.9))),
                     ],

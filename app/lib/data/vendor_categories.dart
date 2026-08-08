@@ -28,7 +28,7 @@ const vendorSegments = <VendorSegmentInfo>[
 /// not bookable (walk-in businesses, brand partners, event categories —
 /// Events isn't a shipped feature yet). Mirrors
 /// server/internal/domain/vendor_category.go's BookingType exactly.
-enum BookingType { session, table, stay }
+enum BookingType { session, table, stay, rental }
 
 class VendorCategory {
   final String id;
@@ -73,6 +73,12 @@ const vendorCategories = <VendorCategory>[
   VendorCategory(id: 'safari-wildlife', label: 'Safari & Wildlife', segment: VendorSegment.activity, icon: 'PawPrint', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
   VendorCategory(id: 'boat-trip', label: 'Boat Trip', segment: VendorSegment.activity, icon: 'Ship', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
   VendorCategory(id: 'city-tour', label: 'City / Cultural Tour', segment: VendorSegment.activity, icon: 'Compass', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),
+
+  // Equipment rentals.
+  VendorCategory(id: 'surf-rental', label: 'Surfboard Rental', segment: VendorSegment.activity, icon: 'Waves', relevantVibeDimensions: ['crowded'], bookingType: BookingType.rental),
+  VendorCategory(id: 'bike-rental', label: 'Bicycle Rental', segment: VendorSegment.activity, icon: 'Bike', relevantVibeDimensions: ['crowded'], bookingType: BookingType.rental),
+  VendorCategory(id: 'scooter-rental', label: 'Scooter Rental', segment: VendorSegment.activity, icon: 'Bike', relevantVibeDimensions: ['crowded'], bookingType: BookingType.rental),
+  VendorCategory(id: 'kayak-rental', label: 'Kayak / Canoe Rental', segment: VendorSegment.activity, icon: 'Anchor', relevantVibeDimensions: ['crowded'], bookingType: BookingType.rental),
 
   // Independent local providers — guides, artisans, tailors, solo hosts.
   VendorCategory(id: 'tour-guide', label: 'Tour / Walking Guide', segment: VendorSegment.independent, icon: 'Compass', relevantVibeDimensions: ['crowded'], bookingType: BookingType.session),

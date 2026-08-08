@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/spotto/server/internal/config"
+	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/seed"
 	"github.com/spotto/server/internal/store/postgres"
 )
@@ -22,6 +23,13 @@ func main() {
 	if err := store.Migrate(ctx); err != nil {
 		log.Fatalf("migrate: %v", err)
 	}
+
+	// Load dynamic vendor categories into memory cache.
+	cats, err := store.GetVendorCategories(ctx)
+	if err != nil {
+		log.Fatalf("failed to load vendor categories: %v", err)
+	}
+	domain.InitVendorCategories(cats)
 	if err := seed.Run(ctx, store); err != nil {
 		log.Fatalf("seed: %v", err)
 	}

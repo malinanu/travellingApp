@@ -11,6 +11,7 @@ const (
 	BookingTypeSession BookingType = "session" // fixed start time + duration + capacity
 	BookingTypeTable   BookingType = "table"   // party size + short fixed duration
 	BookingTypeStay    BookingType = "stay"    // date-range check-in/out + guest count + room capacity
+	BookingTypeRental  BookingType = "rental"  // fixed start time + duration + item capacity
 )
 
 // BookableService is one bookable thing a vendor offers (e.g. "Beginner surf

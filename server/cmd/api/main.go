@@ -9,6 +9,7 @@ import (
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/config"
+	"github.com/spotto/server/internal/domain"
 	httpapi "github.com/spotto/server/internal/http"
 	"github.com/spotto/server/internal/store/postgres"
 )
@@ -25,6 +26,13 @@ func main() {
 	if err := store.Migrate(ctx); err != nil {
 		log.Fatalf("migrate: %v", err)
 	}
+
+	// Load dynamic vendor categories into memory cache.
+	cats, err := store.GetVendorCategories(ctx)
+	if err != nil {
+		log.Fatalf("failed to load vendor categories: %v", err)
+	}
+	domain.InitVendorCategories(cats)
 
 	srv := httpapi.New(store, auth.NewTokens(cfg.JWTSecret), cfg)
 	go srv.StartHolidayScheduler(ctx)

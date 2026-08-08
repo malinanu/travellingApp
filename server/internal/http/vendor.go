@@ -874,6 +874,10 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 		s.handleBookingCheckIn(w, r, v, code)
 		return
 	}
+	if strings.HasPrefix(code, "QUEST-") {
+		s.handleQuestValidate(w, r, v, code)
+		return
+	}
 
 	claim, err := s.Store.ClaimByCode(r.Context(), code)
 	if errors.Is(err, postgres.ErrNotFound) {
@@ -936,7 +940,32 @@ func (s *Server) blobHandler(kind string) http.HandlerFunc {
 }
 
 func (s *Server) handleVendorDashboard(w http.ResponseWriter, r *http.Request) {
-	s.blobHandler("dashboard")(w, r)
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	data, err := s.Store.VendorBlob(r.Context(), v.ID, "dashboard")
+	if err != nil && !errors.Is(err, postgres.ErrNotFound) {
+		storeErr(w, err)
+		return
+	}
+	
+	var blob map[string]any
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &blob); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+	} else {
+		blob = map[string]any{}
+	}
+	
+	// Inject Quest Analytics
+	dateStr := time.Now().UTC().Format("2006-01-02")
+	claims, _ := s.Store.GetQuestClaimsCount(r.Context(), v.ID, dateStr)
+	blob["questClaimsToday"] = claims
+	
+	writeJSON(w, http.StatusOK, blob)
 }
 
 func (s *Server) handleVendorGrowth(w http.ResponseWriter, r *http.Request) {
@@ -1208,4 +1237,116 @@ func (s *Server) handleRevokeVendorInvite(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"revoked": true})
+}
+
+func (s *Server) handleGetSponsorship(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	spons, err := s.Store.GetVendorSponsorship(r.Context(), v.ID)
+	if errors.Is(err, postgres.ErrNotFound) {
+		writeJSON(w, http.StatusOK, map[string]any{"isActive": false})
+		return
+	}
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, spons)
+}
+
+func (s *Server) handlePutSponsorship(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		RewardDescription string `json:"rewardDescription"`
+		RewardLimit       int    `json:"rewardLimit"`
+		IsActive          bool   `json:"isActive"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.RewardDescription == "" {
+		writeErr(w, http.StatusBadRequest, "rewardDescription is required")
+		return
+	}
+	spons := domain.VendorSponsorship{
+		VendorID:          v.ID,
+		RewardDescription: req.RewardDescription,
+		RewardLimit:       req.RewardLimit,
+		IsActive:          req.IsActive,
+	}
+	if err := s.Store.UpsertVendorSponsorship(r.Context(), spons); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, spons)
+}
+
+func (s *Server) handleQuestValidate(w http.ResponseWriter, r *http.Request, v domain.Vendor, code string) {
+	travellerID := strings.TrimPrefix(code, "QUEST-")
+	if travellerID == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"result": "unknown"})
+		return
+	}
+	
+	dateStr := time.Now().UTC().Format("2006-01-02")
+	
+	// Check if this vendor is scheduled for today
+	schedule, err := s.Store.GetQuestSchedule(r.Context(), dateStr)
+	if err != nil || schedule.VendorID != v.ID {
+		writeJSON(w, http.StatusOK, map[string]any{"result": "unknown"})
+		return
+	}
+
+	// Check if vendor has an active sponsorship
+	spons, err := s.Store.GetVendorSponsorship(r.Context(), v.ID)
+	if err != nil || !spons.IsActive || spons.Status != "approved" {
+		writeJSON(w, http.StatusOK, map[string]any{"result": "unknown"}) // For now, just unknown if not active/approved
+		return
+	}
+	
+	// Check if traveller completed the daily quest
+	progress, err := s.Store.GetDailyQuestProgress(r.Context(), travellerID)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"result": "unknown"})
+		return
+	}
+	
+	if progress < schedule.Goal {
+		writeJSON(w, http.StatusOK, map[string]any{"result": "unknown"}) // Progress not complete
+		return
+	}
+	claim := domain.QuestClaim{
+		ID:          newID("qcl"),
+		TravellerID: travellerID,
+		VendorID:    v.ID,
+		Date:        dateStr,
+	}
+	
+	err = s.Store.CreateQuestClaim(r.Context(), claim)
+	if err != nil {
+		// If duplicate claim
+		if strings.Contains(err.Error(), "duplicate key value violates unique constraint") || 
+		   strings.Contains(err.Error(), "quest_claims_traveller_id_date_key") {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"result": "already_redeemed",
+			})
+			return
+		}
+		storeErr(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"result": "valid",
+		"claim": map[string]any{
+			"travellerName": "Traveller", // We don't join User for simplicity in this proof-of-concept
+			"offerLabel":    spons.RewardDescription,
+			"code":          code,
+		},
+	})
 }

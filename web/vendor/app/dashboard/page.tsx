@@ -125,7 +125,20 @@ export default function DashboardPage() {
         )}
 
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-          {(dash?.kpis ?? []).map((k) => {
+          {(() => {
+            const kpis = [...(dash?.kpis ?? [])];
+            if (dash?.questClaimsToday !== undefined) {
+              kpis.push({
+                id: 'quest-claims',
+                label: 'Quest Claims',
+                value: dash.questClaimsToday,
+                icon: 'Ticket',
+                delta: null,
+                tone: 'sun',
+                hint: 'Today',
+              });
+            }
+            return kpis.map((k) => {
             const Icon = KPI_ICONS[k.icon] ?? Tag;
             const tone = KPI_TONES[k.tone] ?? KPI_TONES.teal;
             const positive = (k.delta ?? 0) >= 0;
@@ -150,7 +163,8 @@ export default function DashboardPage() {
                 </div>
               </div>
             );
-          })}
+          });
+          })()}
         </div>
 
         <div className="grid gap-6 grid-cols-1 lg:[grid-template-columns:minmax(0,1.5fr)_minmax(0,1fr)]">

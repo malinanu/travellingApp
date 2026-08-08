@@ -32,6 +32,7 @@ class TripScreen extends ConsumerStatefulWidget {
 class _TripScreenState extends ConsumerState<TripScreen> {
   int _dayIx = 0;
   bool _dayView = false;
+  bool _builderMode = false;
   late DateTime _calMonth;
 
   @override
@@ -106,6 +107,8 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                           ],
                         ),
                       ),
+                      _builderButton(),
+                      const SizedBox(width: 8),
                       _myTripsButton(ref),
                       const SizedBox(width: 8),
                       _inspirationButton(trip),
@@ -117,11 +120,125 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                 ],
               ),
             ),
-            Expanded(child: _dayView ? _dayBody(stops) : _calendarBody(trip)),
-            if (_dayView && stops.isNotEmpty) _daySummary(text, stops),
+            Expanded(child: _builderMode ? _builderBody(trip) : (_dayView ? _dayBody(stops) : _calendarBody(trip))),
+            if (_dayView && !_builderMode && stops.isNotEmpty) _daySummary(text, stops),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _builderButton() {
+    return PressScale(
+      scale: 0.92,
+      onTap: () => setState(() {
+        _builderMode = !_builderMode;
+      }),
+      child: Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: _builderMode ? SpottoColors.accent : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(color: Color(0x1A103D3A), blurRadius: 10, offset: Offset(0, 2))
+          ],
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.list_alt_rounded, size: 16, color: _builderMode ? Colors.white : SpottoColors.accent),
+            const SizedBox(width: 6),
+            Text(
+              'Builder',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _builderMode ? Colors.white : SpottoColors.ink),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _builderBody(Trip trip) {
+    final items = <Map<String, dynamic>>[];
+    for (int d = 0; d < trip.days.length; d++) {
+      items.add({'type': 'header', 'dayIx': d});
+      for (int s = 0; s < trip.days[d].stops.length; s++) {
+        items.add({'type': 'stop', 'dayIx': d, 'stopIx': s, 'stop': trip.days[d].stops[s]});
+      }
+    }
+
+    return ReorderableListView.builder(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+      buildDefaultDragHandles: false,
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        if (item['type'] == 'header') {
+          final d = item['dayIx'] as int;
+          final date = tripDayDate(trip.startDate, d);
+          return Container(
+            key: ValueKey('header_$d'),
+            padding: const EdgeInsets.only(top: 24, bottom: 12),
+            child: Text(
+              'Day ${d + 1} — ${DateFormat('MMM d').format(date)}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: SpottoColors.ink),
+            ),
+          );
+        } else {
+          final stop = item['stop'] as TripStop;
+          final place = tripPlace(stop);
+          if (place == null) return Container(key: ValueKey('empty_$index'));
+          
+          return ReorderableDragStartListener(
+            key: ValueKey('stop_${stop.id}'),
+            index: index,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: StopCard(
+                stop: stop,
+                place: place,
+                first: false,
+                last: false,
+                by: tripWho(stop.by),
+                builderMode: true,
+                onTime: (t) => ref.read(tripProvider.notifier).setStopTime(item['dayIx'] as int, stop.id, t),
+                onUp: () {},
+                onDown: () {},
+                onRemove: () => _removeStop(stop, place.name),
+              ),
+            ),
+          );
+        }
+      },
+      onReorder: (oldIndex, newIndex) {
+        if (oldIndex < newIndex) newIndex -= 1;
+        
+        final item = items[oldIndex];
+        if (item['type'] == 'header') return; 
+        
+        final simulated = List.of(items);
+        simulated.removeAt(oldIndex);
+        
+        int destDayIx = 0;
+        int destStopIx = 0;
+        
+        for (int i = 0; i < newIndex; i++) {
+          final destItem = simulated[i];
+          if (destItem['type'] == 'header') {
+            destDayIx = destItem['dayIx'] as int;
+            destStopIx = 0;
+          } else {
+            destStopIx++;
+          }
+        }
+        
+        ref.read(tripProvider.notifier).moveStopBetweenDays(
+          item['dayIx'] as int,
+          item['stopIx'] as int,
+          destDayIx,
+          destStopIx,
+        );
+      },
     );
   }
 
