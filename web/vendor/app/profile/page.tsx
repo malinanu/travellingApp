@@ -188,6 +188,7 @@ export default function ProfilePage() {
   const [justSaved, setJustSaved] = useState(false);
   const [newAmenity, setNewAmenity] = useState('');
   const [addingAmenity, setAddingAmenity] = useState(false);
+  const [activeSegment, setActiveSegment] = useState<string | null>(null);
 
   const [identity, setIdentity] = useState({ name: '', town: '', lat: 0, lng: 0 });
   const [identityDirty, setIdentityDirty] = useState(false);
@@ -358,30 +359,43 @@ export default function ProfilePage() {
 
           <div className="card p-6">
             <CardHeader icon={Store} title="Business type" sub="What kind of spot are you?" />
-            <div className="space-y-4 mb-4 max-h-[360px] overflow-y-auto pr-1">
-              {VENDOR_SEGMENTS.map((segment) => (
-                <div key={segment.id}>
-                  <span className="block text-[10.5px] font-extrabold uppercase tracking-wide mb-1.5 text-muted">
-                    {segment.label}
-                  </span>
-                  <div className="grid grid-cols-3 gap-2">
-                    {categoriesBySegment(segment.id).map((t) => {
-                      const Icon = categoryIconComponent(t);
-                      const on = isSelectedCategory(business?.category, t);
-                      return (
-                        <button type="button" key={t.id} disabled={updateCategory.isPending}
-                          onClick={() => updateCategory.mutate(t.id)}
-                          className={`rounded-xl border px-2 py-2.5 flex flex-col items-center gap-1 text-[12px] font-extrabold text-center leading-tight transition-colors disabled:opacity-60 ${
-                            on ? 'border-accent bg-accent-tint text-accent' : 'border-line bg-sand hover:border-accent'
-                          }`}>
-                          <Icon size={17} />
-                          {t.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+            <div className="mb-4">
+              <div className="flex overflow-x-auto gap-2 pb-2 mb-3 -mx-2 px-2" style={{ scrollbarWidth: 'none' }}>
+                {VENDOR_SEGMENTS.map((segment) => {
+                  const currentSegmentId = activeSegment ?? (business?.category ? categoryById(business.category)?.segment : VENDOR_SEGMENTS[0].id) ?? VENDOR_SEGMENTS[0].id;
+                  const isActive = currentSegmentId === segment.id;
+                  return (
+                    <button type="button" key={segment.id}
+                      onClick={() => setActiveSegment(segment.id)}
+                      className={`whitespace-nowrap rounded-full px-3.5 py-1.5 font-extrabold text-[12px] transition-colors border shrink-0 ${
+                        isActive ? 'border-accent bg-accent text-white' : 'border-line bg-sand text-muted hover:border-accent hover:text-accent'
+                      }`}>
+                      {segment.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {(() => {
+                  const currentSegmentId = activeSegment ?? (business?.category ? categoryById(business.category)?.segment : VENDOR_SEGMENTS[0].id) ?? VENDOR_SEGMENTS[0].id;
+                  // @ts-ignore - in case categoriesBySegment requires a specific enum type, but string is fine
+                  return categoriesBySegment(currentSegmentId).map((t) => {
+                    const Icon = categoryIconComponent(t);
+                    const on = isSelectedCategory(business?.category, t);
+                    return (
+                      <button type="button" key={t.id} disabled={updateCategory.isPending}
+                        onClick={() => updateCategory.mutate(t.id)}
+                        className={`rounded-xl border px-2 py-2.5 flex flex-col items-center justify-center gap-1 text-[12px] font-extrabold text-center leading-tight transition-colors disabled:opacity-60 ${
+                          on ? 'border-accent bg-accent-tint text-accent' : 'border-line bg-sand hover:border-accent'
+                        }`}>
+                        <Icon size={17} className="mb-0.5" />
+                        {t.label}
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
             </div>
             <div className="flex items-start gap-2 rounded-xl bg-sand p-3">
               <UtensilsCrossed size={15} className="text-accent shrink-0 mt-0.5" />
