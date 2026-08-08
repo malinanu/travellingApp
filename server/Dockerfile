@@ -34,7 +34,6 @@ COPY --from=builder --chown=app:app /out/api /app/api
 COPY --from=builder --chown=app:app /out/seed /app/seed
 COPY --from=builder --chown=app:app /out/gendata /app/gendata
 COPY --from=builder --chown=app:app /out/importsrilanka /app/importsrilanka
-COPY --chown=app:app sri_lanka_spots.json /app/sri_lanka_spots.json
 COPY --chown=app:app docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 USER app
