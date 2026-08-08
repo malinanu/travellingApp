@@ -104,7 +104,7 @@ func Load() Config {
 		Port:              getenv("PORT", "8080"),
 		DatabaseURL:       mustGetenv("DATABASE_URL"),
 		JWTSecret:         jwtSecret,
-		CORSOrigins:       strings.Split(mustGetenv("CORS_ORIGINS"), ","),
+		CORSOrigins:       splitNonEmpty(mustGetenv("CORS_ORIGINS")),
 		TOTPEncryptionKey: totpKey,
 
 		SMTPHost:             getenv("SMTP_HOST", ""),
@@ -147,15 +147,20 @@ func sanitizedR2AccountID(id string) string {
 }
 
 // splitNonEmpty splits a comma-separated env value, trimming whitespace and
-// dropping empty segments — so a trailing comma or extra spaces don't
-// silently produce a spurious empty-string entry.
+// quotes, and dropping empty segments — so a trailing comma, extra spaces,
+// or spurious quotation marks don't silently produce malformed entries.
 func splitNonEmpty(s string) []string {
 	if s == "" {
 		return nil
 	}
+	// Many users deploy via Docker Compose / Portainer where they might
+	// inadvertently wrap the whole list in quotes. Strip them from the
+	// entire string before splitting.
+	s = strings.Trim(strings.TrimSpace(s), "\"'")
+
 	var out []string
 	for _, p := range strings.Split(s, ",") {
-		if t := strings.TrimSpace(p); t != "" {
+		if t := strings.TrimSpace(strings.Trim(strings.TrimSpace(p), "\"'")); t != "" {
 			out = append(out, t)
 		}
 	}
