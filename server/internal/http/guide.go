@@ -47,8 +47,11 @@ Current weather where they are: %s
 
 Guidelines:
 - Keep replies short, warm, and conversational — like a knowledgeable local friend, not a search engine.
+- TRIP PLANNING: If the traveller asks to plan a trip (e.g., specific dates or locations), DO NOT search immediately. First, ask them about their budget (e.g., luxury $$$, mid-range $$, or budget $).
+- VIBE CHECK: If "Traveller's saved travel styles" is "none stated" and they ask for recommendations or a trip, you must ask what kind of vibe they prefer (e.g. quiet, lively, nature) before searching. Once they reply, call save_user_vibe to save their preferences.
 - If you don't have enough information to make a good recommendation (e.g. budget, interests, how much time they have, what mood they're in), ask ONE short clarifying question before searching — don't guess.
-- Once you have enough to go on, call search_places to find real matching places. Never invent or recommend a place that search_places didn't actually return.
+- Once you have enough to go on (including budget and vibe), call search_places to find real matching places. Never invent or recommend a place that search_places didn't actually return. 
+- For trip plans, call save_trip to permanently save the generated itinerary using the retrieved places.
 - search_places' structured filters (categories, tags, vibe, price, etc.) cover the common cases, but for anything that doesn't map cleanly onto them — a specific mood, activity, or phrase the traveller used — also pass it as the free-text "query" argument so it can be matched semantically.
 - When you recommend places, mention them by name naturally in your reply so the traveller can tell which ones you mean.
 - If it's currently raining, lean toward indoor recommendations unless the traveller says otherwise.
@@ -355,6 +358,43 @@ func guideTools() []gemini.Tool {
 				},
 			},
 		},
+		{
+			Type: "function",
+			Function: gemini.ToolFunction{
+				Name:        "save_user_vibe",
+				Description: "Permanently save the traveller's preferred travel styles and vibes to their profile. Use this after asking a new user for their vibe.",
+				Parameters: map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"vibes": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+					"required":   []string{"vibes"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: gemini.ToolFunction{
+				Name:        "save_trip",
+				Description: "Automatically save a generated itinerary to the traveller's account.",
+				Parameters: map[string]any{
+					"type":       "object",
+					"properties": map[string]any{
+						"name": map[string]any{"type": "string", "description": "Name of the trip"},
+						"startDate": map[string]any{"type": "string", "description": "YYYY-MM-DD"},
+						"days": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"date": map[string]any{"type": "string"},
+									"places": map[string]any{"type": "array", "items": map[string]any{"type": "string", "description": "Place IDs"}},
+								},
+							},
+						},
+					},
+					"required":   []string{"name", "startDate", "days"},
+				},
+			},
+		},
 	}
 }
 
@@ -363,6 +403,55 @@ func guideTools() []gemini.Tool {
 // whether it used a free-text semantic query (search_places only).
 func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, lat, lng float64, weather string) (result string, placeIDs []string, usedSemanticQuery bool) {
 	switch tc.Function.Name {
+	case "save_user_vibe":
+		var args struct {
+			Vibes []string `json:"vibes"`
+		}
+		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+		c := auth.FromContext(ctx)
+		if u, err := s.Store.UserByID(ctx, c.Subject); err == nil {
+			if err := s.Store.UpdateUserProfile(ctx, u.ID, u.Name, u.Country, args.Vibes, u.Interests); err == nil {
+				return `{"status":"ok", "message":"vibes saved"}`, nil, false
+			}
+		}
+		return `{"error":"failed to save vibes"}`, nil, false
+
+	case "save_trip":
+		var args struct {
+			Name      string `json:"name"`
+			StartDate string `json:"startDate"`
+			Days      []any  `json:"days"`
+		}
+		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+		c := auth.FromContext(ctx)
+		
+		daysJSON, _ := json.Marshal(args.Days)
+		trip := domain.Trip{
+			OwnerID:   c.Subject,
+			Name:      args.Name,
+			StartDate: args.StartDate,
+			Days:      daysJSON,
+			UpdatedAt: time.Now(),
+		}
+		
+		// Collect all place IDs to return so the model knows which places are in the trip
+		for _, dayAny := range args.Days {
+			if dayMap, ok := dayAny.(map[string]any); ok {
+				if placesAny, ok := dayMap["places"].([]any); ok {
+					for _, p := range placesAny {
+						if pStr, ok := p.(string); ok {
+							placeIDs = append(placeIDs, pStr)
+						}
+					}
+				}
+			}
+		}
+		
+		if err := s.Store.UpsertTrip(ctx, trip); err == nil {
+			return `{"status":"ok", "message":"trip saved successfully"}`, placeIDs, false
+		}
+		return `{"error":"failed to save trip"}`, nil, false
+
 	case "search_places":
 		var args struct {
 			Categories        []string `json:"categories"`
