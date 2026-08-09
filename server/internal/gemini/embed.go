@@ -54,7 +54,7 @@ func Embed(ctx context.Context, apiKey string, inputs []string) ([][]float64, er
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if apiKey != "" {
-		req.Header.Set("x-goog-api-key", apiKey)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -125,7 +126,9 @@ func Fetch(ctx context.Context, apiKey string, lat, lng float64) (*Snapshot, err
 		if err == nil {
 			return snap, nil
 		}
-		log.Printf("weather: Tomorrow.io failed (%v), falling back to Open-Meteo for (%f,%f)", err, lat, lng)
+		if !strings.Contains(err.Error(), "status 429") {
+			log.Printf("weather: Tomorrow.io failed (%v), falling back to Open-Meteo for (%f,%f)", err, lat, lng)
+		}
 	}
 	return FetchOpenMeteo(ctx, lat, lng)
 }

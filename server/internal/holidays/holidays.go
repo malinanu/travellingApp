@@ -102,6 +102,7 @@ func fetchFromGoogle(ctx context.Context, apiKey, calendarID string, days int) (
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Referer", "https://spotto.dev/")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
