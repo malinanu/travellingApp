@@ -68,9 +68,16 @@ type chatResponse struct {
 	Choices []struct {
 		Message Message `json:"message"`
 	} `json:"choices"`
+	Usage *Usage `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 // Complete sends the conversation so far (plus any available tools) to
@@ -78,19 +85,19 @@ type chatResponse struct {
 // — which may itself carry ToolCalls instead of a final Content answer; the
 // caller is responsible for executing those and calling Complete again with the
 // extended message list (see guide.go's tool-calling loop).
-func Complete(ctx context.Context, apiKey string, messages []Message, tools []Tool) (*Message, error) {
+func Complete(ctx context.Context, apiKey string, messages []Message, tools []Tool) (*Message, *Usage, error) {
 	// Bounded independently of the caller's context.
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	body, err := json.Marshal(chatRequest{Model: ChatModel, Messages: messages, Tools: tools})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatEndpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if apiKey != "" {
@@ -99,26 +106,26 @@ func Complete(ctx context.Context, apiKey string, messages []Message, tools []To
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("gemini chat request: %w", err)
+		return nil, nil, fmt.Errorf("gemini chat request: %w", err)
 	}
 	defer res.Body.Close()
 	
 	if res.StatusCode == http.StatusTooManyRequests {
-		return nil, ErrRateLimited
+		return nil, nil, ErrRateLimited
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("gemini chat: unexpected status %d", res.StatusCode)
+		return nil, nil, fmt.Errorf("gemini chat: unexpected status %d", res.StatusCode)
 	}
 
 	var parsed chatResponse
 	if err := json.NewDecoder(res.Body).Decode(&parsed); err != nil {
-		return nil, fmt.Errorf("gemini decode chat response: %w", err)
+		return nil, nil, fmt.Errorf("gemini decode chat response: %w", err)
 	}
 	if parsed.Error != nil {
-		return nil, fmt.Errorf("gemini chat error: %s", parsed.Error.Message)
+		return nil, nil, fmt.Errorf("gemini chat error: %s", parsed.Error.Message)
 	}
 	if len(parsed.Choices) == 0 {
-		return nil, fmt.Errorf("gemini chat: empty response")
+		return nil, nil, fmt.Errorf("gemini chat: empty response")
 	}
-	return &parsed.Choices[0].Message, nil
+	return &parsed.Choices[0].Message, parsed.Usage, nil
 }

@@ -82,7 +82,7 @@ type Server struct {
 	totpLimit     *loginLimiter // guards /auth/2fa/login-verify (key: ip+userID)
 	resetLimit    *loginLimiter // guards /auth/forgot-password (key: ip+email)
 	grantPinLimit *loginLimiter // guards /vendor/profile-grants/{id}/redeem (key: ip+userID) — a 6-digit PIN only has 10^6 possibilities
-	guideLimit    *rateLimiter  // guards /guide/chat (key: userID or clientIP)
+	guideLimit    *dynamicRateLimiter // guards /guide/chat (key: userID or clientIP)
 	globalLimit   *dynamicRateLimiter
 	oauthCodes    *authCodeStore
 	GroupHub      *GroupHub
@@ -91,8 +91,14 @@ type Server struct {
 func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server {
 	initialLimit, err := store.GetRateLimitRPM(context.Background())
 	if err != nil {
-		initialLimit = 200
+		initialLimit = 60
 	}
+
+	initialGuideLimit, err := store.GetGuideRateLimitRPM(context.Background())
+	if err != nil {
+		initialGuideLimit = 15
+	}
+
 	s := &Server{
 		Store:   store,
 		Tokens:  tokens,
@@ -115,7 +121,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		totpLimit:          newLoginLimiter(5, 15*time.Minute),
 		resetLimit:         newLoginLimiter(5, 15*time.Minute),
 		grantPinLimit:      newLoginLimiter(5, 15*time.Minute),
-		guideLimit:         newRateLimiter(15, 1*time.Minute),
+		guideLimit:         newDynamicRateLimiter(initialGuideLimit, 1*time.Minute),
 		globalLimit:        newDynamicRateLimiter(initialLimit, 1*time.Minute),
 		oauthCodes:         newAuthCodeStore(),
 		GroupHub:           NewGroupHub(),
@@ -409,7 +415,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Post("/admin/vendor-grants/{id}/extend", s.handleExtendVendorGrant)
 		r.Post("/admin/vendor-grants/{id}/revoke", s.handleRevokeVendorGrantAdmin)
 		r.Get("/admin/local-guide/stats", s.handleAdminGuideStats)
-		r.Get("/admin/local-guide/conversations", s.handleAdminGuideConversations)
+		r.Put("/admin/local-guide/rate-limit", s.handleAdminPutGuideRateLimit)
+		r.Get("/admin/local-guide/users", s.handleAdminGuideUsers)
+		r.Get("/admin/local-guide/users/{id}/messages", s.handleAdminGuideUserMessages)
 		r.Get("/admin/local-guide/conversations/{id}", s.handleAdminGuideConversationDetail)
 
 		// Quests

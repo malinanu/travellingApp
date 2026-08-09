@@ -1,0 +1,2 @@
+ALTER TABLE guide_requests ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE guide_requests ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0;

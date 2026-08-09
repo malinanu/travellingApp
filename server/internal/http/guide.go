@@ -177,6 +177,8 @@ func (s *Server) recordGuideRequest(ctx context.Context, convID, travellerID, st
 		LatencyMs:         latencyMs,
 		ToolsUsed:         dedupe(meta.ToolsUsed),
 		UsedSemanticQuery: meta.UsedSemanticQuery,
+		InputTokens:       meta.InputTokens,
+		OutputTokens:      meta.OutputTokens,
 	}); err != nil {
 		log.Printf("guide: record request: %v", err)
 	}
@@ -209,6 +211,8 @@ func (s *Server) handleGuideLatestConversation(w http.ResponseWriter, r *http.Re
 type guideRequestMeta struct {
 	ToolsUsed         []string
 	UsedSemanticQuery bool
+	InputTokens       int
+	OutputTokens      int
 }
 
 // runGuideChat builds the conversation + tools, and runs the tool-calling
@@ -239,7 +243,11 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 	var placeIDs []string
 
 	for range guideMaxToolRounds {
-		resp, err := gemini.Complete(ctx, s.GeminiAPIKey, messages, tools)
+		resp, usage, err := gemini.Complete(ctx, s.GeminiAPIKey, messages, tools)
+		if usage != nil {
+			meta.InputTokens += usage.PromptTokens
+			meta.OutputTokens += usage.CompletionTokens
+		}
 		if err != nil {
 			return "", nil, meta, err
 		}

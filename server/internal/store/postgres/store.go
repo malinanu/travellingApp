@@ -2461,15 +2461,40 @@ func (s *Store) GuideMessagesByConversation(ctx context.Context, conversationID 
 	return out, rows.Err()
 }
 
+// GuideMessagesByTraveller returns all user-visible turns for a given traveller across all conversations
+func (s *Store) GuideMessagesByTraveller(ctx context.Context, travellerID string) ([]domain.GuideMessage, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT m.conversation_id, m.role, m.content, m.place_ids, m.created_at
+		FROM guide_messages m
+		JOIN guide_conversations c ON m.conversation_id = c.id
+		WHERE c.traveller_id = $1
+		ORDER BY m.created_at ASC`, travellerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.GuideMessage{}
+	for rows.Next() {
+		var m domain.GuideMessage
+		var placeIDs []byte
+		if err := rows.Scan(&m.ConversationID, &m.Role, &m.Content, &placeIDs, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		json.Unmarshal(placeIDs, &m.PlaceIDs)
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // InsertGuideRequest records telemetry for one POST /guide/chat call,
 // success or failure — see recordGuideRequest in internal/http/guide.go.
 func (s *Store) InsertGuideRequest(ctx context.Context, r domain.GuideRequest) error {
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO guide_requests
-			(conversation_id, traveller_id, status, error_message, latency_ms, tools_used, used_semantic_query)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+			(conversation_id, traveller_id, status, error_message, latency_ms, tools_used, used_semantic_query, input_tokens, output_tokens)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 		r.ConversationID, r.TravellerID, r.Status, r.ErrorMessage, r.LatencyMs,
-		jsonb(r.ToolsUsed), r.UsedSemanticQuery)
+		jsonb(r.ToolsUsed), r.UsedSemanticQuery, r.InputTokens, r.OutputTokens)
 	return err
 }
 
@@ -2517,6 +2542,44 @@ func (s *Store) GuideToolUsage(ctx context.Context) ([]domain.ToolUsageCount, er
 			return nil, err
 		}
 		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// RecentGuideUsers lists the most recently active Local Guide users
+// for the admin dashboard's browsable list, along with their analytics.
+func (s *Store) RecentGuideUsers(ctx context.Context, limit int) ([]domain.GuideUserSummary, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT
+			u.id,
+			COALESCE(u.name, ''),
+			COALESCE((SELECT count(*) FROM guide_messages m 
+				JOIN guide_conversations c ON m.conversation_id = c.id 
+				WHERE c.traveller_id = u.id), 0) AS total_messages,
+			COALESCE((SELECT count(*) FROM guide_requests r 
+				WHERE r.traveller_id = u.id AND r.status = 'error'), 0) AS error_count,
+			COALESCE((SELECT sum(input_tokens) FROM guide_requests r 
+				WHERE r.traveller_id = u.id), 0) AS input_tokens,
+			COALESCE((SELECT sum(output_tokens) FROM guide_requests r 
+				WHERE r.traveller_id = u.id), 0) AS output_tokens,
+			COALESCE((SELECT count(*) FROM trips t 
+				WHERE t.owner_id = u.id), 0) AS trips_planned,
+			COALESCE((SELECT max(created_at) FROM guide_requests r 
+				WHERE r.traveller_id = u.id), u.created_at) AS last_active_at
+		FROM users u
+		WHERE EXISTS (SELECT 1 FROM guide_requests r WHERE r.traveller_id = u.id)
+		ORDER BY last_active_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.GuideUserSummary{}
+	for rows.Next() {
+		var g domain.GuideUserSummary
+		if err := rows.Scan(&g.TravellerID, &g.TravellerName, &g.TotalMessages, &g.ErrorCount, &g.InputTokens, &g.OutputTokens, &g.TripsPlanned, &g.LastActiveAt); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
 	}
 	return out, rows.Err()
 }
@@ -3095,6 +3158,31 @@ func (s *Store) SetRateLimitRPM(ctx context.Context, limit int) error {
 	b, _ := json.Marshal(limit)
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO platform_settings (key, value) VALUES ('rate_limit_rpm', $1)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+	`, b)
+	return err
+}
+
+func (s *Store) GetGuideRateLimitRPM(ctx context.Context) (int, error) {
+	var val string
+	err := s.Pool.QueryRow(ctx, `SELECT value FROM platform_settings WHERE key = 'guide_rate_limit_rpm'`).Scan(&val)
+	if err == pgx.ErrNoRows {
+		return 15, nil
+	}
+	if err != nil {
+		return 15, err
+	}
+	var limit int
+	if err := json.Unmarshal([]byte(val), &limit); err != nil {
+		return 15, err
+	}
+	return limit, nil
+}
+
+func (s *Store) SetGuideRateLimitRPM(ctx context.Context, limit int) error {
+	b, _ := json.Marshal(limit)
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO platform_settings (key, value) VALUES ('guide_rate_limit_rpm', $1)
 		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
 	`, b)
 	return err

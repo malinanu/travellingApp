@@ -445,7 +445,7 @@ type GuideConversation struct {
 // prior plain-text turns, so there's nothing to replay.
 type GuideMessage struct {
 	ID             int64     `json:"-"`
-	ConversationID string    `json:"-"`
+	ConversationID string    `json:"conversationId"`
 	Role           string    `json:"role"` // "user" | "assistant"
 	Content        string    `json:"content"`
 	PlaceIDs       []string  `json:"placeIds,omitempty"` // places referenced/recommended in this turn
@@ -463,6 +463,8 @@ type GuideRequest struct {
 	LatencyMs         int       `json:"latencyMs"`
 	ToolsUsed         []string  `json:"toolsUsed"`
 	UsedSemanticQuery bool      `json:"usedSemanticQuery"`
+	InputTokens       int       `json:"inputTokens"`
+	OutputTokens      int       `json:"outputTokens"`
 	CreatedAt         time.Time `json:"createdAt"`
 }
 
@@ -496,6 +498,18 @@ type GuideConversationSummary struct {
 	MessageCount  int       `json:"messageCount"`
 	LastMessage   string    `json:"lastMessage"`
 	UpdatedAt     time.Time `json:"updatedAt"`
+}
+
+// GuideUserSummary is one row in the admin dashboard's browsable user list.
+type GuideUserSummary struct {
+	TravellerID   string    `json:"travellerId"`
+	TravellerName string    `json:"travellerName"`
+	TotalMessages int       `json:"totalMessages"`
+	ErrorCount    int       `json:"errorCount"`
+	InputTokens   int       `json:"inputTokens"`
+	OutputTokens  int       `json:"outputTokens"`
+	TripsPlanned  int       `json:"tripsPlanned"`
+	LastActiveAt  time.Time `json:"lastActiveAt"`
 }
 
 type Subscription struct {

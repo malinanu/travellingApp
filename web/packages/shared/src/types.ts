@@ -609,22 +609,27 @@ export interface AdminGuideToolUsage {
 export interface AdminGuideStatsResponse {
   stats: AdminGuideStats;
   toolUsage: AdminGuideToolUsage[];
+  rateLimitRPM: number;
 }
 
 /** One row in the Local Guide dashboard's browsable conversation list —
  * GET /admin/local-guide/conversations. */
-export interface AdminGuideConversationSummary {
-  id: string;
+export interface AdminGuideUserSummary {
+  travellerId: string;
   travellerName: string;
-  messageCount: number;
-  lastMessage: string;
-  updatedAt: string;
+  totalMessages: number;
+  errorCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  tripsPlanned: number;
+  lastActiveAt: string;
 }
 
 /** One turn in a Local Guide conversation — GET
- * /admin/local-guide/conversations/{id} returns these oldest-first. */
+ * /admin/local-guide/conversations/{id} */
 export interface AdminGuideMessage {
-  role: string;
+  conversationId: string;
+  role: 'user' | 'model';
   content: string;
   placeIds?: string[];
   createdAt: string;
