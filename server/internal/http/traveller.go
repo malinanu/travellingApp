@@ -16,8 +16,10 @@ import (
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
+	"github.com/spotto/server/internal/gemini"
 	"github.com/spotto/server/internal/geo"
 	"github.com/spotto/server/internal/placedetails"
+	"github.com/spotto/server/internal/recommend"
 	"github.com/spotto/server/internal/store/postgres"
 )
 
@@ -160,6 +162,56 @@ func (s *Server) handlePlaces(w http.ResponseWriter, r *http.Request) {
 		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 && limit < len(out) {
 			out = out[:limit]
 		}
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleSearchPlaces(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		writeErr(w, http.StatusBadRequest, "query 'q' is required")
+		return
+	}
+
+	if s.GeminiAPIKey == "" {
+		writeErr(w, http.StatusServiceUnavailable, "semantic search is not configured")
+		return
+	}
+
+	emb, err := gemini.Embed(r.Context(), s.GeminiAPIKey, []string{q})
+	if err != nil || len(emb) == 0 {
+		writeErr(w, http.StatusInternalServerError, "failed to embed query")
+		return
+	}
+
+	places, err := s.Store.Places(r.Context())
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+
+	prefs := recommend.Preferences{
+		QueryEmbedding: emb[0],
+	}
+
+	scored := recommend.Rank(places, prefs, "")
+	
+	limit := 10
+	if len(scored) < limit {
+		limit = len(scored)
+	}
+	
+	out := make([]map[string]any, 0, limit)
+	for i := 0; i < limit; i++ {
+		// Only include places with a positive semantic match (> 0.5)
+		if scored[i].Score <= 0.5 {
+			continue
+		}
+		m := s.placeJSON(r.Context(), scored[i].Place)
+		m["semanticScore"] = scored[i].Score
+		m["matchReasons"] = scored[i].Reasons
+		out = append(out, m)
 	}
 
 	writeJSON(w, http.StatusOK, out)

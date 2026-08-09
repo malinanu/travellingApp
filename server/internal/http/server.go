@@ -237,6 +237,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/trips", s.handleListTrips)
 		r.Post("/trips", s.handleSaveTrip)
 		r.Get("/places", s.handlePlaces)
+		r.Get("/places/search", s.handleSearchPlaces)
 		r.Get("/places/{id}", s.handlePlace)
 		r.Get("/places/{id}/reviews", s.handlePlaceReviews)
 		r.Get("/places/{id}/photos", s.handlePlacePhotos)
