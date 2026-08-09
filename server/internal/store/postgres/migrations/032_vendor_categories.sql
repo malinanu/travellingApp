@@ -66,6 +66,11 @@ FROM (VALUES
 WHERE vc.id = v.id;
 
 
+-- Normalize empty categories to NULL
+UPDATE vendors
+SET category = NULL
+WHERE category = '';
+
 -- Foreign key to vendor_categories in vendors table
 ALTER TABLE vendors
 ADD CONSTRAINT fk_vendors_category
