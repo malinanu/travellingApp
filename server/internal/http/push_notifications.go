@@ -8,6 +8,7 @@ import (
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
+	"firebase.google.com/go/v4/messaging"
 )
 
 // handleRegisterPushToken saves a user's device push notification token.
@@ -68,16 +69,43 @@ func (s *Server) handleUnregisterPushToken(w http.ResponseWriter, r *http.Reques
 
 // SendUserPushNotification dispatches a push notification to all registered devices of a user.
 func (s *Server) SendUserPushNotification(ctx context.Context, userID, title, body string, data map[string]string) {
+	if s.FirebaseApp == nil {
+		return // Push notifications not configured
+	}
+
 	tokens, err := s.Store.UserPushTokens(ctx, userID)
 	if err != nil || len(tokens) == 0 {
 		return
 	}
 
-	log.Printf("[PushNotification] Sending alert to user=%s (devices=%d): '%s' - '%s'",
-		userID, len(tokens), title, body)
+	client, err := s.FirebaseApp.Messaging(ctx)
+	if err != nil {
+		log.Printf("[PushNotification] Failed to get messaging client: %v", err)
+		return
+	}
 
-	// Simulated / FCM transport dispatch loop
+	var deviceTokens []string
 	for _, tok := range tokens {
-		log.Printf("[FCM] Dispatching push to token=%s payload=%v", tok, data)
+		deviceTokens = append(deviceTokens, tok.DeviceToken)
+	}
+
+	msg := &messaging.MulticastMessage{
+		Tokens: deviceTokens,
+		Notification: &messaging.Notification{
+			Title: title,
+			Body:  body,
+		},
+		Data: data,
+	}
+
+	resp, err := client.SendMulticast(ctx, msg)
+	if err != nil {
+		log.Printf("[PushNotification] Failed to send multicast message: %v", err)
+		return
+	}
+
+	if resp.FailureCount > 0 {
+		log.Printf("[PushNotification] Multicast partially failed. Success: %d, Failure: %d", resp.SuccessCount, resp.FailureCount)
+		// We could implement automatic token pruning here if resp.Responses[i].Error is not nil
 	}
 }

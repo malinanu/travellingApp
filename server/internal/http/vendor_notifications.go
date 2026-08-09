@@ -19,7 +19,11 @@ func (s *Server) TriggerClaimNotification(ctx context.Context, vendorID, travell
 		Time:   time.Now().Format("Jan 2, 3:04 PM"),
 		Unread: true,
 	}
-	return s.Store.UpsertVendorNotification(ctx, vendorID, n)
+	err := s.Store.UpsertVendorNotification(ctx, vendorID, n)
+	if err == nil {
+		go s.dispatchVendorPush(vendorID, n.Title, n.Sub, map[string]string{"type": "claim"})
+	}
+	return err
 }
 
 // TriggerReviewNotification emits a notification when a new review is posted.
@@ -33,7 +37,11 @@ func (s *Server) TriggerReviewNotification(ctx context.Context, vendorID, travel
 		Time:   time.Now().Format("Jan 2, 3:04 PM"),
 		Unread: true,
 	}
-	return s.Store.UpsertVendorNotification(ctx, vendorID, n)
+	err := s.Store.UpsertVendorNotification(ctx, vendorID, n)
+	if err == nil {
+		go s.dispatchVendorPush(vendorID, n.Title, n.Sub, map[string]string{"type": "review"})
+	}
+	return err
 }
 
 // TriggerOfferLimitNotification emits an alert when an offer reaches its claim limit.
@@ -47,5 +55,20 @@ func (s *Server) TriggerOfferLimitNotification(ctx context.Context, vendorID, of
 		Time:   time.Now().Format("Jan 2, 3:04 PM"),
 		Unread: true,
 	}
-	return s.Store.UpsertVendorNotification(ctx, vendorID, n)
+	err := s.Store.UpsertVendorNotification(ctx, vendorID, n)
+	if err == nil {
+		go s.dispatchVendorPush(vendorID, n.Title, n.Sub, map[string]string{"type": "limit"})
+	}
+	return err
+}
+
+func (s *Server) dispatchVendorPush(vendorID, title, body string, data map[string]string) {
+	ctx := context.Background()
+	team, err := s.Store.VendorTeamMembers(ctx, vendorID)
+	if err != nil {
+		return
+	}
+	for _, member := range team {
+		s.SendUserPushNotification(ctx, member.ID, title, body, data)
+	}
 }

@@ -2,14 +2,17 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"time"
 
+	firebase "firebase.google.com/go/v4"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/option"
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/config"
@@ -70,6 +73,10 @@ type Server struct {
 	// Media uploads to Cloudflare R2; nil when R2 isn't configured, in which
 	// case the /media endpoints report 501 instead of failing startup.
 	Media media.Uploader
+	
+	// FirebaseApp is used to dispatch push notifications to Flutter clients.
+	// Nil if FIREBASE_SERVICE_ACCOUNT_JSON is not configured.
+	FirebaseApp *firebase.App
 
 	loginLimit    *loginLimiter // guards /auth/login (key: ip+email)
 	totpLimit     *loginLimiter // guards /auth/2fa/login-verify (key: ip+userID)
@@ -121,6 +128,13 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 	}
 	if cfg.R2Configured() {
 		s.Media = media.NewR2(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
+	}
+	if cfg.FirebaseServiceAccount != "" {
+		opt := option.WithCredentialsJSON([]byte(cfg.FirebaseServiceAccount))
+		app, err := firebase.NewApp(context.Background(), nil, opt)
+		if err == nil {
+			s.FirebaseApp = app
+		}
 	}
 	return s
 }

@@ -65,6 +65,10 @@ type Config struct {
 	// there's no need yet for admin accounts to be self-service provisioned.
 	SuperAdminEmails []string
 
+	// FirebaseServiceAccount is the JSON string of a Firebase service account
+	// key, used for sending FCM push notifications to the Flutter app.
+	FirebaseServiceAccount string
+
 	// R2 (Cloudflare) powers image/video uploads. All four are optional —
 	// unset means the media endpoints report themselves unconfigured (501)
 	// rather than failing startup, exactly like Google OAuth. The bucket is
@@ -121,6 +125,7 @@ func Load() Config {
 		VendorAppURL:         getenv("VENDOR_APP_URL", "http://localhost:3000"),
 		AdminAppURL:          getenv("ADMIN_APP_URL", "http://localhost:3001"),
 		SuperAdminEmails:     splitNonEmpty(getenv("SUPER_ADMIN_EMAILS", "")),
+		FirebaseServiceAccount: getenv("FIREBASE_SERVICE_ACCOUNT_JSON", ""),
 
 		R2AccountID:       sanitizedR2AccountID(getenv("R2_ACCOUNT_ID", "")),
 		R2AccessKeyID:     getenv("R2_ACCESS_KEY_ID", ""),
