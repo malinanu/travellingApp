@@ -58,14 +58,15 @@ func Embed(ctx context.Context, apiKey string, inputs []string) ([][]float64, er
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, embeddingsEndpoint, bytes.NewReader(body))
+	url := embeddingsEndpoint
+	if apiKey != "" {
+		url += "?key=" + apiKey
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("x-goog-api-key", apiKey)
-	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("gemini embed request: %w", err)
