@@ -7,6 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, CheckCircle2, Edit3, FileText, Flag, MapPin, Undo2, Wifi, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 import type { Vendor } from '@spotto/shared';
 import Shell from '../../components/shell';
@@ -38,10 +39,17 @@ export default function QueuePage() {
     queryFn: () => api.get<Vendor[]>('/admin/vendors?status=pending'),
   });
 
+  const searchParams = useSearchParams();
+  const queryId = searchParams.get('id');
+
   const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(queryId);
   const [toast, setToast] = useState<PendingUndo | null>(null);
   const pendingRef = useRef<PendingUndo | null>(null);
+
+  useEffect(() => {
+    if (queryId) setSelectedId(queryId);
+  }, [queryId]);
 
   const visible = vendors.filter((v) => !removedIds.has(v.id));
   useEffect(() => {

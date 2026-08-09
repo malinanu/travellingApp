@@ -217,12 +217,14 @@ function Rail({ pending }: { pending: number }) {
   );
 }
 
-function resultRoute(kind: 'vendor' | 'feedItem' | 'subscription', status?: string): string {
+function resultRoute(kind: 'vendor' | 'feedItem' | 'subscription', status?: string, id?: string): string {
   // Non-pending vendors used to route to /geo, which silently drops any
   // vendor without coordinates — /vendors always has a row for them.
-  if (kind === 'vendor') return status === 'pending' ? '/queue' : '/vendors';
-  if (kind === 'feedItem') return '/content';
-  return '/subscriptions';
+  let route = '/subscriptions';
+  if (kind === 'vendor') route = status === 'pending' ? '/queue' : '/vendors';
+  else if (kind === 'feedItem') route = '/content';
+  
+  return id ? `${route}?id=${id}` : route;
 }
 
 function CommandSearch() {
@@ -299,21 +301,21 @@ function CommandSearch() {
           {results && results.vendors.length > 0 && (
             <ResultGroup label="Vendors">
               {results.vendors.map((v) => (
-                <ResultRow key={v.id} title={v.name} sub={`${v.category} · ${v.town}`} onClick={() => go(resultRoute('vendor', v.status))} />
+                <ResultRow key={v.id} title={v.name} sub={`${v.category} · ${v.town}`} onClick={() => go(resultRoute('vendor', v.status, v.id))} />
               ))}
             </ResultGroup>
           )}
           {results && results.feedItems.length > 0 && (
             <ResultGroup label="Feed items">
               {results.feedItems.map((f) => (
-                <ResultRow key={f.id} title={f.vendor || `#${f.id}`} sub={f.text} onClick={() => go(resultRoute('feedItem'))} />
+                <ResultRow key={f.id} title={f.vendor || `#${f.id}`} sub={f.text} onClick={() => go(resultRoute('feedItem', undefined, String(f.id)))} />
               ))}
             </ResultGroup>
           )}
           {results && results.subscriptions.length > 0 && (
             <ResultGroup label="Subscriptions">
               {results.subscriptions.map((s) => (
-                <ResultRow key={s.id} title={s.vendor} sub={`${s.tier} · ${s.state}`} onClick={() => go(resultRoute('subscription'))} />
+                <ResultRow key={s.id} title={s.vendor} sub={`${s.tier} · ${s.state}`} onClick={() => go(resultRoute('subscription', undefined, String(s.id)))} />
               ))}
             </ResultGroup>
           )}

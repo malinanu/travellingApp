@@ -13,6 +13,7 @@ import {
   Ticket, Trash2, Users, Wifi, XCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 import {
   categoriesBySegment, VENDOR_SEGMENTS,
@@ -58,10 +59,17 @@ export default function VendorsPage() {
     queryFn: () => api.get<AdminVendorSummary>('/admin/vendors/summary'),
   });
 
+  const searchParams = useSearchParams();
+  const queryId = searchParams.get('id');
+
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<VendorStatus | 'all'>('all');
   const [category, setCategory] = useState('all');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(queryId);
+
+  useEffect(() => {
+    if (queryId) setSelectedId(queryId);
+  }, [queryId]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
