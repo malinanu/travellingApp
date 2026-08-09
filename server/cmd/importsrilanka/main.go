@@ -185,6 +185,10 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 				role, _ := photo["role"].(string)
 				objectKey, _ := photo["object_key"].(string)
 				url, _ := photo["url"].(string)
+				
+				// Rewrite the old proxy URLs to the new public CDN URLs
+				url = strings.ReplaceAll(url, "/media/raw/", "https://spotto-images.threelogiq.com/")
+				
 				contentType, _ := photo["content_type"].(string)
 				width := int(photo["width"].(float64))
 				height := int(photo["height"].(float64))

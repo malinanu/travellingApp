@@ -168,10 +168,7 @@ func (r *R2) Delete(ctx context.Context, key string) error {
 	return err
 }
 
-// PublicURL returns the app-relative path objects are served from —
-// deliberately not an absolute R2 URL, since the bucket is private. The
-// path is resolved by handleMediaRaw, which signs a short-lived, per-key
-// view token onto it at response time (see Server.signMediaPath).
+// PublicURL returns the absolute CDN URL objects are served from.
 func (r *R2) PublicURL(key string) string {
-	return "/media/raw/" + key
+	return "https://spotto-images.threelogiq.com/" + key
 }
