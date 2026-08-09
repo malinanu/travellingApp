@@ -9,6 +9,8 @@ FROM node:20-alpine AS builder
 # actual secret; use a runtime env var (not a build arg) for anything private.
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ARG NEXT_PUBLIC_VENDOR_URL
+ENV NEXT_PUBLIC_VENDOR_URL=${NEXT_PUBLIC_VENDOR_URL}
 WORKDIR /web
 COPY . .
 RUN npm install
