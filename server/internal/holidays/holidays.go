@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 )
 
@@ -102,7 +103,11 @@ func fetchFromGoogle(ctx context.Context, apiKey, calendarID string, days int) (
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Referer", "https://spottoapi.threelogiq.com/")
+	referer := os.Getenv("NEXT_PUBLIC_API_URL")
+	if referer == "" {
+		referer = "https://spottoapi.threelogiq.com/"
+	}
+	req.Header.Set("Referer", referer)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
