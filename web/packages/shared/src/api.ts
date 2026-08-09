@@ -1,7 +1,7 @@
 // Tiny fetch wrapper with localStorage token auth (localhost demo trade-off;
 // see README for the production cookie/CSRF caveat).
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 // The R2 bucket behind media uploads is private — the server hands back
 // app-relative paths like `/media/raw/<key>?token=...` (see
