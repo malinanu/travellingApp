@@ -13,7 +13,7 @@ import (
 const chatEndpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
 // ChatModel is a free-tier chat model.
-const ChatModel = "gemini-2.5-flash"
+const ChatModel = "gemini-1.5-flash"
 
 // ErrRateLimited distinguishes a 429 so callers can surface something
 // friendlier than a generic failure — free-model rate limits are real and
@@ -94,7 +94,7 @@ func Complete(ctx context.Context, apiKey string, messages []Message, tools []To
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if apiKey != "" {
-		req.Header.Set("x-goog-api-key", apiKey)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
 	res, err := http.DefaultClient.Do(req)

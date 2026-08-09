@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
 const prompt = `This is a Sri Lanka Registrar of Companies "Certificate of Incorporation".
 Find the printed Company Number (format: 1-3 letters then 4-10 digits, e.g. PV00334782),
