@@ -86,7 +86,7 @@ func (s *Server) SendUserPushNotification(ctx context.Context, userID, title, bo
 
 	var deviceTokens []string
 	for _, tok := range tokens {
-		deviceTokens = append(deviceTokens, tok.DeviceToken)
+		deviceTokens = append(deviceTokens, tok)
 	}
 
 	msg := &messaging.MulticastMessage{
