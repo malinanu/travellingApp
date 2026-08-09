@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/router.dart';
+import 'core/api/api_client.dart';
 import 'core/api/push_notification_service.dart';
 import 'core/storage/local_store.dart';
 import 'core/theme/theme.dart';
@@ -12,8 +13,9 @@ import 'data/repositories/repositories.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   AnalyticsService.instance.initialize();
-  PushNotificationService.instance.initialize();
   final store = await LocalStore.init();
+  final api = ApiClient(store);
+  await PushNotificationService.instance.initialize(api);
   runApp(
     ProviderScope(
       // Riverpod 3 auto-retries a failing provider by default. This app
