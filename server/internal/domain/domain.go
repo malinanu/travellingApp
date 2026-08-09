@@ -604,3 +604,10 @@ type VendorProfileGrant struct {
 	RevokedAt       *time.Time `json:"revokedAt,omitempty"`
 	RevokedBy       string     `json:"revokedBy,omitempty"`
 }
+
+type PlatformAnalytics struct {
+	TotalUsers    int `json:"totalUsers"`
+	TotalVendors  int `json:"totalVendors"`
+	TotalClaims   int `json:"totalClaims"`
+	TotalReviews  int `json:"totalReviews"`
+}

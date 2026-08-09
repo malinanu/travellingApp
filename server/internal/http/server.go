@@ -358,6 +358,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(s.Authenticated, auth.RequireRole(domain.RoleAdmin))
 		r.Get("/admin/kpis", s.handleAdminKPIs)
+		r.Get("/admin/analytics", s.handleAdminAnalytics)
 		r.Get("/admin/search", s.handleAdminSearch)
 		r.Get("/admin/vendors", s.handleAdminVendors)
 		r.Post("/admin/vendors/{id}/approve", s.vendorStatusHandler(domain.VendorApproved, "vendor.approve"))

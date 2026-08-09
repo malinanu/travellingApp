@@ -39,6 +39,16 @@ func (s *Server) handleAdminKPIs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
+	analytics, err := s.Store.PlatformAnalytics(r.Context())
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, analytics)
+}
+
+
 func (s *Server) handleAdminVendors(w http.ResponseWriter, r *http.Request) {
 	vendors, err := s.Store.Vendors(r.Context(), r.URL.Query().Get("status"))
 	if err != nil {

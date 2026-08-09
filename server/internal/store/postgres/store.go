@@ -3065,3 +3065,15 @@ func (s *Store) ListQuestSchedules(ctx context.Context) ([]domain.QuestSchedule,
 	}
 	return res, rows.Err()
 }
+
+func (s *Store) PlatformAnalytics(ctx context.Context) (domain.PlatformAnalytics, error) {
+	var a domain.PlatformAnalytics
+	err := s.Pool.QueryRow(ctx, `
+		SELECT 
+			(SELECT COUNT(*) FROM users),
+			(SELECT COUNT(*) FROM vendors),
+			(SELECT COUNT(*) FROM claims),
+			(SELECT COUNT(*) FROM reviews)
+	`).Scan(&a.TotalUsers, &a.TotalVendors, &a.TotalClaims, &a.TotalReviews)
+	return a, err
+}
