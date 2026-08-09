@@ -168,7 +168,7 @@ func (r *R2) Delete(ctx context.Context, key string) error {
 	return err
 }
 
-// PublicURL returns the absolute CDN URL objects are served from.
+// PublicURL returns the app-relative proxy path for media objects.
 func (r *R2) PublicURL(key string) string {
-	return "https://spotto-images.threelogiq.com/" + key
+	return "/media/raw/" + key
 }

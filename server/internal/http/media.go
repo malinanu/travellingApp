@@ -232,6 +232,10 @@ func (s *Server) handleMediaRaw(w http.ResponseWriter, r *http.Request) {
 // response), any existing query string is discarded first rather than
 // appended to, so this never produces a doubly-signed URL.
 func (s *Server) signMediaPath(path string) string {
+	// Auto-heal any database records that were rewritten to the absolute CDN
+	// URL by the importer script, bringing them back to the proxy architecture.
+	path = strings.ReplaceAll(path, "https://spotto-images.threelogiq.com/", "/media/raw/")
+
 	const prefix = "/media/raw/"
 	base, _, _ := strings.Cut(path, "?")
 	if !strings.HasPrefix(base, prefix) {
