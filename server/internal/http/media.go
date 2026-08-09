@@ -211,7 +211,6 @@ func (s *Server) handleMediaRaw(w http.ResponseWriter, r *http.Request) {
 	}
 	body, contentType, err := s.Media.Get(r.Context(), key)
 	if err != nil {
-		log.Printf("R2 Get error for key %s: %v", key, err)
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
