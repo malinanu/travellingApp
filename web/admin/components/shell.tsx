@@ -18,7 +18,6 @@ import { api } from '../lib/api';
 const NAV: { href: string; label: string; icon: LucideIcon; live?: boolean; superAdminOnly?: boolean }[] = [
   { href: '/queue', label: 'Approval queue', icon: UserCheck },
   { href: '/vendors', label: 'Vendors', icon: Store },
-  { href: '/spots', label: 'Spots', icon: MapPin },
   { href: '/quests', label: 'Quests', icon: Activity },
   { href: '/content', label: 'Content monitor', icon: Radio, live: true },
   { href: '/geo', label: 'Geo-analytics', icon: Map },
