@@ -230,6 +230,10 @@ func (l *dynamicRateLimiter) cleanupLoop() {
 
 func (s *Server) GlobalRateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.globalLimit == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
 		ip := clientIP(r)
 		if !s.globalLimit.allowInc(ip) {
 			writeTooManyRequests(w)

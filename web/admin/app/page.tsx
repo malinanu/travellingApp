@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { Users, Store, Ticket, Star, Loader2, ArrowRight } from 'lucide-react';
 import Shell from '../components/shell';
 import { api } from '../lib/api';
@@ -16,7 +16,7 @@ interface PlatformAnalytics {
 export default function DashboardPage() {
   const { data, isLoading, isError } = useQuery<PlatformAnalytics>({
     queryKey: ['adminAnalytics'],
-    queryFn: () => api.get('/admin/analytics').then(r => r.data),
+    queryFn: () => api.get<PlatformAnalytics>('/admin/analytics'),
     refetchInterval: 30000,
   });
 
@@ -113,7 +113,7 @@ export default function DashboardPage() {
 function SecuritySettingsPanel() {
   const { data, refetch } = useQuery<{ rateLimitRPM: number }>({
     queryKey: ['adminSettings'],
-    queryFn: () => api.get('/admin/settings').then(r => r.data),
+    queryFn: () => api.get<{ rateLimitRPM: number }>('/admin/settings'),
   });
 
   const updateSettings = useMutation({

@@ -94,7 +94,7 @@ func Complete(ctx context.Context, apiKey string, messages []Message, tools []To
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("x-goog-api-key", apiKey)
 	}
 
 	res, err := http.DefaultClient.Do(req)

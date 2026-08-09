@@ -23,6 +23,7 @@ app/.flutter-plugins-dependencies
 app/android/.gradle/
 app/android/local.properties
 app/.idea/
+app/spotto-demo-firebase-adminsdk-fbsvc-c76bf01500.json
 *.iml
 
 # OS / editor
@@ -32,3 +33,6 @@ Thumbs.db
 
 # Prototype build artifacts (2 MB standalone snapshots)
 Prototype/upload/
+
+scrap-data/images/*
+

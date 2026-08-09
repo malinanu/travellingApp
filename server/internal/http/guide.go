@@ -434,6 +434,13 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, lat, lng 
 			UpdatedAt: time.Now(),
 		}
 		
+		if existing, err := s.Store.TripByOwner(ctx, c.Subject); err == nil {
+			trip.Code = existing.Code
+			trip.Collab = existing.Collab
+		} else {
+			trip.Code = newID("trp")
+		}
+
 		// Collect all place IDs to return so the model knows which places are in the trip
 		for _, dayAny := range args.Days {
 			if dayMap, ok := dayAny.(map[string]any); ok {
