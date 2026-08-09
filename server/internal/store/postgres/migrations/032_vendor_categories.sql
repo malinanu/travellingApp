@@ -66,10 +66,15 @@ FROM (VALUES
 WHERE vc.id = v.id;
 
 
--- Normalize empty categories to NULL
+-- Insert an uncategorized fallback
+INSERT INTO vendor_categories (id, label, segment, icon, relevant_vibe_dimensions, booking_type)
+VALUES ('uncategorized', 'Uncategorized', 'General', 'storefront', '{}'::text[], NULL)
+ON CONFLICT (id) DO NOTHING;
+
+-- Normalize empty categories to 'uncategorized'
 UPDATE vendors
-SET category = NULL
-WHERE category = '';
+SET category = 'uncategorized'
+WHERE category = '' OR category IS NULL;
 
 -- Foreign key to vendor_categories in vendors table
 ALTER TABLE vendors
