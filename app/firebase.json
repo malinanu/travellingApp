@@ -1,0 +1,1 @@
+{"flutter":{"platforms":{"android":{"default":{"projectId":"spotto-demo","appId":"1:717044985665:android:1a238ab4e9c5aae089bbc0","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"spotto-demo","configurations":{"android":"1:717044985665:android:1a238ab4e9c5aae089bbc0","ios":"1:717044985665:ios:87fe5b25f0df0a1a89bbc0"}}}}}}

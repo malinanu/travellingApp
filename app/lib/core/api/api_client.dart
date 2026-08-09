@@ -10,7 +10,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kReleaseMode;
 
 import '../storage/local_store.dart';
 
-const apiBaseUrl = String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:8080');
+const apiBaseUrl = String.fromEnvironment('API_URL', defaultValue: 'https://spottoapi.threelogiq.com');
 
 /// The R2 bucket behind media uploads is private — the server hands back
 /// app-relative paths like `/media/raw/<key>?token=...` (see
@@ -18,7 +18,13 @@ const apiBaseUrl = String.fromEnvironment('API_URL', defaultValue: 'http://10.0.
 /// URL, so every render site needs to resolve against our own API host
 /// before handing the URL to Image.network/VideoPlayerController. Anything
 /// already absolute (http/https) passes through unchanged.
-String resolveMediaUrl(String url) => url.startsWith('/') ? '$apiBaseUrl$url' : url;
+String resolveMediaUrl(String url) {
+  if (url.startsWith('/')) {
+    final base = apiBaseUrl.endsWith('/') ? apiBaseUrl.substring(0, apiBaseUrl.length - 1) : apiBaseUrl;
+    return '$base$url';
+  }
+  return url;
+}
 
 // Guards against shipping a release build that still points at the plaintext
 // emulator default (or any http:// URL) — the bearer token would go out
