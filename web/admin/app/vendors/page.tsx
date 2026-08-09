@@ -350,7 +350,7 @@ function VendorMonitor({
 
       <div className="flex gap-3 mt-6">
         <a
-          href={`http://localhost:3002/dashboard?impersonate=${vendor.id}`}
+          href={`${process.env.NEXT_PUBLIC_VENDOR_URL || 'http://localhost:3000'}/dashboard?impersonate=${vendor.id}`}
           target="_blank"
           rel="noreferrer"
           className="btn py-2.5 flex items-center justify-center gap-2 text-accent font-extrabold"
