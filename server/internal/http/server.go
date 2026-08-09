@@ -83,11 +83,16 @@ type Server struct {
 	resetLimit    *loginLimiter // guards /auth/forgot-password (key: ip+email)
 	grantPinLimit *loginLimiter // guards /vendor/profile-grants/{id}/redeem (key: ip+userID) — a 6-digit PIN only has 10^6 possibilities
 	guideLimit    *rateLimiter  // guards /guide/chat (key: userID or clientIP)
+	globalLimit   *dynamicRateLimiter
 	oauthCodes    *authCodeStore
 	GroupHub      *GroupHub
 }
 
 func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server {
+	initialLimit, err := store.GetRateLimitRPM(context.Background())
+	if err != nil {
+		initialLimit = 200
+	}
 	s := &Server{
 		Store:   store,
 		Tokens:  tokens,
@@ -111,6 +116,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		resetLimit:         newLoginLimiter(5, 15*time.Minute),
 		grantPinLimit:      newLoginLimiter(5, 15*time.Minute),
 		guideLimit:         newRateLimiter(15, 1*time.Minute),
+		globalLimit:        newDynamicRateLimiter(initialLimit, 1*time.Minute),
 		oauthCodes:         newAuthCodeStore(),
 		GroupHub:           NewGroupHub(),
 	}
@@ -174,6 +180,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(realIP)
+	r.Use(s.GlobalRateLimitMiddleware)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(maxBytesMiddleware(10 * 1024 * 1024))
@@ -193,6 +200,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			w.Header().Set("X-XSS-Protection", "0")
 			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 			w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)")
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 			next.ServeHTTP(w, r)
 		})
 	})
@@ -359,6 +368,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Use(s.Authenticated, auth.RequireRole(domain.RoleAdmin))
 		r.Get("/admin/kpis", s.handleAdminKPIs)
 		r.Get("/admin/analytics", s.handleAdminAnalytics)
+		r.Get("/admin/settings", s.handleAdminGetSettings)
+		r.Put("/admin/settings", s.handleAdminPutSettings)
 		r.Get("/admin/search", s.handleAdminSearch)
 		r.Get("/admin/vendors", s.handleAdminVendors)
 		r.Post("/admin/vendors/{id}/approve", s.vendorStatusHandler(domain.VendorApproved, "vendor.approve"))

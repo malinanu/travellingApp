@@ -83,9 +83,9 @@ export default function DashboardPage() {
 
         <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Quick Actions / Shortcuts */}
-            <div className="rounded-2xl bg-[#141517] border border-white/5 p-6">
+            <div className="rounded-2xl bg-[#141517] border border-white/5 p-6 flex flex-col">
               <h2 className="text-lg font-semibold text-white mb-4">Quick Actions</h2>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 flex-grow">
                 <Link href="/queue" className="flex items-center justify-between p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors group">
                   <span className="text-sm font-medium text-white">Review Pending Vendors</span>
                   <ArrowRight className="h-4 w-4 text-[var(--muted)] group-hover:text-white transition-colors" />
@@ -100,9 +100,64 @@ export default function DashboardPage() {
                 </Link>
               </div>
             </div>
+
+            {/* Platform Security */}
+            <SecuritySettingsPanel />
         </div>
 
       </div>
     </Shell>
+  );
+}
+
+function SecuritySettingsPanel() {
+  const { data, refetch } = useQuery<{ rateLimitRPM: number }>({
+    queryKey: ['adminSettings'],
+    queryFn: () => api.get('/admin/settings').then(r => r.data),
+  });
+
+  const updateSettings = useMutation({
+    mutationFn: (rpm: number) => api.put('/admin/settings', { rateLimitRPM: rpm }),
+    onSuccess: () => refetch(),
+  });
+
+  if (!data) return (
+    <div className="rounded-2xl bg-[#141517] border border-white/5 p-6 flex items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-[var(--muted)]" />
+    </div>
+  );
+
+  return (
+    <div className="rounded-2xl bg-[#141517] border border-white/5 p-6 flex flex-col">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-lg font-semibold text-white">Platform Security</h2>
+        {updateSettings.isPending && <Loader2 className="h-4 w-4 animate-spin text-[var(--muted)]" />}
+      </div>
+      <p className="text-sm text-[var(--muted)] mb-6">
+        Adjust the global API rate limit (requests per minute per IP address) in real-time to defend against traffic spikes or abuse.
+      </p>
+
+      <div className="flex-grow flex flex-col justify-center">
+        <div className="flex justify-between items-end mb-3">
+          <label className="text-sm font-medium text-[var(--accent)]">Global API Rate Limit</label>
+          <span className="text-xl font-bold text-white tracking-tight">{data.rateLimitRPM} <span className="text-sm font-normal text-[var(--muted)]">RPM</span></span>
+        </div>
+        <div className="flex items-center gap-4">
+          <input 
+            type="range" 
+            min="10" 
+            max="1000" 
+            step="10"
+            value={data.rateLimitRPM}
+            onChange={(e) => updateSettings.mutate(parseInt(e.target.value, 10))}
+            className="w-full accent-emerald-500 bg-white/10 h-2 rounded-lg appearance-none cursor-pointer"
+          />
+        </div>
+        <div className="flex justify-between text-xs text-[var(--muted)] mt-2 font-medium uppercase tracking-wider">
+          <span>Strict (10)</span>
+          <span>Permissive (1000)</span>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -3077,3 +3077,25 @@ func (s *Store) PlatformAnalytics(ctx context.Context) (domain.PlatformAnalytics
 	`).Scan(&a.TotalUsers, &a.TotalVendors, &a.TotalClaims, &a.TotalReviews)
 	return a, err
 }
+
+func (s *Store) GetRateLimitRPM(ctx context.Context) (int, error) {
+	var val string
+	err := s.Pool.QueryRow(ctx, `SELECT value FROM platform_settings WHERE key = 'rate_limit_rpm'`).Scan(&val)
+	if err != nil {
+		return 200, err
+	}
+	var limit int
+	if err := json.Unmarshal([]byte(val), &limit); err != nil {
+		return 200, err
+	}
+	return limit, nil
+}
+
+func (s *Store) SetRateLimitRPM(ctx context.Context, limit int) error {
+	b, _ := json.Marshal(limit)
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO platform_settings (key, value) VALUES ('rate_limit_rpm', $1)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+	`, b)
+	return err
+}

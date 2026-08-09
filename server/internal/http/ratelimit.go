@@ -171,3 +171,71 @@ func (l *rateLimiter) cleanupLoop() {
 	}
 }
 
+type dynamicRateLimiter struct {
+	mu       sync.Mutex
+	requests map[string]*requestWindow
+	maxLimit int
+	window   time.Duration
+}
+
+func newDynamicRateLimiter(initialMax int, window time.Duration) *dynamicRateLimiter {
+	l := &dynamicRateLimiter{
+		requests: make(map[string]*requestWindow),
+		maxLimit: initialMax,
+		window:   window,
+	}
+	go l.cleanupLoop()
+	return l
+}
+
+func (l *dynamicRateLimiter) setMax(max int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.maxLimit = max
+}
+
+func (l *dynamicRateLimiter) allowInc(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	w, ok := l.requests[key]
+	if !ok || now.After(w.resetAt) {
+		l.requests[key] = &requestWindow{
+			count:   1,
+			resetAt: now.Add(l.window),
+		}
+		return true
+	}
+	if w.count >= l.maxLimit {
+		return false
+	}
+	w.count++
+	return true
+}
+
+func (l *dynamicRateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		l.mu.Lock()
+		now := time.Now()
+		for k, w := range l.requests {
+			if now.After(w.resetAt) {
+				delete(l.requests, k)
+			}
+		}
+		l.mu.Unlock()
+	}
+}
+
+func (s *Server) GlobalRateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := clientIP(r)
+		if !s.globalLimit.allowInc(ip) {
+			writeTooManyRequests(w)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+

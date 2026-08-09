@@ -48,6 +48,35 @@ func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, analytics)
 }
 
+func (s *Server) handleAdminGetSettings(w http.ResponseWriter, r *http.Request) {
+	limit, err := s.Store.GetRateLimitRPM(r.Context())
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"rateLimitRPM": limit})
+}
+
+func (s *Server) handleAdminPutSettings(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RateLimitRPM int `json:"rateLimitRPM"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if body.RateLimitRPM < 1 {
+		writeErr(w, http.StatusBadRequest, "rate limit must be >= 1")
+		return
+	}
+	if err := s.Store.SetRateLimitRPM(r.Context(), body.RateLimitRPM); err != nil {
+		storeErr(w, err)
+		return
+	}
+	s.globalLimit.setMax(body.RateLimitRPM)
+	writeJSON(w, http.StatusOK, map[string]int{"rateLimitRPM": body.RateLimitRPM})
+}
+
 
 func (s *Server) handleAdminVendors(w http.ResponseWriter, r *http.Request) {
 	vendors, err := s.Store.Vendors(r.Context(), r.URL.Query().Get("status"))
