@@ -105,7 +105,7 @@ func fetchFromGoogle(ctx context.Context, apiKey, calendarID string, days int) (
 	}
 	referer := os.Getenv("NEXT_PUBLIC_API_URL")
 	if referer == "" {
-		return nil, fmt.Errorf("holidays: NEXT_PUBLIC_API_URL is empty")
+		return nil, fmt.Errorf("holidays: api url is missing")
 	}
 	req.Header.Set("Referer", referer)
 	res, err := http.DefaultClient.Do(req)
