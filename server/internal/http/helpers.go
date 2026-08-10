@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"crypto/rand"
@@ -24,10 +24,10 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 // storeErr maps ErrNotFound to 404, everything else to 500.
 func storeErr(w http.ResponseWriter, err error) {
 	if errors.Is(err, postgres.ErrNotFound) {
-		writeErr(w, http.StatusNotFound, "not found")
+		writeErr(w, http.StatusNotFound, "The requested item could not be found.")
 		return
 	}
-	writeErr(w, http.StatusInternalServerError, "internal error")
+	writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
@@ -63,7 +63,7 @@ func newClaimCode() string {
 	return "SPOTTO-" + string(out)
 }
 
-// newBookingCode returns BOOK-XXXX — a distinct namespace from
+// newBookingCode returns BOOK-XXXX â€” a distinct namespace from
 // newClaimCode's SPOTTO-XXXX so handleValidate can dispatch on prefix alone.
 func newBookingCode() string {
 	b := make([]byte, 4)

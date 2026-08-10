@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"context"
@@ -43,7 +43,7 @@ func (s *Server) runVendorReportCheck(ctx context.Context) {
 			continue
 		}
 
-		subject := fmt.Sprintf("Weekly Performance Report — %s", v.Name)
+		subject := fmt.Sprintf("Weekly Performance Report â€” %s", v.Name)
 		body := fmt.Sprintf(`
 			<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 				<h2>Weekly Digest for %s</h2>

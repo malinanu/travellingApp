@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"context"
@@ -35,7 +35,7 @@ func (s *Server) handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
 // vendor account by Google ID (or, first time, by email), and hands the
 // frontend a one-time authCode to exchange for the same JSON body
 // /auth/login would return (including the 2FA-pending shape, if the
-// matched account has 2FA enabled — Google sign-in does not bypass it).
+// matched account has 2FA enabled â€” Google sign-in does not bypass it).
 // If no account matches, it redirects to registration with the Google
 // name/email prefilled instead of auto-creating a vendor, since
 // registration still needs business type/town Google can't supply.
@@ -72,7 +72,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		u, err = s.Store.UserByEmail(ctx, strings.ToLower(info.Email))
 	}
 	if err != nil || u.Role != domain.RoleVendor {
-		// No matching vendor account — send them to registration with
+		// No matching vendor account â€” send them to registration with
 		// their Google details prefilled rather than guessing.
 		q := url.Values{"email": {info.Email}, "name": {info.Name}}
 		http.Redirect(w, r, s.VendorAppURL+"/login?mode=register&"+q.Encode(), http.StatusFound)
@@ -86,21 +86,21 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	if u.TOTPEnabled {
 		pending, err := s.Tokens.IssueTwoFactorPending(u.ID)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal error")
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 			return
 		}
 		payload = map[string]any{"twoFactorRequired": true, "twoFactorToken": pending}
 	} else {
 		token, err := s.Tokens.Issue(u)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal error")
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 			return
 		}
 		payload = authResp{Token: token, User: u}
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	exchangeCode := newID("oac")

@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 )
 
 // handleAdminGuideStats powers the Local Guide dashboard's stat-card grid
-// and tool-usage breakdown — usage/reliability over the trailing 7 days
+// and tool-usage breakdown â€” usage/reliability over the trailing 7 days
 // plus the embedding backfill's overall progress.
 func (s *Server) handleAdminGuideStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := s.Store.GuideStats(r.Context())
@@ -46,7 +46,7 @@ func (s *Server) handleAdminGuideUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAdminGuideConversationDetail returns one conversation's full
-// transcript — an admin can inspect any conversation, unlike the
+// transcript â€” an admin can inspect any conversation, unlike the
 // traveller-facing endpoint which enforces ownership.
 func (s *Server) handleAdminGuideConversationDetail(w http.ResponseWriter, r *http.Request) {
 	messages, err := s.Store.GuideMessagesByConversation(r.Context(), chi.URLParam(r, "id"))

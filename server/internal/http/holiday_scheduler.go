@@ -1,7 +1,7 @@
-package httpapi
+﻿package httpapi
 
 // The holiday scheduler is the first *scheduled* background job in this
-// codebase — internal/jobs.Queue is fire-and-forget work triggered by a
+// codebase â€” internal/jobs.Queue is fire-and-forget work triggered by a
 // request (e.g. sending an email after an invite), not a periodic check.
 // This runs independently of any HTTP request, so it lives here rather
 // than in internal/jobs.
@@ -22,7 +22,7 @@ const holidaySchedulerInterval = 12 * time.Hour
 // StartHolidayScheduler periodically checks for public holidays landing
 // within holidayNoticeDays and creates a VendorNotification for every
 // approved vendor that hasn't yet recorded an open/closed decision for
-// that date (see handleVendorHolidayDecision) — deterministic notification
+// that date (see handleVendorHolidayDecision) â€” deterministic notification
 // IDs (see runHolidayCheck) make re-running this idempotent rather than
 // spamming duplicates. Blocks until ctx is cancelled; call with `go`.
 func (s *Server) StartHolidayScheduler(ctx context.Context) {
@@ -47,7 +47,7 @@ func (s *Server) runHolidayCheck(ctx context.Context) {
 	}
 
 	// Fetch each represented country's holiday list once per tick, not
-	// once per vendor — country here always means Vendor.Country ("LK" for
+	// once per vendor â€” country here always means Vendor.Country ("LK" for
 	// any vendor predating that field).
 	byCountry := make(map[string][]holidays.Holiday)
 	for _, v := range vendors {
@@ -85,7 +85,7 @@ func (s *Server) runHolidayCheck(ctx context.Context) {
 				Icon:   "Clock",
 				Tone:   "sun",
 				Title:  h.Name + " is coming up",
-				Sub:    fmt.Sprintf("%s — will you be open? Answer it on your Business Profile.", h.Date.Format("Jan 2")),
+				Sub:    fmt.Sprintf("%s â€” will you be open? Answer it on your Business Profile.", h.Date.Format("Jan 2")),
 				Time:   "just now",
 				Unread: true,
 			}

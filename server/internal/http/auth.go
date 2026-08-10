@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"crypto/rand"
@@ -17,7 +17,7 @@ import (
 )
 
 // dummyPasswordHash is compared against when a login's email doesn't match
-// any user, so CheckPassword always pays its bcrypt cost either way —
+// any user, so CheckPassword always pays its bcrypt cost either way â€”
 // otherwise response latency alone reveals which emails are registered
 // (the "||" short-circuit skips bcrypt entirely for unknown emails).
 // Computed once at startup via package-var init, not per request.
@@ -32,7 +32,7 @@ func mustHashDummyPassword() string {
 }
 
 // commonPasswords are the handful of weak passwords that show up at the top
-// of every breach-corpus frequency list — cheap to block outright even
+// of every breach-corpus frequency list â€” cheap to block outright even
 // though they'd pass the other structural checks below (e.g. "password1"
 // isn't all-digit or all-repeated-char).
 var commonPasswords = map[string]bool{
@@ -45,7 +45,7 @@ var commonPasswords = map[string]bool{
 
 // isWeakPassword catches the most common trivially-guessable patterns
 // (length is already checked separately by the caller). Not a full
-// strength-scoring system — just cheap, high-value rejections.
+// strength-scoring system â€” just cheap, high-value rejections.
 func isWeakPassword(password, email string) bool {
 	allDigits := true
 	allSameChar := true
@@ -82,7 +82,7 @@ type registerReq struct {
 	// Lat/Lng/Contact/Hours are populated only when the owner found their
 	// business via the registration wizard's Google Places search step
 	// (web/vendor/app/login/page.tsx) rather than typing everything by
-	// hand — carried directly in this request because a freshly-registered
+	// hand â€” carried directly in this request because a freshly-registered
 	// vendor is `pending` and can't yet call the approval-gated
 	// PUT /vendor/business / PATCH /vendor/business/identity endpoints to
 	// set these itself.
@@ -94,19 +94,19 @@ type registerReq struct {
 	} `json:"contact,omitempty"`
 	Hours map[string]dayHoursDoc `json:"hours,omitempty"`
 	// BusinessCountry is an ISO 3166-1 alpha-2 code (e.g. "LK", "US") read
-	// from the Places search result's address_components — distinct from
+	// from the Places search result's address_components â€” distinct from
 	// the traveller-registration Country field below (that one is the
 	// traveller's own home country, an unrelated concept). Empty defaults
 	// to "LK" in Store.UpsertVendor, matching every vendor that predates
 	// this field.
 	BusinessCountry string `json:"businessCountry,omitempty"`
 	// GooglePlaceID is the Google Maps Place ID from the registration
-	// wizard's "Find your business" Places search — captured so we can
+	// wizard's "Find your business" Places search â€” captured so we can
 	// cache it on the vendor row for later Place Details enrichment (see
 	// internal/placedetails) instead of only having it in the JSONB blob.
 	GooglePlaceID string `json:"googlePlaceId,omitempty"`
 	// InviteCode joins an existing vendor as the invite's assigned role
-	// (staff or manager) instead of creating a new pending vendor — see
+	// (staff or manager) instead of creating a new pending vendor â€” see
 	// the team-invite flow in handleRegister.
 	InviteCode string `json:"inviteCode,omitempty"`
 	// Traveller extras
@@ -135,7 +135,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if isWeakPassword(req.Password, req.Email) {
-		writeErr(w, http.StatusBadRequest, "password is too weak — avoid all-digit, all-repeated, or email-derived passwords")
+		writeErr(w, http.StatusBadRequest, "password is too weak â€” avoid all-digit, all-repeated, or email-derived passwords")
 		return
 	}
 	if _, err := s.Store.UserByEmail(r.Context(), req.Email); err == nil {
@@ -149,7 +149,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 
@@ -169,7 +169,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var invite *domain.VendorInvite
 	if role == domain.RoleVendor && req.InviteCode != "" {
 		// Joining an existing vendor as whatever role the invite specified
-		// (staff or manager) — validated below, after we know the invite
+		// (staff or manager) â€” validated below, after we know the invite
 		// exists, isn't revoked/accepted/expired.
 		inv, err := s.Store.VendorInviteByCode(r.Context(), req.InviteCode)
 		if err != nil || inv.Revoked || inv.AcceptedAt != nil || time.Now().After(inv.ExpiresAt) {
@@ -228,7 +228,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err := s.Store.UpsertVendor(r.Context(), v); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal error")
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 			return
 		}
 		u.VendorID = &v.ID
@@ -236,12 +236,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.Store.CreateUser(r.Context(), u); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	if invite != nil {
 		if err := s.Store.AcceptVendorInvite(r.Context(), invite.ID, u.ID); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal error")
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 			return
 		}
 	}
@@ -252,12 +252,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// what was actually just stored.
 	u, err = s.Store.UserByID(r.Context(), u.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	token, err := s.Tokens.Issue(u)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	u.AvatarURL = s.signMediaPath(u.AvatarURL)
@@ -293,7 +293,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if u.TOTPEnabled {
 		pending, err := s.Tokens.IssueTwoFactorPending(u.ID)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal error")
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -304,7 +304,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	token, err := s.Tokens.Issue(u)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	u.AvatarURL = s.signMediaPath(u.AvatarURL)
@@ -316,7 +316,7 @@ type meResp struct {
 	domain.User
 	VendorStatus *domain.VendorStatus `json:"vendorStatus,omitempty"`
 	// IsSuperAdmin is only ever true for RoleAdmin accounts listed in
-	// SUPER_ADMIN_EMAILS — see superadmin.go.
+	// SUPER_ADMIN_EMAILS â€” see superadmin.go.
 	IsSuperAdmin bool `json:"isSuperAdmin,omitempty"`
 }
 
@@ -367,7 +367,7 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		u.Interests = *req.Interests
 	}
 	if err := s.Store.UpdateUserProfile(r.Context(), u.ID, u.Name, u.Country, u.TravelStyle, u.Interests); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	u.AvatarURL = s.signMediaPath(u.AvatarURL)
@@ -401,19 +401,19 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if isWeakPassword(req.NewPassword, u.Email) {
-		writeErr(w, http.StatusBadRequest, "password is too weak — avoid all-digit, all-repeated, or email-derived passwords")
+		writeErr(w, http.StatusBadRequest, "password is too weak â€” avoid all-digit, all-repeated, or email-derived passwords")
 		return
 	}
 	hash, err := auth.HashPassword(req.NewPassword)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	if err := s.Store.UpdateUserPassword(r.Context(), u.ID, hash); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
-	// UpdateUserPassword just bumped token_version in the DB — mirror that
+	// UpdateUserPassword just bumped token_version in the DB â€” mirror that
 	// locally so the token we issue below matches, instead of immediately
 	// failing Server.Authenticated's version check on the very next request.
 	u.TokenVersion++
@@ -421,7 +421,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	// possession) since its old token_version no longer matches.
 	token, err := s.Tokens.Issue(u)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"token": token})
@@ -441,7 +441,7 @@ func (s *Server) handleUpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.SetShareLocation(r.Context(), c.Subject, req.ShareLocation); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, req)
@@ -477,7 +477,7 @@ func (s *Server) handleUpdateMyContact(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.Store.UpdateUserContact(r.Context(), u.ID, req.Name, email, req.Phone); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	u.Name, u.Email, u.Phone = req.Name, email, req.Phone
@@ -485,7 +485,7 @@ func (s *Server) handleUpdateMyContact(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUpdateNotificationPrefs saves the account page's notification
-// toggles. Nothing in the app sends notifications yet — this just persists
+// toggles. Nothing in the app sends notifications yet â€” this just persists
 // the preference for whenever that exists.
 func (s *Server) handleUpdateNotificationPrefs(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
@@ -499,7 +499,7 @@ func (s *Server) handleUpdateNotificationPrefs(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if err := s.Store.UpdateNotificationPrefs(r.Context(), c.Subject, req.Redemptions, req.Reviews, req.Payouts, req.GrowthTips); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, req)
@@ -514,7 +514,7 @@ func newResetToken() string {
 func hashResetToken(raw string) string { return sha256Hex(raw) }
 
 // sha256Hex hashes a secret (reset token, profile-grant PIN, ...) for
-// at-rest storage — callers compare by hash, never store the raw value.
+// at-rest storage â€” callers compare by hash, never store the raw value.
 func sha256Hex(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
@@ -525,7 +525,7 @@ func sha256Hex(raw string) string {
 // differences. If it does match, a reset email is queued (see
 // internal/jobs) rather than sent inline, so this handler doesn't block
 // on SMTP latency. The emailed link's host is picked by the matched
-// user's role (VendorAppURL vs AdminAppURL) — travellers don't have a
+// user's role (VendorAppURL vs AdminAppURL) â€” travellers don't have a
 // reset UI yet, so they fall back to the vendor app's like before.
 func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -540,7 +540,7 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 		writeTooManyRequests(w)
 		return
 	}
-	s.resetLimit.recordFailure(limitKey) // bounds requests per key; never reset — resends should stay rate-limited too
+	s.resetLimit.recordFailure(limitKey) // bounds requests per key; never reset â€” resends should stay rate-limited too
 
 	if u, err := s.Store.UserByEmail(r.Context(), email); err == nil {
 		raw := newResetToken()
@@ -563,7 +563,7 @@ func resetEmailHTML(link string) string {
 		`<p>If this wasn't you, you can safely ignore this email.</p>`
 }
 
-// handleResetPassword validates the token (by hash — the raw token is
+// handleResetPassword validates the token (by hash â€” the raw token is
 // never stored), applies the same password-strength rules as
 // registration, and bumps token_version so any existing sessions are
 // signed out (same revocation mechanism as a 2FA disable).
@@ -586,7 +586,7 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.Store.UserByID(r.Context(), rt.UserID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	if len(req.NewPassword) < 10 {
@@ -594,20 +594,20 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if isWeakPassword(req.NewPassword, u.Email) {
-		writeErr(w, http.StatusBadRequest, "password is too weak — avoid all-digit, all-repeated, or email-derived passwords")
+		writeErr(w, http.StatusBadRequest, "password is too weak â€” avoid all-digit, all-repeated, or email-derived passwords")
 		return
 	}
 	hash, err := auth.HashPassword(req.NewPassword)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	if err := s.Store.UpdateUserPassword(r.Context(), u.ID, hash); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	if err := s.Store.MarkPasswordResetTokenUsed(r.Context(), rt.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -652,7 +652,7 @@ func (s *Server) requireApprovedVendor(w http.ResponseWriter, r *http.Request) (
 
 // requireEditableVendor allows pending/edits-status vendors through in
 // addition to approved ones, so they can set up their business profile,
-// category, and menu while awaiting admin approval — only rejected/
+// category, and menu while awaiting admin approval â€” only rejected/
 // suspended vendors are blocked. Use for writes that just describe the
 // business rather than making it live to travelers.
 func (s *Server) requireEditableVendor(w http.ResponseWriter, r *http.Request) (domain.Vendor, bool) {
@@ -766,7 +766,7 @@ func (s *Server) handleAppleAuth(w http.ResponseWriter, r *http.Request) {
 
 	u, err = s.Store.UserByID(r.Context(), newUser.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 

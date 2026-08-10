@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"errors"
@@ -69,7 +69,7 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 	svc.VendorID = v.ID
 	svc.Active = true
 	if err := s.Store.UpsertBookableService(r.Context(), svc); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusCreated, svc)
@@ -99,14 +99,14 @@ func (s *Server) handleUpdateService(w http.ResponseWriter, r *http.Request) {
 		svc.Capacity = 1
 	}
 	if err := s.Store.UpsertBookableService(r.Context(), svc); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, svc)
 }
 
 // DeleteBookableService cascades to that service's booking history (ON
-// DELETE CASCADE) — see the store method's own doc comment.
+// DELETE CASCADE) â€” see the store method's own doc comment.
 func (s *Server) handleDeleteService(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireApprovedVendor(w, r)
 	if !ok {
@@ -148,7 +148,7 @@ func (s *Server) handleVendorCancelBooking(w http.ResponseWriter, r *http.Reques
 }
 
 // handleSetBookingStatus lets a vendor mark a booking no_show/completed/
-// cancelled by hand — covers a phone booking or a no-show whose code was
+// cancelled by hand â€” covers a phone booking or a no-show whose code was
 // never scanned.
 func (s *Server) handleSetBookingStatus(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireApprovedVendor(w, r)
@@ -175,7 +175,7 @@ func (s *Server) handleSetBookingStatus(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleBookingCheckIn is dispatched from handleValidate when a scanned/
-// entered code has the "BOOK-" prefix — mirrors the claim-redemption
+// entered code has the "BOOK-" prefix â€” mirrors the claim-redemption
 // result shape (valid/already_redeemed/wrong_vendor/unknown) so the vendor
 // portal's existing Validate page needs no structural change, just new
 // copy for r.booking vs r.claim.

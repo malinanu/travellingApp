@@ -1,9 +1,9 @@
-package httpapi
+﻿package httpapi
 
 // Second scheduled background job in this codebase (see
 // holiday_scheduler.go's doc comment for the distinction from
 // internal/jobs.Queue's fire-and-forget work). Sends a reminder email
-// (reusing the existing mail.Mailer — no traveller-facing notification
+// (reusing the existing mail.Mailer â€” no traveller-facing notification
 // system exists otherwise, see booking.go's design notes) for confirmed
 // bookings starting soon.
 
@@ -17,7 +17,7 @@ import (
 const bookingReminderSchedulerInterval = 1 * time.Hour
 
 // bookingReminderWindow is how far ahead of a booking's start time this
-// scheduler starts considering it "due" — a booking is only ever emailed
+// scheduler starts considering it "due" â€” a booking is only ever emailed
 // once, gated by BookingsForReminder's reminder_sent_at IS NULL filter, so
 // widening this window doesn't risk duplicate reminders on a slow tick.
 const bookingReminderWindow = 24 * time.Hour

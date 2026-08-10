@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"net/http"
@@ -25,7 +25,7 @@ func (s *Server) isSuperAdmin(email string) bool {
 // RequireSuperAdmin further restricts an admin-role route (use after
 // auth.RequireRole(domain.RoleAdmin)) to accounts listed in
 // SUPER_ADMIN_EMAILS. It lives here rather than in package auth because it
-// needs a Store lookup (email isn't in the JWT claims) — matching how every
+// needs a Store lookup (email isn't in the JWT claims) â€” matching how every
 // other DB-dependent check in this codebase (Authenticated itself, the
 // vendor-grant access checks) is a *Server method, not a package-auth func.
 func (s *Server) RequireSuperAdmin(next http.Handler) http.Handler {

@@ -1,11 +1,11 @@
-package httpapi
+﻿package httpapi
 
 // The BR-cert scheduler is the background worker behind Business
 // Registration certificate verification: a vendor uploads their
-// certificate (PDF or image, media role "br_cert" — see media.go), which
+// certificate (PDF or image, media role "br_cert" â€” see media.go), which
 // queues an OCR pre-fill pass (internal/gemini) of the printed certificate
 // number, which in turn queues an eROC registry check (internal/eroc) once
-// a number is set — either the OCR guess or whatever the vendor typed/
+// a number is set â€” either the OCR guess or whatever the vendor typed/
 // edited themselves. Both steps run here, off the request path, following
 // the same ticker-sweep shape as weather_scheduler.go/holiday_scheduler.go
 // (this codebase has no job-queue abstraction) so state lives in Postgres
@@ -35,7 +35,7 @@ const brCertVerifyCallSpacing = 1 * time.Second
 
 // brCertMaxVerifyAttempts bounds retries on transient eROC failures
 // (network errors, non-200s) before giving up and surfacing the vendor for
-// manual review — a permanently malformed/unreachable case must not retry
+// manual review â€” a permanently malformed/unreachable case must not retry
 // forever.
 const brCertMaxVerifyAttempts = 5
 
@@ -63,7 +63,7 @@ func (s *Server) runBRCertSweep(ctx context.Context) {
 // br_cert doc hasn't been read yet.
 func (s *Server) runBRCertOCRSweep(ctx context.Context) {
 	if s.GeminiAPIKey == "" {
-		return // unconfigured — vendors can still type the number in manually
+		return // unconfigured â€” vendors can still type the number in manually
 	}
 	vendors, err := s.Store.VendorsPendingBRCertOCR(ctx)
 	if err != nil {

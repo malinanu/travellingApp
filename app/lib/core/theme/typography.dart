@@ -3,15 +3,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'dark_palette.dart';
 import 'palette.dart';
 
-TextTheme spottoTextTheme({bool dark = false}) {
+TextTheme spottoTextTheme() {
   final fredoka = GoogleFonts.fredokaTextTheme();
   final nunito = GoogleFonts.nunitoTextTheme();
-  final ink = dark ? SpottoDarkColors.ink : SpottoColors.ink;
-  final inkSoft = dark ? SpottoDarkColors.inkSoft : SpottoColors.inkSoft;
-  final muted = dark ? SpottoDarkColors.muted : SpottoColors.muted;
+  final ink = SpottoColors.ink;
+  final inkSoft = SpottoColors.inkSoft;
+  final muted = SpottoColors.muted;
 
   return TextTheme(
     displayLarge: fredoka.displayLarge!.copyWith(color: ink, fontWeight: FontWeight.w600),

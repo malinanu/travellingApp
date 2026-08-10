@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"context"
@@ -56,7 +56,7 @@ func (s *Server) handleWeatherBatch(w http.ResponseWriter, r *http.Request) {
 // handleWeather (live traveller requests) and the background scheduler
 // (weather_scheduler.go): in-memory cache, then the Postgres-backed cache
 // (survives a process restart, e.g. every deploy), and only then a real
-// Tomorrow.io or Open-Meteo call — so nothing burns quota on a cell that's
+// Tomorrow.io or Open-Meteo call â€” so nothing burns quota on a cell that's
 // already warm.
 func (s *Server) getOrFetchWeather(ctx context.Context, lat, lng float64) (snap *weather.Snapshot, fromCache bool, err error) {
 	key := weather.CellKey(lat, lng)

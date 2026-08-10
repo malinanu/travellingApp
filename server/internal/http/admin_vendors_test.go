@@ -1,12 +1,12 @@
-package httpapi_test
+﻿package httpapi_test
 
 // Integration tests for the admin vendor directory and its per-vendor stats
 // pane. Two things are covered because two distinct bugs were possible:
 //
-//  1. GET /admin/vendors with no status must return *every* vendor —
+//  1. GET /admin/vendors with no status must return *every* vendor â€”
 //     including suspended ones and ones with no map coordinates, which the
 //     approval queue (pending only) and geo map (coords only) each hide.
-//  2. GET /admin/vendors/{id}/stats must aggregate the right rows — notably
+//  2. GET /admin/vendors/{id}/stats must aggregate the right rows â€” notably
 //     checkins, which carry no vendor_id and join via places.vendor_id.
 //
 // Same real-Postgres pattern as validate_test.go; skips if it can't connect.
@@ -28,7 +28,7 @@ import (
 
 func TestAdminVendorDirectoryAndStats(t *testing.T) {
 	store := mustConnect(t)
-	// Registered before the purge cleanup below so it runs *after* it —
+	// Registered before the purge cleanup below so it runs *after* it â€”
 	// t.Cleanup is LIFO, and a plain `defer store.Close()` would close the
 	// pool out from under the purge.
 	t.Cleanup(store.Close)
@@ -59,7 +59,7 @@ func TestAdminVendorDirectoryAndStats(t *testing.T) {
 	}
 	must(t, store.UpsertVendor(ctx, subject))
 
-	// A suspended vendor and a coordinate-less one — the two cases that were
+	// A suspended vendor and a coordinate-less one â€” the two cases that were
 	// invisible in every pre-existing admin surface.
 	suspended := domain.Vendor{
 		ID: "ven_stats_suspended", Name: "Stats Suspended Inn", Category: "hotel", Town: "Kandy",
@@ -147,7 +147,7 @@ func TestAdminVendorDirectoryAndStats(t *testing.T) {
 		if st.Checkins30d != 2 {
 			t.Errorf("checkins30d: want 2, got %d", st.Checkins30d)
 		}
-		// Ratings 5, 4, 1 → avg 3.33, one bad review, below the flag threshold of 5.
+		// Ratings 5, 4, 1 â†’ avg 3.33, one bad review, below the flag threshold of 5.
 		if st.Reviews != 3 {
 			t.Errorf("reviews: want 3, got %d", st.Reviews)
 		}
@@ -182,7 +182,7 @@ func TestAdminVendorDirectoryAndStats(t *testing.T) {
 		if st["redeemed"] != float64(0) || st["reviews"] != float64(0) {
 			t.Errorf("want zeroed stats, got %v", st)
 		}
-		// No subscriptions row — the field should be omitted, not zero.
+		// No subscriptions row â€” the field should be omitted, not zero.
 		if _, present := st["subTier"]; present {
 			t.Error("subTier should be omitted for a vendor with no subscription")
 		}
@@ -310,7 +310,7 @@ func seedVendorActivity(t *testing.T, store *postgres.Store, ctx context.Context
 		}))
 	}
 
-	// 2 check-ins — these hang off the place, not the vendor.
+	// 2 check-ins â€” these hang off the place, not the vendor.
 	must(t, store.AddCheckin(ctx, placeID, "usr_stats_traveller"))
 	must(t, store.AddCheckin(ctx, placeID, "usr_stats_traveller2"))
 

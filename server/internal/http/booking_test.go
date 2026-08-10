@@ -1,7 +1,7 @@
-package httpapi_test
+﻿package httpapi_test
 
 // Integration tests for the booking system against the real Postgres store
-// (see validate_test.go's doc comment — same self-skip-if-no-local-db
+// (see validate_test.go's doc comment â€” same self-skip-if-no-local-db
 // convention). Covers: capacity enforcement under concurrency, closed-day
 // rejection, cancel ownership, and the BOOK-/SPOTTO- prefix dispatch in
 // handleValidate.
@@ -78,7 +78,7 @@ func TestBookingCapacityAndLifecycle(t *testing.T) {
 		Name: "Test Surf Lesson", DurationMins: 60, Capacity: 1, PartySizeMin: 1, PartySizeMax: 4,
 		Availability: &allDay, Active: true}
 	must(t, store.UpsertBookableService(ctx, svc))
-	// Vendor must be open (Hours) for the requested slot too — checkVendorOpen
+	// Vendor must be open (Hours) for the requested slot too â€” checkVendorOpen
 	// gates on this independently of the service's own Availability.
 	must(t, store.UpdateVendorProfile(ctx, vendor.ID, []byte(`{"hours":{"monday":{"open":"00:00","close":"23:59"},"tuesday":{"open":"00:00","close":"23:59"},"wednesday":{"open":"00:00","close":"23:59"},"thursday":{"open":"00:00","close":"23:59"},"friday":{"open":"00:00","close":"23:59"},"saturday":{"open":"00:00","close":"23:59"},"sunday":{"open":"00:00","close":"23:59"}}}`)))
 
@@ -116,7 +116,7 @@ func TestBookingCapacityAndLifecycle(t *testing.T) {
 
 	t.Run("second concurrent booking for the same full slot is rejected", func(t *testing.T) {
 		// capacity=1, one confirmed booking already exists for this exact
-		// slot — a second concurrent attempt must lose.
+		// slot â€” a second concurrent attempt must lose.
 		status, out := doJSON(t, http.MethodPost, srv.URL+"/bookings", travellerBToken, bookingBody)
 		if status != http.StatusConflict {
 			t.Errorf("want 409 (full), got %d (%v)", status, out)

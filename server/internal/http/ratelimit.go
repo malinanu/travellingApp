@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"net"
@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// loginLimiter is a simple per-key sliding-window attempt counter — enough
+// loginLimiter is a simple per-key sliding-window attempt counter â€” enough
 // to blunt brute-force/credential-stuffing against a single-instance
 // deployment without pulling in an external dependency (Redis etc.). Keys
 // are typically "clientIP:identity" so one attacker can't lock out
@@ -56,7 +56,7 @@ func (l *loginLimiter) recordFailure(key string) {
 	w.count++
 }
 
-// reset clears key's counter — call on a successful attempt.
+// reset clears key's counter â€” call on a successful attempt.
 func (l *loginLimiter) reset(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -82,16 +82,16 @@ func (l *loginLimiter) cleanupLoop() {
 // left-most (client-supplied, spoofable) X-Forwarded-For entry. That let an
 // attacker send a different X-Forwarded-For value on every request to get a
 // fresh rate-limit bucket each time, defeating loginLimit/totpLimit
-// entirely. Instead, this trusts only the right-most entry — the one
+// entirely. Instead, this trusts only the right-most entry â€” the one
 // CloudPanel's reverse proxy itself appends via
-// `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` — which
+// `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` â€” which
 // reflects what the proxy actually saw on its own client-facing socket and
 // can't be overridden by anything the client puts in the header.
 func realIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Deliberately X-Forwarded-For only, not X-Real-IP: we know
 		// CloudPanel's nginx appends to the former (see comment above), but
-		// we have no such guarantee for the latter — trusting it unverified
+		// we have no such guarantee for the latter â€” trusting it unverified
 		// would reopen the same spoofing hole under a different header
 		// name. Absent X-Forwarded-For, r.RemoteAddr (the direct TCP peer,
 		// i.e. nginx itself) is used as-is: a safe, if coarse, fallback.
@@ -116,7 +116,7 @@ func clientIP(r *http.Request) string {
 }
 
 func writeTooManyRequests(w http.ResponseWriter) {
-	writeErr(w, http.StatusTooManyRequests, "too many attempts — try again later")
+	writeErr(w, http.StatusTooManyRequests, "too many attempts â€” try again later")
 }
 
 type rateLimiter struct {

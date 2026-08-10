@@ -1,7 +1,7 @@
-package httpapi
+﻿package httpapi
 
 // The embedding worker backfills semantic-search vectors for places, off
-// the request path — same ticker-driven, Postgres-state-not-in-memory shape
+// the request path â€” same ticker-driven, Postgres-state-not-in-memory shape
 // as thumbnail_worker.go/weather_scheduler.go/holiday_scheduler.go/
 // br_cert_scheduler.go. Places start with embedding = NULL and this sweep
 // fills them in a few at a time via one batched OpenRouter call per tick.
@@ -15,12 +15,12 @@ import (
 	"github.com/spotto/server/internal/recommend"
 )
 
-// embeddingWorkerInterval — no tight latency requirement here (unlike
+// embeddingWorkerInterval â€” no tight latency requirement here (unlike
 // thumbnails, nothing in the UI is waiting on a place's embedding to
 // appear), so this paces gently against the free-tier embedding model's
 // rate limits. Deliberately wide: OpenRouter's free (":free") models share
 // one account-wide daily cap (50/day unfunded, 1000/day after a one-time
-// $10 credit purchase — see gemini.ai's rate-limit docs), and that
+// $10 credit purchase â€” see gemini.ai's rate-limit docs), and that
 // budget also has to cover live chat traffic from Local Guide itself. At
 // 30s this worker alone could burn most of an unfunded day's quota in the
 // ~20 minutes it takes to back through a few hundred places, right after
@@ -67,7 +67,7 @@ func (s *Server) runEmbeddingSweep(ctx context.Context) {
 
 	embeddings, err := gemini.Embed(ctx, s.GeminiAPIKey, texts)
 	if err != nil {
-		// Transient (rate limit/network) — left NULL, picked up again next
+		// Transient (rate limit/network) â€” left NULL, picked up again next
 		// tick, same as the thumbnail worker's transient-failure handling.
 		log.Printf("embedding worker: embed batch: %v", err)
 		return

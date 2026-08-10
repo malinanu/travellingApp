@@ -1,4 +1,4 @@
-// Package httpapi wires the chi router, middleware and handlers.
+﻿// Package httpapi wires the chi router, middleware and handlers.
 package httpapi
 
 import (
@@ -31,24 +31,24 @@ type Server struct {
 	TOTPKey []byte // AES-256 key for encrypting TOTP secrets at rest
 
 	Mail *mail.Mailer
-	// Jobs runs slow side effects (email sends) off the request goroutine —
+	// Jobs runs slow side effects (email sends) off the request goroutine â€”
 	// see internal/jobs for why this is best-effort, not durable.
 	Jobs         *jobs.Queue
 	VendorAppURL string
 	AdminAppURL  string
 	// SuperAdminEmails holds lowercased, trimmed emails from
-	// config.Config.SuperAdminEmails for O(1) membership checks — see
+	// config.Config.SuperAdminEmails for O(1) membership checks â€” see
 	// isSuperAdmin in superadmin.go.
 	SuperAdminEmails map[string]bool
 	// GoogleCalendarAPIKey enables live public-holiday lookups (see
-	// internal/holidays and holiday_scheduler.go) — empty means the
+	// internal/holidays and holiday_scheduler.go) â€” empty means the
 	// scheduler falls back to a bundled static list instead.
 	GoogleCalendarAPIKey string
-	// TomorrowIOAPIKey enables live weather (see internal/weather) — empty
+	// TomorrowIOAPIKey enables live weather (see internal/weather) â€” empty
 	// means GET /weather reports itself unconfigured (501) instead.
 	TomorrowIOAPIKey string
 	// GeminiAPIKey enables BR-certificate OCR pre-fill (see
-	// internal/gemini) — empty means the br-cert scheduler's OCR sweep is
+	// internal/gemini) â€” empty means the br-cert scheduler's OCR sweep is
 	// a no-op. It also powers the Local Guide chat/embeddings; empty means
 	// POST /guide/chat reports itself unconfigured (501).
 	GeminiAPIKey string
@@ -57,16 +57,16 @@ type Server struct {
 	// tier's tight rate limit.
 	WeatherCache *weather.Cache
 	// GooglePlacesAPIKey enables live Places Details enrichment (see
-	// internal/placedetails) for GET /places/{id} — sourced from the same
+	// internal/placedetails) for GET /places/{id} â€” sourced from the same
 	// shared Google Maps/Places-enabled key as GoogleCalendarAPIKey (see
 	// its doc comment in config.Config), not a separate credential. Empty
 	// means that enrichment is silently skipped.
 	GooglePlacesAPIKey string
 	// PlaceDetailsCache holds recent Places Details lookups keyed by Google
 	// place ID (see internal/placedetails/cache.go) to keep paid API spend
-	// down — these attributes rarely change, so the TTL is long.
+	// down â€” these attributes rarely change, so the TTL is long.
 	PlaceDetailsCache *placedetails.Cache
-	// GoogleOAuth is nil when GOOGLE_CLIENT_ID/SECRET aren't configured —
+	// GoogleOAuth is nil when GOOGLE_CLIENT_ID/SECRET aren't configured â€”
 	// handleGoogleLogin/handleGoogleCallback report 501 in that case rather
 	// than panicking on a nil config.
 	GoogleOAuth *oauth2.Config
@@ -81,7 +81,7 @@ type Server struct {
 	loginLimit    *loginLimiter // guards /auth/login (key: ip+email)
 	totpLimit     *loginLimiter // guards /auth/2fa/login-verify (key: ip+userID)
 	resetLimit    *loginLimiter // guards /auth/forgot-password (key: ip+email)
-	grantPinLimit *loginLimiter // guards /vendor/profile-grants/{id}/redeem (key: ip+userID) — a 6-digit PIN only has 10^6 possibilities
+	grantPinLimit *loginLimiter // guards /vendor/profile-grants/{id}/redeem (key: ip+userID) â€” a 6-digit PIN only has 10^6 possibilities
 	guideLimit    *dynamicRateLimiter // guards /guide/chat (key: userID or clientIP)
 	globalLimit   *dynamicRateLimiter
 	oauthCodes    *authCodeStore
@@ -114,7 +114,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		TomorrowIOAPIKey:     cfg.TomorrowIOAPIKey,
 		GeminiAPIKey:         cfg.GeminiAPIKey,
 		WeatherCache:         weather.NewCache(),
-		// Same key as GoogleCalendarAPIKey — see its doc comment.
+		// Same key as GoogleCalendarAPIKey â€” see its doc comment.
 		GooglePlacesAPIKey: cfg.GoogleCalendarAPIKey,
 		PlaceDetailsCache:  placedetails.NewCache(),
 		loginLimit:         newLoginLimiter(5, 15*time.Minute),
@@ -152,7 +152,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 }
 
 // Authenticated requires a valid Bearer session token AND that its embedded
-// token_version still matches the user's current one in the database — a
+// token_version still matches the user's current one in the database â€” a
 // signature-valid token whose version has been bumped (e.g. by a 2FA
 // disable) is rejected even though Tokens.Verify alone would accept it.
 func (s *Server) Authenticated(next http.Handler) http.Handler {
@@ -216,7 +216,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": "v1"})
 	})
 
-	// Proxies a private R2 object read — deliberately outside the
+	// Proxies a private R2 object read â€” deliberately outside the
 	// Authenticated group below: it's loaded via plain <img>/<video>/<a>
 	// tags (app and web), which can't attach an Authorization header, so it
 	// authorises via a signed token query param instead (see
@@ -274,7 +274,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/places/{id}/services/{serviceId}/availability", s.handleServiceAvailability)
 		r.Post("/offers/{id}/view", s.handleOfferView)
 
-		// Media uploads (R2) — any authenticated role; per-owner authorisation
+		// Media uploads (R2) â€” any authenticated role; per-owner authorisation
 		// is enforced inside the handlers (see canUploadFor).
 		r.Post("/media/presign", s.handleMediaPresign)
 		r.Post("/media/confirm", s.handleMediaConfirm)
@@ -308,7 +308,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Use(s.Authenticated, auth.RequireRole(domain.RoleVendor))
 		// Business Profile writes are gated by requireBusinessProfileAccess
 		// inside the handlers themselves (owner, or a manager with an active
-		// temporary grant) rather than by role-tier middleware — see
+		// temporary grant) rather than by role-tier middleware â€” see
 		// vendor_grants.go.
 		r.Get("/vendor/business", s.handleVendorBusiness)
 		r.Put("/vendor/business", s.handleUpdateVendorBusiness)
@@ -332,7 +332,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/vendor/profile-grants/mine", s.handleMyVendorProfileGrant)
 		r.Post("/vendor/profile-grants/{id}/redeem", s.handleRedeemVendorProfileGrant)
 
-		// Offers/menu mutations, growth, and reports — staff has zero
+		// Offers/menu mutations, growth, and reports â€” staff has zero
 		// access (scan/validate only per the account page's own copy).
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireVendorManagerOrAbove)
@@ -356,7 +356,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			r.Post("/vendor/holidays/decision", s.handleVendorHolidayDecision)
 		})
 
-		// Team management — the account's own owner only, not invited staff
+		// Team management â€” the account's own owner only, not invited staff
 		// or managers.
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireVendorOwner)
@@ -433,7 +433,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Put("/admin/categories/{id}", s.handleAdminUpdateCategory)
 		r.Delete("/admin/categories/{id}", s.handleAdminDeleteCategory)
 
-		// Cross-admin history of destructive actions — restricted further
+		// Cross-admin history of destructive actions â€” restricted further
 		// to super-admins, since it names which specific admin did what.
 		r.Group(func(r chi.Router) {
 			r.Use(s.RequireSuperAdmin)

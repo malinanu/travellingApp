@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/spotto/server/internal/media"
 )
 
-// singleValueRoles hold at most one object per owner — a new upload replaces
+// singleValueRoles hold at most one object per owner â€” a new upload replaces
 // (and deletes from R2) the previous one. br_cert is single-value (unlike
 // the generic multi-value "doc") because a re-upload should replace the
 // vendor's one Business Registration certificate, not add another.
@@ -152,7 +152,7 @@ func (s *Server) handleMediaConfirm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Thumbnail generation happens off the request path — see
+	// Thumbnail generation happens off the request path â€” see
 	// thumbnail_worker.go. Marking it pending here just queues it; the
 	// confirm response goes out immediately with no thumb/micro yet
 	// (clients already fall back to the full-size url in that case).
@@ -184,14 +184,14 @@ func (s *Server) handleMediaConfirm(w http.ResponseWriter, r *http.Request) {
 		_ = s.Store.StartVendorBRCertOCR(r.Context(), req.OwnerID)
 	}
 	s.resyncVendorMediaBestEffort(r.Context(), req.OwnerType, req.OwnerID)
-	// ThumbURL/MicroThumb are always empty at this point — thumb_status is
-	// only just now "pending" (see thumbnail_worker.go) — so no signing is
+	// ThumbURL/MicroThumb are always empty at this point â€” thumb_status is
+	// only just now "pending" (see thumbnail_worker.go) â€” so no signing is
 	// needed here, unlike m.URL, which is always present.
 	m.URL = s.signMediaPath(m.URL)
 	writeJSON(w, http.StatusOK, m)
 }
 
-// handleMediaRaw proxies a read of one R2 object through our own API — the
+// handleMediaRaw proxies a read of one R2 object through our own API â€” the
 // bucket is private, so this is the only way any client (app or web) ever
 // sees the bytes. Authorisation is a signed, single-key token in the query
 // string (see auth.Tokens.IssueMediaView) rather than the usual bearer
@@ -211,7 +211,7 @@ func (s *Server) handleMediaRaw(w http.ResponseWriter, r *http.Request) {
 	}
 	body, contentType, err := s.Media.Get(r.Context(), key)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "not found")
+		writeErr(w, http.StatusNotFound, "The requested item could not be found.")
 		return
 	}
 	defer body.Close()
@@ -223,7 +223,7 @@ func (s *Server) handleMediaRaw(w http.ResponseWriter, r *http.Request) {
 }
 
 // signMediaPath appends a fresh, short-lived view token to a stored
-// "/media/raw/<key>" path — called at HTTP-response time, never when a
+// "/media/raw/<key>" path â€” called at HTTP-response time, never when a
 // media row is written, so a signed URL is never stale by the time a client
 // sees it. Paths that don't start with the proxy prefix (empty strings,
 // or anything else) pass through unchanged. Idempotent: if path already
@@ -267,7 +267,7 @@ func (s *Server) handleMediaDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	// canUploadFor's blanket true for ownerType "place" is correct for
 	// uploads (any traveller can contribute a photo to a public place) but
-	// far too permissive for deletion — without this, any signed-in
+	// far too permissive for deletion â€” without this, any signed-in
 	// traveller could delete any other traveller's place photo, not just
 	// their own.
 	if m.OwnerType == "place" && c.Role != domain.RoleAdmin && m.UploadedBy != c.Subject {
@@ -297,7 +297,7 @@ func (s *Server) handleMediaDelete(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = s.Store.SetVendorDocs(r.Context(), m.OwnerID, hasDoc)
 		if m.Role == "br_cert" {
-			// Nothing left to OCR — but a previously confirmed/verified
+			// Nothing left to OCR â€” but a previously confirmed/verified
 			// certificate number is preserved, not reset.
 			_ = s.Store.ResetVendorBRCertOCR(r.Context(), m.OwnerID)
 		}
@@ -307,12 +307,12 @@ func (s *Server) handleMediaDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // signMediaList signs every item's URL in place before it goes out in a
-// response — the stored value is always the unsigned "/media/raw/<key>"
+// response â€” the stored value is always the unsigned "/media/raw/<key>"
 // path (see signMediaPath).
 func (s *Server) signMediaList(list []domain.Media) []domain.Media {
 	for i := range list {
 		list[i].URL = s.signMediaPath(list[i].URL)
-		// ThumbURL isn't a stored column (only ThumbKey is, via scanMedia) —
+		// ThumbURL isn't a stored column (only ThumbKey is, via scanMedia) â€”
 		// derive it here the same way handleMediaConfirm does right after
 		// generating it, so it round-trips correctly through the DB too.
 		if list[i].ThumbKey != "" {

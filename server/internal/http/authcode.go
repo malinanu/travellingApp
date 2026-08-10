@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"sync"
@@ -7,7 +7,7 @@ import (
 
 // authCodeStore holds short-lived, single-use exchange codes used to hand
 // a login result (session token, or a 2FA-pending token) to the frontend
-// after an OAuth redirect, without putting the token itself in a URL —
+// after an OAuth redirect, without putting the token itself in a URL â€”
 // which would otherwise sit in browser history and server access logs.
 // The stored payload is the exact JSON body /auth/login would have
 // returned, so the frontend's post-login handling doesn't need to know
@@ -34,7 +34,7 @@ func (s *authCodeStore) put(code string, payload []byte) {
 	s.codes[code] = authCodeEntry{payload: payload, expiresAt: time.Now().Add(2 * time.Minute)}
 }
 
-// take returns the payload for code and deletes it — a code can be
+// take returns the payload for code and deletes it â€” a code can be
 // exchanged exactly once.
 func (s *authCodeStore) take(code string) ([]byte, bool) {
 	s.mu.Lock()

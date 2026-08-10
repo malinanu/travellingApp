@@ -1,7 +1,7 @@
-package httpapi_test
+﻿package httpapi_test
 
 // Integration test verifying the staff/manager/owner permission matrix is
-// actually enforced — see requireBusinessProfileAccess (vendor.go) and
+// actually enforced â€” see requireBusinessProfileAccess (vendor.go) and
 // RequireVendorManagerOrAbove (auth.go). Same real-Postgres pattern as
 // validate_test.go; skips automatically if it can't connect.
 

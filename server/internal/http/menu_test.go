@@ -1,11 +1,11 @@
-package httpapi_test
+﻿package httpapi_test
 
 // End-to-end proof of the vendor-menu round trip that a vendor reported as
 // "I edit the menu, nothing changes, and the app doesn't update":
 //
 //  1. An approved vendor's PUT /vendor/menu persists (GET returns it back).
 //  2. The save mirrors the active preset into the traveller-facing place, so
-//     GET /places (what the Flutter app reads) shows the new items — proving
+//     GET /places (what the Flutter app reads) shows the new items â€” proving
 //     syncVendorPlace runs on menu save and placeJSON serves the snapshot.
 //
 // Same real-Postgres pattern as the other integration tests; skips without a
@@ -122,11 +122,11 @@ func TestVendorMenuRoundTripToTraveller(t *testing.T) {
 			}
 		}
 		if place == nil {
-			t.Fatal("vendor's place is not in the traveller feed — syncVendorPlace did not create/link it")
+			t.Fatal("vendor's place is not in the traveller feed â€” syncVendorPlace did not create/link it")
 		}
 		menu, ok := place["menu"].([]any)
 		if !ok || len(menu) == 0 {
-			t.Fatalf("place has no menu — syncVendorPlace did not propagate it; menu=%v", place["menu"])
+			t.Fatalf("place has no menu â€” syncVendorPlace did not propagate it; menu=%v", place["menu"])
 		}
 		sec, _ := menu[0].(map[string]any)
 		if sec["name"] != "Mains" {

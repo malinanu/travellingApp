@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"encoding/json"
@@ -14,7 +14,7 @@ import (
 	"github.com/spotto/server/internal/store/postgres"
 )
 
-// handlePlaceServices lists a place's active bookable services — empty for
+// handlePlaceServices lists a place's active bookable services â€” empty for
 // a place with no vendor, or a vendor whose category isn't bookable (no
 // services will ever have been created for it).
 func (s *Server) handlePlaceServices(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +68,7 @@ func parseClockOnDate(date time.Time, clock string) (time.Time, error) {
 
 // handleServiceAvailability computes real bookable windows for a
 // session/table service on a given ?date=, or remaining room capacity for
-// a stay service given ?checkIn=&checkOut= — checked live against the
+// a stay service given ?checkIn=&checkOut= â€” checked live against the
 // vendor's Hours/HolidayOverrides and existing overlapping confirmed
 // bookings, never a pre-materialized slot table.
 func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +83,7 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if place.VendorID == nil || svc.VendorID != *place.VendorID {
-		writeErr(w, http.StatusNotFound, "not found")
+		writeErr(w, http.StatusNotFound, "The requested item could not be found.")
 		return
 	}
 
@@ -151,7 +151,7 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{"slots": slots})
 }
 
-// handleCreateBooking creates a real booking — always auto-confirmed, no
+// handleCreateBooking creates a real booking â€” always auto-confirmed, no
 // payment collected. The server always computes EndAt itself for
 // session/table (StartAt + service.DurationMins), never trusting a
 // client-supplied duration; for stay, StartAt/EndAt come straight from the
@@ -261,7 +261,7 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		// Real failures (capacity/inactive/not-found) won't change on
-		// retry — only a code unique-collision should be retried, same
+		// retry â€” only a code unique-collision should be retried, same
 		// distinction handleCreateClaim doesn't need to make since
 		// CreateClaim has no other failure mode.
 		if errors.Is(err, postgres.ErrNotFound) || errors.Is(err, postgres.ErrServiceInactive) || errors.Is(err, postgres.ErrBookingFull) {
@@ -322,7 +322,7 @@ func (s *Server) handleCancelMyBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if booking.TravellerID != c.Subject {
-		writeErr(w, http.StatusNotFound, "not found")
+		writeErr(w, http.StatusNotFound, "The requested item could not be found.")
 		return
 	}
 	if err := s.Store.CancelBookingAsTraveller(r.Context(), id, c.Subject); err != nil {

@@ -1,4 +1,4 @@
-package httpapi_test
+﻿package httpapi_test
 
 // Integration tests for per-day Business Hours and the public-holiday
 // closure prompt (vendor.go's todayHoursAndOpenNow, handleUpcomingVendorHolidays,
@@ -73,13 +73,13 @@ func TestVendorHoursAndHolidays(t *testing.T) {
 	})
 
 	t.Run("legacy single open/close pair still works after the per-day hours change", func(t *testing.T) {
-		// Simulates a vendor whose profile predates per-day hours — direct
+		// Simulates a vendor whose profile predates per-day hours â€” direct
 		// SQL write bypasses the API's own (now per-day-only) validation,
 		// matching what's actually sitting in the real database today.
 		store.Pool.Exec(ctx, `UPDATE vendors SET profile = profile || jsonb_build_object('hours', jsonb_build_object('open', $2::text, 'close', $3::text)) WHERE id=$1`,
 			vendor.ID, openTime, closeTime)
 		// Any Business Profile write re-syncs the Place from the vendor row
-		// as it now stands in the DB — use a harmless identity no-op.
+		// as it now stands in the DB â€” use a harmless identity no-op.
 		if got := doReq(t, srv, http.MethodPatch, "/vendor/business/identity", ownerToken, map[string]any{"name": vendor.Name, "town": "Weligama"}); got != http.StatusOK {
 			t.Fatalf("identity no-op: want 200, got %d", got)
 		}

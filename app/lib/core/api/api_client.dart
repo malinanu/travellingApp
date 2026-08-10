@@ -73,7 +73,7 @@ class ApiClient {
       if (data is Map && data['error'] is String) return data['error'] as String;
       if (e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.connectionError) {
-        return 'Cannot reach the server — is the API running?';
+        return 'Cannot connect to the server. Please check your internet connection and try again.';
       }
       // A response came back but wasn't the {"error": "..."} shape (e.g. a
       // plain-text 4xx/5xx body, or a proxy/500 page) — the user only ever

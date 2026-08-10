@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"context"
@@ -26,7 +26,7 @@ func (s *Server) handleVendorBusiness(w http.ResponseWriter, r *http.Request) {
 	}
 	// Best-effort: a vendor with no synced place yet (never approved, or
 	// syncVendorPlace hasn't run) just gets no vibe data rather than a
-	// failed request — this is supplementary read-only info, not core to
+	// failed request â€” this is supplementary read-only info, not core to
 	// the response.
 	if place, err := s.Store.PlaceByVendorID(r.Context(), v.ID); err == nil {
 		if vibe, err := s.Store.VibeAggregate(r.Context(), place.ID); err == nil {
@@ -42,7 +42,7 @@ func (s *Server) handleVendorBusiness(w http.ResponseWriter, r *http.Request) {
 // rejected. Call after requireEditableVendor/requireApprovedVendor, before
 // any Business Profile mutation. GET /vendor/business intentionally stays
 // open to all roles (see server.go) since the portal shell reads it on
-// every page — only writes are gated here.
+// every page â€” only writes are gated here.
 func (s *Server) requireBusinessProfileAccess(w http.ResponseWriter, r *http.Request, v domain.Vendor) bool {
 	c := auth.FromContext(r.Context())
 	if c.VendorRole == domain.VendorRoleOwner || c.VendorRole == "" {
@@ -70,7 +70,7 @@ func (s *Server) handleUpdateVendorBusiness(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := s.Store.UpdateVendorProfile(r.Context(), v.ID, profile); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	v.Profile = profile
@@ -78,7 +78,7 @@ func (s *Server) handleUpdateVendorBusiness(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, v)
 }
 
-// handleUpdateVendorIdentity corrects business name/town/map-pin location —
+// handleUpdateVendorIdentity corrects business name/town/map-pin location â€”
 // these are otherwise set once at registration and never touched again.
 func (s *Server) handleUpdateVendorIdentity(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireEditableVendor(w, r)
@@ -102,7 +102,7 @@ func (s *Server) handleUpdateVendorIdentity(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := s.Store.UpdateVendorIdentity(r.Context(), v.ID, req.Name, req.Town, req.Lat, req.Lng); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	v.Name, v.Town, v.Lat, v.Lng = req.Name, req.Town, req.Lat, req.Lng
@@ -111,7 +111,7 @@ func (s *Server) handleUpdateVendorIdentity(w http.ResponseWriter, r *http.Reque
 }
 
 // handleUpdateVendorBRCertNumber sets/edits the vendor's Business
-// Registration certificate number — either a Gemini pre-fill the vendor
+// Registration certificate number â€” either a Gemini pre-fill the vendor
 // confirmed as-is, or one they typed/corrected themselves. Any edit
 // re-queues eROC verification (see Store.SetVendorBRCertNumber).
 func (s *Server) handleUpdateVendorBRCertNumber(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +134,7 @@ func (s *Server) handleUpdateVendorBRCertNumber(w http.ResponseWriter, r *http.R
 		return
 	}
 	if err := s.Store.SetVendorBRCertNumber(r.Context(), v.ID, certNo); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	v.BRCertNumber, v.BRCertCompanyName, v.BRCertMessage, v.BRCertAttempts = certNo, "", "", 0
@@ -147,7 +147,7 @@ func (s *Server) handleUpdateVendorBRCertNumber(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, v)
 }
 
-// handleUpdateVendorCategory changes the business type — separate from
+// handleUpdateVendorCategory changes the business type â€” separate from
 // handleUpdateVendorBusiness since category is a top-level vendors column,
 // not part of the profile JSON blob that endpoint replaces wholesale.
 func (s *Server) handleUpdateVendorCategory(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +173,7 @@ func (s *Server) handleUpdateVendorCategory(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := s.Store.UpdateVendorCategory(r.Context(), v.ID, req.Category); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	v.Category = req.Category
@@ -190,7 +190,7 @@ type upcomingHoliday struct {
 
 // handleUpcomingVendorHolidays lists public holidays within the notice
 // window that this vendor hasn't yet recorded an open/closed decision for
-// — gated to owner+manager (RequireVendorManagerOrAbove in server.go), not
+// â€” gated to owner+manager (RequireVendorManagerOrAbove in server.go), not
 // staff, and deliberately not behind requireBusinessProfileAccess since
 // answering it is a narrow, lighter action than full profile edits.
 func (s *Server) handleUpcomingVendorHolidays(w http.ResponseWriter, r *http.Request) {
@@ -200,7 +200,7 @@ func (s *Server) handleUpcomingVendorHolidays(w http.ResponseWriter, r *http.Req
 	}
 	all, err := holidays.Upcoming(r.Context(), s.GoogleCalendarAPIKey, v.Country, holidayNoticeDays)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	var profile vendorProfileDoc
@@ -221,7 +221,7 @@ func (s *Server) handleUpcomingVendorHolidays(w http.ResponseWriter, r *http.Req
 }
 
 // handleVendorHolidayDecision records an owner/manager's open/closed
-// decision for a specific date — a narrow read-modify-write on just the
+// decision for a specific date â€” a narrow read-modify-write on just the
 // holidayOverrides field, reusing the existing full-profile store method
 // rather than needing a dedicated one.
 func (s *Server) handleVendorHolidayDecision(w http.ResponseWriter, r *http.Request) {
@@ -261,11 +261,11 @@ func (s *Server) handleVendorHolidayDecision(w http.ResponseWriter, r *http.Requ
 
 	updated, err := json.Marshal(data)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	if err := s.Store.UpdateVendorProfile(r.Context(), v.ID, updated); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	v.Profile = updated
@@ -298,7 +298,7 @@ func (s *Server) handleUpdateVendorMenu(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := s.Store.UpdateVendorMenu(r.Context(), v.ID, menu); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	v.Menu = menu
@@ -341,7 +341,7 @@ func (s *Server) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 		o.Status = domain.OfferDraft
 	}
 	if err := s.Store.UpsertOffer(r.Context(), o); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	s.syncVendorPlaceBestEffort(r.Context(), v)
@@ -365,7 +365,7 @@ func (s *Server) handleUpdateOffer(w http.ResponseWriter, r *http.Request) {
 	o.ID = existing.ID
 	o.VendorID = v.ID
 	if err := s.Store.UpsertOffer(r.Context(), o); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	s.syncVendorPlaceBestEffort(r.Context(), v)
@@ -405,7 +405,7 @@ func (s *Server) handleDeleteOffer(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleOfferClaims lists the claim/redemption activity for one of the
-// caller's own offers — drives the vendor portal's offer detail drawer.
+// caller's own offers â€” drives the vendor portal's offer detail drawer.
 func (s *Server) handleOfferClaims(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireVendor(w, r)
 	if !ok {
@@ -430,7 +430,7 @@ func (s *Server) handleOfferClaims(w http.ResponseWriter, r *http.Request) {
 
 // syncVendorPlaceBestEffort keeps the traveller-facing Place row's headline
 // "deal" in sync with vendor v's most relevant live/ending offer, logging
-// (not failing the request) on error — the primary offer CRUD operation
+// (not failing the request) on error â€” the primary offer CRUD operation
 // already succeeded by the time this runs, and a sync hiccup shouldn't
 // undo it from the caller's perspective.
 func (s *Server) syncVendorPlaceBestEffort(ctx context.Context, v domain.Vendor) {
@@ -448,7 +448,7 @@ type vendorProfileDoc struct {
 	} `json:"wifi"`
 	BestTimes []string `json:"bestTimes"`
 	SeaView   bool     `json:"seaView"`
-	// Hours is keyed by lowercase weekday name ("monday".."sunday") — see
+	// Hours is keyed by lowercase weekday name ("monday".."sunday") â€” see
 	// weekdayKey. A missing entry or one with Closed=true means the vendor
 	// is closed that day. vendorHoursDoc's UnmarshalJSON transparently
 	// migrates the pre-per-day {open,close} shape on read.
@@ -462,7 +462,7 @@ type vendorProfileDoc struct {
 		Facebook  string `json:"facebook"`
 	} `json:"contact"`
 	// HolidayOverrides records an owner/manager's explicit open/closed
-	// decision for a specific date (see handleVendorHolidayDecision) — a
+	// decision for a specific date (see handleVendorHolidayDecision) â€” a
 	// Closed:true entry for today always wins over the regular weekly
 	// Hours schedule in syncVendorPlace.
 	HolidayOverrides []holidayOverrideDoc `json:"holidayOverrides"`
@@ -512,7 +512,7 @@ type holidayOverrideDoc struct {
 }
 
 // vendorMenuPresetDoc mirrors one MenuPreset from
-// web/packages/shared/src/types.ts — a whole named menu the vendor can
+// web/packages/shared/src/types.ts â€” a whole named menu the vendor can
 // toggle live via vendorMenuDoc.ActivePresetID.
 type vendorMenuPresetDoc struct {
 	ID       string           `json:"id"`
@@ -520,7 +520,7 @@ type vendorMenuPresetDoc struct {
 	Sections []map[string]any `json:"sections"`
 }
 
-// vendorMenuDoc mirrors StoredMenuDoc — either the legacy bare
+// vendorMenuDoc mirrors StoredMenuDoc â€” either the legacy bare
 // {sections: [...]} shape any vendor who hasn't resaved since presets
 // shipped may still have, or {presets: [...], activePresetId} once they
 // have. Presets wins whenever non-empty; see effectiveMenuSections. The
@@ -535,7 +535,7 @@ type vendorMenuDoc struct {
 // availableToday implements MenuItem/MenuSection.availableDays' whitelist
 // semantics: an absent or nil "availableDays" means unrestricted (always
 // available); once present, only an explicit `true` for today's weekday
-// key counts — an absent or `false` entry excludes it.
+// key counts â€” an absent or `false` entry excludes it.
 func availableToday(m map[string]any, today string) bool {
 	raw, ok := m["availableDays"]
 	if !ok || raw == nil {
@@ -592,9 +592,9 @@ func effectiveMenuSections(doc vendorMenuDoc, now time.Time) []map[string]any {
 }
 
 // wifiSpeedLabel derives the two display strings the traveller app expects
-// (speed/label) from the single 0-10 score a vendor sets — the vendor
+// (speed/label) from the single 0-10 score a vendor sets â€” the vendor
 // portal only collects a score, not free text, so this keeps both sides
-// consistent with the score slider's own "Patchy ↔ Blazing fast" labels.
+// consistent with the score slider's own "Patchy â†” Blazing fast" labels.
 func wifiSpeedLabel(score float64) string {
 	switch {
 	case score >= 8:
@@ -678,7 +678,7 @@ func todayHoursAndOpenNow(profile vendorProfileDoc, now time.Time) (string, bool
 			if name == "" {
 				name = "public holiday"
 			}
-			return "Closed today — " + name, false
+			return "Closed today â€” " + name, false
 		}
 	}
 	day, ok := profile.Hours[weekdayKey(now)]
@@ -688,11 +688,11 @@ func todayHoursAndOpenNow(profile vendorProfileDoc, now time.Time) (string, bool
 		}
 		return "", false
 	}
-	return formatHourLabel(day.Open) + " – " + formatHourLabel(day.Close), isOpenNow(day.Open, day.Close)
+	return formatHourLabel(day.Open) + " â€“ " + formatHourLabel(day.Close), isOpenNow(day.Open, day.Close)
 }
 
-// syncVendorPlace mirrors vendor v's current profile — headline offer,
-// Wi-Fi/sea-view/best-times/amenities/blurb/hours/contact, and menu — into
+// syncVendorPlace mirrors vendor v's current profile â€” headline offer,
+// Wi-Fi/sea-view/best-times/amenities/blurb/hours/contact, and menu â€” into
 // the traveller-facing Place.Data, lazily creating a minimal Place if v
 // doesn't have one yet (real, non-seeded vendors otherwise have no map
 // presence at all). Vendor is the sole authoritative source for
@@ -782,7 +782,7 @@ func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
 	data["menu"] = effectiveMenuSections(menuDoc, time.Now())
 
 	// Mirror the vendor's uploaded media into the traveller listing: a cover
-	// image, the gallery, and a promo video (all public R2 URLs) — plus
+	// image, the gallery, and a promo video (all public R2 URLs) â€” plus
 	// each one's thumbnail/blur-placeholder pair alongside it (additive,
 	// "cover"/"gallery" themselves are left exactly as-is for backward
 	// compatibility). No signing needed here for the new fields:
@@ -827,7 +827,7 @@ func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
 	return s.Store.UpsertPlace(ctx, place)
 }
 
-// pickHeadlineOffer picks the single offer synced into Place.Data.deal —
+// pickHeadlineOffer picks the single offer synced into Place.Data.deal â€”
 // live beats ending, ties broken by most-recently-updated (offer IDs are
 // random hex, not chronological). Returns nil if the vendor has no
 // live/ending offer.
@@ -868,7 +868,7 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "code required")
 		return
 	}
-	// BOOK-XXXX vs SPOTTO-XXXX namespaces make the code type unambiguous —
+	// BOOK-XXXX vs SPOTTO-XXXX namespaces make the code type unambiguous â€”
 	// no new scanner UI needed, see handleBookingCheckIn.
 	if strings.HasPrefix(code, "BOOK-") {
 		s.handleBookingCheckIn(w, r, v, code)
@@ -953,7 +953,7 @@ func (s *Server) handleVendorDashboard(w http.ResponseWriter, r *http.Request) {
 	var blob map[string]any
 	if len(data) > 0 {
 		if err := json.Unmarshal(data, &blob); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal error")
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 			return
 		}
 	} else {
@@ -978,7 +978,7 @@ func (s *Server) handleVendorReports(w http.ResponseWriter, r *http.Request) {
 
 // handleVendorFlashSale records a real flash-sale send against the growth
 // blob's `flash.lastSentMins`, enforcing the same 1-per-3h limit the UI
-// displays (server-side, not just a disabled button) — a client can't just
+// displays (server-side, not just a disabled button) â€” a client can't just
 // re-enable the button to bypass it.
 func (s *Server) handleVendorFlashSale(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireVendor(w, r)
@@ -999,7 +999,7 @@ func (s *Server) handleVendorFlashSale(w http.ResponseWriter, r *http.Request) {
 	var blob map[string]json.RawMessage
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &blob); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal error")
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 			return
 		}
 	}
@@ -1029,17 +1029,17 @@ func (s *Server) handleVendorFlashSale(w http.ResponseWriter, r *http.Request) {
 	}
 	updated, err := json.Marshal(flash)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	blob["flash"] = updated
 	newData, err := json.Marshal(blob)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	if err := s.Store.UpsertVendorBlob(r.Context(), v.ID, "growth", newData); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"sent": true})
@@ -1084,13 +1084,13 @@ func (s *Server) handleVendorNotificationsRead(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if err := s.Store.MarkVendorNotificationsRead(r.Context(), v.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// teamMember is the safe subset of domain.User exposed on the team list —
+// teamMember is the safe subset of domain.User exposed on the team list â€”
 // never the full record (password hash, TOTP fields).
 type teamMember struct {
 	ID        string    `json:"id"`
@@ -1110,7 +1110,7 @@ type teamInvite struct {
 }
 
 // handleVendorTeam lists current members (owner + staff) and still-pending
-// invites — viewable by anyone on the team, not just the owner.
+// invites â€” viewable by anyone on the team, not just the owner.
 func (s *Server) handleVendorTeam(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireVendor(w, r)
 	if !ok {
@@ -1118,7 +1118,7 @@ func (s *Server) handleVendorTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	users, err := s.Store.VendorTeamMembers(r.Context(), v.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	members := make([]teamMember, 0, len(users))
@@ -1127,7 +1127,7 @@ func (s *Server) handleVendorTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	invites, err := s.Store.VendorInvites(r.Context(), v.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	pending := make([]teamInvite, 0, len(invites))
@@ -1154,7 +1154,7 @@ func newInviteCode() string {
 // handleCreateVendorInvite generates a 7-day invite code for a new staff
 // or manager member to join this vendor account. Owner-only (see
 // server.go's RequireVendorOwner). If an email is given and the mailer is
-// configured, the invite link is emailed to it — but the code/link is
+// configured, the invite link is emailed to it â€” but the code/link is
 // always returned to the caller too, so the invite still works as a
 // copy-link if email isn't configured or delivery fails.
 func (s *Server) handleCreateVendorInvite(w http.ResponseWriter, r *http.Request) {
@@ -1189,7 +1189,7 @@ func (s *Server) handleCreateVendorInvite(w http.ResponseWriter, r *http.Request
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}
 	if err := s.Store.CreateVendorInvite(r.Context(), inv); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	if inv.Email != "" {

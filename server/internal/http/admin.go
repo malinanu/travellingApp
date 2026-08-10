@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"encoding/json"
@@ -150,7 +150,7 @@ func (s *Server) handleAdminVendorReviews(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, reviews)
 }
 
-// handleAdminVendorStats powers the Vendors page monitor pane — one
+// handleAdminVendorStats powers the Vendors page monitor pane â€” one
 // vendor's live activity roll-up (redemptions, check-ins, reviews, offers,
 // content, subscription, team).
 func (s *Server) handleAdminVendorStats(w http.ResponseWriter, r *http.Request) {
@@ -163,7 +163,7 @@ func (s *Server) handleAdminVendorStats(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleAdminVendorVibe returns the crowdsourced Current Vibe reading for a
-// vendor's synced place — lazy per-vendor detail, same convention as
+// vendor's synced place â€” lazy per-vendor detail, same convention as
 // handleAdminVendorStats/Offers/Redemptions, not attached to the bulk
 // GET /admin/vendors list to avoid adding an N+1 query there. Best-effort:
 // a vendor with no synced place yet (never approved, or syncVendorPlace
@@ -183,7 +183,7 @@ func (s *Server) handleAdminVendorVibe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, vibe)
 }
 
-// handleAdminVendorSummary powers the Vendors page's aggregate band — the
+// handleAdminVendorSummary powers the Vendors page's aggregate band â€” the
 // network-wide roll-up across every vendor (status breakdown, redemptions,
 // check-ins, rating, offers, subscriptions).
 func (s *Server) handleAdminVendorSummary(w http.ResponseWriter, r *http.Request) {
@@ -280,7 +280,7 @@ func (s *Server) handleAdminVendorTeam(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// handleAdminVendorAudit returns the admin-action history for one vendor —
+// handleAdminVendorAudit returns the admin-action history for one vendor â€”
 // the vendor-detail History tab.
 func (s *Server) handleAdminVendorAudit(w http.ResponseWriter, r *http.Request) {
 	entries, err := s.Store.AuditLogsByTarget(r.Context(), "vendor", chi.URLParam(r, "id"), 100)
@@ -385,7 +385,7 @@ func (s *Server) handleAdminVendorTakedown(w http.ResponseWriter, r *http.Reques
 }
 
 // vendorStatusHandler is shared by approve/reject/request-edits/suspend/
-// reinstate — action is a distinct audit-log label per call site even
+// reinstate â€” action is a distinct audit-log label per call site even
 // though approve and reinstate both resolve to VendorApproved (server.go).
 func (s *Server) vendorStatusHandler(status domain.VendorStatus, action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -494,13 +494,13 @@ func (s *Server) handleCreateAudioGuide(w http.ResponseWriter, r *http.Request) 
 	}
 	g.ID = newID("aud")
 	if err := s.Store.UpsertAudioGuide(r.Context(), g); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusCreated, g)
 }
 
-// handleAdminSearch powers the command bar's ⌘K search — see
+// handleAdminSearch powers the command bar's âŒ˜K search â€” see
 // Store.AdminSearch for the query shape.
 func (s *Server) handleAdminSearch(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
@@ -518,7 +518,7 @@ func (s *Server) handleAdminSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, results)
 }
 
-// handleAdminNotifications powers the command-center bell — see
+// handleAdminNotifications powers the command-center bell â€” see
 // Store.AdminNotifications for how buckets are derived and marked unread.
 func (s *Server) handleAdminNotifications(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())

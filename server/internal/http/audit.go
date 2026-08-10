@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 )
 
 // logAdminAction is a best-effort audit write, called after an admin
-// mutation has already succeeded — a failure here is logged, not
+// mutation has already succeeded â€” a failure here is logged, not
 // propagated, since the parent request already did what it promised.
 func (s *Server) logAdminAction(ctx context.Context, action, targetType, targetID string, metadata any) {
 	c := auth.FromContext(ctx)
@@ -21,7 +21,7 @@ func (s *Server) logAdminAction(ctx context.Context, action, targetType, targetI
 		return
 	}
 	// A zero-value User (email/name blank) on lookup failure still leaves a
-	// usable entry — actorID alone is enough to trace the action.
+	// usable entry â€” actorID alone is enough to trace the action.
 	actor, _ := s.Store.UserByID(ctx, c.Subject)
 	var raw json.RawMessage
 	if metadata != nil {

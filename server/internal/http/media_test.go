@@ -1,4 +1,4 @@
-package httpapi_test
+﻿package httpapi_test
 
 // Integration tests for the R2 media-upload endpoints, using a stub Uploader
 // so no real Cloudflare bucket is needed: they exercise the auth checks,
@@ -43,7 +43,7 @@ func (u *stubUploader) Get(_ context.Context, key string) (io.ReadCloser, string
 	return io.NopCloser(strings.NewReader("stub-bytes-" + key)), "image/jpeg", nil
 }
 
-// Put is a no-op stub — real thumbnail bytes never need to actually land
+// Put is a no-op stub â€” real thumbnail bytes never need to actually land
 // anywhere for these tests, and Get's fake, non-image "stub-bytes-..."
 // body already exercises handleMediaConfirm's must-not-fail-the-upload
 // path when thumbnail generation can't decode it as a real image.
@@ -57,7 +57,7 @@ func (u *stubUploader) Delete(_ context.Context, key string) error {
 }
 
 // PublicURL matches the real R2 implementation: a relative path proxied
-// through our own API, not an absolute R2/CDN URL — see media.R2.PublicURL.
+// through our own API, not an absolute R2/CDN URL â€” see media.R2.PublicURL.
 func (u *stubUploader) PublicURL(key string) string { return "/media/raw/" + key }
 
 func newMediaTestServer(t *testing.T, store *postgres.Store, withUploader bool) (*httptest.Server, *stubUploader) {

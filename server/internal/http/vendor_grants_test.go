@@ -1,4 +1,4 @@
-package httpapi_test
+﻿package httpapi_test
 
 // Integration tests for the temporary Business-Profile access grant system
 // (vendor_grants.go): create/redeem/expiry/revoke/rate-limit, plus admin
@@ -79,7 +79,7 @@ func TestAdminVendorGrantsNeverNull(t *testing.T) {
 	body, _ := io.ReadAll(res.Body)
 	got := strings.TrimSpace(string(body))
 	if got == "null" {
-		t.Fatal("empty grant list serialised to null — this crashes the /access-grants page")
+		t.Fatal("empty grant list serialised to null â€” this crashes the /access-grants page")
 	}
 	if got != "[]" {
 		t.Errorf("want [], got %s", got)
@@ -115,7 +115,7 @@ func TestVendorProfileGrants(t *testing.T) {
 	identityBody := map[string]any{"name": "Grants Test Vendor", "town": "Weligama"}
 
 	// createGrant creates a fresh grant and registers its revocation as test
-	// cleanup — ActiveVendorProfileGrant checks "does *any* active grant
+	// cleanup â€” ActiveVendorProfileGrant checks "does *any* active grant
 	// exist for this grantee", so a grant left active by an earlier subtest
 	// would otherwise leak through and mask what a later subtest is
 	// actually testing.

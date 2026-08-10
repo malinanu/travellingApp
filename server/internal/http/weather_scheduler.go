@@ -1,25 +1,25 @@
-package httpapi
+﻿package httpapi
 
 // The weather scheduler proactively warms the weather cache for every
 // distinct location the real vendor dataset spans, so a traveller's live
 // /weather request almost always hits an already-warm cache instead of
 // spending one of Tomorrow.io's tight free-tier calls (25/hour, 500/day)
 // per request. Mirrors the holiday scheduler's shape (see
-// holiday_scheduler.go): runs once immediately — so a fresh deploy/restart
+// holiday_scheduler.go): runs once immediately â€” so a fresh deploy/restart
 // (e.g. pulling a new image in Portainer, which restarts the whole
 // container) repopulates the cache right away rather than waiting on the
-// first traveller to hit each cell — then on a recurring tick.
+// first traveller to hit each cell â€” then on a recurring tick.
 //
 // Every sweep goes through getOrFetchWeather (weather.go), the same
 // cache-then-fetch path handleWeather uses, so a cell whose cache is still
-// fresh is skipped rather than re-fetched — the sweep only spends real
+// fresh is skipped rather than re-fetched â€” the sweep only spends real
 // Tomorrow.io calls on cells that actually need it. This matters because
 // the dataset spans ~25 distinct cells today (every imported spot becomes
-// its own vendor with real coordinates — see importsrilanka), not the
+// its own vendor with real coordinates â€” see importsrilanka), not the
 // ~12-15 this scheduler originally assumed: an unconditional sweep of 25
 // cells alone would exhaust the entire 25-req/hour free tier in one pass,
 // leaving nothing for live traveller requests. See weather.TTL for the
-// other half of the fix — the TTL controls the steady-state call rate
+// other half of the fix â€” the TTL controls the steady-state call rate
 // once cells are warm.
 
 import (
@@ -31,7 +31,7 @@ import (
 // weatherSchedulerInterval is kept comfortably under weather.TTL so a cell
 // is always checked well before it goes stale. Since getOrFetchWeather
 // skips cells whose cache is still fresh, running this more often than
-// strictly needed is cheap — it just means most cells are no-ops most of
+// strictly needed is cheap â€” it just means most cells are no-ops most of
 // the time, cells only cost a real call once per TTL window.
 const weatherSchedulerInterval = 45 * time.Minute
 

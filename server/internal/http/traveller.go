@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"context"
@@ -24,7 +24,7 @@ import (
 )
 
 // placeJSON flattens Place.Data with id/name/vendorId for the Flutter model,
-// plus the place's real current vibe aggregate — so the app never needs a
+// plus the place's real current vibe aggregate â€” so the app never needs a
 // hardcoded vibe seed even on a place's first load, before anyone in this
 // session has checked in.
 func (s *Server) placeJSON(ctx context.Context, p domain.Place) map[string]any {
@@ -50,7 +50,7 @@ func (s *Server) placeJSON(ctx context.Context, p domain.Place) map[string]any {
 // signMediaRefs walks an already-unmarshaled JSON value in place (maps and
 // slices from encoding/json use shared backing storage, so mutating a
 // nested map/slice found inside m is visible through m itself) and signs
-// every string that looks like a stored "/media/raw/<key>" path — cover,
+// every string that looks like a stored "/media/raw/<key>" path â€” cover,
 // gallery, promoVideo, nested menu item photos, and anything else future
 // fields add, without needing to enumerate each field by name.
 func (s *Server) signMediaRefs(v any) {
@@ -225,20 +225,20 @@ func (s *Server) handlePlace(w http.ResponseWriter, r *http.Request) {
 	}
 	m := s.placeJSON(r.Context(), p)
 	// Only the single-place fetch looks up the caller's own latest vibe
-	// check-in, not the bulk handlePlaces list above — same "don't N+1 the
+	// check-in, not the bulk handlePlaces list above â€” same "don't N+1 the
 	// list" reasoning as enrichWithPlaceDetails below.
 	if mine, err := s.Store.MyLatestVibeCheckin(r.Context(), p.ID, auth.FromContext(r.Context()).Subject); err == nil {
 		m["myVibe"] = mine
 	}
 	// Only the single-place fetch enriches with live Places details, not
-	// the bulk handlePlaces list above — Google bills per Details call, so
+	// the bulk handlePlaces list above â€” Google bills per Details call, so
 	// this only runs for the one place a traveller actually opened.
 	s.enrichWithPlaceDetails(r.Context(), m)
 	writeJSON(w, http.StatusOK, m)
 }
 
 // enrichWithPlaceDetails backfills phone/website/wheelchairAccessible/
-// priceLevel from a live (cached) Google Places Details lookup — only for
+// priceLevel from a live (cached) Google Places Details lookup â€” only for
 // places actually imported from Google (data.source == "google_places"
 // with a data.sourceId), and only into fields that are still empty/zero,
 // so a curated business's real vendor-entered contact info can never be
@@ -286,7 +286,7 @@ func (s *Server) enrichWithPlaceDetails(ctx context.Context, m map[string]any) {
 
 // getOrFetchPlaceDetails is the three-tier cache path for Places Details:
 // in-memory cache, then the Postgres-backed cache (survives a process
-// restart, e.g. every deploy), and only then a real paid Google call —
+// restart, e.g. every deploy), and only then a real paid Google call â€”
 // mirrors getOrFetchWeather in weather.go.
 func (s *Server) getOrFetchPlaceDetails(ctx context.Context, googlePlaceID string) (*placedetails.Details, error) {
 	if cached, ok := s.PlaceDetailsCache.Get(googlePlaceID); ok {
@@ -317,7 +317,7 @@ func (s *Server) getOrFetchPlaceDetails(ctx context.Context, googlePlaceID strin
 }
 
 // handlePlacePhotos returns the traveller-contributed photos for a place
-// (media owned by the place with role "contrib") — kept off the main /places
+// (media owned by the place with role "contrib") â€” kept off the main /places
 // payload to avoid an N+1, fetched lazily by the place detail sheet.
 func (s *Server) handlePlacePhotos(w http.ResponseWriter, r *http.Request) {
 	all, err := s.Store.MediaByOwner(r.Context(), "place", chi.URLParam(r, "id"))
@@ -335,7 +335,7 @@ func (s *Server) handlePlacePhotos(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleOfferView records one real traveller impression of an offer's deal
-// card — called once per render (not per rebuild) from the Flutter app.
+// card â€” called once per render (not per rebuild) from the Flutter app.
 func (s *Server) handleOfferView(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.IncrementOfferViews(r.Context(), chi.URLParam(r, "id")); err != nil {
 		storeErr(w, err)
@@ -346,18 +346,18 @@ func (s *Server) handleOfferView(w http.ResponseWriter, r *http.Request) {
 
 // vibeCheckinGeofenceMeters bounds how close a traveller must be to a place
 // to rate its vibe. This is collected for future vibe-based recommendation
-// analytics — a rating submitted from anywhere would poison that, so it's
+// analytics â€” a rating submitted from anywhere would poison that, so it's
 // enforced here server-side, not just hidden client-side.
 const vibeCheckinGeofenceMeters = 150.0
 
 // vibeCheckinCooldown is the minimum gap between one traveller's check-ins
-// for the same place — check-ins are otherwise unlimited (see
+// for the same place â€” check-ins are otherwise unlimited (see
 // handleVibeCheckin's doc comment), so without this a traveller standing at
 // a place could resubmit every request and effectively overwrite the
 // aggregate at will.
 const vibeCheckinCooldown = 15 * time.Minute
 
-// handleVibeCheckin records one traveller's full vibe snapshot for a place —
+// handleVibeCheckin records one traveller's full vibe snapshot for a place â€”
 // always a new row (see Store.AddVibeCheckin), never an edit of a previous
 // check-in, so a traveller can re-rate a place on a later visit. Gated by
 // vibeCheckinCooldown so the same traveller can't resubmit indefinitely.
@@ -374,7 +374,7 @@ func (s *Server) handleVibeCheckin(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	// 0 stays valid — the "not yet rated" sentinel for whichever dimension
+	// 0 stays valid â€” the "not yet rated" sentinel for whichever dimension
 	// wasn't part of this particular tap (see VibeCheckInsNotifier.rate());
 	// 1-5 are the real ratings.
 	if req.Productive < 0 || req.Productive > 5 || req.Loud < 0 || req.Loud > 5 || req.Crowded < 0 || req.Crowded > 5 {
@@ -401,16 +401,16 @@ func (s *Server) handleVibeCheckin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if !errors.Is(err, postgres.ErrNotFound) {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	if err := s.Store.AddVibeCheckin(r.Context(), placeID, c.Subject, req.Productive, req.Loud, req.Crowded); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	vibe, err := s.Store.VibeAggregate(r.Context(), placeID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -488,13 +488,13 @@ func (s *Server) handleCreateReview(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   time.Now(),
 	}
 	if err := s.Store.UpsertReview(r.Context(), review); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	if place.VendorID != nil {
 		go s.TriggerReviewNotification(context.Background(), *place.VendorID, "Traveller", req.Rating)
 	}
-	// On edit, ON CONFLICT kept the original row's id — return the real
+	// On edit, ON CONFLICT kept the original row's id â€” return the real
 	// stored id so the client attaches photos to the right review.
 	if id, err := s.Store.ReviewIDForTravellerPlace(r.Context(), c.Subject, placeID); err == nil {
 		review.ID = id
@@ -515,7 +515,7 @@ func (s *Server) handleCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.AddCheckin(r.Context(), req.PlaceID, c.Subject); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
@@ -608,7 +608,7 @@ func (s *Server) handleCreateClaim(w http.ResponseWriter, r *http.Request) {
 		Status:      domain.ClaimClaimed,
 		ClaimedAt:   time.Now(),
 	}
-	// Resolve offerId defensively — never fail the claim over a bad/stale
+	// Resolve offerId defensively â€” never fail the claim over a bad/stale
 	// id; offerLabel/offerValue keep working exactly as before this field
 	// existed either way.
 	if req.OfferID != "" {
@@ -672,16 +672,16 @@ func (s *Server) handlePutTrip(w http.ResponseWriter, r *http.Request) {
 	}
 	t.OwnerID = c.Subject
 	if err := s.Store.UpsertTrip(r.Context(), t); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, t)
 }
 
 // groupMember is the resolved-profile shape the trip-invite sheet and
-// group map markers need — never expose the full domain.User (password
+// group map markers need â€” never expose the full domain.User (password
 // hash, TOTP fields). Lat/Lng are only set when the member has opted into
-// share_location AND reported a position in the last 15 minutes — group
+// share_location AND reported a position in the last 15 minutes â€” group
 // membership is a mutual-trust circle the member explicitly joined, unlike
 // the broader NearbyTravellers lookup which never exposes exact position.
 type groupMember struct {
@@ -713,7 +713,7 @@ func (s *Server) handleGetGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	users, err := s.Store.UsersByIDs(r.Context(), g.MemberIDs)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	members := make([]groupMember, 0, len(users))
@@ -736,7 +736,7 @@ func (s *Server) handlePutGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	g.OwnerID = c.Subject
 	if err := s.Store.UpsertGroup(r.Context(), g); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, g)
@@ -744,7 +744,7 @@ func (s *Server) handlePutGroup(w http.ResponseWriter, r *http.Request) {
 
 // handleUpdateMyLocation records the caller's current position for the
 // nearby-travellers feature. Requires share_location to already be on
-// (via PUT /me/privacy) — reporting a position you haven't consented to
+// (via PUT /me/privacy) â€” reporting a position you haven't consented to
 // share would defeat the point of the toggle.
 func (s *Server) handleUpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
@@ -769,14 +769,14 @@ func (s *Server) handleUpdateMyLocation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := s.Store.UpdateUserLocation(r.Context(), u.ID, req.Lat, req.Lng); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // handleNearbyTravellers requires the caller to be opted in AND have a
-// recent position of their own — seeing others without being visible
+// recent position of their own â€” seeing others without being visible
 // yourself would be a one-way surveillance pattern this deliberately avoids.
 func (s *Server) handleNearbyTravellers(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
@@ -800,7 +800,7 @@ func (s *Server) handleNearbyTravellers(w http.ResponseWriter, r *http.Request) 
 	}
 	nearby, err := s.Store.NearbyTravellers(r.Context(), u.ID, *u.Lat, *u.Lng, radiusKm)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, nearby)

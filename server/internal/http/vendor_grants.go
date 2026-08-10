@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"crypto/rand"
@@ -14,7 +14,7 @@ import (
 	"github.com/spotto/server/internal/store/postgres"
 )
 
-// profilePinTTL bounds how long a generated PIN itself is redeemable —
+// profilePinTTL bounds how long a generated PIN itself is redeemable â€”
 // fixed and independent of the owner's chosen access duration, so a
 // 15-minute grant doesn't silently burn down unread in an inbox.
 const profilePinTTL = 10 * time.Minute
@@ -88,7 +88,7 @@ func (s *Server) handleCreateVendorProfileGrant(w http.ResponseWriter, r *http.R
 		s.Jobs.Enqueue(func() { s.Mail.Send(email, subject, body) })
 	}
 	// The raw PIN is returned once here regardless of delivery method (same
-	// copy-fallback precedent as vendor invites) — it is never persisted.
+	// copy-fallback precedent as vendor invites) â€” it is never persisted.
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id": g.ID, "granteeId": g.GranteeID, "durationMins": g.DurationMins,
 		"pinExpiresAt": g.PinExpiresAt, "pin": pin,
@@ -206,7 +206,7 @@ func (s *Server) handleAdminVendorGrants(w http.ResponseWriter, r *http.Request)
 }
 
 // handleExtendVendorGrant lets a platform admin extend (positive minutes)
-// or shorten (negative minutes) a grant's current expiry — one endpoint
+// or shorten (negative minutes) a grant's current expiry â€” one endpoint
 // covers both directions.
 func (s *Server) handleExtendVendorGrant(w http.ResponseWriter, r *http.Request) {
 	var req struct {

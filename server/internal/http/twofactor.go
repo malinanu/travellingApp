@@ -1,4 +1,4 @@
-package httpapi
+﻿package httpapi
 
 import (
 	"net/http"
@@ -41,7 +41,7 @@ func (s *Server) handleTwoFactorLoginVerify(w http.ResponseWriter, r *http.Reque
 	s.totpLimit.reset(limitKey)
 	token, err := s.Tokens.Issue(u)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	u.AvatarURL = s.signMediaPath(u.AvatarURL)
@@ -59,20 +59,20 @@ func (s *Server) handleTwoFactorSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	secret, otpauthURL, err := auth.GenerateTOTPSecret(u.Email)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	encrypted, err := auth.EncryptSecret(s.TOTPKey, secret)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	if err := s.Store.SetUserTOTPPending(r.Context(), u.ID, encrypted); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	// The client only ever sees the plaintext secret/otpauthUrl for QR
-	// rendering at setup time — nothing plaintext is ever persisted.
+	// rendering at setup time â€” nothing plaintext is ever persisted.
 	writeJSON(w, http.StatusOK, map[string]string{"secret": secret, "otpauthUrl": otpauthURL})
 }
 
@@ -92,7 +92,7 @@ func (s *Server) handleTwoFactorEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if u.TOTPPendingSecret == "" {
-		writeErr(w, http.StatusBadRequest, "no pending 2FA setup — call /auth/2fa/setup first")
+		writeErr(w, http.StatusBadRequest, "no pending 2FA setup â€” call /auth/2fa/setup first")
 		return
 	}
 	pendingSecret, err := auth.DecryptSecret(s.TOTPKey, u.TOTPPendingSecret)
@@ -100,10 +100,10 @@ func (s *Server) handleTwoFactorEnable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid code")
 		return
 	}
-	// u.TOTPPendingSecret is already encrypted — EnableUserTOTP just moves
+	// u.TOTPPendingSecret is already encrypted â€” EnableUserTOTP just moves
 	// it from the pending column to the active one, no re-encryption needed.
 	if err := s.Store.EnableUserTOTP(r.Context(), u.ID, u.TOTPPendingSecret); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"enabled": true})
@@ -136,17 +136,17 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 	}
 	s.totpLimit.reset(limitKey)
 	if err := s.Store.DisableUserTOTP(r.Context(), u.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
-	// DisableUserTOTP just bumped token_version — mirror that locally and
+	// DisableUserTOTP just bumped token_version â€” mirror that locally and
 	// re-issue a token so this same session (which just proved possession
 	// via a valid code) isn't immediately logged out by its own action.
 	u.TOTPEnabled = false
 	u.TokenVersion++
 	token, err := s.Tokens.Issue(u)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"enabled": false, "token": token})

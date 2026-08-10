@@ -1,4 +1,4 @@
-package httpapi_test
+﻿package httpapi_test
 
 // Integration tests for vendor menu presets + per-day item/section
 // availability (vendor.go's effectiveMenuSections/availableToday). Same

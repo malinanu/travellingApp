@@ -1,4 +1,4 @@
-package httpapi_test
+﻿package httpapi_test
 
 // Integration tests for the advanced admin vendor-detail surface: the
 // read-only detail endpoints (offers / reviews / team / audit), the admin

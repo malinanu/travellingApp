@@ -1,7 +1,7 @@
-package httpapi_test
+﻿package httpapi_test
 
 // Integration test for the vendor validate endpoint's edge cases against the
-// real Postgres store (the domain has no mockable interface — see store.go's
+// real Postgres store (the domain has no mockable interface â€” see store.go's
 // decision to skip per-entity interfaces since the project is Postgres-only).
 // Requires the local shared-postgres container with a `spotto` database;
 // skips automatically if it can't connect.
@@ -79,7 +79,7 @@ func TestValidateEdgeCases(t *testing.T) {
 	ctx := context.Background()
 
 	tokens := auth.NewTokens("test-secret-" + t.Name())
-	testTOTPKey := make([]byte, 32) // zero key is fine for this test — no 2FA flows exercised here
+	testTOTPKey := make([]byte, 32) // zero key is fine for this test â€” no 2FA flows exercised here
 	cfg := config.Config{CORSOrigins: []string{"http://localhost:3000"}, TOTPEncryptionKey: testTOTPKey, VendorAppURL: "http://localhost:3000"}
 	srv := httptest.NewServer(httpapi.New(store, tokens, cfg).Router(cfg))
 	defer srv.Close()
