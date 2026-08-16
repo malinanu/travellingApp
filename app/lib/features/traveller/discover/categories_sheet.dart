@@ -99,7 +99,7 @@ class _CategoriesSheetState extends State<_CategoriesSheet> {
                 const Expanded(
                   child: Center(
                     child: Text(
-                      'More Categories',
+                      'More',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -236,8 +236,8 @@ class _CategoriesSheetState extends State<_CategoriesSheet> {
                 scale: 0.95,
                 onTap: () => _toggleCategory(cat.label),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: bgColor,
                     borderRadius: BorderRadius.circular(999),
@@ -248,6 +248,7 @@ class _CategoriesSheetState extends State<_CategoriesSheet> {
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
                         spottoIcon(cat.icon),

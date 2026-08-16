@@ -367,7 +367,7 @@ class Place {
       wifi: json['wifi'] is Map
           ? WifiInfo.fromJson((json['wifi'] as Map).cast<String, dynamic>())
           : const WifiInfo(score: 0, speed: '', label: ''),
-      hours: json['hours'] as String? ?? '',
+      hours: json['hours'] is String ? json['hours'] as String : '',
       openNow: json['openNow'] as bool? ?? false,
       bestTimes: _parseStringList(json['bestTimes']),
       deal: json['deal'] is Map
@@ -393,7 +393,7 @@ class Place {
       menu: [
         if (json['menu'] is List)
           for (final s in (json['menu'] as List))
-            MenuSection.fromJson(s as Map<String, dynamic>)
+            MenuSection.fromJson((s as Map).cast<String, dynamic>())
       ],
       vibe: json['vibe'] is Map
           ? VibeAggregate.fromJson((json['vibe'] as Map).cast<String, dynamic>())

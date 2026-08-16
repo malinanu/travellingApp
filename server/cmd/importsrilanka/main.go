@@ -46,20 +46,20 @@ func categoryForSpot(data map[string]any) string {
 	}
 	switch t {
 	case "cafe":
-		return "cafe"
+		return "coffee"
 	case "food":
 		switch {
 		case tagSet["bakery"] && !tagSet["restaurant"] && !tagSet["cafe"]:
-			return "bakery"
+			return "groceries"
 		case tagSet["bar"] && !tagSet["restaurant"] && !tagSet["cafe"]:
-			return "bar-pub"
+			return "bars"
 		case tagSet["cafe"] && !tagSet["restaurant"]:
-			return "cafe"
+			return "coffee"
 		default:
-			return "restaurant"
+			return "restaurants"
 		}
 	default:
-		return ""
+		return "attractions"
 	}
 }
 
