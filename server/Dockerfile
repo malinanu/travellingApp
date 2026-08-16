@@ -25,6 +25,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/api ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/seed ./cmd/seed
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/gendata ./cmd/gendata
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/importsrilanka ./cmd/importsrilanka
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/seedcategories ./cmd/seedcategories
 
 FROM alpine:latest
 RUN apk add --no-cache ca-certificates && \
@@ -34,6 +35,7 @@ COPY --from=builder --chown=app:app /out/api /app/api
 COPY --from=builder --chown=app:app /out/seed /app/seed
 COPY --from=builder --chown=app:app /out/gendata /app/gendata
 COPY --from=builder --chown=app:app /out/importsrilanka /app/importsrilanka
+COPY --from=builder --chown=app:app /out/seedcategories /app/seedcategories
 COPY --chown=app:app sri_lanka_spots_r2_ready.json /app/sri_lanka_spots_r2_ready.json
 COPY --chown=app:app docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
