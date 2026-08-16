@@ -99,10 +99,10 @@ class _CategoriesSheetState extends State<_CategoriesSheet> {
                 const Expanded(
                   child: Center(
                     child: Text(
-                      'More',
+                      'More Categories',
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
                         color: Colors.white,
                       ),
                     ),
