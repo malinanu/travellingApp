@@ -405,7 +405,10 @@ class CategoriesNotifier extends Notifier<List<VendorCategory>> {
       final categories = <VendorCategory>[];
       for (final raw in cached) {
         try {
-          categories.add(VendorCategory.fromJson((raw as Map).cast<String, dynamic>()));
+          final cat = VendorCategory.fromJson((raw as Map).cast<String, dynamic>());
+          if (cat.id != 'general' && cat.id != 'uncategorized') {
+            categories.add(cat);
+          }
         } catch (e) {
           debugPrint('CategoriesNotifier: skipping unparseable category: $e');
         }
@@ -426,7 +429,10 @@ class CategoriesNotifier extends Notifier<List<VendorCategory>> {
       final categories = <VendorCategory>[];
       for (final raw in list) {
         try {
-          categories.add(VendorCategory.fromJson((raw as Map).cast<String, dynamic>()));
+          final cat = VendorCategory.fromJson((raw as Map).cast<String, dynamic>());
+          if (cat.id != 'general' && cat.id != 'uncategorized') {
+            categories.add(cat);
+          }
         } catch (e) {
           debugPrint('CategoriesNotifier: skipping unparseable category: $e');
         }
