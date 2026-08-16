@@ -12,12 +12,12 @@ import "strings"
 type VendorSegment string
 
 const (
-	SegmentHospitality VendorSegment = "hospitality"
-	SegmentActivity    VendorSegment = "activity"
-	SegmentIndependent VendorSegment = "independent"
-	SegmentEvents      VendorSegment = "events"
-	SegmentBrand       VendorSegment = "brand"
-	SegmentFuture      VendorSegment = "future"
+	SegmentFoodAndDrink VendorSegment = "food_and_drink"
+	SegmentThingsToDo   VendorSegment = "things_to_do"
+	SegmentShopping     VendorSegment = "shopping"
+	SegmentServices     VendorSegment = "services"
+	SegmentBrand        VendorSegment = "brand"
+	SegmentFuture       VendorSegment = "future"
 )
 
 // VendorCategory is one selectable business type within a segment. Icon is a
@@ -27,17 +27,17 @@ const (
 // that's meaningful to ask/score for this category (e.g. "productive"
 // doesn't mean anything for a beach bar) — see RelevantVibeDimensions.
 type VendorCategory struct {
-	ID                     string
-	Label                  string
-	Segment                VendorSegment
-	Icon                   string
-	RelevantVibeDimensions []string
+	ID                     string        `json:"id"`
+	Label                  string        `json:"label"`
+	Segment                VendorSegment `json:"segment"`
+	Icon                   string        `json:"icon"`
+	RelevantVibeDimensions []string      `json:"relevantVibeDimensions"`
 	// BookingType is which BookingType (see booking.go) this category's
 	// vendors can take real bookings for — "" means not bookable in this
 	// phase (walk-in businesses, brand partners, and Events — Events isn't
 	// a built feature yet; ticket booking can reuse this same system once
 	// it ships). See BookingTypeByCategory/IsBookableCategory.
-	BookingType BookingType
+	BookingType BookingType `json:"bookingType"`
 }
 
 // VendorCategories is the single canonical taxonomy — the source of truth

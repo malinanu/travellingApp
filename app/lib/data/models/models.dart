@@ -168,8 +168,9 @@ class MenuSection {
         id: json['id'] as String? ?? '',
         name: json['name'] as String? ?? '',
         items: [
-          for (final i in (json['items'] as List? ?? const []))
-            MenuItem.fromJson(i as Map<String, dynamic>)
+          if (json['items'] is List)
+            for (final i in (json['items'] as List))
+              MenuItem.fromJson(i as Map<String, dynamic>)
         ],
       );
 }
@@ -368,11 +369,11 @@ class Place {
           : const WifiInfo(score: 0, speed: '', label: ''),
       hours: json['hours'] as String? ?? '',
       openNow: json['openNow'] as bool? ?? false,
-      bestTimes: [for (final t in (json['bestTimes'] as List? ?? const [])) t as String],
+      bestTimes: _parseStringList(json['bestTimes']),
       deal: json['deal'] is Map
           ? Deal.fromJson((json['deal'] as Map).cast<String, dynamic>())
           : Deal.none,
-      tags: [for (final t in (json['tags'] as List? ?? const [])) t as String],
+      tags: _parseStringList(json['tags']),
       blurb: json['blurb'] as String? ?? '',
       contact: json['contact'] is Map
           ? ContactInfo.fromJson((json['contact'] as Map).cast<String, dynamic>())
@@ -386,12 +387,13 @@ class Place {
       cover: json['cover'] as String? ?? '',
       coverThumb: json['coverThumb'] as String? ?? '',
       coverMicro: json['coverMicro'] as String? ?? '',
-      gallery: [for (final g in (json['gallery'] as List? ?? const [])) g as String],
-      galleryThumbs: [for (final g in (json['galleryThumbs'] as List? ?? const [])) g as String],
+      gallery: _parseStringList(json['gallery']),
+      galleryThumbs: _parseStringList(json['galleryThumbs']),
       promoVideo: json['promoVideo'] as String? ?? '',
       menu: [
-        for (final s in (json['menu'] as List? ?? const []))
-          MenuSection.fromJson(s as Map<String, dynamic>)
+        if (json['menu'] is List)
+          for (final s in (json['menu'] as List))
+            MenuSection.fromJson(s as Map<String, dynamic>)
       ],
       vibe: json['vibe'] is Map
           ? VibeAggregate.fromJson((json['vibe'] as Map).cast<String, dynamic>())
@@ -400,7 +402,7 @@ class Place {
           ? VibeCheckin.fromJson((json['myVibe'] as Map).cast<String, dynamic>())
           : null,
       cost: numericCost,
-      styles: [for (final s in (json['styles'] as List? ?? const [])) s as String],
+      styles: _parseStringList(json['styles']),
       hint: json['hint'] as String? ?? '',
       curated: json['curated'] as bool? ?? false,
     );

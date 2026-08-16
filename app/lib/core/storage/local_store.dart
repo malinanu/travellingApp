@@ -23,6 +23,7 @@ abstract final class StoreKeys {
   static const weatherPins = 'spotto_weather_pins'; // saved Weather-screen locations
   static const checkIns = 'spotto_checkins'; // placeIds checked into (artisan quest)
   static const favorites = 'spotto_favorites'; // bookmarked placeIds
+  static const categories = 'spotto_categories'; // fetched dynamic categories
 }
 
 class LocalStore {

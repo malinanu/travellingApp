@@ -529,7 +529,7 @@ class _SpotCard extends StatelessWidget {
                 children: [
                   const Icon(Icons.star, size: 16, color: SpottoColors.sun),
                   const SizedBox(width: 4),
-                  Text('${place.rating}', style: text.labelLarge),
+                  Text(place.rating.toStringAsFixed(1), style: text.labelLarge),
                   Text(
                     distanceLabel != null || place.distance.isEmpty
                         ? '  ·  ${place.type}'

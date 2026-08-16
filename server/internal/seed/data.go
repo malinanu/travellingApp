@@ -7,41 +7,50 @@ package seed
 import "github.com/spotto/server/internal/domain"
 
 var InitialCategories = []domain.VendorCategory{
-	{ID: "cafe", Label: "Café", Segment: domain.SegmentHospitality, Icon: "Coffee", RelevantVibeDimensions: []string{"productive", "loud", "crowded"}, BookingType: domain.BookingTypeTable},
-	{ID: "coworking-cafe", Label: "Coworking Café", Segment: domain.SegmentHospitality, Icon: "Laptop", RelevantVibeDimensions: []string{"productive", "loud", "crowded"}, BookingType: domain.BookingTypeTable},
-	{ID: "restaurant", Label: "Restaurant", Segment: domain.SegmentHospitality, Icon: "UtensilsCrossed", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
-	{ID: "street-food", Label: "Street Food", Segment: domain.SegmentHospitality, Icon: "Soup", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "bakery", Label: "Bakery", Segment: domain.SegmentHospitality, Icon: "Cookie", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "bar-pub", Label: "Bar & Pub", Segment: domain.SegmentHospitality, Icon: "Martini", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
-	{ID: "club", Label: "Club / Nightlife", Segment: domain.SegmentHospitality, Icon: "Music", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
-	{ID: "hotel", Label: "Hotel", Segment: domain.SegmentHospitality, Icon: "Building2", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeStay},
-	{ID: "hostel", Label: "Hostel / Guesthouse", Segment: domain.SegmentHospitality, Icon: "BedSingle", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeStay},
-	{ID: "resort", Label: "Resort", Segment: domain.SegmentHospitality, Icon: "Palmtree", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeStay},
-	{ID: "beach-club", Label: "Beach Club", Segment: domain.SegmentHospitality, Icon: "Waves", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
-	{ID: "surf-school", Label: "Surf School", Segment: domain.SegmentActivity, Icon: "Waves", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "dive-school", Label: "Diving / Dive Shop", Segment: domain.SegmentActivity, Icon: "Anchor", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "yoga-studio", Label: "Yoga Studio", Segment: domain.SegmentActivity, Icon: "Flower2", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "spa-wellness", Label: "Spa & Wellness", Segment: domain.SegmentActivity, Icon: "Sparkles", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "cooking-class", Label: "Cooking Class", Segment: domain.SegmentActivity, Icon: "ChefHat", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "pottery-workshop", Label: "Pottery Workshop", Segment: domain.SegmentActivity, Icon: "Hammer", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "batik-atelier", Label: "Batik / Textile Atelier", Segment: domain.SegmentActivity, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "spice-trail", Label: "Spice Trail", Segment: domain.SegmentActivity, Icon: "Leaf", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "safari-wildlife", Label: "Safari & Wildlife", Segment: domain.SegmentActivity, Icon: "PawPrint", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "boat-trip", Label: "Boat Trip", Segment: domain.SegmentActivity, Icon: "Ship", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "city-tour", Label: "City / Cultural Tour", Segment: domain.SegmentActivity, Icon: "Compass", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "surf-rental", Label: "Surfboard Rental", Segment: domain.SegmentActivity, Icon: "Waves", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeRental},
-	{ID: "bike-rental", Label: "Bicycle Rental", Segment: domain.SegmentActivity, Icon: "Bike", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeRental},
-	{ID: "scooter-rental", Label: "Scooter Rental", Segment: domain.SegmentActivity, Icon: "Bike", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeRental},
-	{ID: "kayak-rental", Label: "Kayak / Canoe Rental", Segment: domain.SegmentActivity, Icon: "Anchor", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeRental},
-	{ID: "tour-guide", Label: "Tour / Walking Guide", Segment: domain.SegmentIndependent, Icon: "Compass", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "artisan-shop", Label: "Local Artisan / Craft Shop", Segment: domain.SegmentIndependent, Icon: "Palette", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "tailor-clothing", Label: "Tailor / Local Clothing", Segment: domain.SegmentIndependent, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "experience-host", Label: "Independent Experience Host", Segment: domain.SegmentIndependent, Icon: "Backpack", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "festival-event", Label: "Festival", Segment: domain.SegmentEvents, Icon: "PartyPopper", RelevantVibeDimensions: []string{"loud", "crowded"}},
-	{ID: "party-promoter", Label: "Party Promotion", Segment: domain.SegmentEvents, Icon: "PartyPopper", RelevantVibeDimensions: []string{"loud", "crowded"}},
-	{ID: "surf-competition", Label: "Surf Competition", Segment: domain.SegmentEvents, Icon: "Waves", RelevantVibeDimensions: []string{"loud", "crowded"}},
-	{ID: "community-charity-event", Label: "Community / Charity Event", Segment: domain.SegmentEvents, Icon: "HeartHandshake", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "music-night", Label: "Music Night", Segment: domain.SegmentEvents, Icon: "Music", RelevantVibeDimensions: []string{"loud", "crowded"}},
+	// Food & Drink
+	{ID: "restaurants", Label: "Restaurants", Segment: domain.SegmentFoodAndDrink, Icon: "UtensilsCrossed", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "takeout", Label: "Takeout", Segment: domain.SegmentFoodAndDrink, Icon: "ShoppingBag", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "bars", Label: "Bars", Segment: domain.SegmentFoodAndDrink, Icon: "Martini", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "delivery", Label: "Delivery", Segment: domain.SegmentFoodAndDrink, Icon: "Truck", RelevantVibeDimensions: []string{}},
+	{ID: "coffee", Label: "Coffee", Segment: domain.SegmentFoodAndDrink, Icon: "Coffee", RelevantVibeDimensions: []string{"productive", "loud", "crowded"}, BookingType: domain.BookingTypeTable},
+
+	// Things to do
+	{ID: "parks", Label: "Parks", Segment: domain.SegmentThingsToDo, Icon: "TreePine", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "gyms", Label: "Gyms", Segment: domain.SegmentThingsToDo, Icon: "Dumbbell", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "art", Label: "Art", Segment: domain.SegmentThingsToDo, Icon: "Palette", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "attractions", Label: "Attractions", Segment: domain.SegmentThingsToDo, Icon: "Ticket", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "nightlife", Label: "Nightlife", Segment: domain.SegmentThingsToDo, Icon: "Music", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "live-music", Label: "Live music", Segment: domain.SegmentThingsToDo, Icon: "Mic", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "movies", Label: "Movies", Segment: domain.SegmentThingsToDo, Icon: "Film", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "museums", Label: "Museums", Segment: domain.SegmentThingsToDo, Icon: "Landmark", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "libraries", Label: "Libraries", Segment: domain.SegmentThingsToDo, Icon: "Library", RelevantVibeDimensions: []string{"productive", "crowded"}},
+
+	// Shopping
+	{ID: "groceries", Label: "Groceries", Segment: domain.SegmentShopping, Icon: "ShoppingCart", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "beauty-supplies", Label: "Beauty supplies", Segment: domain.SegmentShopping, Icon: "Sparkles", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "car-dealers", Label: "Car dealers", Segment: domain.SegmentShopping, Icon: "Car", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "home-garden", Label: "Home & garden", Segment: domain.SegmentShopping, Icon: "Flower2", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "apparel", Label: "Apparel", Segment: domain.SegmentShopping, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "shopping-centers", Label: "Shopping centers", Segment: domain.SegmentShopping, Icon: "Store", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "electronics", Label: "Electronics", Segment: domain.SegmentShopping, Icon: "Laptop", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "sporting-goods", Label: "Sporting goods", Segment: domain.SegmentShopping, Icon: "Bike", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "convenience-stores", Label: "Convenience stores", Segment: domain.SegmentShopping, Icon: "Store", RelevantVibeDimensions: []string{"crowded"}},
+
+	// Services
+	{ID: "hotels", Label: "Hotels", Segment: domain.SegmentServices, Icon: "Building2", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeStay},
+	{ID: "atms", Label: "ATMs", Segment: domain.SegmentServices, Icon: "Banknote", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "beauty-salons", Label: "Beauty salons", Segment: domain.SegmentServices, Icon: "Scissors", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "car-rental", Label: "Car rental", Segment: domain.SegmentServices, Icon: "Key", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeRental},
+	{ID: "car-wash", Label: "Car wash", Segment: domain.SegmentServices, Icon: "Droplets", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "dry-cleaning", Label: "Dry cleaning", Segment: domain.SegmentServices, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "charging-stations", Label: "Charging stations", Segment: domain.SegmentServices, Icon: "Zap", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "gas", Label: "Gas", Segment: domain.SegmentServices, Icon: "Fuel", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "hospitals-clinics", Label: "Hospitals & clinics", Segment: domain.SegmentServices, Icon: "Stethoscope", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
+	{ID: "mail-shipping", Label: "Mail & shipping", Segment: domain.SegmentServices, Icon: "Mail", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "parking", Label: "Parking", Segment: domain.SegmentServices, Icon: "SquareParking", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "pharmacies", Label: "Pharmacies", Segment: domain.SegmentServices, Icon: "Pill", RelevantVibeDimensions: []string{"crowded"}},
+
+	// Brand
 	{ID: "beverage-brand", Label: "Beverage Brand", Segment: domain.SegmentBrand, Icon: "GlassWater"},
 	{ID: "alcohol-brand", Label: "Beer & Alcohol Brand", Segment: domain.SegmentBrand, Icon: "Wine"},
 	{ID: "food-brand", Label: "Food Brand", Segment: domain.SegmentBrand, Icon: "UtensilsCrossed"},
@@ -49,254 +58,45 @@ var InitialCategories = []domain.VendorCategory{
 	{ID: "tourism-company", Label: "Tourism Company", Segment: domain.SegmentBrand, Icon: "Plane"},
 }
 
-// placeDriftwoodData …placeBatikData mirror the Dart Place model in
-// app/lib/data/mock/places.dart (id/name/vendorId live on the row).
-const placeDriftwoodData = `{
-  "type": "Coworking Café", "icon": "Coffee", "color": "teal",
-  "x": 33, "y": 38, "lat": 5.9731, "lng": 80.4280, "rating": 4.8, "reviews": 212, "distance": "400 m", "priceLevel": "$$",
-  "wifi": {"score": 9.2, "speed": "88 Mbps", "label": "Blazing"},
-  "hours": "7:00 AM – 9:00 PM", "openNow": true, "bestTimes": ["morning", "afternoon"],
-  "deal": {"active": true, "label": "Free flat white with any day pass", "tag": "Perk"},
-  "tags": ["Coffee", "Coworking", "Fast Wi-Fi", "Power outlets"],
-  "blurb": "Airy garden café with a dedicated co-work loft, standing desks and the fastest fibre line in the bay. Sea-view seats on the upper deck.",
-  "seaView": true, "photo": "cowork",
-  "cost": 1200, "styles": ["nomad"], "hint": "8:00", "curated": true,
-  "menu": [
-    {"id": "s1", "name": "Breakfast", "items": [
-      {"id": "m1", "name": "Coconut roti & curd bowl", "price": 950, "desc": "Pol roti, kithul treacle, buffalo curd", "icon": "EggFried"},
-      {"id": "m2", "name": "Surfer’s big plate", "price": 1450, "desc": "Eggs any way, sourdough, sambol, bacon", "icon": "Sandwich"}
-    ]},
-    {"id": "s2", "name": "Mains", "items": [
-      {"id": "m3", "name": "Jackfruit curry & rice", "price": 1200, "desc": "Young jak, red rice, papadam", "icon": "Soup"},
-      {"id": "m4", "name": "Grilled catch of the day", "price": 1850, "desc": "From the bay — ask what came in", "icon": "Fish"}
-    ]},
-    {"id": "s3", "name": "Drinks", "items": [
-      {"id": "m5", "name": "Single-origin pour-over", "price": 750, "desc": "Ceylon arabica, brewed to order", "icon": "Coffee"},
-      {"id": "m6", "name": "King coconut", "price": 350, "desc": "Straight off the cart, chilled", "icon": "GlassWater"}
-    ]}
-  ]
-}`
-
-const placeBaysurfData = `{
-  "type": "Surf School", "icon": "Waves", "color": "coral",
-  "x": 62, "y": 64, "lat": 5.9711, "lng": 80.4301, "rating": 4.9, "reviews": 540, "distance": "650 m", "priceLevel": "$$",
-  "wifi": {"score": 6.1, "speed": "24 Mbps", "label": "Okay"},
-  "hours": "6:00 AM – 6:00 PM", "openNow": true, "bestTimes": ["morning", "afternoon"],
-  "deal": {"active": true, "label": "20% off beginner group lessons — today only", "tag": "20% OFF"},
-  "tags": ["Surf", "Board rental", "Beginner friendly"],
-  "blurb": "Right on the gentle beach-break that made Weligama famous for first-timers. Boards, rash guards and ISA-certified instructors.",
-  "seaView": true, "photo": "surf",
-  "cost": 3500, "styles": ["surf", "backpacker"], "hint": "6:30", "curated": true
-}`
-
-const placeHangtimeData = `{
-  "type": "Sunset Bar", "icon": "Martini", "color": "sun",
-  "x": 48, "y": 22, "lat": 5.9744, "lng": 80.4291, "rating": 4.7, "reviews": 388, "distance": "900 m", "priceLevel": "$$$",
-  "wifi": {"score": 7.0, "speed": "31 Mbps", "label": "Good"},
-  "hours": "4:00 PM – 1:00 AM", "openNow": false, "bestTimes": ["evening"],
-  "deal": {"active": true, "label": "Happy hour 5–7 PM · 2-for-1 arrack cocktails", "tag": "Happy Hr"},
-  "tags": ["Cocktails", "Live DJ", "Ocean view", "Popular at sunset"],
-  "blurb": "Palm-fringed rooftop facing due west over the bay — the spot locals point to when the sky turns gold. DJ sets Thu–Sun.",
-  "seaView": true, "popularEvening": true, "photo": "sunset",
-  "cost": 2800, "styles": ["nomad", "luxury"], "hint": "17:30", "curated": true,
-  "menu": [
-    {"id": "s1", "name": "Cocktails", "items": [
-      {"id": "m1", "name": "Arrack sour", "price": 1400, "desc": "Ceylon arrack, lime, kithul, egg white", "icon": "Martini"},
-      {"id": "m2", "name": "Bay sunset spritz", "price": 1600, "desc": "Passionfruit, prosecco, soda", "icon": "Wine"}
-    ]},
-    {"id": "s2", "name": "Bites", "items": [
-      {"id": "m3", "name": "Hot butter cuttlefish", "price": 1750, "desc": "The rooftop classic, extra lime", "icon": "Flame"},
-      {"id": "m4", "name": "Isso vade plate", "price": 950, "desc": "Prawn lentil fritters, tamarind dip", "icon": "Cookie"}
-    ]}
-  ]
-}`
-
-const placeClaystudioData = `{
-  "type": "Pottery Workshop", "icon": "Palette", "color": "clay",
-  "x": 19, "y": 34, "lat": 5.9734, "lng": 80.4270, "rating": 4.9, "reviews": 96, "distance": "300 m", "priceLevel": "$$",
-  "wifi": {"score": 5.0, "speed": "18 Mbps", "label": "Okay"},
-  "hours": "9:00 AM – 6:00 PM", "openNow": true, "bestTimes": ["morning", "afternoon"],
-  "indoor": true, "artisan": true,
-  "deal": {"active": true, "label": "Drop-in wheel-throwing taster — Rs 1,500", "tag": "Workshop"},
-  "tags": ["Pottery", "Hands-on", "Indoor", "Local artisan"],
-  "blurb": "A working clay studio tucked off the main road. Spin the wheel with resident potters — the perfect rainy-day plan when the surf is blown out.",
-  "seaView": false, "photo": "clay",
-  "cost": 1500, "styles": ["backpacker"], "hint": "10:00", "curated": true
-}`
-
-const placeBatikData = `{
-  "type": "Batik Atelier", "icon": "Brush", "color": "plum",
-  "x": 73, "y": 30, "lat": 5.9738, "lng": 80.4309, "rating": 4.8, "reviews": 73, "distance": "750 m", "priceLevel": "$$",
-  "wifi": {"score": 5.5, "speed": "20 Mbps", "label": "Okay"},
-  "hours": "9:30 AM – 5:30 PM", "openNow": true, "bestTimes": ["morning", "afternoon"],
-  "indoor": true, "artisan": true,
-  "deal": {"active": false, "label": "", "tag": ""},
-  "tags": ["Batik", "Hand-dyed", "Indoor", "Local artisan"],
-  "blurb": "Family atelier hand-waxing and dyeing batik the traditional way. Watch a panel come to life, or wax your own under the canopy.",
-  "seaView": false, "photo": "batik",
-  "cost": 1000, "styles": ["luxury"], "hint": "11:00", "curated": true
-}`
-
-// The 11 blocks below are the wider-Weligama-area trip-planner stops (no
-// vendor account — vendor_id is NULL for all of them), ported from
-// app/lib/data/mock/trip_catalog.dart's tripCatalog so the trip planner can
-// source its full catalog from /places instead of a hardcoded Dart list.
-// Only the fields the trip planner actually needs (type/icon/lat/lng/cost/
-// styles/hint) are set — everything else defaults to zero/empty in the
-// Flutter Place model, which is fine for stops that aren't Spotto
-// businesses (no menu, wifi score, deal, etc. to show).
-
-const placeBayvillaData = `{
-  "type": "Hotel", "icon": "BedDouble", "color": "teal",
-  "lat": 5.9731, "lng": 80.4254, "cost": 9500, "styles": ["luxury", "nomad"], "hint": "14:00"
-}`
-
-const placePalmhostelData = `{
-  "type": "Hostel", "icon": "Backpack", "color": "coral",
-  "lat": 5.9758, "lng": 80.4332, "cost": 2200, "styles": ["backpacker", "surf"], "hint": "13:00"
-}`
-
-const placeWelibeachData = `{
-  "type": "Beach", "icon": "Palmtree", "color": "sun",
-  "lat": 5.9722, "lng": 80.4286, "cost": 0, "styles": ["surf", "backpacker", "nomad", "luxury"], "hint": "7:00"
-}`
-
-const placeMirissaData = `{
-  "type": "Beach", "icon": "Palmtree", "color": "sun",
-  "lat": 5.9445, "lng": 80.4595, "cost": 0, "styles": ["surf", "backpacker", "luxury"], "hint": "15:00"
-}`
-
-const placeCoconuthillData = `{
-  "type": "Viewpoint", "icon": "Mountain", "color": "clay",
-  "lat": 5.9417, "lng": 80.4632, "cost": 0, "styles": ["backpacker", "luxury", "nomad"], "hint": "17:00"
-}`
-
-const placeKottuData = `{
-  "type": "Street Food", "icon": "UtensilsCrossed", "color": "coral",
-  "lat": 5.9755, "lng": 80.4312, "cost": 800, "styles": ["backpacker", "surf"], "hint": "19:30"
-}`
-
-const placeReefdineData = `{
-  "type": "Restaurant", "icon": "Wine", "color": "plum",
-  "lat": 5.9740, "lng": 80.4260, "cost": 5200, "styles": ["luxury"], "hint": "19:00"
-}`
-
-const placeSecretrootData = `{
-  "type": "Spa & Wellness", "icon": "Flower2", "color": "plum",
-  "lat": 5.9768, "lng": 80.4338, "cost": 4200, "styles": ["luxury", "nomad"], "hint": "16:00"
-}`
-
-const placeTaprobaneData = `{
-  "type": "Viewpoint", "icon": "Mountain", "color": "teal",
-  "lat": 5.9735, "lng": 80.4203, "cost": 0, "styles": ["nomad", "luxury", "backpacker"], "hint": "8:30"
-}`
-
-const placeOldlightData = `{
-  "type": "Bar & Gallery", "icon": "Martini", "color": "clay",
-  "lat": 5.9701, "lng": 80.4179, "cost": 2400, "styles": ["nomad", "backpacker"], "hint": "21:00"
-}`
-
-const placeMorningmktData = `{
-  "type": "Local Market", "icon": "ShoppingBasket", "color": "sun",
-  "lat": 5.9769, "lng": 80.4297, "cost": 500, "styles": ["backpacker", "nomad"], "hint": "6:30"
-}`
-
-// driftwoodProfile is PROFILE from vendor-data.jsx.
-const driftwoodProfile = `{
-  "wifi": {"enabled": true, "score": 9.2, "speed": 88},
-  "bestTimes": ["morning", "afternoon"],
-  "seaView": true,
-  "hours": {"open": "07:00", "close": "21:00"},
-  "amenities": ["Power outlets", "Standing desks", "Air-con loft", "Specialty coffee", "Quiet zone", "Sea-view deck"],
-  "blurb": "Airy garden café with a dedicated co-work loft, standing desks and the fastest fibre line in the bay. Sea-view seats on the upper deck."
-}`
-
-// driftwoodMenu is MENU from vendor-data.jsx (sections document).
-const driftwoodMenu = `{"sections": [
-  {"id": "s1", "name": "Breakfast", "items": [
-    {"id": "m1", "name": "Coconut roti & curd bowl", "price": 950, "desc": "Pol roti, kithul treacle, buffalo curd", "img": null, "icon": "EggFried"},
-    {"id": "m2", "name": "Surfer’s big plate", "price": 1450, "desc": "Eggs any way, sourdough, sambol, bacon", "img": null, "icon": "Sandwich"}
-  ]},
-  {"id": "s2", "name": "Mains", "items": [
-    {"id": "m3", "name": "Jackfruit curry & rice", "price": 1200, "desc": "Young jak, red rice, papadam", "img": null, "icon": "Soup"},
-    {"id": "m4", "name": "Grilled catch of the day", "price": 1850, "desc": "From the bay — ask what came in", "img": null, "icon": "Fish"}
-  ]},
-  {"id": "s3", "name": "Drinks", "items": [
-    {"id": "m5", "name": "Single-origin pour-over", "price": 750, "desc": "Ceylon arabica, brewed to order", "img": null, "icon": "Coffee"},
-    {"id": "m6", "name": "King coconut", "price": 350, "desc": "Straight off the cart, chilled", "img": null, "icon": "GlassWater"}
-  ]}
-]}`
-
-// driftwoodDashboard bundles KPIS/WEEK/POPULAR/TREND from vendor-data.jsx.
-const driftwoodDashboard = `{
-  "kpis": [
-    {"id": "offers", "label": "Active Offers", "value": 3, "icon": "Tag", "delta": null, "tone": "teal", "hint": "1 ending soon"},
-    {"id": "redeem", "label": "Total Redemptions", "value": 248, "icon": "Ticket", "delta": 18, "tone": "coral", "hint": "this week"},
-    {"id": "views", "label": "Profile Views", "value": 1940, "icon": "Eye", "delta": 12, "tone": "sun", "hint": "last 7 days"}
-  ],
-  "week": [
-    {"day": "Mon", "views": 210, "redemptions": 24}, {"day": "Tue", "views": 248, "redemptions": 31},
-    {"day": "Wed", "views": 196, "redemptions": 22}, {"day": "Thu", "views": 312, "redemptions": 44},
-    {"day": "Fri", "views": 358, "redemptions": 52}, {"day": "Sat", "views": 401, "redemptions": 61},
-    {"day": "Sun", "views": 285, "redemptions": 14}
-  ],
-  "popular": [
-    {"h": 7, "v": 28}, {"h": 8, "v": 52}, {"h": 9, "v": 86}, {"h": 10, "v": 100},
-    {"h": 11, "v": 78}, {"h": 12, "v": 60}, {"h": 13, "v": 48}, {"h": 14, "v": 66},
-    {"h": 15, "v": 82}, {"h": 16, "v": 71}, {"h": 17, "v": 44}, {"h": 18, "v": 30},
-    {"h": 19, "v": 22}, {"h": 20, "v": 14}
-  ],
-  "trend": [
-    {"wk": "W1", "you": 38, "cat": 30}, {"wk": "W2", "you": 44, "cat": 33},
-    {"wk": "W3", "you": 41, "cat": 36}, {"wk": "W4", "you": 58, "cat": 39},
-    {"wk": "W5", "you": 72, "cat": 42}, {"wk": "W6", "you": 86, "cat": 47}
-  ]
-}`
-
-// driftwoodGrowth bundles FLASH/STAMP_CARD/BTS_CLIPS/BOOST from vendor-data.jsx.
-const driftwoodGrowth = `{
-  "flash": {"radiusKm": 3, "inRange": 142, "nomads": 58, "surfers": 44, "lastSentMins": 184},
-  "stampCard": {
-    "reward": "Free flat white", "stampsNeeded": 6,
-    "buckets": [
-      {"away": 1, "count": 23, "label": "One stamp away"},
-      {"away": 2, "count": 41, "label": "Two away"},
-      {"away": 3, "count": 67, "label": "Three+ away"}
-    ],
-    "totalHolders": 214, "redeemedThisMonth": 38
-  },
-  "btsClips": [
-    {"id": "b1", "title": "Pulling the morning espresso", "secs": 9, "views": 1240, "grad": "linear-gradient(135deg,#0e8c8a,#0a5f6e)", "icon": "Coffee"},
-    {"id": "b2", "title": "Roasting Ceylon beans", "secs": 10, "views": 880, "grad": "linear-gradient(135deg,#c2683f,#7a3b22)", "icon": "Flame"},
-    {"id": "b3", "title": "Latte art, slow-mo", "secs": 7, "views": 2010, "grad": "linear-gradient(135deg,#0b4a54,#0b6f86)", "icon": "Sparkles"}
-  ],
-  "boost": {
-    "event": {"name": "Friday Sunset Sessions", "when": "Fri · 5–9 PM", "dj": "Live DJ + arrack cocktails"},
-    "tiers": [
-      {"id": "local", "label": "Local map top spot", "reach": "~1,200 travelers", "days": 3, "price": 12, "icon": "MapPin"},
-      {"id": "category", "label": "Category feature", "reach": "~3,400 travelers", "days": 5, "price": 24, "icon": "Star", "best": true},
-      {"id": "push", "label": "Push + map + category", "reach": "~6,800 travelers", "days": 7, "price": 39, "icon": "Megaphone"}
-    ]
-  }
-}`
-
-// driftwoodReports reuses the dashboard series for the Reports page charts.
-const driftwoodReports = `{
-  "week": [
-    {"day": "Mon", "views": 210, "redemptions": 24}, {"day": "Tue", "views": 248, "redemptions": 31},
-    {"day": "Wed", "views": 196, "redemptions": 22}, {"day": "Thu", "views": 312, "redemptions": 44},
-    {"day": "Fri", "views": 358, "redemptions": 52}, {"day": "Sat", "views": 401, "redemptions": 61},
-    {"day": "Sun", "views": 285, "redemptions": 14}
-  ],
-  "trend": [
-    {"wk": "W1", "you": 38, "cat": 30}, {"wk": "W2", "you": 44, "cat": 33},
-    {"wk": "W3", "you": 41, "cat": 36}, {"wk": "W4", "you": 58, "cat": 39},
-    {"wk": "W5", "you": 72, "cat": 42}, {"wk": "W6", "you": 86, "cat": 47}
-  ],
-  "popular": [
-    {"h": 7, "v": 28}, {"h": 8, "v": 52}, {"h": 9, "v": 86}, {"h": 10, "v": 100},
-    {"h": 11, "v": 78}, {"h": 12, "v": 60}, {"h": 13, "v": 48}, {"h": 14, "v": 66},
-    {"h": 15, "v": 82}, {"h": 16, "v": 71}, {"h": 17, "v": 44}, {"h": 18, "v": 30},
-    {"h": 19, "v": 22}, {"h": 20, "v": 14}
-  ]
-}`
+var Regions = []domain.Region{
+	{ID: "colombo", Name: "Colombo", X: 25, Y: 56, Lat: 6.9271, Lng: 79.8612, Travelers: 88, Vendors: 96},
+	{ID: "negombo", Name: "Negombo", X: 23, Y: 49, Lat: 7.2083, Lng: 79.8358, Travelers: 54, Vendors: 60},
+	{ID: "kandy", Name: "Kandy", X: 50, Y: 47, Lat: 7.2906, Lng: 80.6337, Travelers: 71, Vendors: 64},
+	{ID: "sigiriya", Name: "Sigiriya", X: 54, Y: 34, Lat: 7.9570, Lng: 80.7603, Travelers: 66, Vendors: 28},
+	{ID: "ella", Name: "Ella", X: 61, Y: 60, Lat: 6.8667, Lng: 81.0466, Travelers: 82, Vendors: 41},
+	{ID: "nuwara", Name: "Nuwara Eliya", X: 54, Y: 56, Lat: 6.9497, Lng: 80.7891, Travelers: 58, Vendors: 39},
+	{ID: "galle", Name: "Galle", X: 31, Y: 82, Lat: 6.0535, Lng: 80.2210, Travelers: 90, Vendors: 78},
+	{ID: "weligama", Name: "Weligama", X: 39, Y: 86, Lat: 5.9724, Lng: 80.4292, Travelers: 95, Vendors: 70},
+	{ID: "mirissa", Name: "Mirissa", X: 44, Y: 88, Lat: 5.9483, Lng: 80.4589, Travelers: 84, Vendors: 52},
+	{ID: "arugam", Name: "Arugam Bay", X: 80, Y: 61, Lat: 6.8404, Lng: 81.8360, Travelers: 76, Vendors: 22},
+	{ID: "trinco", Name: "Trincomalee", X: 70, Y: 27, Lat: 8.5874, Lng: 81.2152, Travelers: 61, Vendors: 18},
+	{ID: "jaffna", Name: "Jaffna", X: 45, Y: 8, Lat: 9.6615, Lng: 80.0255, Travelers: 44, Vendors: 12},
+	{ID: "anuradhapura", Name: "Anuradhapura", X: 48, Y: 30, Lat: 8.3300, Lng: 80.4100, Travelers: 40, Vendors: 20},
+	{ID: "polonnaruwa", Name: "Polonnaruwa", X: 60, Y: 35, Lat: 7.9400, Lng: 81.0000, Travelers: 35, Vendors: 15},
+	{ID: "dambulla", Name: "Dambulla", X: 52, Y: 36, Lat: 7.8600, Lng: 80.6500, Travelers: 50, Vendors: 25},
+	{ID: "hikkaduwa", Name: "Hikkaduwa", X: 28, Y: 78, Lat: 6.1400, Lng: 80.1000, Travelers: 75, Vendors: 60},
+	{ID: "unawatuna", Name: "Unawatuna", X: 32, Y: 83, Lat: 6.0100, Lng: 80.2500, Travelers: 85, Vendors: 70},
+	{ID: "ahangama", Name: "Ahangama", X: 36, Y: 85, Lat: 5.9700, Lng: 80.3600, Travelers: 80, Vendors: 55},
+	{ID: "dickwella", Name: "Dickwella", X: 52, Y: 87, Lat: 5.9600, Lng: 80.7000, Travelers: 70, Vendors: 40},
+	{ID: "tangalle", Name: "Tangalle", X: 56, Y: 86, Lat: 6.0200, Lng: 80.7900, Travelers: 60, Vendors: 35},
+	{ID: "yala", Name: "Yala", X: 70, Y: 75, Lat: 6.3700, Lng: 81.4500, Travelers: 55, Vendors: 25},
+	{ID: "kalpitiya", Name: "Kalpitiya", X: 20, Y: 35, Lat: 8.2300, Lng: 79.7700, Travelers: 45, Vendors: 20},
+	{ID: "passikudah", Name: "Passikudah", X: 75, Y: 40, Lat: 7.9200, Lng: 81.5600, Travelers: 35, Vendors: 15},
+	{ID: "batticaloa", Name: "Batticaloa", X: 78, Y: 45, Lat: 7.7400, Lng: 81.6900, Travelers: 30, Vendors: 10},
+	{ID: "ampara", Name: "Ampara", X: 78, Y: 47, Lat: 7.2978, Lng: 81.6790, Travelers: 15, Vendors: 5},
+	{ID: "badulla", Name: "Badulla", X: 61, Y: 60, Lat: 6.8999, Lng: 81.0571, Travelers: 20, Vendors: 10},
+	{ID: "gampaha", Name: "Gampaha", X: 27, Y: 53, Lat: 7.0873, Lng: 79.9997, Travelers: 35, Vendors: 40},
+	{ID: "hambantota", Name: "Hambantota", X: 63, Y: 80, Lat: 6.1427, Lng: 81.1212, Travelers: 25, Vendors: 15},
+	{ID: "kalutara", Name: "Kalutara", X: 26, Y: 68, Lat: 6.5854, Lng: 79.9607, Travelers: 40, Vendors: 25},
+	{ID: "kegalle", Name: "Kegalle", X: 40, Y: 48, Lat: 7.2513, Lng: 80.3464, Travelers: 15, Vendors: 10},
+	{ID: "kilinochchi", Name: "Kilinochchi", X: 47, Y: 15, Lat: 9.3803, Lng: 80.3770, Travelers: 5, Vendors: 2},
+	{ID: "kurunegala", Name: "Kurunegala", X: 40, Y: 42, Lat: 7.4863, Lng: 80.3629, Travelers: 20, Vendors: 15},
+	{ID: "mannar", Name: "Mannar", X: 28, Y: 20, Lat: 8.9800, Lng: 79.9000, Travelers: 10, Vendors: 5},
+	{ID: "matale", Name: "Matale", X: 50, Y: 42, Lat: 7.4675, Lng: 80.6234, Travelers: 25, Vendors: 15},
+	{ID: "matara", Name: "Matara", X: 47, Y: 88, Lat: 5.9485, Lng: 80.5353, Travelers: 65, Vendors: 45},
+	{ID: "monaragala", Name: "Monaragala", X: 68, Y: 60, Lat: 6.8700, Lng: 81.3500, Travelers: 15, Vendors: 5},
+	{ID: "mullaitivu", Name: "Mullaitivu", X: 58, Y: 18, Lat: 9.2500, Lng: 80.8167, Travelers: 5, Vendors: 2},
+	{ID: "puttalam", Name: "Puttalam", X: 25, Y: 28, Lat: 8.0408, Lng: 79.8265, Travelers: 15, Vendors: 10},
+	{ID: "ratnapura", Name: "Ratnapura", X: 42, Y: 64, Lat: 6.6932, Lng: 80.3995, Travelers: 30, Vendors: 15},
+	{ID: "vavuniya", Name: "Vavuniya", X: 48, Y: 25, Lat: 8.7542, Lng: 80.4982, Travelers: 10, Vendors: 5},
+}

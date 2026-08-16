@@ -2908,7 +2908,7 @@ func (s *Store) AdminNotifications(ctx context.Context, adminID string) ([]domai
 // Wipe truncates all data tables (used by cmd/seed for idempotent reloads).
 func (s *Store) Wipe(ctx context.Context) error {
 	_, err := s.Pool.Exec(ctx, `
-		TRUNCATE users, vendors, offers, places, claims, trips, groups, feed_items,
+		TRUNCATE users, offers, claims, trips, groups, feed_items,
 			regions, subscriptions, audio_guides, vibe_checkins, checkins,
 			vendor_notifications, vendor_blobs, reviews, vendor_invites, admin_audit_log,
 			admin_notification_reads`)

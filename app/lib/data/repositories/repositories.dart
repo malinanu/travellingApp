@@ -18,6 +18,7 @@ import '../../core/storage/local_store.dart';
 import '../mock/places.dart' as seed;
 import '../mock/trip_catalog.dart';
 import '../models/models.dart';
+import '../vendor_categories.dart';
 
 /// Parses a string-list field from server JSON that may still be in an
 /// older single-string shape (e.g. travelStyle before it became
@@ -392,6 +393,55 @@ class PlacesNotifier extends Notifier<List<Place>> {
 }
 
 final placesProvider = NotifierProvider<PlacesNotifier, List<Place>>(PlacesNotifier.new);
+
+// ── categories (dynamic from server) ──────────────────────────────
+
+class CategoriesNotifier extends Notifier<List<VendorCategory>> {
+  @override
+  List<VendorCategory> build() {
+    Future.microtask(refresh);
+    final cached = ref.read(localStoreProvider).getJsonList(StoreKeys.categories);
+    if (cached != null && cached.isNotEmpty) {
+      final categories = <VendorCategory>[];
+      for (final raw in cached) {
+        try {
+          categories.add(VendorCategory.fromJson((raw as Map).cast<String, dynamic>()));
+        } catch (e) {
+          debugPrint('CategoriesNotifier: skipping unparseable category: $e');
+        }
+      }
+      if (categories.isNotEmpty) {
+        vendorCategories = categories;
+        return categories;
+      }
+    }
+    return vendorCategories;
+  }
+
+  Future<void> refresh() async {
+    try {
+      final res = await ref.read(apiProvider).dio.get('/categories');
+      final list = res.data as List;
+      if (list.isEmpty) return;
+      final categories = <VendorCategory>[];
+      for (final raw in list) {
+        try {
+          categories.add(VendorCategory.fromJson((raw as Map).cast<String, dynamic>()));
+        } catch (e) {
+          debugPrint('CategoriesNotifier: skipping unparseable category: $e');
+        }
+      }
+      if (categories.isEmpty) return;
+      state = categories;
+      vendorCategories = categories; // update global fallback synchronously
+      await ref.read(localStoreProvider).setJsonList(StoreKeys.categories, list);
+    } catch (e) {
+      debugPrint('categoriesProvider refresh failed: $e');
+    }
+  }
+}
+
+final categoriesProvider = NotifierProvider<CategoriesNotifier, List<VendorCategory>>(CategoriesNotifier.new);
 
 // ── group ─────────────────────────────────────────────────────────
 

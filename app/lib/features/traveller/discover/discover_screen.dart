@@ -12,7 +12,6 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/api/google_places_service.dart';
-import '../../../core/api/map_tile_cache.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/category_icons.dart';
 import '../../../core/widgets/map_marker.dart';
@@ -25,6 +24,7 @@ import '../../../data/repositories/repositories.dart';
 import '../../../data/vendor_categories.dart';
 import '../group/group_sheet.dart';
 import '../group/group_ws_provider.dart';
+import 'categories_sheet.dart';
 import 'quest_sheet.dart';
 import '../place_detail/business_drawer.dart';
 import '../weather/activity_rules.dart';
@@ -196,61 +196,26 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   String _searchQuery = '';
   List<GooglePlacesSearchResult> _googleResults = [];
   bool _isSearchingGoogle = false;
-  String _selectedCategory = 'All';
+  Set<String> _selectedCategories = {'All'};
   double _currentZoom = 15.0;
   String? _selectedPlaceId;
 
-  bool _isCachingTiles = false;
-  int _cacheProgress = 0;
-  int _cacheTotal = 0;
 
-  Future<void> _downloadOfflineTiles() async {
-    setState(() { _isCachingTiles = true; _cacheProgress = 0; _cacheTotal = 1; });
-    // Cache messenger ref before any await so we don't use BuildContext
-    // across an async gap (lint: use_build_context_synchronously).
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final result = await prefetchMapTiles(
-        onProgress: (done, total) {
-          if (mounted) setState(() { _cacheProgress = done; _cacheTotal = total; });
-        },
-      );
-      if (!mounted) return;
-      final sizeMb = (await mapTileCacheSizeBytes() / (1024 * 1024)).toStringAsFixed(1);
-      messenger.showSnackBar(SnackBar(
-        content: Text(
-          result.hasErrors
-            ? '⚠ Downloaded ${result.downloaded} tiles (${result.failed} failed). $sizeMb MB cached.'
-            : '✓ ${result.downloaded} tiles downloaded · $sizeMb MB · Map area offline!',
-        ),
-        duration: const Duration(seconds: 4),
-      ));
-    } finally {
-      if (mounted) setState(() => _isCachingTiles = false);
-    }
-  }
 
   List<Place> _filterPlaces(List<Place> places, Set<String> favoriteIds) {
-    switch (_selectedCategory) {
-      case 'Hospitality':
-        return _placesInSegment(places, VendorSegment.hospitality);
-      case 'Activities':
-        return _placesInSegment(places, VendorSegment.activity);
-      case 'Independent':
-        return _placesInSegment(places, VendorSegment.independent);
-      case 'Events':
-        return _placesInSegment(places, VendorSegment.events);
-      case 'Deals':
-        return places.where((p) => p.deal.active).toList();
-      case 'Favorites':
-        return places.where((p) => favoriteIds.contains(p.id)).toList();
-      default:
-        return places;
-    }
+    if (_selectedCategories.contains('All')) return places;
+    
+    return places.where((p) {
+      if (_selectedCategories.contains('Deals') && p.deal.active) return true;
+      if (_selectedCategories.contains('Favorites') && favoriteIds.contains(p.id)) return true;
+      
+      final cat = categoryById(p.categoryId);
+      if (cat != null && _selectedCategories.contains(cat.label)) return true;
+      
+      return false;
+    }).toList();
   }
 
-  List<Place> _placesInSegment(List<Place> places, VendorSegment segment) =>
-      places.where((p) => categoryById(p.categoryId)?.segment == segment).toList();
 
   /// Map-pin vibe badge icon for [p] — the category's primary relevant
   /// dimension (see relevantVibeDimensions), or null if there's no real
@@ -498,6 +463,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final favorites = ref.watch(favoritesProvider);
     final trip = ref.watch(tripProvider);
     final liveLocations = ref.watch(groupLiveLocationsProvider);
+    final categories = ref.watch(categoriesProvider);
 
     final favoriteIds = favorites;
     final Set<String> tripCalendarPlaceNames = trip.days
@@ -674,18 +640,52 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                // Category Filter Bar
+                // Category Filter Bar (Google Maps style pills)
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
                       _categoryChip('All', Icons.apps_rounded),
-                      _categoryChip('Hospitality', Icons.coffee_rounded),
-                      _categoryChip('Activities', Icons.hiking_rounded),
-                      _categoryChip('Independent', Icons.storefront_rounded),
-                      _categoryChip('Events', Icons.celebration_rounded),
                       _categoryChip('Deals', Icons.local_offer_rounded),
+                      for (final cat in categories.take(6))
+                        _categoryChip(cat.label, spottoIcon(cat.icon)),
                       _categoryChip('Favorites', Icons.favorite_rounded),
+                      // "More" button
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: PressScale(
+                          scale: 0.95,
+                          onTap: () async {
+                            final newSelection = await showCategoriesSheet(
+                              context,
+                              selectedCategories: _selectedCategories,
+                              availableCategories: categories,
+                            );
+                            if (newSelection != null && mounted) {
+                              setState(() => _selectedCategories = newSelection);
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: SpottoColors.line, width: 1.2),
+                              boxShadow: const [
+                                BoxShadow(color: Color(0x18103D3A), blurRadius: 6, offset: Offset(0, 2)),
+                              ],
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.more_horiz_rounded, size: 16, color: SpottoColors.ink),
+                                SizedBox(width: 6),
+                                Text('More', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: SpottoColors.ink)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -903,41 +903,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
               mode: _locationMode, onTap: _onLocationButtonTap),
         ),
 
-        // Offline map cache button
-        Positioned(
-          right: 16,
-          bottom: 202,
-          child: PressScale(
-            scale: 0.92,
-            onTap: _isCachingTiles ? null : _downloadOfflineTiles,
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: const [
-                  BoxShadow(
-                    color: SpottoColors.inkShadow,
-                    blurRadius: 10,
-                    offset: Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: _isCachingTiles
-                  ? Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: CircularProgressIndicator(
-                        value: _cacheTotal > 0 ? _cacheProgress / _cacheTotal : null,
-                        strokeWidth: 2.5,
-                        color: SpottoColors.accent,
-                      ),
-                    )
-                  : const Icon(Icons.download_for_offline_rounded,
-                      size: 20, color: SpottoColors.accent),
-            ),
-          ),
-        ),
+
 
         // bottom: daily quest chip + time filter pills
         Positioned(
@@ -1035,17 +1001,36 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       };
 
   Widget _categoryChip(String label, IconData icon) {
-    final isSelected = _selectedCategory == label;
+    final isSelected = _selectedCategories.contains(label);
     return Padding(
-      padding: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.only(right: 8),
       child: PressScale(
         scale: 0.95,
-        onTap: () => setState(() => _selectedCategory = label),
+        onTap: () {
+          setState(() {
+            if (label == 'All') {
+              _selectedCategories.clear();
+              _selectedCategories.add('All');
+              return;
+            }
+            
+            _selectedCategories.remove('All');
+            
+            if (_selectedCategories.contains(label)) {
+              _selectedCategories.remove(label);
+              if (_selectedCategories.isEmpty) {
+                _selectedCategories.add('All');
+              }
+            } else {
+              _selectedCategories.add(label);
+            }
+          });
+        },
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: isSelected ? SpottoColors.accent : Colors.white,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(999), // Google Maps style pill
             border: Border.all(
               color: isSelected ? SpottoColors.accent : SpottoColors.line,
               width: 1.2,
@@ -1061,14 +1046,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon,
-                  size: 13,
+                  size: 16, // Slightly larger icon to match Maps style
                   color: isSelected ? Colors.white : SpottoColors.accent),
-              const SizedBox(width: 5),
+              const SizedBox(width: 6),
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
                   color: isSelected ? Colors.white : SpottoColors.ink,
                 ),
               ),

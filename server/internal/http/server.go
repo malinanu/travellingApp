@@ -1,4 +1,4 @@
-﻿// Package httpapi wires the chi router, middleware and handlers.
+// Package httpapi wires the chi router, middleware and handlers.
 package httpapi
 
 import (
@@ -225,7 +225,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Get("/media/raw/*", s.handleMediaRaw)
 
 	r.Get("/healthz", s.handleHealthz)
-	r.Get("/api/categories", s.handleAdminCategories)
+	r.Get("/categories", s.handleAdminCategories)
 	r.Get("/readyz", s.handleReadyz)
 	r.Get("/ws/group", s.handleGroupWS)
 
