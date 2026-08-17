@@ -406,7 +406,8 @@ class CategoriesNotifier extends Notifier<List<VendorCategory>> {
       for (final raw in cached) {
         try {
           final cat = VendorCategory.fromJson((raw as Map).cast<String, dynamic>());
-          if (cat.id != 'general' && cat.id != 'uncategorized') {
+          final id = cat.id.toLowerCase();
+          if (id != 'general' && id != 'genaral' && id != 'uncategorized') {
             categories.add(cat);
           }
         } catch (e) {
@@ -430,7 +431,8 @@ class CategoriesNotifier extends Notifier<List<VendorCategory>> {
       for (final raw in list) {
         try {
           final cat = VendorCategory.fromJson((raw as Map).cast<String, dynamic>());
-          if (cat.id != 'general' && cat.id != 'uncategorized') {
+          final id = cat.id.toLowerCase();
+          if (id != 'general' && id != 'genaral' && id != 'uncategorized') {
             categories.add(cat);
           }
         } catch (e) {

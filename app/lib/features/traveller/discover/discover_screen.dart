@@ -647,7 +647,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     children: [
                       _categoryChip('All', Icons.apps_rounded),
                       _categoryChip('Deals', Icons.local_offer_rounded),
-                      for (final cat in categories.take(6))
+                      for (final cat in categories.take(9))
                         _categoryChip(cat.label, spottoIcon(cat.icon)),
                       _categoryChip('Favorites', Icons.favorite_rounded),
                       // "More" button
