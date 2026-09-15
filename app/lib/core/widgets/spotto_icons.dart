@@ -67,6 +67,27 @@ const _iconMap = <String, IconData>{
   'Check': Icons.check,
   'Plus': Icons.add,
   'X': Icons.close,
+  // Additional common Lucide icons from server seeds
+  'ShoppingBag': Icons.shopping_bag,
+  'Truck': Icons.local_shipping,
+  'TreePine': Icons.park,
+  'Dumbbell': Icons.fitness_center,
+  'Mic': Icons.mic,
+  'Film': Icons.movie,
+  'Landmark': Icons.account_balance,
+  'Library': Icons.local_library,
+  'ShoppingCart': Icons.shopping_cart,
+  'Car': Icons.directions_car,
+  'Bike': Icons.pedal_bike,
+  'Banknote': Icons.payments,
+  'Scissors': Icons.content_cut,
+  'Key': Icons.vpn_key,
+  'Droplets': Icons.water_drop,
+  'Fuel': Icons.local_gas_station,
+  'Stethoscope': Icons.medical_services,
+  'Mail': Icons.mail,
+  'SquareParking': Icons.local_parking,
+  'Pill': Icons.medication,
   // Vendor-category taxonomy icons (see data/vendor_categories.dart) not
   // already covered above.
   'Building2': Icons.apartment,
@@ -81,6 +102,48 @@ const _iconMap = <String, IconData>{
   'PartyPopper': Icons.celebration,
   'HeartHandshake': Icons.handshake,
   'Plane': Icons.flight,
+  // Added to differentiate categories that previously shared an icon with
+  // an unrelated category (see spotto-icons-taxonomy-cleanup memory).
+  'Zap': Icons.ev_station,
+  'Trophy': Icons.emoji_events,
+  'Tv': Icons.tv,
+  'Home': Icons.home,
+  'WashingMachine': Icons.local_laundry_service,
+  'Image': Icons.image_outlined,
+  'Umbrella': Icons.umbrella,
+  'Medal': Icons.military_tech,
+  'Ruler': Icons.straighten,
+  'Sailboat': Icons.sailing,
 };
 
-IconData spottoIcon(String name) => _iconMap[name] ?? Icons.circle_outlined;
+// Lowercased once at first use (not per spottoIcon call) so exact-name
+// lookup stays O(1) instead of scanning+lowercasing all of _iconMap on
+// every call — this runs per place on every map/list render.
+final Map<String, IconData> _iconMapLower =
+    _iconMap.map((key, value) => MapEntry(key.toLowerCase(), value));
+
+IconData spottoIcon(String name) {
+  final norm = name.toLowerCase().trim();
+  final exact = _iconMapLower[norm];
+  if (exact != null) return exact;
+
+  // Robust fallbacks if the user manually entered a generic name in the admin panel
+  if (norm.contains('cafe') || norm.contains('coffee')) return Icons.local_cafe;
+  if (norm.contains('restaurant') || norm.contains('food') || norm.contains('dining') || norm.contains('meal') || norm.contains('eat')) return Icons.restaurant;
+  if (norm.contains('hotel') || norm.contains('stay') || norm.contains('bed') || norm.contains('hostel') || norm.contains('resort')) return Icons.hotel;
+  if (norm.contains('bar') || norm.contains('pub') || norm.contains('drink') || norm.contains('wine') || norm.contains('beer') || norm.contains('martini') || norm.contains('club')) return Icons.local_bar;
+  if (norm.contains('surf') || norm.contains('wave') || norm.contains('beach') || norm.contains('sea') || norm.contains('boat') || norm.contains('water') || norm.contains('dive')) return Icons.waves;
+  if (norm.contains('gym') || norm.contains('fitness') || norm.contains('workout') || norm.contains('sport')) return Icons.fitness_center;
+  if (norm.contains('art') || norm.contains('paint') || norm.contains('palette') || norm.contains('craft') || norm.contains('pottery') || norm.contains('batik')) return Icons.palette;
+  if (norm.contains('shop') || norm.contains('store') || norm.contains('market') || norm.contains('retail') || norm.contains('grocery') || norm.contains('clothing')) return Icons.storefront;
+  if (norm.contains('music') || norm.contains('dj')) return Icons.music_note;
+  if (norm.contains('park') || norm.contains('tree') || norm.contains('garden') || norm.contains('nature') || norm.contains('safari')) return Icons.park;
+  if (norm.contains('tour') || norm.contains('guide') || norm.contains('trip') || norm.contains('explore')) return Icons.explore;
+  if (norm.contains('yoga') || norm.contains('wellness') || norm.contains('spa')) return Icons.spa;
+  if (norm.contains('charg') || norm.contains('ev station')) return Icons.ev_station;
+  if (norm.contains('laundry') || norm.contains('dry clean')) return Icons.local_laundry_service;
+  if (norm.contains('electronic') || norm.contains('tv') || norm.contains('television')) return Icons.tv;
+  if (norm.contains('trophy') || norm.contains('medal') || norm.contains('award')) return Icons.emoji_events;
+
+  return Icons.circle_outlined;
+}

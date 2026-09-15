@@ -490,6 +490,17 @@ type ToolUsageCount struct {
 	Count int    `json:"count"`
 }
 
+// GuideErrorEntry is one failed /guide/chat call, for the admin dashboard's
+// "recent errors" panel — the only place the real upstream failure reason
+// (as opposed to the generic message shown to the traveller) is visible
+// without shell/DB access.
+type GuideErrorEntry struct {
+	ConversationID string    `json:"conversationId"`
+	TravellerID    string    `json:"travellerId"`
+	ErrorMessage   string    `json:"errorMessage"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
 // GuideConversationSummary is one row in the admin dashboard's browsable
 // conversation list.
 type GuideConversationSummary struct {

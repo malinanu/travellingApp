@@ -301,6 +301,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/travellers/nearby", s.handleNearbyTravellers)
 		r.Post("/guide/chat", s.handleGuideChat)
 		r.Get("/guide/conversations/latest", s.handleGuideLatestConversation)
+		r.Post("/trip/inspiration/extract-places", s.handleExtractPlacesFromLink)
 	})
 
 	// Vendor (approved vendors only, checked in handlers where relevant).
@@ -419,6 +420,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/local-guide/users", s.handleAdminGuideUsers)
 		r.Get("/admin/local-guide/users/{id}/messages", s.handleAdminGuideUserMessages)
 		r.Get("/admin/local-guide/conversations/{id}", s.handleAdminGuideConversationDetail)
+		r.Get("/admin/local-guide/errors", s.handleAdminGuideErrors)
 
 		// Quests
 		r.Get("/admin/quests/sponsorships/pending", s.handleAdminListPendingSponsorships)

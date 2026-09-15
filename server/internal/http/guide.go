@@ -1,9 +1,9 @@
 ﻿package httpapi
 
 // Local Guide: a conversational assistant that recommends real places and
-// (eventually, in a fast-follow) plans trips. Uses OpenRouter's free-tier
-// google/gemma-4-31b-it:free model (internal/openrouter) with tool calling
-// â€” the model decides for itself whether it has enough information to
+// (eventually, in a fast-follow) plans trips. Uses Gemini's gemini-1.5-flash
+// model (internal/gemini) via its OpenAI-compatibility endpoint, with tool
+// calling â€” the model decides for itself whether it has enough information to
 // search, or should ask a clarifying question first, steered entirely by
 // guideSystemPrompt rather than separate orchestration code. The actual
 // place-matching is internal/recommend's deterministic scoring algorithm;

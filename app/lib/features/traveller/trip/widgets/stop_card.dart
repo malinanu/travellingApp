@@ -22,7 +22,7 @@ class StopCard extends StatelessWidget {
   final VoidCallback onDown;
   final VoidCallback onRemove;
   final VoidCallback? onOpen; // null when not a Spotto place
-  final bool builderMode;
+  final VoidCallback? onMoveToDay; // null when there's only one day to move to
 
   const StopCard({
     super.key,
@@ -36,7 +36,7 @@ class StopCard extends StatelessWidget {
     required this.onDown,
     required this.onRemove,
     this.onOpen,
-    this.builderMode = false,
+    this.onMoveToDay,
   });
 
   Future<void> _pickTime(BuildContext context) async {
@@ -171,21 +171,30 @@ class StopCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          if (builderMode)
-            const SizedBox(
-              width: 28,
-              height: 48,
-              child: Icon(Icons.drag_indicator, size: 22, color: SpottoColors.muted),
-            )
-          else
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                arrow(Icons.keyboard_arrow_up, first, onUp),
-                const SizedBox(height: 2),
-                arrow(Icons.keyboard_arrow_down, last, onDown),
-              ],
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              arrow(Icons.keyboard_arrow_up, first, onUp),
+              const SizedBox(height: 2),
+              arrow(Icons.keyboard_arrow_down, last, onDown),
+            ],
+          ),
+          if (onMoveToDay != null) ...[
+            const SizedBox(width: 4),
+            PressScale(
+              scale: 0.9,
+              onTap: onMoveToDay,
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: SpottoColors.sand,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.calendar_month_outlined, size: 15, color: SpottoColors.inkSoft),
+              ),
             ),
+          ],
           const SizedBox(width: 4),
           PressScale(
             scale: 0.9,

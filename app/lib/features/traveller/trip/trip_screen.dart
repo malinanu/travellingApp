@@ -17,7 +17,6 @@ import 'widgets/calendar_month.dart';
 import 'widgets/confirm_delete_dialog.dart';
 import 'widgets/inspiration_sheet.dart';
 import 'widgets/my_trips_sheet.dart';
-import 'widgets/new_trip_sheet.dart';
 import 'widgets/stop_card.dart';
 import 'widgets/trip_common.dart';
 import 'widgets/trip_share_sheet.dart';
@@ -32,7 +31,6 @@ class TripScreen extends ConsumerStatefulWidget {
 class _TripScreenState extends ConsumerState<TripScreen> {
   int _dayIx = 0;
   bool _dayView = false;
-  bool _builderMode = false;
   late DateTime _calMonth;
 
   @override
@@ -52,6 +50,51 @@ class _TripScreenState extends ConsumerState<TripScreen> {
   Future<void> _removeStop(TripStop stop, String name) async {
     final ok = await showConfirmDeleteDialog(context, name, tripWho(stop.by));
     if (ok) ref.read(tripProvider.notifier).removeStop(_dayIx, stop.id);
+  }
+
+  void _showMoveToDaySheet(int stopIx) {
+    final trip = ref.read(tripProvider);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Move to day',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: SpottoColors.ink)),
+            const SizedBox(height: 8),
+            for (int d = 0; d < trip.days.length; d++)
+              if (d != _dayIx)
+                PressScale(
+                  scale: 0.98,
+                  onTap: () {
+                    Navigator.pop(context);
+                    ref.read(tripProvider.notifier).moveStopBetweenDays(
+                        _dayIx, stopIx, d, trip.days[d].stops.length);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.calendar_today_rounded, size: 16, color: SpottoColors.accent),
+                        const SizedBox(width: 10),
+                        Text('Day ${d + 1} — ${DateFormat('MMM d').format(tripDayDate(trip.startDate, d))}',
+                            style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                  ),
+                ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -107,8 +150,6 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                           ],
                         ),
                       ),
-                      _builderButton(),
-                      const SizedBox(width: 8),
                       _myTripsButton(ref),
                       const SizedBox(width: 8),
                       _inspirationButton(trip),
@@ -120,125 +161,11 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                 ],
               ),
             ),
-            Expanded(child: _builderMode ? _builderBody(trip) : (_dayView ? _dayBody(stops) : _calendarBody(trip))),
-            if (_dayView && !_builderMode && stops.isNotEmpty) _daySummary(text, stops),
+            Expanded(child: _dayView ? _dayBody(stops) : _calendarBody(trip)),
+            if (_dayView && stops.isNotEmpty) _daySummary(text, stops),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _builderButton() {
-    return PressScale(
-      scale: 0.92,
-      onTap: () => setState(() {
-        _builderMode = !_builderMode;
-      }),
-      child: Container(
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: _builderMode ? SpottoColors.accent : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(color: Color(0x1A103D3A), blurRadius: 10, offset: Offset(0, 2))
-          ],
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.list_alt_rounded, size: 16, color: _builderMode ? Colors.white : SpottoColors.accent),
-            const SizedBox(width: 6),
-            Text(
-              'Builder',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _builderMode ? Colors.white : SpottoColors.ink),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _builderBody(Trip trip) {
-    final items = <Map<String, dynamic>>[];
-    for (int d = 0; d < trip.days.length; d++) {
-      items.add({'type': 'header', 'dayIx': d});
-      for (int s = 0; s < trip.days[d].stops.length; s++) {
-        items.add({'type': 'stop', 'dayIx': d, 'stopIx': s, 'stop': trip.days[d].stops[s]});
-      }
-    }
-
-    return ReorderableListView.builder(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-      buildDefaultDragHandles: false,
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        if (item['type'] == 'header') {
-          final d = item['dayIx'] as int;
-          final date = tripDayDate(trip.startDate, d);
-          return Container(
-            key: ValueKey('header_$d'),
-            padding: const EdgeInsets.only(top: 24, bottom: 12),
-            child: Text(
-              'Day ${d + 1} — ${DateFormat('MMM d').format(date)}',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: SpottoColors.ink),
-            ),
-          );
-        } else {
-          final stop = item['stop'] as TripStop;
-          final place = tripPlace(stop);
-          if (place == null) return Container(key: ValueKey('empty_$index'));
-          
-          return ReorderableDragStartListener(
-            key: ValueKey('stop_${stop.id}'),
-            index: index,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: StopCard(
-                stop: stop,
-                place: place,
-                first: false,
-                last: false,
-                by: tripWho(stop.by),
-                builderMode: true,
-                onTime: (t) => ref.read(tripProvider.notifier).setStopTime(item['dayIx'] as int, stop.id, t),
-                onUp: () {},
-                onDown: () {},
-                onRemove: () => _removeStop(stop, place.name),
-              ),
-            ),
-          );
-        }
-      },
-      onReorder: (oldIndex, newIndex) {
-        if (oldIndex < newIndex) newIndex -= 1;
-        
-        final item = items[oldIndex];
-        if (item['type'] == 'header') return; 
-        
-        final simulated = List.of(items);
-        simulated.removeAt(oldIndex);
-        
-        int destDayIx = 0;
-        int destStopIx = 0;
-        
-        for (int i = 0; i < newIndex; i++) {
-          final destItem = simulated[i];
-          if (destItem['type'] == 'header') {
-            destDayIx = destItem['dayIx'] as int;
-            destStopIx = 0;
-          } else {
-            destStopIx++;
-          }
-        }
-        
-        ref.read(tripProvider.notifier).moveStopBetweenDays(
-          item['dayIx'] as int,
-          item['stopIx'] as int,
-          destDayIx,
-          destStopIx,
-        );
-      },
     );
   }
 
@@ -246,7 +173,14 @@ class _TripScreenState extends ConsumerState<TripScreen> {
     final allTrips = ref.watch(savedTripsProvider);
     return PressScale(
       scale: 0.95,
-      onTap: () => showMyTripsSheet(context, ref),
+      onTap: () => showMyTripsSheet(
+        context,
+        ref,
+        onTripOpened: () => setState(() {
+          _dayIx = 0;
+          _dayView = true;
+        }),
+      ),
       child: Container(
         height: 40,
         padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -582,6 +516,9 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                   onUp: () => ref.read(tripProvider.notifier).moveStop(_dayIx, i, -1),
                   onDown: () => ref.read(tripProvider.notifier).moveStop(_dayIx, i, 1),
                   onRemove: () => _removeStop(s, place.name),
+                  onMoveToDay: ref.read(tripProvider).days.length > 1
+                      ? () => _showMoveToDaySheet(i)
+                      : null,
                   onOpen: place.spottoId == null
                       ? null
                       : () {

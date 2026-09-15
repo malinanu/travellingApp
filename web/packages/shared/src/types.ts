@@ -635,6 +635,16 @@ export interface AdminGuideMessage {
   createdAt: string;
 }
 
+/** One failed /guide/chat call — GET /admin/local-guide/errors. The
+ * traveller only ever sees a generic "unexpected error" message, so this is
+ * the real upstream failure reason (auth, quota, model access, etc.). */
+export interface AdminGuideErrorEntry {
+  conversationId: string;
+  travellerId: string;
+  errorMessage: string;
+  createdAt: string;
+}
+
 /** "12 min ago" style rendering for server timestamps. */
 export function timeAgo(iso: string | undefined): string {
   if (!iso) return '';

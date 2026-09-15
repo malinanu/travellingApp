@@ -397,9 +397,17 @@ final placesProvider = NotifierProvider<PlacesNotifier, List<Place>>(PlacesNotif
 // ── categories (dynamic from server) ──────────────────────────────
 
 class CategoriesNotifier extends Notifier<List<VendorCategory>> {
+  Timer? _timer;
+
   @override
   List<VendorCategory> build() {
+    ref.onDispose(() => _timer?.cancel());
     Future.microtask(refresh);
+    // Also re-poll periodically so an admin-added category (or icon change)
+    // reaches any already-running app instance within 24h, not just on the
+    // next cold start.
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(hours: 24), (_) => refresh());
     final cached = ref.read(localStoreProvider).getJsonList(StoreKeys.categories);
     if (cached != null && cached.isNotEmpty) {
       final categories = <VendorCategory>[];
@@ -1287,6 +1295,18 @@ final placeDetailsProvider = FutureProvider.family<Place, String>((ref, placeId)
   final res = await ref.read(apiProvider).dio.get('/places/$placeId');
   return Place.fromJson((res.data as Map).cast<String, dynamic>());
 });
+
+/// Pulls the real places mentioned in an Instagram inspiration link's
+/// caption — see POST /trip/inspiration/extract-places and
+/// [ExtractedPlace]. Throws on network/server failure; caller shows a
+/// friendly "couldn't read that link" state.
+Future<List<ExtractedPlace>> extractPlacesFromLink(WidgetRef ref, String url) async {
+  final res = await ref.read(apiProvider).dio.post('/trip/inspiration/extract-places', data: {'url': url});
+  final list = (res.data as Map)['places'] as List? ?? [];
+  return list
+      .map((e) => ExtractedPlace.fromJson((e as Map).cast<String, dynamic>()))
+      .toList();
+}
 
 /// Submits (or edits) the current traveller's review for a place, then
 /// refreshes [placeReviewsProvider] for that place.

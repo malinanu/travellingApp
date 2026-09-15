@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Icons from 'lucide-react';
 import { useState } from 'react';
-import { VendorCategory, VENDOR_SEGMENTS, VendorSegment } from '@spotto/shared';
+import { VendorCategory, VENDOR_SEGMENTS, VendorSegment, SUPPORTED_ICON_NAMES } from '@spotto/shared';
 import Shell from '../../components/shell';
 import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
@@ -122,7 +122,9 @@ export default function CategoriesPage() {
 
 function CategoryModal({ category, onClose, onSaved }: { category?: VendorCategory; onClose: () => void; onSaved: () => void }) {
   const isNew = !category;
-  
+  const [icon, setIcon] = useState(category?.icon || SUPPORTED_ICON_NAMES[0]);
+  const [iconSearch, setIconSearch] = useState('');
+
   const mutation = useMutation({
     mutationFn: (data: VendorCategory) => {
       if (isNew) {
@@ -133,6 +135,10 @@ function CategoryModal({ category, onClose, onSaved }: { category?: VendorCatego
     },
     onSuccess: () => onSaved(),
   });
+
+  const filteredIcons = SUPPORTED_ICON_NAMES.filter(name =>
+    name.toLowerCase().includes(iconSearch.trim().toLowerCase())
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -153,7 +159,7 @@ function CategoryModal({ category, onClose, onSaved }: { category?: VendorCatego
               id: fd.get('id') as string,
               label: fd.get('label') as string,
               segment: fd.get('segment') as VendorSegment,
-              icon: fd.get('icon') as string,
+              icon,
               bookingType: (fd.get('bookingType') as any) || undefined,
             });
           }}
@@ -194,9 +200,49 @@ function CategoryModal({ category, onClose, onSaved }: { category?: VendorCatego
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-muted uppercase tracking-wide">Lucide Icon Name</label>
-            <input name="icon" required defaultValue={category?.icon} className="input" placeholder="e.g. Coffee" />
-            <span className="text-[11px] text-muted-foreground">Must be a valid React-Lucide icon name (PascalCase).</span>
+            <label className="text-[12px] font-bold text-muted uppercase tracking-wide">Icon</label>
+            <div className="flex items-center gap-2 p-2 rounded border border-border bg-background">
+              <div className="w-9 h-9 rounded-full bg-accent/30 flex items-center justify-center shrink-0">
+                {(() => {
+                  const IconComp = (Icons as any)[icon] || Icons.CircleDashed;
+                  return <IconComp size={18} className="text-primary" />;
+                })()}
+              </div>
+              <span className="text-[13px] font-semibold">{icon}</span>
+            </div>
+            <input
+              value={iconSearch}
+              onChange={e => setIconSearch(e.target.value)}
+              className="input"
+              placeholder="Search icons…"
+            />
+            <div className="grid grid-cols-6 gap-1.5 max-h-40 overflow-y-auto p-1 border border-border rounded">
+              {filteredIcons.map(name => {
+                const IconComp = (Icons as any)[name] || Icons.CircleDashed;
+                const selected = name === icon;
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    title={name}
+                    onClick={() => setIcon(name)}
+                    className={`w-9 h-9 rounded flex items-center justify-center border transition-colors ${
+                      selected
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-transparent text-muted hover:bg-accent hover:text-primary'
+                    }`}
+                  >
+                    <IconComp size={16} />
+                  </button>
+                );
+              })}
+              {filteredIcons.length === 0 && (
+                <div className="col-span-6 text-[12px] text-muted p-2">No matching icons.</div>
+              )}
+            </div>
+            <span className="text-[11px] text-muted-foreground">
+              Only icons the mobile app already knows how to render are selectable, so new categories always show up correctly.
+            </span>
           </div>
 
           <div className="flex flex-col gap-1.5">

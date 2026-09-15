@@ -11,16 +11,17 @@ import '../../../../data/mock/trip_catalog.dart';
 import '../../../../data/repositories/repositories.dart';
 import 'new_trip_sheet.dart';
 
-Future<void> showMyTripsSheet(BuildContext context, WidgetRef ref) {
+Future<void> showMyTripsSheet(BuildContext context, WidgetRef ref, {VoidCallback? onTripOpened}) {
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    builder: (_) => const _MyTripsSheet(),
+    builder: (_) => _MyTripsSheet(onTripOpened: onTripOpened),
   );
 }
 
 class _MyTripsSheet extends ConsumerWidget {
-  const _MyTripsSheet();
+  final VoidCallback? onTripOpened;
+  const _MyTripsSheet({this.onTripOpened});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -81,6 +82,7 @@ class _MyTripsSheet extends ConsumerWidget {
                           ref.read(tripProvider.notifier).switchActiveTrip(trip.code);
                         }
                         Navigator.pop(context);
+                        onTripOpened?.call();
                       },
                       child: Container(
                         padding: const EdgeInsets.all(16),

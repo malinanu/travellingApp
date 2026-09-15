@@ -45,6 +45,20 @@ func (s *Server) handleAdminGuideUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, users)
 }
 
+// handleAdminGuideErrors returns the most recent failed /guide/chat calls
+// with their real error_message — the traveller only ever sees a generic
+// "unexpected error" string, so this is the diagnostic surface for actually
+// finding out why (auth, quota, model access, etc.) without shell/DB access.
+func (s *Server) handleAdminGuideErrors(w http.ResponseWriter, r *http.Request) {
+	const limit = 30
+	errs, err := s.Store.RecentGuideErrors(r.Context(), limit)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, errs)
+}
+
 // handleAdminGuideConversationDetail returns one conversation's full
 // transcript â€” an admin can inspect any conversation, unlike the
 // traveller-facing endpoint which enforces ownership.

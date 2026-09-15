@@ -334,7 +334,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           userInterests.any((style) => p.styles.contains(style));
 
       final color = SpottoColors.pinTones[p.color] ?? SpottoColors.accent;
-      final icon = categoryIcon(p.categoryId);
+      var icon = categoryIcon(p.categoryId);
+      if (icon == Icons.place && p.icon.isNotEmpty) {
+        icon = spottoIcon(p.icon);
+      }
 
       final isSelected = _selectedPlaceId == p.id;
       final showBanner = isSelected ||

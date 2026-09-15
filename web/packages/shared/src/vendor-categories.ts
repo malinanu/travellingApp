@@ -66,7 +66,7 @@ export const VENDOR_CATEGORIES: VendorCategory[] = [
   { id: 'hotel', label: 'Hotel', segment: 'hospitality', icon: 'Building2', relevantVibeDimensions: ['crowded'], bookingType: 'stay' },
   { id: 'hostel', label: 'Hostel / Guesthouse', segment: 'hospitality', icon: 'BedSingle', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'stay' },
   { id: 'resort', label: 'Resort', segment: 'hospitality', icon: 'Palmtree', relevantVibeDimensions: ['crowded'], bookingType: 'stay' },
-  { id: 'beach-club', label: 'Beach Club', segment: 'hospitality', icon: 'Waves', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
+  { id: 'beach-club', label: 'Beach Club', segment: 'hospitality', icon: 'Umbrella', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
 
   // Activity and experience providers — surf/dive schools, yoga, tours.
   { id: 'surf-school', label: 'Surf School', segment: 'activity', icon: 'Waves', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
@@ -75,7 +75,7 @@ export const VENDOR_CATEGORIES: VendorCategory[] = [
   { id: 'spa-wellness', label: 'Spa & Wellness', segment: 'activity', icon: 'Sparkles', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'session' },
   { id: 'cooking-class', label: 'Cooking Class', segment: 'activity', icon: 'ChefHat', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
   { id: 'pottery-workshop', label: 'Pottery Workshop', segment: 'activity', icon: 'Hammer', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
-  { id: 'batik-atelier', label: 'Batik / Textile Atelier', segment: 'activity', icon: 'Shirt', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'batik-atelier', label: 'Batik / Textile Atelier', segment: 'activity', icon: 'Brush', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
   { id: 'spice-trail', label: 'Spice Trail', segment: 'activity', icon: 'Leaf', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
   { id: 'safari-wildlife', label: 'Safari & Wildlife', segment: 'activity', icon: 'PawPrint', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
   { id: 'boat-trip', label: 'Boat Trip', segment: 'activity', icon: 'Ship', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
@@ -85,18 +85,18 @@ export const VENDOR_CATEGORIES: VendorCategory[] = [
   { id: 'surf-rental', label: 'Surfboard Rental', segment: 'activity', icon: 'Waves', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
   { id: 'bike-rental', label: 'Bicycle Rental', segment: 'activity', icon: 'Bike', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
   { id: 'scooter-rental', label: 'Scooter Rental', segment: 'activity', icon: 'Bike', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
-  { id: 'kayak-rental', label: 'Kayak / Canoe Rental', segment: 'activity', icon: 'Anchor', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
+  { id: 'kayak-rental', label: 'Kayak / Canoe Rental', segment: 'activity', icon: 'Sailboat', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
 
   // Independent local providers — guides, artisans, tailors, solo hosts.
   { id: 'tour-guide', label: 'Tour / Walking Guide', segment: 'independent', icon: 'Compass', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
   { id: 'artisan-shop', label: 'Local Artisan / Craft Shop', segment: 'independent', icon: 'Palette', relevantVibeDimensions: ['crowded'] },
-  { id: 'tailor-clothing', label: 'Tailor / Local Clothing', segment: 'independent', icon: 'Shirt', relevantVibeDimensions: ['crowded'] },
+  { id: 'tailor-clothing', label: 'Tailor / Local Clothing', segment: 'independent', icon: 'Ruler', relevantVibeDimensions: ['crowded'] },
   { id: 'experience-host', label: 'Independent Experience Host', segment: 'independent', icon: 'Backpack', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
 
   // Event promoters — festivals, parties, competitions, community events.
   { id: 'festival-event', label: 'Festival', segment: 'events', icon: 'PartyPopper', relevantVibeDimensions: ['loud', 'crowded'] },
   { id: 'party-promoter', label: 'Party Promotion', segment: 'events', icon: 'PartyPopper', relevantVibeDimensions: ['loud', 'crowded'] },
-  { id: 'surf-competition', label: 'Surf Competition', segment: 'events', icon: 'Waves', relevantVibeDimensions: ['loud', 'crowded'] },
+  { id: 'surf-competition', label: 'Surf Competition', segment: 'events', icon: 'Medal', relevantVibeDimensions: ['loud', 'crowded'] },
   { id: 'community-charity-event', label: 'Community / Charity Event', segment: 'events', icon: 'HeartHandshake', relevantVibeDimensions: ['crowded'] },
   { id: 'music-night', label: 'Music Night', segment: 'events', icon: 'Music', relevantVibeDimensions: ['loud', 'crowded'] },
 

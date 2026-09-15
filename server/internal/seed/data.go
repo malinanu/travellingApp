@@ -17,7 +17,7 @@ var InitialCategories = []domain.VendorCategory{
 	// Things to do
 	{ID: "parks", Label: "Parks", Segment: domain.SegmentThingsToDo, Icon: "TreePine", RelevantVibeDimensions: []string{"crowded"}},
 	{ID: "gyms", Label: "Gyms", Segment: domain.SegmentThingsToDo, Icon: "Dumbbell", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "art", Label: "Art", Segment: domain.SegmentThingsToDo, Icon: "Palette", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "art", Label: "Art", Segment: domain.SegmentThingsToDo, Icon: "Image", RelevantVibeDimensions: []string{"crowded"}},
 	{ID: "attractions", Label: "Attractions", Segment: domain.SegmentThingsToDo, Icon: "Ticket", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
 	{ID: "nightlife", Label: "Nightlife", Segment: domain.SegmentThingsToDo, Icon: "Music", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
 	{ID: "live-music", Label: "Live music", Segment: domain.SegmentThingsToDo, Icon: "Mic", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
@@ -27,14 +27,14 @@ var InitialCategories = []domain.VendorCategory{
 
 	// Shopping
 	{ID: "groceries", Label: "Groceries", Segment: domain.SegmentShopping, Icon: "ShoppingCart", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "beauty-supplies", Label: "Beauty supplies", Segment: domain.SegmentShopping, Icon: "Sparkles", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "beauty-supplies", Label: "Beauty supplies", Segment: domain.SegmentShopping, Icon: "Gem", RelevantVibeDimensions: []string{"crowded"}},
 	{ID: "car-dealers", Label: "Car dealers", Segment: domain.SegmentShopping, Icon: "Car", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "home-garden", Label: "Home & garden", Segment: domain.SegmentShopping, Icon: "Flower2", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "home-garden", Label: "Home & garden", Segment: domain.SegmentShopping, Icon: "Home", RelevantVibeDimensions: []string{"crowded"}},
 	{ID: "apparel", Label: "Apparel", Segment: domain.SegmentShopping, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}},
 	{ID: "shopping-centers", Label: "Shopping centers", Segment: domain.SegmentShopping, Icon: "Store", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "electronics", Label: "Electronics", Segment: domain.SegmentShopping, Icon: "Laptop", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "sporting-goods", Label: "Sporting goods", Segment: domain.SegmentShopping, Icon: "Bike", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "convenience-stores", Label: "Convenience stores", Segment: domain.SegmentShopping, Icon: "Store", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "electronics", Label: "Electronics", Segment: domain.SegmentShopping, Icon: "Tv", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "sporting-goods", Label: "Sporting goods", Segment: domain.SegmentShopping, Icon: "Trophy", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "convenience-stores", Label: "Convenience stores", Segment: domain.SegmentShopping, Icon: "Package", RelevantVibeDimensions: []string{"crowded"}},
 
 	// Services
 	{ID: "hotels", Label: "Hotels", Segment: domain.SegmentServices, Icon: "Building2", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeStay},
@@ -42,7 +42,7 @@ var InitialCategories = []domain.VendorCategory{
 	{ID: "beauty-salons", Label: "Beauty salons", Segment: domain.SegmentServices, Icon: "Scissors", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
 	{ID: "car-rental", Label: "Car rental", Segment: domain.SegmentServices, Icon: "Key", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeRental},
 	{ID: "car-wash", Label: "Car wash", Segment: domain.SegmentServices, Icon: "Droplets", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "dry-cleaning", Label: "Dry cleaning", Segment: domain.SegmentServices, Icon: "Shirt", RelevantVibeDimensions: []string{"crowded"}},
+	{ID: "dry-cleaning", Label: "Dry cleaning", Segment: domain.SegmentServices, Icon: "WashingMachine", RelevantVibeDimensions: []string{"crowded"}},
 	{ID: "charging-stations", Label: "Charging stations", Segment: domain.SegmentServices, Icon: "Zap", RelevantVibeDimensions: []string{"crowded"}},
 	{ID: "gas", Label: "Gas", Segment: domain.SegmentServices, Icon: "Fuel", RelevantVibeDimensions: []string{"crowded"}},
 	{ID: "hospitals-clinics", Label: "Hospitals & clinics", Segment: domain.SegmentServices, Icon: "Stethoscope", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},

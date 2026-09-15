@@ -2523,6 +2523,32 @@ func (s *Store) GuideStats(ctx context.Context) (domain.GuideStats, error) {
 	return st, err
 }
 
+// RecentGuideErrors lists the most recent failed /guide/chat calls with
+// their real error_message, for the admin dashboard's "recent errors" panel
+// — the generic message the traveller sees never reveals what actually
+// went wrong upstream (auth, quota, model access, etc.).
+func (s *Store) RecentGuideErrors(ctx context.Context, limit int) ([]domain.GuideErrorEntry, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT conversation_id, traveller_id, error_message, created_at
+		FROM guide_requests
+		WHERE status = 'error'
+		ORDER BY created_at DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.GuideErrorEntry{}
+	for rows.Next() {
+		var e domain.GuideErrorEntry
+		if err := rows.Scan(&e.ConversationID, &e.TravellerID, &e.ErrorMessage, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // GuideToolUsage breaks down tool-call counts over the trailing 7 days —
 // the one place this needs an actual GROUP BY, since tool names live inside
 // a JSONB array column rather than a scalar one.

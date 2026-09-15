@@ -27,9 +27,34 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/gendata ./cmd/gendata
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/importsrilanka ./cmd/importsrilanka
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/seedcategories ./cmd/seedcategories
 
-FROM alpine:latest
-RUN apk add --no-cache ca-certificates && \
-    addgroup -S app && adduser -S app -G app
+# debian:bookworm-slim, not alpine — yt-dlp's Linux release binary is a
+# PyInstaller build with an embedded CPython linked against real glibc.
+# Alpine's musl libc can't run it even with the gcompat shim installed (it
+# gets far enough to extract the bundle, then fails relocating glibc-only
+# symbols like dladdr1) — this is a well-known yt-dlp-on-Alpine limitation,
+# not something a compat package fixes. yt-dlp fetches a public Instagram
+# reel/post's caption via `yt-dlp --dump-json --skip-download <url>` for the
+# Inspiration Board's "extract places" feature — see
+# internal/http/inspiration_extract.go. No official Instagram API exists for
+# this, so this is the best-effort fetch step ahead of Gemini place-matching.
+# Checksum-verified so a compromised/altered release asset can't silently
+# end up in the image. Fetched via the "latest" alias rather than a
+# version-tagged URL: GitHub's tag-specific asset URLs redirect to a
+# short-lived signed release-assets.githubusercontent.com link that this
+# environment's Docker build network couldn't reliably reach (consistent
+# 404s), while the /latest/download/ alias worked reliably — the checksum
+# pin still catches any drift (a newer "latest" release fails the build
+# loudly instead of silently shipping unverified bytes) so update
+# YTDLP_SHA256 (from that release's SHA2-256SUMS asset on GitHub) whenever
+# that happens.
+FROM debian:bookworm-slim
+ARG YTDLP_SHA256=58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && \
+    curl -fL --retry 3 --retry-delay 2 -o /usr/local/bin/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux" && \
+    echo "${YTDLP_SHA256}  /usr/local/bin/yt-dlp" | sha256sum -c - && \
+    chmod +x /usr/local/bin/yt-dlp && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -r app && useradd -r -g app app
 WORKDIR /app
 COPY --from=builder --chown=app:app /out/api /app/api
 COPY --from=builder --chown=app:app /out/seed /app/seed

@@ -14,6 +14,7 @@ import { useState } from 'react';
 import {
   timeAgo,
   type AdminGuideUserSummary, type AdminGuideMessage, type AdminGuideStatsResponse,
+  type AdminGuideErrorEntry,
 } from '@spotto/shared';
 import Shell from '../../components/shell';
 import { InlineErrorBanner } from '../../components/route-status';
@@ -28,6 +29,11 @@ export default function LocalGuidePage() {
   const { data: users = [], isError: usersError } = useQuery<AdminGuideUserSummary[]>({
     queryKey: ['admin-guide-users'],
     queryFn: () => api.get<AdminGuideUserSummary[]>('/admin/local-guide/users'),
+    refetchInterval: 30000,
+  });
+  const { data: recentErrors = [] } = useQuery<AdminGuideErrorEntry[]>({
+    queryKey: ['admin-guide-errors'],
+    queryFn: () => api.get<AdminGuideErrorEntry[]>('/admin/local-guide/errors'),
     refetchInterval: 30000,
   });
 
@@ -116,6 +122,22 @@ export default function LocalGuidePage() {
               <span className="text-[12px] font-semibold text-muted w-10 text-right">{t.count}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {recentErrors.length > 0 && (
+        <div className="panel px-4 py-3.5 mb-4">
+          <p className="text-[11.5px] font-bold text-muted uppercase tracking-wide mb-2 flex items-center gap-1.5">
+            <XCircle size={12} className="text-red-500" /> Recent errors — real upstream failure reason
+          </p>
+          <div className="max-h-48 overflow-y-auto space-y-1.5">
+            {recentErrors.map((e, i) => (
+              <div key={i} className="flex items-start gap-2 text-[12px]">
+                <span className="font-semibold text-muted shrink-0 w-24">{timeAgo(e.createdAt)}</span>
+                <span className="font-mono flex-1 break-words" style={{ color: '#e11d48' }}>{e.errorMessage || '(no message recorded)'}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/theme/palette.dart';
 import '../../../../core/widgets/press_scale.dart';
+import '../../../../core/widgets/spotto_icons.dart';
 import '../../../../data/mock/trip_catalog.dart';
 import '../../../../data/repositories/repositories.dart';
 
@@ -429,6 +430,10 @@ class _InspirationCard extends ConsumerWidget {
               ),
             ],
           ),
+          if (link.platform == 'instagram') ...[
+            const SizedBox(height: 8),
+            _ExtractPlacesButton(url: link.url),
+          ],
           if (link.note.isNotEmpty) ...[
             const SizedBox(height: 8),
             GestureDetector(
@@ -475,6 +480,220 @@ class _InspirationCard extends ConsumerWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─────── extract places ───────────────────────────────────────────────────
+
+class _ExtractPlacesButton extends ConsumerStatefulWidget {
+  final String url;
+  const _ExtractPlacesButton({required this.url});
+
+  @override
+  ConsumerState<_ExtractPlacesButton> createState() => _ExtractPlacesButtonState();
+}
+
+class _ExtractPlacesButtonState extends ConsumerState<_ExtractPlacesButton> {
+  bool _loading = false;
+
+  Future<void> _extract() async {
+    setState(() => _loading = true);
+    try {
+      final places = await extractPlacesFromLink(ref, widget.url);
+      if (!mounted) return;
+      if (places.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't find any places mentioned in that link.")),
+        );
+      } else {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => _ExtractedPlacesSheet(places: places),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't read that link — it may be private or unavailable.")),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PressScale(
+      scale: 0.97,
+      onTap: _loading ? null : _extract,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(
+          color: SpottoColors.accentTint,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_loading)
+              const SizedBox(
+                width: 13,
+                height: 13,
+                child: CircularProgressIndicator(strokeWidth: 2, color: SpottoColors.accent),
+              )
+            else
+              const Icon(Icons.auto_awesome_rounded, size: 14, color: SpottoColors.accent),
+            const SizedBox(width: 6),
+            Text(_loading ? 'Reading link…' : 'Extract places',
+                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: SpottoColors.accent)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExtractedPlacesSheet extends ConsumerWidget {
+  final List<ExtractedPlace> places;
+  const _ExtractedPlacesSheet({required this.places});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final text = Theme.of(context).textTheme;
+    return DraggableScrollableSheet(
+      initialChildSize: 0.55,
+      minChildSize: 0.3,
+      maxChildSize: 0.85,
+      expand: false,
+      builder: (_, scrollCtrl) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: SpottoColors.muted.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Places found in this link',
+                    style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              ),
+            ),
+            Expanded(
+              child: ListView.separated(
+                controller: scrollCtrl,
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                itemCount: places.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (_, i) => _ExtractedPlaceRow(place: places[i]),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExtractedPlaceRow extends ConsumerWidget {
+  final ExtractedPlace place;
+  const _ExtractedPlaceRow({required this.place});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final favorites = place.matched ? ref.watch(favoritesProvider) : const <String>{};
+    final isFavorite = place.placeId != null && favorites.contains(place.placeId);
+
+    void addToTrip() {
+      final trip = ref.read(tripProvider);
+      if (trip.days.isEmpty) return;
+      final catalogPlace = place.matched
+          ? ref.read(placesProvider).where((p) => p.id == place.placeId).firstOrNull
+          : null;
+      if (catalogPlace != null) {
+        ref.read(tripProvider.notifier).addPlaceStop(0, catalogPlace);
+      } else {
+        ref.read(tripProvider.notifier).addCustomStop(0, place.name);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Added "${place.name}" to Day 1 — move it to another day from the Trip tab.')),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: SpottoColors.line),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: const BoxDecoration(
+              color: SpottoColors.accentTint,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              place.category != null ? spottoIcon(place.category!) : Icons.place_outlined,
+              size: 18,
+              color: SpottoColors.accent,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(place.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                Text(place.matched ? 'In Spotto' : "Not in Spotto's catalog yet",
+                    style: const TextStyle(fontSize: 11, color: SpottoColors.muted)),
+              ],
+            ),
+          ),
+          if (place.matched)
+            PressScale(
+              scale: 0.9,
+              onTap: () => ref.read(favoritesProvider.notifier).toggle(place.placeId!),
+              child: Icon(isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  size: 20, color: isFavorite ? Colors.pinkAccent : SpottoColors.muted),
+            ),
+          const SizedBox(width: 8),
+          PressScale(
+            scale: 0.92,
+            onTap: addToTrip,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: SpottoColors.accent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text('Add to trip',
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white)),
+            ),
+          ),
         ],
       ),
     );
