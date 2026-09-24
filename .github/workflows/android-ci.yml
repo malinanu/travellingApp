@@ -44,4 +44,5 @@ jobs:
         with:
           name: spotto-android-apk
           path: app/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 3
           if-no-files-found: error

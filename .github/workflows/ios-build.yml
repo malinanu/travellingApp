@@ -3,6 +3,7 @@ name: iOS Build (unsigned, for sideload testing)
 on:
   push:
     branches: [main]
+  workflow_dispatch:
   pull_request:
     branches: [main]
 
@@ -49,4 +50,5 @@ jobs:
         with:
           name: ios-testing-ipa
           path: app/build/ios/iphoneos/app-release.ipa
+          retention-days: 3
           if-no-files-found: error
