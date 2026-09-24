@@ -20,6 +20,24 @@ const (
 	SegmentFuture       VendorSegment = "future"
 )
 
+// PinColorForSegment maps a category's segment to a Place.color pin-tone
+// key. Mirrors app/lib/core/theme/palette.dart's pinTones keys exactly —
+// keep both in sync if either changes.
+func PinColorForSegment(seg VendorSegment) string {
+	switch seg {
+	case SegmentFoodAndDrink:
+		return "coral"
+	case SegmentThingsToDo:
+		return "sun"
+	case SegmentShopping:
+		return "plum"
+	case SegmentServices:
+		return "clay"
+	default: // SegmentBrand, SegmentFuture, unknown
+		return "teal"
+	}
+}
+
 // VendorCategory is one selectable business type within a segment. Icon is a
 // Lucide icon name (string, not a component — this package has no UI
 // dependency; web/vendor and the Flutter app each resolve it locally).

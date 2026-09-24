@@ -4,10 +4,11 @@
 // category's icon *name* to a real lucide-react component, since the
 // shared package has no UI-framework dependency.
 import {
-  Anchor, Backpack, BedSingle, Building2, ChefHat, Coffee, Compass, Cookie,
-  Flower2, GlassWater, Hammer, HeartHandshake, Laptop, Leaf, Martini, Music,
-  Palette, Palmtree, PartyPopper, PawPrint, Plane, Ship, Shirt, Soup,
-  Sparkles, UtensilsCrossed, Waves, Wine, LucideIcon,
+  Banknote, Building2, Car, Coffee, Compass, Droplets, Dumbbell, Film, Fuel,
+  Gem, GlassWater, Home, Image, Key, Landmark, Library, Mail, Martini, Mic,
+  Music, Package, Pill, Plane, Scissors, Shirt, ShoppingBag, ShoppingCart,
+  Sparkles, SquareParking, Stethoscope, Store, Ticket, TreePine, Trophy,
+  Truck, Tv, UtensilsCrossed, WashingMachine, Wine, Zap, LucideIcon,
 } from 'lucide-react';
 import {
   VendorCategory, VENDOR_SEGMENTS, VENDOR_CATEGORIES,
@@ -21,10 +22,11 @@ export { VENDOR_SEGMENTS, VENDOR_CATEGORIES, categoryById, categoriesBySegment, 
 export const BUSINESS_CATEGORIES = onboardableCategories();
 
 const ICON_COMPONENTS: Record<string, LucideIcon> = {
-  Anchor, Backpack, BedSingle, Building2, ChefHat, Coffee, Compass, Cookie,
-  Flower2, GlassWater, Hammer, HeartHandshake, Laptop, Leaf, Martini, Music,
-  Palette, Palmtree, PartyPopper, PawPrint, Plane, Ship, Shirt, Soup,
-  Sparkles, UtensilsCrossed, Waves, Wine,
+  Banknote, Building2, Car, Coffee, Droplets, Dumbbell, Film, Fuel, Gem,
+  GlassWater, Home, Image, Key, Landmark, Library, Mail, Martini, Mic,
+  Music, Package, Pill, Plane, Scissors, Shirt, ShoppingBag, ShoppingCart,
+  Sparkles, SquareParking, Stethoscope, Store, Ticket, TreePine, Trophy,
+  Truck, Tv, UtensilsCrossed, WashingMachine, Wine, Zap,
 };
 
 /** Resolves a category's icon name to its lucide-react component, falling

@@ -1,21 +1,25 @@
 // Canonical vendor-category taxonomy — the single source of truth for both
-// web/vendor and web/admin, mirroring the business plan's 6 stakeholder
-// segments. Mirrors server/internal/domain/vendor_category.go and
+// web/vendor and web/admin, mirroring server/internal/seed/data.go (the
+// real, DB-backed taxonomy served at GET /categories) and
 // app/lib/data/vendor_categories.dart exactly (id/label/segment/icon name/
-// relevantVibeDimensions) — keep all three in sync if any change.
+// relevantVibeDimensions/bookingType) — keep all three in sync if any
+// change. This file previously held an entirely different, disjoint
+// taxonomy (hospitality/activity/independent/events/brand ids like
+// "cafe"/"coworking-cafe") that vendor onboarding and admin vendor editing
+// wrote into vendors.category — a value the app's own category lookup
+// (populated at runtime from GET /categories) could never resolve, so
+// those vendors' map pins always fell back to the generic pin. Replaced
+// 2026-09-23 to close that gap.
 //
 // This package has no UI-framework dependency, so `icon` is a Lucide icon
 // *name* (string), not a component — each app resolves it locally
 // (web/vendor/lib/business-categories.ts owns the lucide-react import).
-//
-// Replaces what used to be 5 independently hardcoded, drifting category
-// lists across this codebase.
 
 export type VendorSegment =
-  | 'hospitality'
-  | 'activity'
-  | 'independent'
-  | 'events'
+  | 'food_and_drink'
+  | 'things_to_do'
+  | 'shopping'
+  | 'services'
   | 'brand'
   | 'future';
 
@@ -28,12 +32,25 @@ export interface VendorSegmentInfo {
 // deliberately excluded — affiliate-only per the business plan, not an
 // active onboarding type. See onboardableCategories().
 export const VENDOR_SEGMENTS: VendorSegmentInfo[] = [
-  { id: 'hospitality', label: 'Hospitality' },
-  { id: 'activity', label: 'Activities & Experiences' },
-  { id: 'independent', label: 'Independent & Local' },
-  { id: 'events', label: 'Events' },
+  { id: 'food_and_drink', label: 'Food & Drink' },
+  { id: 'things_to_do', label: 'Things to do' },
+  { id: 'shopping', label: 'Shopping' },
+  { id: 'services', label: 'Services' },
   { id: 'brand', label: 'Brand Partner' },
 ];
+
+/** Place.color pin-tone key per segment — mirrors
+ * server/internal/domain/vendor_category.go's PinColorForSegment and
+ * app/lib/core/theme/palette.dart's pinTones exactly. Keep all three in
+ * sync if either changes. */
+export const PIN_TONE_COLORS: Record<VendorSegment, string> = {
+  food_and_drink: '#F0682F', // coral
+  things_to_do: '#EAA200', // sun
+  shopping: '#7C5CFF', // plum
+  services: '#C2683F', // clay
+  brand: '#0B6F86', // teal
+  future: '#0B6F86', // teal
+};
 
 export type BookingType = 'session' | 'table' | 'stay' | 'rental';
 
@@ -55,52 +72,50 @@ export interface VendorCategory {
 }
 
 export const VENDOR_CATEGORIES: VendorCategory[] = [
-  // Hospitality vendors — cafes, restaurants, bars, hotels, beach clubs.
-  { id: 'cafe', label: 'Café', segment: 'hospitality', icon: 'Coffee', relevantVibeDimensions: ['productive', 'loud', 'crowded'], bookingType: 'table' },
-  { id: 'coworking-cafe', label: 'Coworking Café', segment: 'hospitality', icon: 'Laptop', relevantVibeDimensions: ['productive', 'loud', 'crowded'], bookingType: 'table' },
-  { id: 'restaurant', label: 'Restaurant', segment: 'hospitality', icon: 'UtensilsCrossed', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
-  { id: 'street-food', label: 'Street Food', segment: 'hospitality', icon: 'Soup', relevantVibeDimensions: ['crowded'] },
-  { id: 'bakery', label: 'Bakery', segment: 'hospitality', icon: 'Cookie', relevantVibeDimensions: ['crowded'] },
-  { id: 'bar-pub', label: 'Bar & Pub', segment: 'hospitality', icon: 'Martini', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
-  { id: 'club', label: 'Club / Nightlife', segment: 'hospitality', icon: 'Music', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
-  { id: 'hotel', label: 'Hotel', segment: 'hospitality', icon: 'Building2', relevantVibeDimensions: ['crowded'], bookingType: 'stay' },
-  { id: 'hostel', label: 'Hostel / Guesthouse', segment: 'hospitality', icon: 'BedSingle', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'stay' },
-  { id: 'resort', label: 'Resort', segment: 'hospitality', icon: 'Palmtree', relevantVibeDimensions: ['crowded'], bookingType: 'stay' },
-  { id: 'beach-club', label: 'Beach Club', segment: 'hospitality', icon: 'Umbrella', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
+  // Food & Drink
+  { id: 'restaurants', label: 'Restaurants', segment: 'food_and_drink', icon: 'UtensilsCrossed', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
+  { id: 'takeout', label: 'Takeout', segment: 'food_and_drink', icon: 'ShoppingBag', relevantVibeDimensions: ['crowded'] },
+  { id: 'bars', label: 'Bars', segment: 'food_and_drink', icon: 'Martini', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
+  { id: 'delivery', label: 'Delivery', segment: 'food_and_drink', icon: 'Truck', relevantVibeDimensions: [] },
+  { id: 'coffee', label: 'Coffee', segment: 'food_and_drink', icon: 'Coffee', relevantVibeDimensions: ['productive', 'loud', 'crowded'], bookingType: 'table' },
 
-  // Activity and experience providers — surf/dive schools, yoga, tours.
-  { id: 'surf-school', label: 'Surf School', segment: 'activity', icon: 'Waves', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
-  { id: 'dive-school', label: 'Diving / Dive Shop', segment: 'activity', icon: 'Anchor', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
-  { id: 'yoga-studio', label: 'Yoga Studio', segment: 'activity', icon: 'Flower2', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'session' },
-  { id: 'spa-wellness', label: 'Spa & Wellness', segment: 'activity', icon: 'Sparkles', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'session' },
-  { id: 'cooking-class', label: 'Cooking Class', segment: 'activity', icon: 'ChefHat', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
-  { id: 'pottery-workshop', label: 'Pottery Workshop', segment: 'activity', icon: 'Hammer', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
-  { id: 'batik-atelier', label: 'Batik / Textile Atelier', segment: 'activity', icon: 'Brush', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
-  { id: 'spice-trail', label: 'Spice Trail', segment: 'activity', icon: 'Leaf', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
-  { id: 'safari-wildlife', label: 'Safari & Wildlife', segment: 'activity', icon: 'PawPrint', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
-  { id: 'boat-trip', label: 'Boat Trip', segment: 'activity', icon: 'Ship', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
-  { id: 'city-tour', label: 'City / Cultural Tour', segment: 'activity', icon: 'Compass', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  // Things to do
+  { id: 'parks', label: 'Parks', segment: 'things_to_do', icon: 'TreePine', relevantVibeDimensions: ['crowded'] },
+  { id: 'gyms', label: 'Gyms', segment: 'things_to_do', icon: 'Dumbbell', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'session' },
+  { id: 'art', label: 'Art', segment: 'things_to_do', icon: 'Image', relevantVibeDimensions: ['crowded'] },
+  { id: 'attractions', label: 'Attractions', segment: 'things_to_do', icon: 'Ticket', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'nightlife', label: 'Nightlife', segment: 'things_to_do', icon: 'Music', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
+  { id: 'live-music', label: 'Live music', segment: 'things_to_do', icon: 'Mic', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
+  { id: 'movies', label: 'Movies', segment: 'things_to_do', icon: 'Film', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'museums', label: 'Museums', segment: 'things_to_do', icon: 'Landmark', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'libraries', label: 'Libraries', segment: 'things_to_do', icon: 'Library', relevantVibeDimensions: ['productive', 'crowded'] },
 
-  // Equipment rentals.
-  { id: 'surf-rental', label: 'Surfboard Rental', segment: 'activity', icon: 'Waves', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
-  { id: 'bike-rental', label: 'Bicycle Rental', segment: 'activity', icon: 'Bike', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
-  { id: 'scooter-rental', label: 'Scooter Rental', segment: 'activity', icon: 'Bike', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
-  { id: 'kayak-rental', label: 'Kayak / Canoe Rental', segment: 'activity', icon: 'Sailboat', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
+  // Shopping
+  { id: 'groceries', label: 'Groceries', segment: 'shopping', icon: 'ShoppingCart', relevantVibeDimensions: ['crowded'] },
+  { id: 'beauty-supplies', label: 'Beauty supplies', segment: 'shopping', icon: 'Gem', relevantVibeDimensions: ['crowded'] },
+  { id: 'car-dealers', label: 'Car dealers', segment: 'shopping', icon: 'Car', relevantVibeDimensions: ['crowded'] },
+  { id: 'home-garden', label: 'Home & garden', segment: 'shopping', icon: 'Home', relevantVibeDimensions: ['crowded'] },
+  { id: 'apparel', label: 'Apparel', segment: 'shopping', icon: 'Shirt', relevantVibeDimensions: ['crowded'] },
+  { id: 'shopping-centers', label: 'Shopping centers', segment: 'shopping', icon: 'Store', relevantVibeDimensions: ['crowded'] },
+  { id: 'electronics', label: 'Electronics', segment: 'shopping', icon: 'Tv', relevantVibeDimensions: ['crowded'] },
+  { id: 'sporting-goods', label: 'Sporting goods', segment: 'shopping', icon: 'Trophy', relevantVibeDimensions: ['crowded'] },
+  { id: 'convenience-stores', label: 'Convenience stores', segment: 'shopping', icon: 'Package', relevantVibeDimensions: ['crowded'] },
 
-  // Independent local providers — guides, artisans, tailors, solo hosts.
-  { id: 'tour-guide', label: 'Tour / Walking Guide', segment: 'independent', icon: 'Compass', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
-  { id: 'artisan-shop', label: 'Local Artisan / Craft Shop', segment: 'independent', icon: 'Palette', relevantVibeDimensions: ['crowded'] },
-  { id: 'tailor-clothing', label: 'Tailor / Local Clothing', segment: 'independent', icon: 'Ruler', relevantVibeDimensions: ['crowded'] },
-  { id: 'experience-host', label: 'Independent Experience Host', segment: 'independent', icon: 'Backpack', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  // Services
+  { id: 'hotels', label: 'Hotels', segment: 'services', icon: 'Building2', relevantVibeDimensions: ['crowded'], bookingType: 'stay' },
+  { id: 'atms', label: 'ATMs', segment: 'services', icon: 'Banknote', relevantVibeDimensions: ['crowded'] },
+  { id: 'beauty-salons', label: 'Beauty salons', segment: 'services', icon: 'Scissors', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'car-rental', label: 'Car rental', segment: 'services', icon: 'Key', relevantVibeDimensions: ['crowded'], bookingType: 'rental' },
+  { id: 'car-wash', label: 'Car wash', segment: 'services', icon: 'Droplets', relevantVibeDimensions: ['crowded'] },
+  { id: 'dry-cleaning', label: 'Dry cleaning', segment: 'services', icon: 'WashingMachine', relevantVibeDimensions: ['crowded'] },
+  { id: 'charging-stations', label: 'Charging stations', segment: 'services', icon: 'Zap', relevantVibeDimensions: ['crowded'] },
+  { id: 'gas', label: 'Gas', segment: 'services', icon: 'Fuel', relevantVibeDimensions: ['crowded'] },
+  { id: 'hospitals-clinics', label: 'Hospitals & clinics', segment: 'services', icon: 'Stethoscope', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
+  { id: 'mail-shipping', label: 'Mail & shipping', segment: 'services', icon: 'Mail', relevantVibeDimensions: ['crowded'] },
+  { id: 'parking', label: 'Parking', segment: 'services', icon: 'SquareParking', relevantVibeDimensions: ['crowded'] },
+  { id: 'pharmacies', label: 'Pharmacies', segment: 'services', icon: 'Pill', relevantVibeDimensions: ['crowded'] },
 
-  // Event promoters — festivals, parties, competitions, community events.
-  { id: 'festival-event', label: 'Festival', segment: 'events', icon: 'PartyPopper', relevantVibeDimensions: ['loud', 'crowded'] },
-  { id: 'party-promoter', label: 'Party Promotion', segment: 'events', icon: 'PartyPopper', relevantVibeDimensions: ['loud', 'crowded'] },
-  { id: 'surf-competition', label: 'Surf Competition', segment: 'events', icon: 'Medal', relevantVibeDimensions: ['loud', 'crowded'] },
-  { id: 'community-charity-event', label: 'Community / Charity Event', segment: 'events', icon: 'HeartHandshake', relevantVibeDimensions: ['crowded'] },
-  { id: 'music-night', label: 'Music Night', segment: 'events', icon: 'Music', relevantVibeDimensions: ['loud', 'crowded'] },
-
-  // Brand partners — sponsors, not physical venues, so vibe is irrelevant.
+  // Brand
   { id: 'beverage-brand', label: 'Beverage Brand', segment: 'brand', icon: 'GlassWater' },
   { id: 'alcohol-brand', label: 'Beer & Alcohol Brand', segment: 'brand', icon: 'Wine' },
   { id: 'food-brand', label: 'Food Brand', segment: 'brand', icon: 'UtensilsCrossed' },

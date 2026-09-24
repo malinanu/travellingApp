@@ -5,6 +5,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // StateProvider moved here in Riverpod 3 (still fully supported, just
 // signalled as the "legacy" API) — see placesLocationStatusProvider/
@@ -398,16 +399,23 @@ final placesProvider = NotifierProvider<PlacesNotifier, List<Place>>(PlacesNotif
 
 class CategoriesNotifier extends Notifier<List<VendorCategory>> {
   Timer? _timer;
+  AppLifecycleListener? _lifecycleListener;
 
   @override
   List<VendorCategory> build() {
-    ref.onDispose(() => _timer?.cancel());
+    ref.onDispose(() {
+      _timer?.cancel();
+      _lifecycleListener?.dispose();
+    });
     Future.microtask(refresh);
-    // Also re-poll periodically so an admin-added category (or icon change)
-    // reaches any already-running app instance within 24h, not just on the
-    // next cold start.
+    // Re-poll periodically as a backstop, and also refresh the moment the
+    // app comes back to the foreground — an admin-added category (or icon
+    // change) then reaches an already-running app instance on the next
+    // resume instead of waiting up to 24h for the periodic timer.
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(hours: 24), (_) => refresh());
+    _lifecycleListener?.dispose();
+    _lifecycleListener = AppLifecycleListener(onResume: refresh);
     final cached = ref.read(localStoreProvider).getJsonList(StoreKeys.categories);
     if (cached != null && cached.isNotEmpty) {
       final categories = <VendorCategory>[];

@@ -722,6 +722,9 @@ func (s *Server) syncVendorPlace(ctx context.Context, v domain.Vendor) error {
 	data["lng"] = v.Lng
 	data["type"] = categoryLabel(v.Category)
 	data["categoryId"] = v.Category
+	if c, ok := domain.CategoryByID(v.Category); ok {
+		data["color"] = domain.PinColorForSegment(c.Segment)
+	}
 
 	// Propagate the vendor's Google Place ID into the place's JSONB so
 	// that enrichWithPlaceDetails (traveller.go) can look up live phone/

@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Icons from 'lucide-react';
 import { useState } from 'react';
-import { VendorCategory, VENDOR_SEGMENTS, VendorSegment, SUPPORTED_ICON_NAMES } from '@spotto/shared';
+import { VendorCategory, VENDOR_SEGMENTS, VendorSegment, SUPPORTED_ICON_NAMES, PIN_TONE_COLORS } from '@spotto/shared';
 import Shell from '../../components/shell';
 import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
@@ -124,6 +124,7 @@ function CategoryModal({ category, onClose, onSaved }: { category?: VendorCatego
   const isNew = !category;
   const [icon, setIcon] = useState(category?.icon || SUPPORTED_ICON_NAMES[0]);
   const [iconSearch, setIconSearch] = useState('');
+  const [segment, setSegment] = useState<VendorSegment>(category?.segment || VENDOR_SEGMENTS[0].id);
 
   const mutation = useMutation({
     mutationFn: (data: VendorCategory) => {
@@ -158,7 +159,7 @@ function CategoryModal({ category, onClose, onSaved }: { category?: VendorCatego
             mutation.mutate({
               id: fd.get('id') as string,
               label: fd.get('label') as string,
-              segment: fd.get('segment') as VendorSegment,
+              segment,
               icon,
               bookingType: (fd.get('bookingType') as any) || undefined,
             });
@@ -192,7 +193,7 @@ function CategoryModal({ category, onClose, onSaved }: { category?: VendorCatego
 
           <div className="flex flex-col gap-1.5">
             <label className="text-[12px] font-bold text-muted uppercase tracking-wide">Segment</label>
-            <select name="segment" required defaultValue={category?.segment || 'hospitality'} className="input">
+            <select name="segment" required value={segment} onChange={e => setSegment(e.target.value as VendorSegment)} className="input">
               {VENDOR_SEGMENTS.map(s => (
                 <option key={s.id} value={s.id}>{s.label}</option>
               ))}
@@ -202,13 +203,17 @@ function CategoryModal({ category, onClose, onSaved }: { category?: VendorCatego
           <div className="flex flex-col gap-1.5">
             <label className="text-[12px] font-bold text-muted uppercase tracking-wide">Icon</label>
             <div className="flex items-center gap-2 p-2 rounded border border-border bg-background">
-              <div className="w-9 h-9 rounded-full bg-accent/30 flex items-center justify-center shrink-0">
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                style={{ backgroundColor: PIN_TONE_COLORS[segment] }}
+              >
                 {(() => {
                   const IconComp = (Icons as any)[icon] || Icons.CircleDashed;
-                  return <IconComp size={18} className="text-primary" />;
+                  return <IconComp size={18} className="text-white" />;
                 })()}
               </div>
               <span className="text-[13px] font-semibold">{icon}</span>
+              <span className="text-[11px] text-muted-foreground ml-auto">Pin preview</span>
             </div>
             <input
               value={iconSearch}

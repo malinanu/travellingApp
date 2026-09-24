@@ -18,17 +18,17 @@
 import type { DayHours, Weekday } from '@spotto/shared';
 
 const GOOGLE_TYPE_TO_CATEGORY: [string, string][] = [
-  ['cafe', 'cafe'],
-  ['restaurant', 'restaurant'],
-  ['bar', 'bar'], ['night_club', 'bar'],
-  ['bakery', 'Bakery'],
-  ['lodging', 'Hotel'],
-  ['spa', 'Spa & Wellness'],
-  ['gym', 'Yoga / Wellness'],
-  ['tourist_attraction', 'Tours / Activity'], ['travel_agency', 'Tours / Activity'],
-  ['meal_takeaway', 'Street Food'],
-  ['art_gallery', 'craft'],
-  ['store', 'shop'], ['clothing_store', 'shop'],
+  ['cafe', 'coffee'],
+  ['restaurant', 'restaurants'],
+  ['bar', 'bars'], ['night_club', 'nightlife'],
+  ['bakery', 'takeout'],
+  ['lodging', 'hotels'],
+  ['spa', 'beauty-salons'],
+  ['gym', 'gyms'],
+  ['tourist_attraction', 'attractions'], ['travel_agency', 'attractions'],
+  ['meal_takeaway', 'takeout'],
+  ['art_gallery', 'art'],
+  ['clothing_store', 'apparel'], ['store', 'shopping-centers'],
 ];
 
 export function categoryFromGoogleTypes(types: string[] | undefined): string | undefined {

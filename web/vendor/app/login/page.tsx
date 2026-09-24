@@ -35,27 +35,27 @@ const DEFAULT_PIN_LNG = 79.8612;
 
 // Best-effort Google place-type → Spotto category mapping, checked in
 // array order (first match wins) — falls back to the wizard's existing
-// 'cafe' default when nothing matches. The category grid in the next step
+// 'coffee' default when nothing matches. The category grid in the next step
 // stays fully visible either way, so a wrong guess is a one-tap fix.
 const GOOGLE_TYPE_TO_CATEGORY: [string, string][] = [
-  ['cafe', 'cafe'],
-  ['restaurant', 'restaurant'],
-  ['bar', 'bar-pub'], ['night_club', 'bar-pub'],
-  ['bakery', 'bakery'],
-  ['lodging', 'hotel'],
-  ['spa', 'spa-wellness'],
-  ['gym', 'yoga-studio'],
-  ['tourist_attraction', 'city-tour'], ['travel_agency', 'city-tour'],
-  ['meal_takeaway', 'street-food'],
-  ['art_gallery', 'pottery-workshop'],
-  ['store', 'artisan-shop'], ['clothing_store', 'artisan-shop'],
+  ['cafe', 'coffee'],
+  ['restaurant', 'restaurants'],
+  ['bar', 'bars'], ['night_club', 'nightlife'],
+  ['bakery', 'takeout'],
+  ['lodging', 'hotels'],
+  ['spa', 'beauty-salons'],
+  ['gym', 'gyms'],
+  ['tourist_attraction', 'attractions'], ['travel_agency', 'attractions'],
+  ['meal_takeaway', 'takeout'],
+  ['art_gallery', 'art'],
+  ['clothing_store', 'apparel'], ['store', 'shopping-centers'],
 ];
 
 function categoryFromGoogleTypes(types: string[] | undefined): string {
   for (const [googleType, spottoCategory] of GOOGLE_TYPE_TO_CATEGORY) {
     if (types?.includes(googleType)) return spottoCategory;
   }
-  return 'cafe';
+  return 'coffee';
 }
 
 // Sri Lankan addresses don't always have a `locality` (small towns often
@@ -182,7 +182,7 @@ function LoginPageInner() {
 
   const [name, setName] = useState('');
   const [businessName, setBusinessName] = useState('');
-  const [category, setCategory] = useState('cafe');
+  const [category, setCategory] = useState('coffee');
   const [phone, setPhone] = useState('');
   const [town, setTown] = useState('Weligama');
   const [description, setDescription] = useState('');
@@ -647,7 +647,7 @@ function LoginPageInner() {
               onLocationSelect={(lat, lng) => { setPlaceLat(lat); setPlaceLng(lng); setPinSeq((s) => s + 1); }}
               onPlaceDetails={({ phone, website, hours }) => {
                 // Category isn't wired here: Step 2 already has the owner
-                // pick one (defaulting to 'cafe'), so there's no reliable
+                // pick one (defaulting to 'coffee'), so there's no reliable
                 // "still empty" signal the way there is for businessContact/
                 // businessHours, which start out as null.
                 if ((phone || website) && !businessContact) {

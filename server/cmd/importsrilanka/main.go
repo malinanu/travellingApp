@@ -233,6 +233,10 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 		if category == "" {
 			category = "uncategorized"
 		}
+		data["categoryId"] = category
+		if c, ok := domain.CategoryByID(category); ok {
+			data["color"] = domain.PinColorForSegment(c.Segment)
+		}
 
 		// Extract formatted data fields into vendor profile
 		profile := map[string]any{}
