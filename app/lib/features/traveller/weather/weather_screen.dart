@@ -4,17 +4,13 @@
 // activity-suitability card, and a 6-cell stat grid. See activity_rules.dart
 // for the scoring engine and core/theme/mood.dart for the hero gradient.
 
-import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import 'package:lottie/lottie.dart';
 
-import '../../../core/api/api_client.dart';
 import '../../../core/api/google_places_service.dart';
 import '../../../core/theme/mood.dart';
 import '../../../core/theme/palette.dart';
@@ -117,7 +113,7 @@ class _WeatherScreenState extends ConsumerState<WeatherScreen> {
               final String id = index == 0 ? 'current' : pins[index - 1].id;
               final String name = index == 0 ? 'My Location' : pins[index - 1].name;
               final bool isPinned = index > 0;
-              final VoidCallback onRetry = () => ref.invalidate(batchedWeatherDeckProvider);
+              void onRetry() => ref.invalidate(batchedWeatherDeckProvider);
               final VoidCallback onTap = index == 0 ? _addPin : () => _removePin(id);
 
               final AsyncValue<WeatherSnapshot> weatherValue = batchAsync.whenData((batchMap) {
@@ -487,7 +483,7 @@ class _HourlyForecastCard extends StatelessWidget {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: snap.hourly.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 16),
+              separatorBuilder: (_, _) => const SizedBox(width: 16),
               itemBuilder: (context, i) {
                 final item = snap.hourly[i];
                 final timeStr = DateFormat('h a').format(item.time);

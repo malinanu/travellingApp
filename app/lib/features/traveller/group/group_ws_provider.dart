@@ -37,7 +37,7 @@ class GroupLiveLocationsNotifier extends Notifier<Map<String, LatLng>> {
 
   void _connect(String groupId, String myId) {
     try {
-      final wsUrl = apiBaseUrl.replaceFirst('http', 'ws') + '/ws/group?groupId=$groupId&userId=$myId';
+      final wsUrl = '${apiBaseUrl.replaceFirst('http', 'ws')}/ws/group?groupId=$groupId&userId=$myId';
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
       
       _channel!.stream.listen(

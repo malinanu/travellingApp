@@ -5,10 +5,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/spotto_card.dart';
-import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 
 class PaymentMethodsScreen extends ConsumerWidget {
@@ -64,7 +62,7 @@ class PaymentMethodsScreen extends ConsumerWidget {
             return ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
               itemCount: cards.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, i) {
                 final card = cards[i];
                 return SpottoCard(
@@ -282,7 +280,7 @@ class _AddCardSheetState extends State<_AddCardSheet> {
           SwitchListTile(
             title: const Text('Set as Default Payment Method'),
             value: _isDefault,
-            activeColor: SpottoColors.accent,
+            activeThumbColor: SpottoColors.accent,
             onChanged: (v) => setState(() => _isDefault = v),
           ),
           const SizedBox(height: 16),

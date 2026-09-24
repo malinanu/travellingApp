@@ -175,8 +175,8 @@ class AuthNotifier extends Notifier<bool> {
     try {
       final res = await ref.read(apiProvider).dio.post('/auth/apple', data: {
         'appleId': appleId,
-        if (email != null) 'email': email,
-        if (name != null) 'name': name,
+        'email': ?email,
+        'name': ?name,
       });
       await _adoptSession(res.data as Map<String, dynamic>);
       return null;
@@ -883,7 +883,7 @@ class ClaimsNotifier extends Notifier<Map<String, String>> {
     if (existing != null) return existing;
     final res = await ref.read(apiProvider).dio.post('/claims', data: {
       'placeId': placeId,
-      if (offerId case final id?) 'offerId': id,
+      'offerId': ?offerId,
       'offerLabel': offerLabel,
       'offerValue': offerValue,
     });

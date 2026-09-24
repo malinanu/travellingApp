@@ -49,7 +49,7 @@ class AnalyticsService {
     final payload = {
       'event': event.name,
       'timestamp': DateTime.now().toIso8601String(),
-      if (properties != null) ...properties,
+      ...?properties,
     };
 
     _bufferedEvents.add(payload);

@@ -249,7 +249,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                       width: 92,
                                       height: 92,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Text(
+                                      errorBuilder: (_, _, _) => Text(
                                           initials.isEmpty ? 'LM' : initials,
                                           style: const TextStyle(
                                               fontSize: 32,

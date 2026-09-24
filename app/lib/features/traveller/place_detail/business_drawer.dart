@@ -348,7 +348,7 @@ class BusinessDrawerBody extends ConsumerWidget {
                                     width: 40,
                                     height: 40,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => _MenuIconTile(icon: item.icon))
+                                    errorBuilder: (_, _, _) => _MenuIconTile(icon: item.icon))
                                 : _MenuIconTile(icon: item.icon),
                           ),
                           const SizedBox(width: 12),
@@ -1816,7 +1816,7 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
           ),
-          error: (_, __) => Text('Couldn\'t load reviews.',
+          error: (_, _) => Text('Couldn\'t load reviews.',
               style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
         ),
       ],
@@ -2341,7 +2341,7 @@ class _PhotoViewerDialogState extends State<_PhotoViewerDialog> {
                       child: Image.network(
                         widget.urls[i],
                         fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const Text("Couldn't load this photo.",
+                        errorBuilder: (_, _, _) => const Text("Couldn't load this photo.",
                             style: TextStyle(color: Colors.white)),
                         loadingBuilder: (_, child, progress) => progress == null
                             ? child

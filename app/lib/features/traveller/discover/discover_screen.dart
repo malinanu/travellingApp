@@ -582,7 +582,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                                   data: (s) =>
                                       '${s.now.conditionLabel} · ${s.now.temp.round()}°',
                                   loading: () => 'Getting conditions…',
-                                  error: (_, __) => 'Weather unavailable',
+                                  error: (_, _) => 'Weather unavailable',
                                 ),
                                 style: text.labelLarge,
                               ),

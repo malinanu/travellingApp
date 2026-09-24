@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../theme/palette.dart';
 import 'press_scale.dart';
 
 class SpottoCard extends StatelessWidget {
