@@ -8,6 +8,8 @@ import (
 )
 
 func TestNormalizePlaceCategory(t *testing.T) {
+	prev := domain.VendorCategories
+	t.Cleanup(func() { domain.InitVendorCategories(prev) })
 	domain.InitVendorCategories(seed.InitialCategories)
 
 	// Legacy imported row: no categoryId, default teal color.
