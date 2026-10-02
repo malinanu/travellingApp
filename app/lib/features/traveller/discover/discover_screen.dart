@@ -335,6 +335,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
       final color = SpottoColors.pinTones[p.color] ?? SpottoColors.accent;
       var icon = categoryIcon(p.categoryId);
+      if (icon == Icons.place && categoryById(p.type) != null) {
+        icon = categoryIcon(p.type);
+      }
       if (icon == Icons.place && p.icon.isNotEmpty) {
         icon = spottoIcon(p.icon);
       }

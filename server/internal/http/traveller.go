@@ -23,6 +23,25 @@ import (
 	"github.com/spotto/server/internal/store/postgres"
 )
 
+// normalizePlaceCategory fills in categoryId and the pin color for places
+// stored before those fields were written (imported spots never carried
+// them), so the app can show the right category icon on the map without a
+// destructive re-import. Rows that already have a known categoryId keep it.
+func normalizePlaceCategory(m map[string]any) {
+	id, _ := m["categoryId"].(string)
+	cat, ok := domain.CategoryByID(id)
+	if !ok {
+		cat, ok = domain.CategoryByID(domain.CategoryForPlaceData(m))
+		if !ok {
+			return
+		}
+		m["categoryId"] = cat.ID
+	}
+	if color, _ := m["color"].(string); color == "" || color == "teal" {
+		m["color"] = domain.PinColorForSegment(cat.Segment)
+	}
+}
+
 // placeJSON flattens Place.Data with id/name/vendorId for the Flutter model,
 // plus the place's real current vibe aggregate â€” so the app never needs a
 // hardcoded vibe seed even on a place's first load, before anyone in this
@@ -40,6 +59,7 @@ func (s *Server) placeJSON(ctx context.Context, p domain.Place) map[string]any {
 	if p.VendorID != nil {
 		m["vendorId"] = *p.VendorID
 	}
+	normalizePlaceCategory(m)
 	if vibe, err := s.Store.VibeAggregate(ctx, p.ID); err == nil {
 		m["vibe"] = vibe
 	}
