@@ -72,6 +72,10 @@ type Server struct {
 	GoogleOAuth *oauth2.Config
 	// AppleAuth verifies Sign in with Apple identity tokens for /auth/apple.
 	AppleAuth *auth.AppleVerifier
+	// GoogleMobileAuth verifies Google ID tokens from the mobile app's
+	// Google Sign-In for /auth/google/mobile. Nil when GOOGLE_CLIENT_ID is
+	// unset (the endpoint then reports 501).
+	GoogleMobileAuth *auth.OIDCVerifier
 	// Media uploads to Cloudflare R2; nil when R2 isn't configured, in which
 	// case the /media endpoints report 501 instead of failing startup.
 	Media media.Uploader
@@ -133,6 +137,9 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		appleAudience = "com.spotto.spotto"
 	}
 	s.AppleAuth = auth.NewAppleVerifier(appleAudience)
+	if cfg.GoogleClientID != "" {
+		s.GoogleMobileAuth = auth.NewGoogleVerifier(cfg.GoogleClientID)
+	}
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
 		s.GoogleOAuth = &oauth2.Config{
 			ClientID:     cfg.GoogleClientID,
@@ -244,6 +251,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Get("/auth/google/login", s.handleGoogleLogin)
 	r.Get("/auth/google/callback", s.handleGoogleCallback)
 	r.Post("/auth/apple", s.handleAppleAuth)
+	r.Post("/auth/google/mobile", s.handleGoogleMobileAuth)
 	r.Post("/auth/exchange", s.handleAuthExchange)
 
 	// Authenticated (any role).

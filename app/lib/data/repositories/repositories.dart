@@ -187,6 +187,20 @@ class AuthNotifier extends Notifier<bool> {
     }
   }
 
+  /// Signs in with a Google ID token from the mobile Google Sign-In. The
+  /// server verifies it with Google and takes the id/email from the token.
+  Future<String?> googleAuth(String idToken) async {
+    try {
+      final res = await ref.read(apiProvider).dio.post('/auth/google/mobile', data: {
+        'idToken': idToken,
+      });
+      await _adoptSession(res.data as Map<String, dynamic>);
+      return null;
+    } catch (e) {
+      return ApiClient.errorMessage(e);
+    }
+  }
+
   Future<String?> forgotPassword(String email) async {
     try {
       await ref.read(apiProvider).dio.post('/auth/forgot-password', data: {'email': email});

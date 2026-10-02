@@ -108,6 +108,79 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, s.VendorAppURL+"/login?authCode="+exchangeCode, http.StatusFound)
 }
 
+// handleGoogleMobileAuth signs a traveller in from the mobile app's Google
+// Sign-In. Only the signed Google ID token is trusted: id and email come from
+// the verified token, never from the request body. Like Apple sign-in it
+// skips password and 2FA, so it only opens traveller accounts.
+func (s *Server) handleGoogleMobileAuth(w http.ResponseWriter, r *http.Request) {
+	if s.GoogleMobileAuth == nil {
+		writeErr(w, http.StatusNotImplemented, "google sign-in is not configured")
+		return
+	}
+	var req struct {
+		IdentityToken string `json:"idToken"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.IdentityToken == "" {
+		writeErr(w, http.StatusBadRequest, "idToken required")
+		return
+	}
+	identity, err := s.GoogleMobileAuth.Verify(r.Context(), req.IdentityToken)
+	if err != nil || !identity.EmailVerified || identity.Email == "" {
+		writeErr(w, http.StatusUnauthorized, "invalid Google sign-in")
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(identity.Email))
+
+	u, err := s.Store.UserByGoogleID(r.Context(), identity.Subject)
+	status := http.StatusOK
+	if err != nil {
+		if existing, emailErr := s.Store.UserByEmail(r.Context(), email); emailErr == nil {
+			u = existing
+			if u.Role == domain.RoleTraveller {
+				_ = s.Store.LinkUserGoogleID(r.Context(), u.ID, identity.Subject)
+			}
+		} else {
+			name := sanitizeText(identity.Name, 100)
+			if name == "" {
+				name = "Google User"
+			}
+			sub := identity.Subject
+			newUser := domain.User{
+				ID:        newID("usr"),
+				Email:     email,
+				Name:      name,
+				Role:      domain.RoleTraveller,
+				GoogleID:  &sub,
+				CreatedAt: time.Now(),
+			}
+			if err := s.Store.CreateUser(r.Context(), newUser); err != nil {
+				writeErr(w, http.StatusInternalServerError, "could not create user account")
+				return
+			}
+			_ = s.Store.LinkUserGoogleID(r.Context(), newUser.ID, sub)
+			u, err = s.Store.UserByID(r.Context(), newUser.ID)
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
+				return
+			}
+			status = http.StatusCreated
+		}
+	}
+	if u.Role != domain.RoleTraveller {
+		writeErr(w, http.StatusForbidden, "this account must sign in with email and password")
+		return
+	}
+	token, err := s.Tokens.Issue(u)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "token generation failed")
+		return
+	}
+	writeJSON(w, status, map[string]any{"token": token, "user": u})
+}
+
 // handleAuthExchange trades a one-time authCode (minted by
 // handleGoogleCallback) for the login payload it was holding. Codes are
 // single-use and expire in 2 minutes.

@@ -10,6 +10,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -20,22 +21,29 @@ const (
 	appleIssuer  = "https://appleid.apple.com"
 	appleKeysURL = "https://appleid.apple.com/auth/keys"
 
+	googleKeysURL = "https://www.googleapis.com/oauth2/v3/certs"
+
 	appleKeysTTL        = time.Hour
 	appleKeysMinRefresh = time.Minute
 )
 
-// AppleIdentity is what a verified Sign in with Apple identity token proves.
-type AppleIdentity struct {
-	Subject       string // Apple's stable, app-scoped user id
+// OIDCIdentity is what a verified OpenID Connect identity token proves.
+type OIDCIdentity struct {
+	Subject       string // the provider's stable user id
 	Email         string // may be empty, or a private-relay address
 	EmailVerified bool
+	Name          string // Google only; Apple never puts the name in the token
 }
 
-// AppleVerifier verifies Sign in with Apple identity tokens (RS256 JWTs signed
-// by Apple) against Apple's published public keys. Without this, /auth/apple
-// would trust whatever id/email the client claims.
-type AppleVerifier struct {
-	audience string // the app's bundle id
+// AppleIdentity is kept as the name Apple-specific callers use.
+type AppleIdentity = OIDCIdentity
+
+// OIDCVerifier verifies RS256 identity tokens (Sign in with Apple, Google
+// Sign-In) against the provider's published public keys. Without this, the
+// social-login endpoints would trust whatever id/email the client claims.
+type OIDCVerifier struct {
+	audience string   // the client/bundle id the token must be issued to
+	issuers  []string // accepted `iss` values
 	keysURL  string
 	client   *http.Client
 
@@ -44,21 +52,35 @@ type AppleVerifier struct {
 	fetchedAt time.Time
 }
 
-// NewAppleVerifier returns a verifier accepting tokens issued to audience
-// (the iOS bundle id, e.g. com.spotto.spotto).
-func NewAppleVerifier(audience string) *AppleVerifier {
-	return &AppleVerifier{
+// AppleVerifier is the OIDCVerifier configured for Apple.
+type AppleVerifier = OIDCVerifier
+
+func newOIDCVerifier(audience, keysURL string, issuers ...string) *OIDCVerifier {
+	return &OIDCVerifier{
 		audience: audience,
-		keysURL:  appleKeysURL,
+		issuers:  issuers,
+		keysURL:  keysURL,
 		client:   &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
+// NewAppleVerifier returns a verifier accepting Apple tokens issued to
+// audience (the iOS bundle id, e.g. com.spotto.spotto).
+func NewAppleVerifier(audience string) *OIDCVerifier {
+	return newOIDCVerifier(audience, appleKeysURL, appleIssuer)
+}
+
+// NewGoogleVerifier returns a verifier accepting Google ID tokens issued to
+// audience (the Web OAuth client id the app passes as serverClientId).
+func NewGoogleVerifier(audience string) *OIDCVerifier {
+	return newOIDCVerifier(audience, googleKeysURL, "https://accounts.google.com", "accounts.google.com")
+}
+
 // Verify checks signature, issuer, audience and expiry, and returns the
 // verified identity. Any failure means the token must not be trusted.
-func (v *AppleVerifier) Verify(ctx context.Context, rawToken string) (AppleIdentity, error) {
+func (v *OIDCVerifier) Verify(ctx context.Context, rawToken string) (OIDCIdentity, error) {
 	if rawToken == "" {
-		return AppleIdentity{}, errors.New("identity token required")
+		return OIDCIdentity{}, errors.New("identity token required")
 	}
 	claims := jwt.MapClaims{}
 	_, err := jwt.ParseWithClaims(rawToken, claims, func(t *jwt.Token) (any, error) {
@@ -69,19 +91,23 @@ func (v *AppleVerifier) Verify(ctx context.Context, rawToken string) (AppleIdent
 		return v.key(ctx, kid)
 	},
 		jwt.WithValidMethods([]string{"RS256"}),
-		jwt.WithIssuer(appleIssuer),
 		jwt.WithAudience(v.audience),
 		jwt.WithExpirationRequired(),
 	)
 	if err != nil {
-		return AppleIdentity{}, fmt.Errorf("invalid apple identity token: %w", err)
+		return OIDCIdentity{}, fmt.Errorf("invalid identity token: %w", err)
+	}
+	iss, _ := claims["iss"].(string)
+	if !slices.Contains(v.issuers, iss) {
+		return OIDCIdentity{}, errors.New("identity token has an unexpected issuer")
 	}
 	sub, _ := claims["sub"].(string)
 	if sub == "" {
-		return AppleIdentity{}, errors.New("apple identity token has no subject")
+		return OIDCIdentity{}, errors.New("identity token has no subject")
 	}
-	id := AppleIdentity{Subject: sub}
+	id := OIDCIdentity{Subject: sub}
 	id.Email, _ = claims["email"].(string)
+	id.Name, _ = claims["name"].(string)
 	// Apple sends email_verified as either a bool or the string "true".
 	switch ev := claims["email_verified"].(type) {
 	case bool:
@@ -95,7 +121,7 @@ func (v *AppleVerifier) Verify(ctx context.Context, rawToken string) (AppleIdent
 // key returns Apple's public key for kid, refreshing the cached key set when
 // it's stale or when kid is unknown (Apple rotates keys), rate-limited so a
 // stream of forged kids can't make us hammer Apple.
-func (v *AppleVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {
+func (v *OIDCVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	age := time.Since(v.fetchedAt)
@@ -112,21 +138,21 @@ func (v *AppleVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, er
 	if k, ok := v.keys[kid]; ok {
 		return k, nil
 	}
-	return nil, errors.New("unknown apple signing key")
+	return nil, errors.New("unknown signing key")
 }
 
-func (v *AppleVerifier) fetchKeys(ctx context.Context) (map[string]*rsa.PublicKey, error) {
+func (v *OIDCVerifier) fetchKeys(ctx context.Context) (map[string]*rsa.PublicKey, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.keysURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	res, err := v.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch apple keys: %w", err)
+		return nil, fmt.Errorf("fetch signing keys: %w", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch apple keys: status %d", res.StatusCode)
+		return nil, fmt.Errorf("fetch signing keys: status %d", res.StatusCode)
 	}
 	var set struct {
 		Keys []struct {
@@ -137,7 +163,7 @@ func (v *AppleVerifier) fetchKeys(ctx context.Context) (map[string]*rsa.PublicKe
 		} `json:"keys"`
 	}
 	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&set); err != nil {
-		return nil, fmt.Errorf("decode apple keys: %w", err)
+		return nil, fmt.Errorf("decode signing keys: %w", err)
 	}
 	keys := make(map[string]*rsa.PublicKey, len(set.Keys))
 	for _, k := range set.Keys {
@@ -152,7 +178,7 @@ func (v *AppleVerifier) fetchKeys(ctx context.Context) (map[string]*rsa.PublicKe
 		keys[k.Kid] = &rsa.PublicKey{N: new(big.Int).SetBytes(n), E: int(new(big.Int).SetBytes(e).Int64())}
 	}
 	if len(keys) == 0 {
-		return nil, errors.New("apple returned no usable keys")
+		return nil, errors.New("no usable signing keys returned")
 	}
 	return keys, nil
 }

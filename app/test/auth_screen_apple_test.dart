@@ -28,11 +28,14 @@ void main() {
     }
   });
 
-  testWidgets('shows Sign in with Apple on iOS', (tester) async {
+  // Apple sign-in is opt-in per build (--dart-define=ENABLE_APPLE_SIGN_IN=true),
+  // so the default build, even on iOS, doesn't show a button that can't work.
+  testWidgets('hides Sign in with Apple on iOS unless the build enables it',
+      (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     try {
       await _pump(tester);
-      expect(find.text('Sign in with Apple'), findsOneWidget);
+      expect(find.text('Sign in with Apple'), findsNothing);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }

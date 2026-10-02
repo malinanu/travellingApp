@@ -19,6 +19,17 @@ if (localPropertiesFile.exists()) {
 }
 val mapsApiKey: String = localProperties.getProperty("MAPS_API_KEY", "")
 
+// Release signing comes from android/key.properties (gitignored; CI writes it
+// from secrets). A stable key matters: Google Sign-In matches the app by
+// package name + signing-key SHA-1, and the debug key CI would otherwise use
+// is regenerated on every run. Without key.properties, release falls back to
+// the debug key so local `flutter run --release` still works.
+val keyProperties = Properties()
+val keyPropertiesFile = rootProject.file("key.properties")
+if (keyPropertiesFile.exists()) {
+    keyPropertiesFile.inputStream().use { keyProperties.load(it) }
+}
+
 android {
     namespace = "com.spotto.spotto"
     compileSdk = flutter.compileSdkVersion
@@ -41,11 +52,24 @@ android {
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 
+    signingConfigs {
+        if (keyPropertiesFile.exists()) {
+            create("release") {
+                storeFile = rootProject.file(keyProperties.getProperty("storeFile"))
+                storePassword = keyProperties.getProperty("storePassword")
+                keyAlias = keyProperties.getProperty("keyAlias")
+                keyPassword = keyProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keyPropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

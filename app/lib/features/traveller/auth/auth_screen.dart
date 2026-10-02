@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatf
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../../core/theme/palette.dart';
@@ -77,8 +78,68 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     context.go(hasPrefs ? '/t' : '/t/onboarding');
   }
 
-  /// Sign in with Apple is only offered on iOS, where the platform provides it.
-  bool get _appleSignInAvailable => defaultTargetPlatform == TargetPlatform.iOS;
+  /// The Web OAuth client id Google ID tokens are issued for (passed as
+  /// `serverClientId`; the server verifies the token's audience against it).
+  /// Supplied per build with `--dart-define=GOOGLE_SERVER_CLIENT_ID=...`; the
+  /// button stays hidden without it because Google sign-in can't work then.
+  static const _googleServerClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
+
+  /// Google sign-in is offered on Android only (Apple's rules require Sign in
+  /// with Apple to be offered alongside Google on iOS).
+  bool get _googleSignInAvailable =>
+      _googleServerClientId.isNotEmpty &&
+      defaultTargetPlatform == TargetPlatform.android;
+
+  Future<void> _signInWithGoogle() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    String? err;
+    var cancelled = false;
+    try {
+      await GoogleSignIn.instance.initialize(serverClientId: _googleServerClientId);
+      final account = await GoogleSignIn.instance.authenticate();
+      final idToken = account.authentication.idToken;
+      if (idToken == null) {
+        err = 'Google did not return a sign-in token. Please try again.';
+      } else {
+        err = await ref.read(authProvider.notifier).googleAuth(idToken);
+      }
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled) {
+        cancelled = true;
+      } else {
+        err = 'Google sign-in failed (${e.code.name}).';
+      }
+    } catch (e) {
+      err = 'Google sign-in is not available right now.';
+    }
+    if (!mounted) return;
+    if (err != null) {
+      setState(() {
+        _busy = false;
+        _error = err;
+      });
+      return;
+    }
+    if (cancelled) {
+      setState(() => _busy = false);
+      return;
+    }
+    final hasPrefs = ref.read(prefsProvider) != null;
+    context.go(hasPrefs ? '/t' : '/t/onboarding');
+  }
+
+  /// Sign in with Apple needs the capability that only a paid Apple Developer
+  /// signing provides, so it's off unless the build opts in with
+  /// `--dart-define=ENABLE_APPLE_SIGN_IN=true` (sideloaded free-account builds
+  /// can't use it and would just show an error).
+  static const _appleSignInEnabled = bool.fromEnvironment('ENABLE_APPLE_SIGN_IN');
+
+  bool get _appleSignInAvailable =>
+      _appleSignInEnabled && defaultTargetPlatform == TargetPlatform.iOS;
 
   Future<void> _signInWithApple() async {
     if (_busy) return;
@@ -289,6 +350,19 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                   ? 'Sign in'
                                   : 'Create account'),
                     ),
+                    if (!isForgot && _googleSignInAvailable) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _busy ? null : _signInWithGoogle,
+                        icon: const Icon(Icons.g_mobiledata, size: 28, color: Colors.black),
+                        label: const Text('Continue with Google',
+                            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          side: const BorderSide(color: Colors.black26),
+                        ),
+                      ),
+                    ],
                     if (!isForgot && _appleSignInAvailable) ...[
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
