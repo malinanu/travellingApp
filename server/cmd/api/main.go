@@ -11,6 +11,7 @@ import (
 	"github.com/spotto/server/internal/config"
 	"github.com/spotto/server/internal/domain"
 	httpapi "github.com/spotto/server/internal/http"
+	"github.com/spotto/server/internal/seed"
 	"github.com/spotto/server/internal/store/postgres"
 )
 
@@ -27,7 +28,13 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	// Load dynamic vendor categories into memory cache.
+	// Make sure the full category taxonomy exists (insert-only, never
+	// overwrites admin edits), then load it into the in-memory cache.
+	if added, err := store.EnsureVendorCategories(ctx, seed.InitialCategories); err != nil {
+		log.Fatalf("ensure vendor categories: %v", err)
+	} else if added > 0 {
+		log.Printf("added %d missing vendor categories", added)
+	}
 	cats, err := store.GetVendorCategories(ctx)
 	if err != nil {
 		log.Fatalf("failed to load vendor categories: %v", err)
