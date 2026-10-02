@@ -70,6 +70,8 @@ type Server struct {
 	// handleGoogleLogin/handleGoogleCallback report 501 in that case rather
 	// than panicking on a nil config.
 	GoogleOAuth *oauth2.Config
+	// AppleAuth verifies Sign in with Apple identity tokens for /auth/apple.
+	AppleAuth *auth.AppleVerifier
 	// Media uploads to Cloudflare R2; nil when R2 isn't configured, in which
 	// case the /media endpoints report 501 instead of failing startup.
 	Media media.Uploader
@@ -126,6 +128,11 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		oauthCodes:         newAuthCodeStore(),
 		GroupHub:           NewGroupHub(),
 	}
+	appleAudience := cfg.AppleBundleID
+	if appleAudience == "" {
+		appleAudience = "com.spotto.spotto"
+	}
+	s.AppleAuth = auth.NewAppleVerifier(appleAudience)
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
 		s.GoogleOAuth = &oauth2.Config{
 			ClientID:     cfg.GoogleClientID,

@@ -1,9 +1,11 @@
 // Consumer auth — login / register against the Spotto API.
 // Demo account: lena@spotto.dev / spotto123 (created by the server seed).
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/illustration.dart';
@@ -75,23 +77,59 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     context.go(hasPrefs ? '/t' : '/t/onboarding');
   }
 
+  /// Sign in with Apple is only offered on iOS, where the platform provides it.
+  bool get _appleSignInAvailable => defaultTargetPlatform == TargetPlatform.iOS;
+
   Future<void> _signInWithApple() async {
     if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
     });
-    final err = await ref.read(authProvider.notifier).appleAuth(
-          'apple_sub_${DateTime.now().millisecondsSinceEpoch}',
-          email: _email.text.trim().isNotEmpty ? _email.text.trim() : null,
-          name: _name.text.trim().isNotEmpty ? _name.text.trim() : null,
-        );
+    String? err;
+    var cancelled = false;
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+      final token = credential.identityToken;
+      if (token == null) {
+        err = 'Apple did not return a sign-in token. Please try again.';
+      } else {
+        // Apple only provides the name on the very first sign-in.
+        final fullName = [credential.givenName, credential.familyName]
+            .whereType<String>()
+            .where((p) => p.isNotEmpty)
+            .join(' ');
+        err = await ref.read(authProvider.notifier).appleAuth(
+              token,
+              name: fullName.isNotEmpty ? fullName : null,
+            );
+      }
+    } on SignInWithAppleAuthorizationException catch (e) {
+      // Closing the Apple sheet isn't an error worth showing.
+      if (e.code == AuthorizationErrorCode.canceled) {
+        cancelled = true;
+      } else {
+        err = 'Sign in with Apple failed (${e.code.name}).';
+      }
+    } catch (e) {
+      err = 'Sign in with Apple is not available right now.';
+    }
     if (!mounted) return;
     if (err != null) {
       setState(() {
         _busy = false;
         _error = err;
       });
+      return;
+    }
+    if (cancelled) {
+      // User closed the Apple sheet: stay on the screen.
+      setState(() => _busy = false);
       return;
     }
     final hasPrefs = ref.read(prefsProvider) != null;
@@ -251,7 +289,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                   ? 'Sign in'
                                   : 'Create account'),
                     ),
-                    if (!isForgot) ...[
+                    if (!isForgot && _appleSignInAvailable) ...[
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
                         onPressed: _busy ? null : _signInWithApple,

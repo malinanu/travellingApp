@@ -696,24 +696,46 @@ func (s *Server) handleExportData(w http.ResponseWriter, r *http.Request) {
 
 // handleAppleAuth handles Sign in with Apple logins & registrations.
 func (s *Server) handleAppleAuth(w http.ResponseWriter, r *http.Request) {
+	// Only the signed identityToken is trusted. The client-supplied appleId
+	// and email are deliberately not read: anyone can send those, and
+	// trusting them let a caller sign in as any existing account.
 	var req struct {
-		AppleID       string `json:"appleId"`
-		Email         string `json:"email"`
 		Name          string `json:"name"`
 		IdentityToken string `json:"identityToken"`
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
-
-	if req.AppleID == "" {
-		writeErr(w, http.StatusBadRequest, "appleId required")
+	if req.IdentityToken == "" {
+		writeErr(w, http.StatusBadRequest, "identityToken required")
 		return
+	}
+	identity, err := s.AppleAuth.Verify(r.Context(), req.IdentityToken)
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "invalid Apple sign-in")
+		return
+	}
+	appleID := identity.Subject
+	verifiedEmail := ""
+	if identity.EmailVerified {
+		verifiedEmail = strings.ToLower(strings.TrimSpace(identity.Email))
+	}
+	// Apple sign-in skips password and 2FA, so it may only open traveller
+	// accounts; vendor/admin accounts must use the normal login flow.
+	travellerOnly := func(u domain.User) bool {
+		if u.Role != domain.RoleTraveller {
+			writeErr(w, http.StatusForbidden, "this account must sign in with email and password")
+			return false
+		}
+		return true
 	}
 
 	// 1. Check if user already exists by appleId
-	u, err := s.Store.GetUserByAppleID(r.Context(), req.AppleID)
+	u, err := s.Store.GetUserByAppleID(r.Context(), appleID)
 	if err == nil {
+		if !travellerOnly(u) {
+			return
+		}
 		token, err := s.Tokens.Issue(u)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "token generation failed")
@@ -724,10 +746,13 @@ func (s *Server) handleAppleAuth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Check if user exists by email
-	if req.Email != "" {
-		existing, err := s.Store.UserByEmail(r.Context(), req.Email)
+	if verifiedEmail != "" {
+		existing, err := s.Store.UserByEmail(r.Context(), verifiedEmail)
 		if err == nil {
-			_ = s.Store.LinkUserAppleID(r.Context(), existing.ID, req.AppleID)
+			if !travellerOnly(existing) {
+				return
+			}
+			_ = s.Store.LinkUserAppleID(r.Context(), existing.ID, appleID)
 			token, err := s.Tokens.Issue(existing)
 			if err != nil {
 				writeErr(w, http.StatusInternalServerError, "token generation failed")
@@ -743,9 +768,9 @@ func (s *Server) handleAppleAuth(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "Apple User"
 	}
-	email := strings.ToLower(strings.TrimSpace(req.Email))
+	email := verifiedEmail
 	if email == "" {
-		email = fmt.Sprintf("apple_%s@privaterelay.appleid.com", req.AppleID)
+		email = fmt.Sprintf("apple_%s@privaterelay.appleid.com", appleID)
 	}
 
 	newUser := domain.User{
@@ -753,7 +778,7 @@ func (s *Server) handleAppleAuth(w http.ResponseWriter, r *http.Request) {
 		Email:     email,
 		Name:      name,
 		Role:      domain.RoleTraveller,
-		AppleID:   &req.AppleID,
+		AppleID:   &appleID,
 		CreatedAt: time.Now(),
 	}
 
@@ -762,7 +787,7 @@ func (s *Server) handleAppleAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = s.Store.LinkUserAppleID(r.Context(), newUser.ID, req.AppleID)
+	_ = s.Store.LinkUserAppleID(r.Context(), newUser.ID, appleID)
 
 	u, err = s.Store.UserByID(r.Context(), newUser.ID)
 	if err != nil {

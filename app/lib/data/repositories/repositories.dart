@@ -171,11 +171,13 @@ class AuthNotifier extends Notifier<bool> {
     }
   }
 
-  Future<String?> appleAuth(String appleId, {String? email, String? name}) async {
+  /// Signs in with a Sign in with Apple identity token. The server verifies
+  /// the token with Apple and takes the user id/email from it, so nothing
+  /// else about the user is sent as a claim.
+  Future<String?> appleAuth(String identityToken, {String? name}) async {
     try {
       final res = await ref.read(apiProvider).dio.post('/auth/apple', data: {
-        'appleId': appleId,
-        'email': ?email,
+        'identityToken': identityToken,
         'name': ?name,
       });
       await _adoptSession(res.data as Map<String, dynamic>);

@@ -31,6 +31,9 @@ type Config struct {
 	GoogleClientID     string
 	GoogleClientSecret string
 	GoogleRedirectURL  string
+	// AppleBundleID is the iOS bundle id Sign in with Apple identity tokens
+	// must be issued to (the token's audience). Defaults to the app's own id.
+	AppleBundleID string
 	// GoogleCalendarAPIKey enables live public-holiday lookups (see
 	// internal/holidays) and, since the same Cloud project/key also has the
 	// Maps JavaScript + Places APIs enabled (it's the same value as the
@@ -119,6 +122,7 @@ func Load() Config {
 		GoogleClientID:       getenv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret:   getenv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURL:    getenv("GOOGLE_REDIRECT_URL", ""),
+		AppleBundleID:        getenv("APPLE_BUNDLE_ID", "com.spotto.spotto"),
 		GoogleCalendarAPIKey: getenv("GOOGLE_CALENDAR_API_KEY", ""),
 		TomorrowIOAPIKey:     getenv("TOMORROW_IO_API_KEY", ""),
 		GeminiAPIKey:         getenv("GEMINI_API_KEY", ""),
