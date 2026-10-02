@@ -16,34 +16,47 @@ class PushNotificationService {
 
   String? _deviceToken;
   bool _initialized = false;
+  static const _stepTimeout = Duration(seconds: 10);
 
   /// Initializes device push notification hooks.
+  ///
+  /// Must never throw or block app startup: on iOS builds without the push
+  /// entitlement (e.g. an unsigned sideloaded .ipa) no APNs token can be
+  /// issued, so these calls can fail or hang. Push is best-effort — the app
+  /// works without it — so any failure here is logged and swallowed.
   Future<void> initialize(ApiClient api) async {
     if (_initialized) return;
     _initialized = true;
 
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
 
-    final messaging = FirebaseMessaging.instance;
-    await messaging.requestPermission();
-    _deviceToken = await messaging.getToken();
+      final messaging = FirebaseMessaging.instance;
+      await messaging.requestPermission().timeout(_stepTimeout);
+      _deviceToken = await messaging.getToken().timeout(_stepTimeout);
 
-    if (_deviceToken != null) {
-      try {
-        await api.dio.post('/me/push-token', data: {'deviceToken': _deviceToken});
-      } catch (e) {
-        developer.log('[PushNotifications] Failed to register token: $e');
+      if (_deviceToken != null) {
+        try {
+          await api.dio.post('/me/push-token', data: {'deviceToken': _deviceToken});
+        } catch (e) {
+          developer.log('[PushNotifications] Failed to register token: $e');
+        }
       }
-    }
 
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      developer.log('[PushNotificationReceived] ${message.notification?.title} — ${message.notification?.body}');
-    });
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        developer.log('[PushNotificationReceived] ${message.notification?.title} — ${message.notification?.body}');
+      });
 
-    if (kDebugMode) {
-      developer.log('[PushNotifications] Device push token initialized: $_deviceToken');
+      if (kDebugMode) {
+        developer.log('[PushNotifications] Device push token initialized: $_deviceToken');
+      }
+    } catch (e, st) {
+      // Allow a later retry (e.g. after the user grants permission).
+      _initialized = false;
+      developer.log('[PushNotifications] Push unavailable, continuing without it: $e',
+          stackTrace: st);
     }
   }
 

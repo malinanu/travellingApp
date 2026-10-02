@@ -49,16 +49,26 @@ class LocalStore {
       // key changed since this value was written, such as after a debug
       // reinstall) — can't be recovered, so drop it and continue logged-out
       // instead of throwing here and crashing before runApp() ever runs.
-      await secure.delete(key: StoreKeys.token);
+      try {
+        await secure.delete(key: StoreKeys.token);
+      } catch (_) {
+        // Keychain unusable altogether (e.g. a re-signed sideloaded iOS
+        // build) — still must not stop the app from launching.
+      }
     }
     // One-time migration for installs from before secure storage: move a
     // plaintext token left over in SharedPreferences into secure storage.
     final legacy = prefs.getString(StoreKeys.token);
+    var migrated = true;
     if (token == null && legacy != null) {
-      await secure.write(key: StoreKeys.token, value: legacy);
+      try {
+        await secure.write(key: StoreKeys.token, value: legacy);
+      } catch (_) {
+        migrated = false; // keychain unusable: keep the legacy copy
+      }
       token = legacy;
     }
-    if (legacy != null) {
+    if (legacy != null && migrated) {
       await prefs.remove(StoreKeys.token);
     }
     return LocalStore(prefs, secure, token);

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,9 +14,16 @@ import 'data/repositories/repositories.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   AnalyticsService.instance.initialize();
-  final store = await LocalStore.init();
+  final LocalStore store;
+  try {
+    store = await LocalStore.init();
+  } catch (e, st) {
+    // Show the failure instead of leaving a blank launch screen.
+    AnalyticsService.instance.logCrash(e, st, context: 'LocalStore.init');
+    runApp(_StartupErrorApp(error: e));
+    return;
+  }
   final api = ApiClient(store);
-  await PushNotificationService.instance.initialize(api);
   runApp(
     ProviderScope(
       // Riverpod 3 auto-retries a failing provider by default. This app
@@ -28,6 +37,9 @@ Future<void> main() async {
       child: const SpottoApp(),
     ),
   );
+  // After the first frame is scheduled, never before: push setup can fail or
+  // hang on iOS builds without the push entitlement and must not block the UI.
+  unawaited(PushNotificationService.instance.initialize(api));
 }
 
 class SpottoApp extends ConsumerWidget {
@@ -40,6 +52,30 @@ class SpottoApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: spottoTheme(),
       routerConfig: ref.watch(routerProvider),
+    );
+  }
+}
+
+/// Minimal fallback shown when startup fails before the real app can build.
+class _StartupErrorApp extends StatelessWidget {
+  const _StartupErrorApp({required this.error});
+  final Object error;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              "Spotto couldn't start.\n\n$error",
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
