@@ -454,6 +454,10 @@ function EmbeddingsCard({ embeddings, worker }: {
       </p>
       <p className="text-[11.5px] font-semibold text-muted mt-1">
         Worker: {worker.lastRunAt ? `last ran ${timeAgo(worker.lastRunAt)}, embedded ${worker.lastEmbedded}` : 'no run since last deploy'}
+        {worker.pausedUntil && ` · paused after a Google rate limit until ${new Date(worker.pausedUntil).toLocaleTimeString()}`}
+      </p>
+      <p className="text-[11px] text-muted mt-1">
+        Backfill stops for the day once it would eat into the last 20% of the daily embed quota, which is kept for live searches.
       </p>
       {worker.lastError && (
         <p className="text-[11.5px] font-mono mt-1 break-words" style={{ color: '#e11d48' }}>{worker.lastError}</p>

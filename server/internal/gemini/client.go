@@ -15,8 +15,13 @@ import (
 // (see internal/config). Google retires model ids on its own schedule —
 // gemini-1.5-flash and text-embedding-004 both started 404ing, which is what
 // silently broke Local Guide — so these live in config rather than code.
+//
+// The chat default is a "lite" model on purpose: gemini-3.8-flash thinks
+// before every answer (10s+ per round, several rounds per guide message)
+// and its free tier allows only 20 requests a day. The lite model answers
+// a tool-calling round in about a second and handles the guide's tools fine.
 const (
-	DefaultChatModel  = "gemini-3.8-flash"
+	DefaultChatModel  = "gemini-3.5-flash-lite"
 	DefaultEmbedModel = "gemini-embedding-001"
 )
 

@@ -620,7 +620,7 @@ export interface AdminGuideStatsResponse {
   quotaUsed: AdminAIQuotaUsage;
   embeddings: AdminEmbeddingStats;
   /** In-memory snapshot of the embedding worker's last sweep (resets on deploy). */
-  embedWorker: { lastRunAt?: string; lastError: string; lastEmbedded: number };
+  embedWorker: { lastRunAt?: string; lastError: string; lastEmbedded: number; pausedUntil?: string };
 }
 
 /** One feature+model's Gemini calls over today (Pacific) / 7d / 30d. */

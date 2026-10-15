@@ -93,10 +93,23 @@ func (s *Server) aiExtractCertNumber(ctx context.Context, data []byte, contentTy
 // memory only — it resets on deploy, which is fine for a "is it running"
 // indicator; the durable progress number comes from the places table.
 type embedWorkerStatus struct {
-	mu          sync.Mutex
-	lastRunAt   time.Time
-	lastError   string
+	mu           sync.Mutex
+	lastRunAt    time.Time
+	lastError    string
 	lastEmbedded int
+	pauseUntil   time.Time
+}
+
+func (st *embedWorkerStatus) pause(d time.Duration) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.pauseUntil = time.Now().Add(d)
+}
+
+func (st *embedWorkerStatus) pausedUntil() time.Time {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.pauseUntil
 }
 
 func (st *embedWorkerStatus) set(embedded int, err error) {
@@ -116,6 +129,9 @@ func (st *embedWorkerStatus) snapshot() map[string]any {
 	out := map[string]any{"lastError": st.lastError, "lastEmbedded": st.lastEmbedded}
 	if !st.lastRunAt.IsZero() {
 		out["lastRunAt"] = st.lastRunAt
+	}
+	if time.Now().Before(st.pauseUntil) {
+		out["pausedUntil"] = st.pauseUntil
 	}
 	return out
 }

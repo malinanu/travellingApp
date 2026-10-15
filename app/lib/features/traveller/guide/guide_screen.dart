@@ -149,12 +149,18 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     // already caps every branch with its own timeout, so this can't hang.
     final pos = (await ref.read(devicePositionProvider.future)).$1;
     try {
-      final res = await ref.read(apiProvider).dio.post('/guide/chat', data: {
-        if (_conversationId != null) 'conversationId': _conversationId,
-        'message': q,
-        'lat': pos.lat,
-        'lng': pos.lng,
-      });
+      final res = await ref.read(apiProvider).dio.post(
+        '/guide/chat',
+        data: {
+          if (_conversationId != null) 'conversationId': _conversationId,
+          'message': q,
+          'lat': pos.lat,
+          'lng': pos.lng,
+        },
+        // The app-wide 10s receiveTimeout is shorter than one model reply
+        // with tool calls; the server caps the whole reply at 60s.
+        options: Options(receiveTimeout: const Duration(seconds: 75)),
+      );
       final body = (res.data as Map).cast<String, dynamic>();
       if (!mounted) return;
       setState(() {

@@ -1,4 +1,4 @@
-﻿package httpapi
+package httpapi
 
 // Local Guide: a conversational assistant that recommends real places and
 // (eventually, in a fast-follow) plans trips. Uses the configured Gemini chat
@@ -34,6 +34,9 @@ import (
 // guideMaxToolRounds bounds how many times the model can call tools before
 // it must give a final answer â€” prevents a runaway loop if it never stops.
 const guideMaxToolRounds = 4
+
+// guideBudget bounds one whole guide reply (all tool rounds plus retries).
+const guideBudget = 60 * time.Second
 
 // guideMaxHistoryMessages caps how much stored conversation gets replayed
 // into each request â€” conversations persist indefinitely, but the model's
@@ -117,8 +120,18 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The model call runs on a context detached from the request: if the
+	// app gives up waiting (slow model, bad network), the answer is still
+	// produced and saved below, so it appears when the traveller reopens the
+	// conversation instead of being thrown away mid-call. guideBudget bounds
+	// it instead, and the write deadline is pushed past the server-wide 30s
+	// WriteTimeout so a slow-but-successful answer can still be delivered.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(guideBudget + 15*time.Second))
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), guideBudget)
+	defer cancel()
+
 	start := time.Now()
-	reply, placeIDs, meta, err := s.runGuideChat(r.Context(), c.Subject, history, req.Message, req.Lat, req.Lng)
+	reply, placeIDs, meta, err := s.runGuideChat(ctx, c.Subject, history, req.Message, req.Lat, req.Lng)
 	latencyMs := int(time.Since(start).Milliseconds())
 	if err != nil {
 		status := "error"
@@ -127,7 +140,7 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 		} else {
 			log.Printf("guide: chat: %v", err)
 		}
-		s.recordGuideRequest(r.Context(), convID, c.Subject, status, err.Error(), latencyMs, meta)
+		s.recordGuideRequest(ctx, convID, c.Subject, status, err.Error(), latencyMs, meta)
 		// Includes conversationId even on failure â€” the conversation row
 		// already exists (created above), and without this the client has
 		// no way to learn its id and ends up creating a brand new
@@ -145,14 +158,14 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	s.recordGuideRequest(r.Context(), convID, c.Subject, "ok", "", latencyMs, meta)
+	s.recordGuideRequest(ctx, convID, c.Subject, "ok", "", latencyMs, meta)
 
-	if err := s.Store.InsertGuideMessage(r.Context(), domain.GuideMessage{
+	if err := s.Store.InsertGuideMessage(ctx, domain.GuideMessage{
 		ConversationID: convID, Role: "user", Content: req.Message,
 	}); err != nil {
 		log.Printf("guide: save user message: %v", err)
 	}
-	if err := s.Store.InsertGuideMessage(r.Context(), domain.GuideMessage{
+	if err := s.Store.InsertGuideMessage(ctx, domain.GuideMessage{
 		ConversationID: convID, Role: "assistant", Content: reply, PlaceIDs: placeIDs,
 	}); err != nil {
 		log.Printf("guide: save assistant message: %v", err)
@@ -405,22 +418,22 @@ func guideTools() []gemini.Tool {
 				Name:        "save_trip",
 				Description: "Automatically save a generated itinerary to the traveller's account.",
 				Parameters: map[string]any{
-					"type":       "object",
+					"type": "object",
 					"properties": map[string]any{
-						"name": map[string]any{"type": "string", "description": "Name of the trip"},
+						"name":      map[string]any{"type": "string", "description": "Name of the trip"},
 						"startDate": map[string]any{"type": "string", "description": "YYYY-MM-DD"},
 						"days": map[string]any{
 							"type": "array",
 							"items": map[string]any{
 								"type": "object",
 								"properties": map[string]any{
-									"date": map[string]any{"type": "string"},
+									"date":   map[string]any{"type": "string"},
 									"places": map[string]any{"type": "array", "items": map[string]any{"type": "string", "description": "Place IDs"}},
 								},
 							},
 						},
 					},
-					"required":   []string{"name", "startDate", "days"},
+					"required": []string{"name", "startDate", "days"},
 				},
 			},
 		},
@@ -453,7 +466,7 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, lat, lng 
 		}
 		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
 		c := auth.FromContext(ctx)
-		
+
 		daysJSON, _ := json.Marshal(args.Days)
 		trip := domain.Trip{
 			OwnerID:   c.Subject,
@@ -462,7 +475,7 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, lat, lng 
 			Days:      daysJSON,
 			UpdatedAt: time.Now(),
 		}
-		
+
 		if existing, err := s.Store.TripByOwner(ctx, c.Subject); err == nil {
 			trip.Code = existing.Code
 			trip.Collab = existing.Collab
@@ -482,7 +495,7 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, lat, lng 
 				}
 			}
 		}
-		
+
 		if err := s.Store.UpsertTrip(ctx, trip); err == nil {
 			return `{"status":"ok", "message":"trip saved successfully"}`, placeIDs, false
 		}
@@ -632,4 +645,3 @@ func dedupe(ids []string) []string {
 	}
 	return out
 }
-
