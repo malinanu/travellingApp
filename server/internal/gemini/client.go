@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -61,20 +62,64 @@ type Usage struct {
 	Estimated        bool `json:"-"`
 }
 
+// ErrDailyQuota marks a 429 caused by a per-day quota (the free tier's
+// daily request cap) — retrying is pointless until Google's Pacific-midnight
+// reset. It is always wrapped together with ErrRateLimited.
+var ErrDailyQuota = errors.New("daily quota used up")
+
+var (
+	quotaRe   = regexp.MustCompile(`Quota exceeded for metric: ([^,]+), limit: (\d+), model: ([\w.\-]+)`)
+	retryRe   = regexp.MustCompile(`Please retry in ([\dhm]*\d+)(?:\.\d+)?s`)
+	messageRe = regexp.MustCompile(`"message":\s*"((?:[^"\\]|\\.)*)"`)
+	quotaIDRe = regexp.MustCompile(`"quotaId":\s*"([^"]+)"`)
+)
+
 // upstreamError turns a non-200 response into an error that carries the
-// status and the start of Google's own error body (e.g. "models/x is not
-// found"), so the admin dashboard's error list shows the real cause instead
-// of a bare status code. A 429 wraps ErrRateLimited.
+// status and Google's own reason (e.g. "models/x is not found"), so the
+// admin dashboard's error list shows the real cause instead of a bare status
+// code. A 429's body opens with a long boilerplate paragraph, so the quota
+// metric, limit, model and retry delay are pulled out and put first rather
+// than truncated away. A 429 wraps ErrRateLimited (and ErrDailyQuota when
+// the exhausted quota is a daily one).
 func upstreamError(kind string, res *http.Response) error {
-	b, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
-	msg := strings.Join(strings.Fields(string(b)), " ")
-	if len(msg) > 400 {
-		msg = msg[:400] + "…"
+	b, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+	body := strings.Join(strings.Fields(string(b)), " ")
+
+	var detail string
+	if m := quotaRe.FindStringSubmatch(body); m != nil {
+		detail = fmt.Sprintf("quota %s limit %s model %s", m[1], m[2], m[3])
+		if r := retryRe.FindStringSubmatch(body); r != nil {
+			detail += "; retry in " + r[1] + "s"
+		}
+	} else if m := messageRe.FindStringSubmatch(body); m != nil {
+		detail = m[1]
+	} else {
+		detail = body
 	}
+	if len(detail) > 300 {
+		detail = detail[:300] + "…"
+	}
+
 	if res.StatusCode == http.StatusTooManyRequests {
-		return fmt.Errorf("%w: %s %s", ErrRateLimited, kind, msg)
+		if isDailyQuota(body) {
+			return fmt.Errorf("%w (%w): %s: %s", ErrRateLimited, ErrDailyQuota, kind, detail)
+		}
+		return fmt.Errorf("%w: %s: %s", ErrRateLimited, kind, detail)
 	}
-	return fmt.Errorf("gemini %s %d: %s", kind, res.StatusCode, msg)
+	return fmt.Errorf("gemini %s %d: %s", kind, res.StatusCode, detail)
+}
+
+// isDailyQuota reports whether a 429 was caused by a per-day quota. The
+// metric name alone can't tell (the free tier's per-minute and per-day caps
+// share generate_content_free_tier_requests), so this reads the violation's
+// quotaId, e.g. GenerateRequestsPerDayPerProjectPerModel-FreeTier.
+func isDailyQuota(body string) bool {
+	for _, m := range quotaIDRe.FindAllStringSubmatch(body, -1) {
+		if strings.Contains(m[1], "PerDay") {
+			return true
+		}
+	}
+	return false
 }
 
 // retryBackoff is the wait before each retry of a 500/503 — Gemini answers

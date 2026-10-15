@@ -3,7 +3,7 @@ package httpapi
 // Local Guide: a conversational assistant that recommends real places and
 // (eventually, in a fast-follow) plans trips. Uses the configured Gemini chat
 // model (GEMINI_CHAT_MODEL, see internal/gemini) via its OpenAI-compatibility endpoint, with tool
-// calling â€” the model decides for itself whether it has enough information to
+// calling — the model decides for itself whether it has enough information to
 // search, or should ask a clarifying question first, steered entirely by
 // guideSystemPrompt rather than separate orchestration code. The actual
 // place-matching is internal/recommend's deterministic scoring algorithm;
@@ -12,7 +12,7 @@ package httpapi
 //
 // Conversations persist (guide_conversations/guide_messages) so a
 // traveller can close the app and resume later, but only user-visible
-// turns are stored â€” each new message re-derives whatever tool calls it
+// turns are stored — each new message re-derives whatever tool calls it
 // needs from the prior plain-text turns, not from replaying tool state.
 
 import (
@@ -32,14 +32,14 @@ import (
 )
 
 // guideMaxToolRounds bounds how many times the model can call tools before
-// it must give a final answer â€” prevents a runaway loop if it never stops.
+// it must give a final answer — prevents a runaway loop if it never stops.
 const guideMaxToolRounds = 4
 
 // guideBudget bounds one whole guide reply (all tool rounds plus retries).
 const guideBudget = 60 * time.Second
 
 // guideMaxHistoryMessages caps how much stored conversation gets replayed
-// into each request â€” conversations persist indefinitely, but the model's
+// into each request — conversations persist indefinitely, but the model's
 // context window doesn't, so only the most recent turns are sent.
 const guideMaxHistoryMessages = 20
 
@@ -49,13 +49,13 @@ Traveller's saved travel styles: %s
 Current weather where they are: %s
 
 Guidelines:
-- Keep replies short, warm, and conversational â€” like a knowledgeable local friend, not a search engine.
+- Keep replies short, warm, and conversational — like a knowledgeable local friend, not a search engine.
 - TRIP PLANNING: If the traveller asks to plan a trip (e.g., specific dates or locations), DO NOT search immediately. First, ask them about their budget (e.g., luxury $$$, mid-range $$, or budget $).
 - VIBE CHECK: If "Traveller's saved travel styles" is "none stated" and they ask for recommendations or a trip, you must ask what kind of vibe they prefer (e.g. quiet, lively, nature) before searching. Once they reply, call save_user_vibe to save their preferences.
-- If you don't have enough information to make a good recommendation (e.g. budget, interests, how much time they have, what mood they're in), ask ONE short clarifying question before searching â€” don't guess.
+- If you don't have enough information to make a good recommendation (e.g. budget, interests, how much time they have, what mood they're in), ask ONE short clarifying question before searching — don't guess.
 - Once you have enough to go on (including budget and vibe), call search_places to find real matching places. Never invent or recommend a place that search_places didn't actually return. 
 - For trip plans, call save_trip to permanently save the generated itinerary using the retrieved places.
-- search_places' structured filters (categories, tags, vibe, price, etc.) cover the common cases, but for anything that doesn't map cleanly onto them â€” a specific mood, activity, or phrase the traveller used â€” also pass it as the free-text "query" argument so it can be matched semantically.
+- search_places' structured filters (categories, tags, vibe, price, etc.) cover the common cases, but for anything that doesn't map cleanly onto them — a specific mood, activity, or phrase the traveller used — also pass it as the free-text "query" argument so it can be matched semantically.
 - When you recommend places, mention them by name naturally in your reply so the traveller can tell which ones you mean.
 - If it's currently raining, lean toward indoor recommendations unless the traveller says otherwise.
 - "Current weather where they are" above is only for the traveller's own location. If they ask about weather somewhere else by name (e.g. "is it going to rain in Ella today?"), call get_weather with that place name instead of guessing.`
@@ -72,7 +72,7 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.guideLimit != nil && !s.guideLimit.allowInc(limitKey) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{
-			"error": "Local Guide rate limit exceeded â€” please wait a moment before sending another message",
+			"error": "Local Guide rate limit exceeded — please wait a moment before sending another message",
 		})
 		return
 	}
@@ -137,17 +137,25 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 		status := "error"
 		if errors.Is(err, gemini.ErrRateLimited) {
 			status = "rate_limited"
-		} else {
-			log.Printf("guide: chat: %v", err)
 		}
+		log.Printf("guide: chat (%s): %v", status, err)
 		s.recordGuideRequest(ctx, convID, c.Subject, status, err.Error(), latencyMs, meta)
-		// Includes conversationId even on failure â€” the conversation row
+		// Includes conversationId even on failure — the conversation row
 		// already exists (created above), and without this the client has
 		// no way to learn its id and ends up creating a brand new
 		// conversation on every retry instead of continuing this one.
+		if errors.Is(err, gemini.ErrDailyQuota) {
+			// Google's daily caps reset at midnight Pacific; "try again in a
+			// moment" would just send the traveller into the same wall.
+			writeJSON(w, http.StatusTooManyRequests, map[string]any{
+				"error":          "Local Guide has reached today's AI usage limit. It resets at midnight Pacific time (1:30 PM in Sri Lanka).",
+				"conversationId": convID,
+			})
+			return
+		}
 		if status == "rate_limited" {
 			writeJSON(w, http.StatusTooManyRequests, map[string]any{
-				"error":          "Local Guide is busy right now â€” try again in a moment",
+				"error":          "Local Guide is busy right now — try again in a moment",
 				"conversationId": convID,
 			})
 			return
@@ -179,7 +187,7 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 }
 
 // recordGuideRequest is best-effort telemetry for the admin Local Guide
-// dashboard â€” a failure here should never affect the traveller-facing
+// dashboard — a failure here should never affect the traveller-facing
 // response, same convention as InsertGuideMessage's error handling.
 func (s *Server) recordGuideRequest(ctx context.Context, convID, travellerID, status, errMsg string, latencyMs int, meta guideRequestMeta) {
 	if err := s.Store.InsertGuideRequest(ctx, domain.GuideRequest{
@@ -217,7 +225,7 @@ func (s *Server) handleGuideLatestConversation(w http.ResponseWriter, r *http.Re
 	})
 }
 
-// guideRequestMeta accumulates telemetry about one runGuideChat call â€” fed
+// guideRequestMeta accumulates telemetry about one runGuideChat call — fed
 // into recordGuideRequest regardless of whether the call ultimately
 // succeeds, so the admin dashboard can see what was attempted even on a
 // failed request.
@@ -339,7 +347,7 @@ func guideTools() []gemini.Tool {
 			Function: gemini.ToolFunction{
 				Name: "search_places",
 				Description: "Search for real places matching the traveller's preferences. " +
-					"Always use this before recommending specific places â€” never invent one.",
+					"Always use this before recommending specific places — never invent one.",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
