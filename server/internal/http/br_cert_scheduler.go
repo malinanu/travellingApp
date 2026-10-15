@@ -20,7 +20,6 @@ import (
 
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/eroc"
-	"github.com/spotto/server/internal/gemini"
 )
 
 const brCertSchedulerInterval = 2 * time.Minute
@@ -123,7 +122,7 @@ func (s *Server) ocrVendorBRCert(ctx context.Context, vendorID string) (string, 
 	if err != nil {
 		return "", err
 	}
-	return gemini.ExtractCertNumber(ctx, s.GeminiAPIKey, data, doc.ContentType)
+	return s.aiExtractCertNumber(ctx, data, doc.ContentType)
 }
 
 // runBRCertVerifySweep checks every vendor with a certificate number

@@ -610,6 +610,79 @@ export interface AdminGuideStatsResponse {
   stats: AdminGuideStats;
   toolUsage: AdminGuideToolUsage[];
   rateLimitRPM: number;
+  /** false when GEMINI_API_KEY isn't set on the server. */
+  configured: boolean;
+  models: { chat: string; embed: string };
+  aiUsage: AdminAIUsageRow[];
+  /** 14 Pacific-time days, oldest first, zero-filled. */
+  daily: AdminAIDailyPoint[];
+  quota: AdminAIQuota;
+  quotaUsed: AdminAIQuotaUsage;
+  embeddings: AdminEmbeddingStats;
+  /** In-memory snapshot of the embedding worker's last sweep (resets on deploy). */
+  embedWorker: { lastRunAt?: string; lastError: string; lastEmbedded: number };
+}
+
+/** One feature+model's Gemini calls over today (Pacific) / 7d / 30d. */
+export interface AdminAIUsageRow {
+  feature: string;
+  kind: 'chat' | 'embed';
+  model: string;
+  requestsToday: number;
+  requests7d: number;
+  requests30d: number;
+  errors7d: number;
+  rateLimited7d: number;
+  inputTokensToday: number;
+  outputTokensToday: number;
+  inputTokens7d: number;
+  outputTokens7d: number;
+  inputTokens30d: number;
+  outputTokens30d: number;
+  /** Embedding token counts are a characters/4 estimate — the API reports none. */
+  tokensEstimated: boolean;
+}
+
+export interface AdminAIDailyPoint {
+  day: string;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/** Admin-entered daily limits — Gemini has no remaining-quota API. */
+export interface AdminAIQuota {
+  chatRequestsPerDay: number;
+  chatTokensPerDay: number;
+  embedRequestsPerDay: number;
+}
+
+export interface AdminAIQuotaUsage {
+  chatRequestsToday: number;
+  chatTokensToday: number;
+  embedRequestsToday: number;
+}
+
+export interface AdminEmbeddingStats {
+  model: string;
+  total: number;
+  /** Embedded with the current model. */
+  embedded: number;
+  /** Never embedded, or embedded with a previous model. */
+  pending: number;
+}
+
+/** POST /admin/local-guide/health — one live call per model. */
+export interface AdminAIHealthCheck {
+  model: string;
+  ok: boolean;
+  latencyMs: number;
+  error?: string;
+}
+
+export interface AdminAIHealthResponse {
+  chat: AdminAIHealthCheck;
+  embed: AdminAIHealthCheck;
 }
 
 /** One row in the Local Guide dashboard's browsable conversation list —
@@ -635,12 +708,13 @@ export interface AdminGuideMessage {
   createdAt: string;
 }
 
-/** One failed /guide/chat call — GET /admin/local-guide/errors. The
- * traveller only ever sees a generic "unexpected error" message, so this is
- * the real upstream failure reason (auth, quota, model access, etc.). */
+/** One failed Gemini call from any feature — GET /admin/local-guide/errors.
+ * The traveller only ever sees a generic "unexpected error" message, so this
+ * is the real upstream failure reason (auth, quota, retired model, etc.). */
 export interface AdminGuideErrorEntry {
-  conversationId: string;
-  travellerId: string;
+  feature: string;
+  model: string;
+  status: 'error' | 'rate_limited';
   errorMessage: string;
   createdAt: string;
 }

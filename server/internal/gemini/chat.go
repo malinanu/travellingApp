@@ -1,24 +1,14 @@
 package gemini
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
 )
 
 const chatEndpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-
-// ChatModel is a free-tier chat model.
-const ChatModel = "gemini-1.5-flash"
-
-// ErrRateLimited distinguishes a 429 so callers can surface something
-// friendlier than a generic failure — free-model rate limits are real and
-// tight, unlike a paid tier.
-var ErrRateLimited = errors.New("gemini: rate limited (429)")
 
 // Message is one turn in an OpenAI-style chat-completion request/response.
 // Role is "system"/"user"/"assistant"/"tool". An assistant message either
@@ -36,6 +26,11 @@ type ToolCall struct {
 	ID       string       `json:"id"`
 	Type     string       `json:"type"` // "function"
 	Function FunctionCall `json:"function"`
+	// ExtraContent carries Gemini 3's thought_signature
+	// ({"google":{"thought_signature":"..."}}). It must be echoed back
+	// verbatim with the assistant turn on the next request, or Gemini
+	// rejects the follow-up with a 400 — so it's kept opaque, never parsed.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 type FunctionCall struct {
@@ -74,47 +69,28 @@ type chatResponse struct {
 	} `json:"error"`
 }
 
-type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
-}
-
 // Complete sends the conversation so far (plus any available tools) to
 // Gemini's OpenAI-compatible endpoint and returns the model's response message
 // — which may itself carry ToolCalls instead of a final Content answer; the
 // caller is responsible for executing those and calling Complete again with the
 // extended message list (see guide.go's tool-calling loop).
-func Complete(ctx context.Context, apiKey string, messages []Message, tools []Tool) (*Message, *Usage, error) {
+func (c *Client) Complete(ctx context.Context, messages []Message, tools []Tool) (*Message, *Usage, error) {
 	// Bounded independently of the caller's context.
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 
-	body, err := json.Marshal(chatRequest{Model: ChatModel, Messages: messages, Tools: tools})
+	body, err := json.Marshal(chatRequest{Model: c.ChatModel, Messages: messages, Tools: tools})
 	if err != nil {
 		return nil, nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatEndpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-
-	res, err := http.DefaultClient.Do(req)
+	res, err := post(ctx, chatEndpoint, body, c.bearer)
 	if err != nil {
 		return nil, nil, fmt.Errorf("gemini chat request: %w", err)
 	}
 	defer res.Body.Close()
-	
-	if res.StatusCode == http.StatusTooManyRequests {
-		return nil, nil, ErrRateLimited
-	}
 	if res.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("gemini chat: unexpected status %d", res.StatusCode)
+		return nil, nil, upstreamError("chat", res)
 	}
 
 	var parsed chatResponse
@@ -122,10 +98,10 @@ func Complete(ctx context.Context, apiKey string, messages []Message, tools []To
 		return nil, nil, fmt.Errorf("gemini decode chat response: %w", err)
 	}
 	if parsed.Error != nil {
-		return nil, nil, fmt.Errorf("gemini chat error: %s", parsed.Error.Message)
+		return nil, parsed.Usage, fmt.Errorf("gemini chat error: %s", parsed.Error.Message)
 	}
 	if len(parsed.Choices) == 0 {
-		return nil, nil, fmt.Errorf("gemini chat: empty response")
+		return nil, parsed.Usage, fmt.Errorf("gemini chat: empty response")
 	}
 	return &parsed.Choices[0].Message, parsed.Usage, nil
 }

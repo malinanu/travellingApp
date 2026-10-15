@@ -490,15 +490,84 @@ type ToolUsageCount struct {
 	Count int    `json:"count"`
 }
 
-// GuideErrorEntry is one failed /guide/chat call, for the admin dashboard's
-// "recent errors" panel — the only place the real upstream failure reason
-// (as opposed to the generic message shown to the traveller) is visible
-// without shell/DB access.
-type GuideErrorEntry struct {
-	ConversationID string    `json:"conversationId"`
-	TravellerID    string    `json:"travellerId"`
-	ErrorMessage   string    `json:"errorMessage"`
-	CreatedAt      time.Time `json:"createdAt"`
+// AIUsageEvent is one upstream Gemini call from any feature, recorded for
+// the admin dashboard (see internal/http/ai_usage.go).
+type AIUsageEvent struct {
+	Feature         string
+	Kind            string // "chat" | "embed"
+	Model           string
+	Status          string // "ok" | "rate_limited" | "error"
+	ErrorMessage    string
+	InputTokens     int
+	OutputTokens    int
+	TokensEstimated bool
+	Items           int
+	LatencyMs       int
+}
+
+// AIUsageRow aggregates one feature+model's Gemini calls over the dashboard's
+// three windows. "Today" is the Pacific-time day, matching when Google resets
+// daily quotas.
+type AIUsageRow struct {
+	Feature           string `json:"feature"`
+	Kind              string `json:"kind"`
+	Model             string `json:"model"`
+	RequestsToday     int    `json:"requestsToday"`
+	Requests7d        int    `json:"requests7d"`
+	Requests30d       int    `json:"requests30d"`
+	Errors7d          int    `json:"errors7d"`
+	RateLimited7d     int    `json:"rateLimited7d"`
+	InputTokensToday  int    `json:"inputTokensToday"`
+	OutputTokensToday int    `json:"outputTokensToday"`
+	InputTokens7d     int    `json:"inputTokens7d"`
+	OutputTokens7d    int    `json:"outputTokens7d"`
+	InputTokens30d    int    `json:"inputTokens30d"`
+	OutputTokens30d   int    `json:"outputTokens30d"`
+	TokensEstimated   bool   `json:"tokensEstimated"`
+}
+
+// AIDailyPoint is one Pacific-time day in the dashboard's 14-day chart.
+type AIDailyPoint struct {
+	Day          string `json:"day"` // YYYY-MM-DD
+	Requests     int    `json:"requests"`
+	InputTokens  int    `json:"inputTokens"`
+	OutputTokens int    `json:"outputTokens"`
+}
+
+// AIQuota is the admin-entered daily limits "left to use" is measured
+// against — Gemini exposes no remaining-quota API.
+type AIQuota struct {
+	ChatRequestsPerDay  int `json:"chatRequestsPerDay"`
+	ChatTokensPerDay    int `json:"chatTokensPerDay"`
+	EmbedRequestsPerDay int `json:"embedRequestsPerDay"`
+}
+
+// AIQuotaUsage is today's (Pacific-time) consumption against AIQuota.
+// Embedding requests count each embedded item, as Google does for batches.
+type AIQuotaUsage struct {
+	ChatRequestsToday  int `json:"chatRequestsToday"`
+	ChatTokensToday    int `json:"chatTokensToday"`
+	EmbedRequestsToday int `json:"embedRequestsToday"`
+}
+
+// EmbeddingStats is the place-embedding backfill's progress for the current
+// embedding model.
+type EmbeddingStats struct {
+	Model    string `json:"model"`
+	Total    int    `json:"total"`
+	Embedded int    `json:"embedded"` // embedded with the current model
+	Pending  int    `json:"pending"`  // never embedded, or embedded with another model
+}
+
+// AIErrorEntry is one failed Gemini call from any feature, with the real
+// upstream error text — the traveller only ever sees a generic message, so
+// this is the diagnostic surface for auth/quota/model-retirement failures.
+type AIErrorEntry struct {
+	Feature      string    `json:"feature"`
+	Model        string    `json:"model"`
+	Status       string    `json:"status"`
+	ErrorMessage string    `json:"errorMessage"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 // GuideConversationSummary is one row in the admin dashboard's browsable

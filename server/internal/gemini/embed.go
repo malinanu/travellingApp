@@ -1,7 +1,6 @@
 package gemini
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,10 +8,7 @@ import (
 	"time"
 )
 
-const embeddingsEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents"
-
-// EmbeddingModel is the semantic-search vector embedding model.
-const EmbeddingModel = "models/text-embedding-004"
+const embedEndpointFmt = "https://generativelanguage.googleapis.com/v1beta/models/%s:batchEmbedContents"
 
 type embedContentRequest struct {
 	Model   string `json:"model"`
@@ -21,6 +17,7 @@ type embedContentRequest struct {
 			Text string `json:"text"`
 		} `json:"parts"`
 	} `json:"content"`
+	OutputDimensionality int `json:"outputDimensionality,omitempty"`
 }
 
 type batchEmbedRequest struct {
@@ -37,62 +34,56 @@ type batchEmbedResponse struct {
 }
 
 // Embed returns one embedding vector per input string, in the same order
-// as inputs.
-func Embed(ctx context.Context, apiKey string, inputs []string) ([][]float64, error) {
+// as inputs. The API reports no token counts for embeddings, so the
+// returned Usage is a characters/4 estimate (Estimated=true).
+func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float64, *Usage, error) {
 	if len(inputs) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	var reqBody batchEmbedRequest
+	chars := 0
 	for _, text := range inputs {
-		req := embedContentRequest{Model: EmbeddingModel}
-		req.Content.Parts = []struct{ Text string `json:"text"` }{{Text: text}}
+		req := embedContentRequest{Model: "models/" + c.EmbedModel, OutputDimensionality: EmbeddingDimensions}
+		req.Content.Parts = []struct {
+			Text string `json:"text"`
+		}{{Text: text}}
 		reqBody.Requests = append(reqBody.Requests, req)
+		chars += len(text)
 	}
+	usage := &Usage{PromptTokens: chars / 4, TotalTokens: chars / 4, Estimated: true}
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, embeddingsEndpoint, bytes.NewReader(body))
+	res, err := post(ctx, fmt.Sprintf(embedEndpointFmt, c.EmbedModel), body, c.apiKey)
 	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("x-goog-api-key", apiKey)
-	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("gemini embed request: %w", err)
+		return nil, usage, fmt.Errorf("gemini embed request: %w", err)
 	}
 	defer res.Body.Close()
-
-	if res.StatusCode == http.StatusTooManyRequests {
-		return nil, ErrRateLimited
-	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("gemini embed unexpected status %d", res.StatusCode)
+		return nil, usage, upstreamError("embed", res)
 	}
 
 	var parsed batchEmbedResponse
 	if err := json.NewDecoder(res.Body).Decode(&parsed); err != nil {
-		return nil, fmt.Errorf("gemini decode embed response: %w", err)
+		return nil, usage, fmt.Errorf("gemini decode embed response: %w", err)
 	}
 	if parsed.Error != nil {
-		return nil, fmt.Errorf("gemini embed error: %s", parsed.Error.Message)
+		return nil, usage, fmt.Errorf("gemini embed error: %s", parsed.Error.Message)
 	}
 	if len(parsed.Embeddings) != len(inputs) {
-		return nil, fmt.Errorf("gemini embed expected %d embeddings, got %d", len(inputs), len(parsed.Embeddings))
+		return nil, usage, fmt.Errorf("gemini embed expected %d embeddings, got %d", len(inputs), len(parsed.Embeddings))
 	}
 
 	out := make([][]float64, len(parsed.Embeddings))
 	for i, e := range parsed.Embeddings {
 		out[i] = e.Values
 	}
-	return out, nil
+	return out, usage, nil
 }

@@ -55,6 +55,11 @@ type Config struct {
 	// (see internal/http/guide.go, internal/recommend). Unset means
 	// these features are unconfigured (no OCR, 501 for guide endpoints).
 	GeminiAPIKey string
+	// GeminiChatModel / GeminiEmbedModel override the default model ids in
+	// internal/gemini — Google retires ids on its own schedule, so a
+	// retirement is an env change rather than a code change.
+	GeminiChatModel  string
+	GeminiEmbedModel string
 	// VendorAppURL is the base URL of the vendor Next.js app, used to build
 	// links embedded in emails (invite accept, password reset).
 	VendorAppURL string
@@ -126,6 +131,8 @@ func Load() Config {
 		GoogleCalendarAPIKey: getenv("GOOGLE_CALENDAR_API_KEY", ""),
 		TomorrowIOAPIKey:     getenv("TOMORROW_IO_API_KEY", ""),
 		GeminiAPIKey:         getenv("GEMINI_API_KEY", ""),
+		GeminiChatModel:      getenv("GEMINI_CHAT_MODEL", ""),
+		GeminiEmbedModel:     getenv("GEMINI_EMBED_MODEL", ""),
 		VendorAppURL:         getenv("VENDOR_APP_URL", "http://localhost:3000"),
 		AdminAppURL:          getenv("ADMIN_APP_URL", "http://localhost:3001"),
 		SuperAdminEmails:     splitNonEmpty(getenv("SUPER_ADMIN_EMAILS", "")),

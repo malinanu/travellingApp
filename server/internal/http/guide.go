@@ -1,8 +1,8 @@
 ﻿package httpapi
 
 // Local Guide: a conversational assistant that recommends real places and
-// (eventually, in a fast-follow) plans trips. Uses Gemini's gemini-1.5-flash
-// model (internal/gemini) via its OpenAI-compatibility endpoint, with tool
+// (eventually, in a fast-follow) plans trips. Uses the configured Gemini chat
+// model (GEMINI_CHAT_MODEL, see internal/gemini) via its OpenAI-compatibility endpoint, with tool
 // calling â€” the model decides for itself whether it has enough information to
 // search, or should ask a clarifying question first, steered entirely by
 // guideSystemPrompt rather than separate orchestration code. The actual
@@ -33,7 +33,7 @@ import (
 
 // guideMaxToolRounds bounds how many times the model can call tools before
 // it must give a final answer â€” prevents a runaway loop if it never stops.
-const guideMaxToolRounds = 3
+const guideMaxToolRounds = 4
 
 // guideMaxHistoryMessages caps how much stored conversation gets replayed
 // into each request â€” conversations persist indefinitely, but the model's
@@ -241,17 +241,37 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 
 	tools := guideTools()
 	var placeIDs []string
+	// base is the conversation without any tool turns; toolResults collects
+	// every tool result as text, for the final round below.
+	base := append([]gemini.Message(nil), messages...)
+	var toolResults []string
 
-	for range guideMaxToolRounds {
-		resp, usage, err := gemini.Complete(ctx, s.GeminiAPIKey, messages, tools)
+	for round := range guideMaxToolRounds {
+		roundMessages, roundTools := messages, tools
+		if round == guideMaxToolRounds-1 {
+			// Last round: force a text answer. Gemini keeps calling tools
+			// whenever the history holds tool turns — even with no tools
+			// declared or tool_choice "none" — so the final request drops
+			// the tool turns and hands their results over as a note instead.
+			note := "Results from the tools you already called:\n" + strings.Join(toolResults, "\n") +
+				"\nAnswer the traveller now using only these results. Do not call any more tools."
+			roundMessages = append(base[:len(base):len(base)], gemini.Message{Role: "system", Content: note})
+			roundTools = nil
+		}
+		resp, usage, err := s.aiComplete(ctx, aiFeatureGuideChat, roundMessages, roundTools)
 		if usage != nil {
 			meta.InputTokens += usage.PromptTokens
-			meta.OutputTokens += usage.CompletionTokens
+			// Same thinking-token accounting as recordAIUsage, so per-user
+			// totals match the dashboard's usage numbers.
+			meta.OutputTokens += max(usage.CompletionTokens, usage.TotalTokens-usage.PromptTokens)
 		}
 		if err != nil {
 			return "", nil, meta, err
 		}
 		if len(resp.ToolCalls) == 0 {
+			if strings.TrimSpace(resp.Content) == "" {
+				return "", nil, meta, errors.New("guide: model returned an empty reply")
+			}
 			return resp.Content, dedupe(placeIDs), meta, nil
 		}
 		messages = append(messages, *resp)
@@ -263,9 +283,10 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 				meta.UsedSemanticQuery = true
 			}
 			messages = append(messages, gemini.Message{Role: "tool", ToolCallID: tc.ID, Content: result})
+			toolResults = append(toolResults, tc.Function.Name+": "+result)
 		}
 	}
-	return "", nil, meta, fmt.Errorf("guide: exceeded %d tool-calling rounds", guideMaxToolRounds)
+	return "", nil, meta, fmt.Errorf("guide: model kept calling tools after %d rounds", guideMaxToolRounds)
 }
 
 func (s *Server) guideWeatherCondition(ctx context.Context, lat, lng float64) string {
@@ -501,7 +522,7 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, lat, lng 
 		// same graceful-degradation convention as guideWeatherCondition.
 		var queryEmbedding []float64
 		if q := strings.TrimSpace(args.Query); q != "" {
-			if vecs, err := gemini.Embed(ctx, s.GeminiAPIKey, []string{q}); err != nil {
+			if vecs, err := s.aiEmbed(ctx, aiFeatureGuideEmbed, []string{q}); err != nil {
 				log.Printf("guide: embed query: %v", err)
 			} else {
 				queryEmbedding = vecs[0]

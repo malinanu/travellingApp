@@ -16,7 +16,6 @@ import (
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
-	"github.com/spotto/server/internal/gemini"
 	"github.com/spotto/server/internal/geo"
 	"github.com/spotto/server/internal/placedetails"
 	"github.com/spotto/server/internal/recommend"
@@ -199,9 +198,10 @@ func (s *Server) handleSearchPlaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	emb, err := gemini.Embed(r.Context(), s.GeminiAPIKey, []string{q})
+	emb, err := s.aiEmbed(r.Context(), aiFeatureSearchEmbed, []string{q})
 	if err != nil || len(emb) == 0 {
-		writeErr(w, http.StatusInternalServerError, "failed to embed query")
+		log.Printf("search places: embed query: %v", err)
+		writeErr(w, http.StatusBadGateway, "semantic search is temporarily unavailable")
 		return
 	}
 

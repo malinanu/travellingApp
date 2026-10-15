@@ -14,6 +14,7 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 
+	"github.com/spotto/server/internal/gemini"
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/config"
 	"github.com/spotto/server/internal/domain"
@@ -52,6 +53,14 @@ type Server struct {
 	// a no-op. It also powers the Local Guide chat/embeddings; empty means
 	// POST /guide/chat reports itself unconfigured (501).
 	GeminiAPIKey string
+	// Gemini is the configured Gemini client (key + model ids). Always
+	// non-nil; callers still gate on GeminiAPIKey == "" for "unconfigured".
+	// Call it through aiComplete/aiEmbed (ai_usage.go) so each call lands
+	// in ai_usage_events for the admin dashboard.
+	Gemini *gemini.Client
+	// embedStatus is the embedding worker's last-run snapshot, surfaced on
+	// the admin Local Guide dashboard.
+	embedStatus embedWorkerStatus
 	// WeatherCache holds recent Tomorrow.io responses keyed by a coarse
 	// lat/lng cell (see internal/weather/cache.go) to stay within the free
 	// tier's tight rate limit.
@@ -119,6 +128,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		GoogleCalendarAPIKey: cfg.GoogleCalendarAPIKey,
 		TomorrowIOAPIKey:     cfg.TomorrowIOAPIKey,
 		GeminiAPIKey:         cfg.GeminiAPIKey,
+		Gemini:               gemini.NewClient(cfg.GeminiAPIKey, cfg.GeminiChatModel, cfg.GeminiEmbedModel),
 		WeatherCache:         weather.NewCache(),
 		// Same key as GoogleCalendarAPIKey â€” see its doc comment.
 		GooglePlacesAPIKey: cfg.GoogleCalendarAPIKey,
@@ -436,6 +446,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/local-guide/users/{id}/messages", s.handleAdminGuideUserMessages)
 		r.Get("/admin/local-guide/conversations/{id}", s.handleAdminGuideConversationDetail)
 		r.Get("/admin/local-guide/errors", s.handleAdminGuideErrors)
+		r.Put("/admin/local-guide/quota", s.handleAdminPutAIQuota)
+		r.Post("/admin/local-guide/health", s.handleAdminGuideHealth)
+		r.Post("/admin/local-guide/reembed", s.handleAdminGuideReembed)
 
 		// Quests
 		r.Get("/admin/quests/sponsorships/pending", s.handleAdminListPendingSponsorships)

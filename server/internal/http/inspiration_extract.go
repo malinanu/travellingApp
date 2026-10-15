@@ -139,7 +139,7 @@ func (s *Server) extractPlaceNames(ctx context.Context, caption string) ([]strin
 		"Respond with ONLY a JSON array of place name strings, nothing else. If none, respond with []." +
 		"\n\nCaption:\n" + caption
 
-	msg, _, err := gemini.Complete(ctx, s.GeminiAPIKey, []gemini.Message{
+	msg, _, err := s.aiComplete(ctx, aiFeatureInspiration, []gemini.Message{
 		{Role: "user", Content: prompt},
 	}, nil)
 	if err != nil {

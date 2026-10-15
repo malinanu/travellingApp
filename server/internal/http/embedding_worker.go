@@ -1,32 +1,25 @@
 ﻿package httpapi
 
 // The embedding worker backfills semantic-search vectors for places, off
-// the request path â€” same ticker-driven, Postgres-state-not-in-memory shape
+// the request path — same ticker-driven, Postgres-state-not-in-memory shape
 // as thumbnail_worker.go/weather_scheduler.go/holiday_scheduler.go/
-// br_cert_scheduler.go. Places start with embedding = NULL and this sweep
-// fills them in a few at a time via one batched OpenRouter call per tick.
+// br_cert_scheduler.go. A place needs (re-)embedding when its embedding is
+// NULL or was produced by a different model than GEMINI_EMBED_MODEL; this
+// sweep fills them in a batch at a time via one batchEmbedContents call.
 
 import (
 	"context"
 	"log"
 	"time"
 
-	"github.com/spotto/server/internal/gemini"
 	"github.com/spotto/server/internal/recommend"
 )
 
-// embeddingWorkerInterval â€” no tight latency requirement here (unlike
-// thumbnails, nothing in the UI is waiting on a place's embedding to
-// appear), so this paces gently against the free-tier embedding model's
-// rate limits. Deliberately wide: OpenRouter's free (":free") models share
-// one account-wide daily cap (50/day unfunded, 1000/day after a one-time
-// $10 credit purchase â€” see gemini.ai's rate-limit docs), and that
-// budget also has to cover live chat traffic from Local Guide itself. At
-// 30s this worker alone could burn most of an unfunded day's quota in the
-// ~20 minutes it takes to back through a few hundred places, right after
-// deploy, before anyone gets to actually chat. 20 minutes spreads that
-// same one-time backlog over most of a day instead.
-const embeddingWorkerInterval = 20 * time.Minute
+// embeddingWorkerInterval — nothing in the UI waits on a place's embedding,
+// so this paces gently. Each embedded item counts against the embedding
+// model's daily request quota (see the admin dashboard's quota bars), and a
+// few hundred places at 20 per 2 minutes backfill well inside an hour.
+const embeddingWorkerInterval = 2 * time.Minute
 
 // embeddingBatchSize caps how many places one tick embeds; a bigger
 // backlog just spans more ticks.
@@ -51,9 +44,11 @@ func (s *Server) runEmbeddingSweep(ctx context.Context) {
 	if s.GeminiAPIKey == "" {
 		return // local guide unconfigured
 	}
-	places, err := s.Store.PlacesMissingEmbedding(ctx, embeddingBatchSize)
+	model := s.Gemini.EmbedModel
+	places, err := s.Store.PlacesMissingEmbedding(ctx, model, embeddingBatchSize)
 	if err != nil {
 		log.Printf("embedding worker: list pending: %v", err)
+		s.embedStatus.set(0, err)
 		return
 	}
 	if len(places) == 0 {
@@ -65,8 +60,9 @@ func (s *Server) runEmbeddingSweep(ctx context.Context) {
 		texts[i] = recommend.SummarizeForEmbedding(p)
 	}
 
-	embeddings, err := gemini.Embed(ctx, s.GeminiAPIKey, texts)
+	embeddings, err := s.aiEmbed(ctx, aiFeatureEmbedWorker, texts)
 	if err != nil {
+		s.embedStatus.set(0, err)
 		// Transient (rate limit/network) â€” left NULL, picked up again next
 		// tick, same as the thumbnail worker's transient-failure handling.
 		log.Printf("embedding worker: embed batch: %v", err)
@@ -75,12 +71,13 @@ func (s *Server) runEmbeddingSweep(ctx context.Context) {
 
 	done := 0
 	for i, p := range places {
-		if err := s.Store.SetPlaceEmbedding(ctx, p.ID, embeddings[i]); err != nil {
+		if err := s.Store.SetPlaceEmbedding(ctx, p.ID, embeddings[i], model); err != nil {
 			log.Printf("embedding worker: store %s: %v", p.ID, err)
 			continue
 		}
 		done++
 	}
+	s.embedStatus.set(done, nil)
 	log.Printf("embedding worker: %d/%d places embedded", done, len(places))
 }
 

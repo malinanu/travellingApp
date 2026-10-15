@@ -1518,11 +1518,15 @@ func (s *Store) PlaceByName(ctx context.Context, name string) (domain.Place, err
 }
 
 // PlacesMissingEmbedding returns up to limit places whose semantic-search
-// embedding hasn't been computed yet — used by the background embedding
-// worker (internal/http/embedding_worker.go) to backfill in small batches.
-func (s *Store) PlacesMissingEmbedding(ctx context.Context, limit int) ([]domain.Place, error) {
+// embedding hasn't been computed yet, or was computed with a different
+// model than the current one (vectors from different models aren't
+// comparable) — used by the background embedding worker
+// (internal/http/embedding_worker.go) to backfill in small batches.
+func (s *Store) PlacesMissingEmbedding(ctx context.Context, model string, limit int) ([]domain.Place, error) {
 	rows, err := s.Pool.Query(ctx,
-		`SELECT id, name, vendor_id, data FROM places WHERE embedding IS NULL LIMIT $1`, limit)
+		`SELECT id, name, vendor_id, data FROM places
+		 WHERE embedding IS NULL OR embedding_model IS DISTINCT FROM $1
+		 LIMIT $2`, model, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1538,13 +1542,14 @@ func (s *Store) PlacesMissingEmbedding(ctx context.Context, limit int) ([]domain
 	return out, rows.Err()
 }
 
-// SetPlaceEmbedding stores a place's semantic-search embedding.
-func (s *Store) SetPlaceEmbedding(ctx context.Context, id string, embedding []float64) error {
+// SetPlaceEmbedding stores a place's semantic-search embedding and the
+// model that produced it.
+func (s *Store) SetPlaceEmbedding(ctx context.Context, id string, embedding []float64, model string) error {
 	b, err := json.Marshal(embedding)
 	if err != nil {
 		return err
 	}
-	_, err = s.Pool.Exec(ctx, `UPDATE places SET embedding=$2 WHERE id=$1`, id, b)
+	_, err = s.Pool.Exec(ctx, `UPDATE places SET embedding=$2, embedding_model=$3 WHERE id=$1`, id, b, model)
 	return err
 }
 
@@ -2521,32 +2526,6 @@ func (s *Store) GuideStats(ctx context.Context) (domain.GuideStats, error) {
 		&st.AvgLatencyMs7d, &st.SemanticQueryCount7d, &st.PlacesEmbedded, &st.PlacesTotal,
 	)
 	return st, err
-}
-
-// RecentGuideErrors lists the most recent failed /guide/chat calls with
-// their real error_message, for the admin dashboard's "recent errors" panel
-// — the generic message the traveller sees never reveals what actually
-// went wrong upstream (auth, quota, model access, etc.).
-func (s *Store) RecentGuideErrors(ctx context.Context, limit int) ([]domain.GuideErrorEntry, error) {
-	rows, err := s.Pool.Query(ctx, `
-		SELECT conversation_id, traveller_id, error_message, created_at
-		FROM guide_requests
-		WHERE status = 'error'
-		ORDER BY created_at DESC
-		LIMIT $1`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []domain.GuideErrorEntry{}
-	for rows.Next() {
-		var e domain.GuideErrorEntry
-		if err := rows.Scan(&e.ConversationID, &e.TravellerID, &e.ErrorMessage, &e.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
 }
 
 // GuideToolUsage breaks down tool-call counts over the trailing 7 days —
