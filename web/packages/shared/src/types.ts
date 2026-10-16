@@ -399,6 +399,33 @@ export interface DashboardBlob {
   popular?: { h: number; v: number }[];
   trend?: { wk: string; you: number; cat: number }[];
   questClaimsToday?: number;
+  questCompletionsToday?: number;
+}
+
+/** A traveller finishing one day's quest (GET /admin/quests/completions,
+ * GET /vendor/quest/completions — the vendor list has no travellerEmail). */
+export interface QuestCompletion {
+  travellerId: string;
+  travellerName: string;
+  travellerEmail?: string;
+  date: string; // UTC quest day, YYYY-MM-DD
+  vendorId?: string;
+  sponsorName: string;
+  goal: number;
+  rewardDescription: string;
+  completedAt: string;
+  redeemedAt?: string;
+}
+
+/** One scheduled day (GET /admin/quests/schedules). */
+export interface QuestSchedule {
+  date: string;
+  vendorId: string;
+  goal: number;
+  sponsorName?: string;
+  rewardDescription?: string;
+  completions: number;
+  redemptions: number;
 }
 
 export interface GrowthBlob {

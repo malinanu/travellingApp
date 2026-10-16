@@ -2622,16 +2622,93 @@ func (s *Store) AddCheckin(ctx context.Context, placeID, travellerID string) err
 	return err
 }
 
-func (s *Store) GetDailyQuestProgress(ctx context.Context, travellerID string) (int, error) {
+// GetDailyQuestProgress counts the distinct places a traveller has checked
+// into since dayStart — the start of the UTC quest day, passed in rather than
+// taken from Postgres CURRENT_DATE so it can't disagree with the UTC date the
+// quest schedule is looked up by.
+func (s *Store) GetDailyQuestProgress(ctx context.Context, travellerID string, dayStart time.Time) (int, error) {
 	var count int
-	// Count unique places checked into by this traveller today (local time proxy by using current_date).
-	// To be robust across timezones, this uses UTC CURRENT_DATE in Postgres, 
-	// which is acceptable for a simple MVP quest.
 	err := s.Pool.QueryRow(ctx,
-		`SELECT COUNT(DISTINCT place_id) 
-		 FROM checkins 
-		 WHERE traveller_id = $1 
-		 AND created_at >= CURRENT_DATE`, travellerID).Scan(&count)
+		`SELECT COUNT(DISTINCT place_id)
+		 FROM checkins
+		 WHERE traveller_id = $1
+		 AND created_at >= $2`, travellerID, dayStart).Scan(&count)
+	return count, err
+}
+
+// RecordQuestCompletion saves that a traveller finished a day's quest, once
+// per traveller and day, and returns when it was first recorded.
+func (s *Store) RecordQuestCompletion(ctx context.Context, c domain.QuestCompletion) (time.Time, error) {
+	var at time.Time
+	// DO UPDATE with a no-op set (rather than DO NOTHING) so RETURNING also
+	// yields the existing row's completed_at on repeat calls.
+	err := s.Pool.QueryRow(ctx, `
+		INSERT INTO quest_completions (traveller_id, date, vendor_id, goal, reward_description)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (traveller_id, date) DO UPDATE SET traveller_id = quest_completions.traveller_id
+		RETURNING completed_at`,
+		c.TravellerID, c.Date, c.VendorID, c.Goal, c.RewardDescription).Scan(&at)
+	return at, err
+}
+
+// QuestClaimedAt is when a traveller's reward for date was scanned, or nil.
+func (s *Store) QuestClaimedAt(ctx context.Context, travellerID, date string) (*time.Time, error) {
+	var at time.Time
+	err := s.Pool.QueryRow(ctx,
+		`SELECT claimed_at FROM quest_claims WHERE traveller_id = $1 AND date = $2`, travellerID, date).Scan(&at)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &at, nil
+}
+
+// ListQuestCompletions returns completions newest first, with the
+// traveller's name/email, the sponsor's name, and when (if) the reward was
+// redeemed.
+func (s *Store) ListQuestCompletions(ctx context.Context, f domain.QuestCompletionFilter) ([]domain.QuestCompletion, error) {
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT qc.traveller_id, COALESCE(u.name, ''), COALESCE(u.email, ''), qc.date, qc.vendor_id,
+		       COALESCE(v.name, 'Spotto'), qc.goal, qc.reward_description, qc.completed_at, cl.claimed_at
+		FROM quest_completions qc
+		LEFT JOIN users u ON u.id = qc.traveller_id
+		LEFT JOIN vendors v ON v.id = qc.vendor_id
+		LEFT JOIN quest_claims cl ON cl.traveller_id = qc.traveller_id AND cl.date = qc.date
+		WHERE ($1 = '' OR qc.date = $1)
+		  AND ($2 = '' OR qc.date >= $2)
+		  AND ($3 = '' OR qc.vendor_id = $3)
+		  AND ($4 = '' OR qc.traveller_id = $4)
+		  AND ($5::timestamptz IS NULL OR qc.completed_at < $5)
+		ORDER BY qc.completed_at DESC
+		LIMIT $6`,
+		f.Date, f.Since, f.VendorID, f.TravellerID, f.Before, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.QuestCompletion{}
+	for rows.Next() {
+		var c domain.QuestCompletion
+		if err := rows.Scan(&c.TravellerID, &c.TravellerName, &c.TravellerEmail, &c.Date, &c.VendorID,
+			&c.SponsorName, &c.Goal, &c.RewardDescription, &c.CompletedAt, &c.RedeemedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// QuestCompletionsCount is how many travellers finished vendorID's quest on date.
+func (s *Store) QuestCompletionsCount(ctx context.Context, vendorID, date string) (int, error) {
+	var count int
+	err := s.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM quest_completions WHERE vendor_id = $1 AND date = $2`, vendorID, date).Scan(&count)
 	return count, err
 }
 
@@ -3114,7 +3191,9 @@ func (s *Store) SetQuestSchedule(ctx context.Context, q domain.QuestSchedule) er
 
 func (s *Store) ListQuestSchedules(ctx context.Context) ([]domain.QuestSchedule, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT d.date, d.vendor_id, d.goal, v.name, vs.reward_description
+		SELECT d.date, d.vendor_id, d.goal, v.name, vs.reward_description,
+		       (SELECT COUNT(*) FROM quest_completions qc WHERE qc.date = d.date),
+		       (SELECT COUNT(*) FROM quest_claims cl WHERE cl.date = d.date)
 		FROM daily_quests d
 		JOIN vendors v ON v.id = d.vendor_id
 		JOIN vendor_sponsorships vs ON vs.vendor_id = d.vendor_id
@@ -3126,7 +3205,7 @@ func (s *Store) ListQuestSchedules(ctx context.Context) ([]domain.QuestSchedule,
 	var res []domain.QuestSchedule
 	for rows.Next() {
 		var q domain.QuestSchedule
-		if err := rows.Scan(&q.Date, &q.VendorID, &q.Goal, &q.SponsorName, &q.RewardDescription); err != nil {
+		if err := rows.Scan(&q.Date, &q.VendorID, &q.Goal, &q.SponsorName, &q.RewardDescription, &q.Completions, &q.Redemptions); err != nil {
 			return nil, err
 		}
 		res = append(res, q)

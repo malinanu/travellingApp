@@ -538,49 +538,95 @@ func (s *Server) handleCheckin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
+	// The updated quest comes back with the check-in, and this is where a
+	// completion gets recorded the moment the goal is reached.
+	quest, _, err := s.questStatus(r.Context(), c.Subject)
+	if err != nil {
+		log.Printf("check-in quest status traveller=%s: %v", c.Subject, err)
+		writeJSON(w, http.StatusCreated, map[string]any{"status": "ok"})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"status": "ok", "quest": quest})
 }
 
 func (s *Server) handleGetQuest(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
-	
-	// Check progress today
-	progress, err := s.Store.GetDailyQuestProgress(r.Context(), c.Subject)
+	quest, _, err := s.questStatus(r.Context(), c.Subject)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "failed to get quest progress")
+		log.Printf("get quest traveller=%s: %v", c.Subject, err)
+		writeErr(w, http.StatusInternalServerError, "Couldn't load today's quest. Please try again.")
 		return
 	}
+	writeJSON(w, http.StatusOK, quest)
+}
 
-	// Fetch the schedule for today
-	today := time.Now().UTC().Format("2006-01-02")
-	schedule, err := s.Store.GetQuestSchedule(r.Context(), today)
-	if err != nil && err != postgres.ErrNotFound {
-		writeErr(w, http.StatusInternalServerError, "failed to get quest schedule")
-		return
+// The quest used on a day nothing is scheduled. Kept in step with the
+// backfill in migration 037_quest_completions.sql.
+const (
+	fallbackQuestGoal   = 5
+	fallbackQuestReward = "Mystery Reward"
+)
+
+// questDayUTC is the quest day for t ('YYYY-MM-DD', UTC) and when it began.
+func questDayUTC(t time.Time) (string, time.Time) {
+	u := t.UTC()
+	start := time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
+	return start.Format("2006-01-02"), start
+}
+
+// questStatus is a traveller's quest for today, as the server records it.
+// The first time their progress reaches the goal it saves a
+// quest_completions row, so admins and the day's sponsor can see who
+// finished — "complete" is never left to the client to decide. The schedule
+// is nil on a day with no sponsored quest.
+func (s *Server) questStatus(ctx context.Context, travellerID string) (domain.DailyQuest, *domain.QuestSchedule, error) {
+	today, dayStart := questDayUTC(time.Now())
+	progress, err := s.Store.GetDailyQuestProgress(ctx, travellerID, dayStart)
+	if err != nil {
+		return domain.DailyQuest{}, nil, fmt.Errorf("quest progress: %w", err)
 	}
-
-	goal := 5
-	rewardDesc := "Mystery Reward"
-	sponsorName := "Spotto"
-	sponsorID := "system"
-
-	if err == nil {
-		goal = schedule.Goal
-		rewardDesc = schedule.RewardDescription
-		sponsorName = schedule.SponsorName
-		sponsorID = schedule.VendorID
+	var schedule *domain.QuestSchedule
+	sched, err := s.Store.GetQuestSchedule(ctx, today)
+	switch {
+	case err == nil:
+		schedule = &sched
+	case !errors.Is(err, postgres.ErrNotFound):
+		return domain.DailyQuest{}, nil, fmt.Errorf("quest schedule %s: %w", today, err)
 	}
 
 	quest := domain.DailyQuest{
-		Goal:              goal,
+		Goal:              fallbackQuestGoal,
 		Progress:          progress,
-		RewardDescription: rewardDesc,
-		IsComplete:        progress >= goal,
-		SponsorName:       sponsorName,
-		SponsorID:         sponsorID,
+		RewardDescription: fallbackQuestReward,
+		SponsorName:       "Spotto",
+		SponsorID:         "system",
+		Date:              today,
+	}
+	var vendorID *string
+	if schedule != nil {
+		quest.Goal = schedule.Goal
+		quest.RewardDescription = schedule.RewardDescription
+		quest.SponsorName = schedule.SponsorName
+		quest.SponsorID = schedule.VendorID
+		vendorID = &schedule.VendorID
+	}
+	quest.IsComplete = progress >= quest.Goal
+	if !quest.IsComplete {
+		return quest, schedule, nil
 	}
 
-	writeJSON(w, http.StatusOK, quest)
+	completedAt, err := s.Store.RecordQuestCompletion(ctx, domain.QuestCompletion{
+		TravellerID: travellerID, Date: today, VendorID: vendorID,
+		Goal: quest.Goal, RewardDescription: quest.RewardDescription,
+	})
+	if err != nil {
+		return domain.DailyQuest{}, nil, fmt.Errorf("record quest completion: %w", err)
+	}
+	quest.CompletedAt = &completedAt
+	if quest.RedeemedAt, err = s.Store.QuestClaimedAt(ctx, travellerID, today); err != nil {
+		return domain.DailyQuest{}, nil, fmt.Errorf("quest claim lookup: %w", err)
+	}
+	return quest, schedule, nil
 }
 
 // handleCreateClaim issues a unique single-use SPOTTO code, idempotent per

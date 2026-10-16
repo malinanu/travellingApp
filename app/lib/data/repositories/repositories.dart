@@ -1380,8 +1380,16 @@ class CheckInsNotifier extends Notifier<Set<String>> {
     ref.read(localStoreProvider).setJsonList(StoreKeys.checkIns, state.toList());
     if (ref.read(authProvider)) {
       try {
-        await ref.read(apiProvider).dio.post('/checkins', data: {'placeId': placeId});
-        // Refresh the daily quest progress
+        final store = ref.read(localStoreProvider);
+        final res = await ref.read(apiProvider).dio.post('/checkins', data: {'placeId': placeId});
+        // The server returns the updated quest with the check-in (and records
+        // a completion there the moment the goal is reached). Show it right
+        // away via the saved copy while dailyQuestProvider refetches.
+        final quest = res.data is Map ? (res.data as Map)['quest'] : null;
+        if (quest is Map) {
+          _saveQuest(store, quest.cast<String, dynamic>());
+          ref.invalidate(cachedQuestProvider);
+        }
         ref.invalidate(dailyQuestProvider);
       } catch (_) {
         // Optimistic, ignore errors for MVP
@@ -1394,13 +1402,22 @@ final checkInsProvider = NotifierProvider<CheckInsNotifier, Set<String>>(CheckIn
 
 const kDefaultQuest = DailyQuest(goal: 2, progress: 0, rewardDescription: 'Free Ceylon Tea', isComplete: false);
 
-/// The server's quest day for [t]. handleGetQuest picks the schedule by the
-/// UTC date, so the saved quest must be keyed the same way — keying by the
-/// local date would keep showing yesterday's quest for hours after the
+/// The server's quest day for [t], in the same 'YYYY-MM-DD' (UTC) form as
+/// the `date` it returns with each quest. handleGetQuest picks the schedule
+/// by the UTC date, so the saved quest must be keyed the same way — keying
+/// by the local date would keep showing yesterday's quest for hours after the
 /// server has reset it (from 05:30 to midnight in Sri Lanka).
 String questDay(DateTime t) {
   final u = t.toUtc();
-  return '${u.year}-${u.month}-${u.day}';
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${u.year}-${two(u.month)}-${two(u.day)}';
+}
+
+/// Saves a quest the server just returned, under the day the server says it
+/// is for (falling back to today's UTC day for an older server).
+void _saveQuest(LocalStore store, Map<String, dynamic> data) {
+  final day = data['date'] is String ? data['date'] as String : questDay(DateTime.now());
+  store.setJson(StoreKeys.quest, {'day': day, 'data': data});
 }
 
 /// Today's quest as last saved on this device (null if it's from another
@@ -1432,9 +1449,7 @@ final dailyQuestProvider = FutureProvider<DailyQuest>((ref) async {
     final data = (res.data as Map).cast<String, dynamic>();
     final quest = DailyQuest.fromJson(data);
     // Don't save the old session's quest if the user signed out meanwhile.
-    if (store.getToken() == token) {
-      store.setJson(StoreKeys.quest, {'day': questDay(DateTime.now()), 'data': data});
-    }
+    if (store.getToken() == token) _saveQuest(store, data);
     return quest;
   } catch (e) {
     debugPrint('dailyQuestProvider refresh failed: $e');

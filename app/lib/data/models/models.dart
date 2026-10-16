@@ -33,6 +33,14 @@ class DailyQuest {
   final String? sponsorName;
   final String? sponsorId;
 
+  /// The UTC quest day the server says this is for ('YYYY-MM-DD').
+  final String? date;
+
+  /// When the server recorded the traveller finishing it, and when the
+  /// sponsor scanned the reward — both from the server, never inferred here.
+  final DateTime? completedAt;
+  final DateTime? redeemedAt;
+
   const DailyQuest({
     required this.goal,
     required this.progress,
@@ -40,6 +48,9 @@ class DailyQuest {
     required this.isComplete,
     this.sponsorName,
     this.sponsorId,
+    this.date,
+    this.completedAt,
+    this.redeemedAt,
   });
 
   factory DailyQuest.fromJson(Map<String, dynamic> json) {
@@ -50,6 +61,9 @@ class DailyQuest {
       isComplete: json['isComplete'] as bool? ?? false,
       sponsorName: json['sponsorName'] as String?,
       sponsorId: json['sponsorId'] as String?,
+      date: json['date'] as String?,
+      completedAt: DateTime.tryParse(json['completedAt'] as String? ?? ''),
+      redeemedAt: DateTime.tryParse(json['redeemedAt'] as String? ?? ''),
     );
   }
 }

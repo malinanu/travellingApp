@@ -94,6 +94,10 @@ void main() {
       final t = DateTime.utc(2026, 10, 15, 19, 30).toLocal();
       expect(questDay(t), '2026-10-15');
     });
+
+    test("matches the server's zero-padded YYYY-MM-DD", () {
+      expect(questDay(DateTime.utc(2026, 1, 5, 12)), '2026-01-05');
+    });
   });
 
   group('cachedWeatherProvider', () {

@@ -342,6 +342,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Patch("/vendor/business/identity", s.handleUpdateVendorIdentity)
 		r.Patch("/vendor/business/br-cert-number", s.handleUpdateVendorBRCertNumber)
 		r.Get("/vendor/sponsorship", s.handleGetSponsorship)
+		r.Get("/vendor/quest/completions", s.handleVendorQuestCompletions)
 		r.Put("/vendor/sponsorship", s.handlePutSponsorship)
 		r.Get("/vendor/menu", s.handleVendorMenu)
 		r.Get("/vendor/offers", s.handleVendorOffers)
@@ -456,6 +457,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Post("/admin/quests/sponsorships/{vendor_id}/status", s.handleAdminUpdateSponsorshipStatus)
 		r.Get("/admin/quests/schedules", s.handleAdminListQuestSchedules)
 		r.Post("/admin/quests/schedules", s.handleAdminSetQuestSchedule)
+		r.Get("/admin/quests/completions", s.handleAdminQuestCompletions)
 
 		// Categories
 		r.Get("/admin/categories", s.handleAdminCategories)

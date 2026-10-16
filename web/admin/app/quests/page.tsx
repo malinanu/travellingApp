@@ -1,13 +1,15 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Calendar, CheckCircle2, ChevronRight, XCircle } from 'lucide-react';
 import { useState } from 'react';
+import { timeAgo, type QuestCompletion, type QuestSchedule } from '@spotto/shared';
 import Shell from '../../components/shell';
+import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
 
 export default function QuestsPage() {
-  const [tab, setTab] = useState<'scheduler' | 'queue'>('queue');
+  const [tab, setTab] = useState<'scheduler' | 'queue' | 'completions'>('queue');
   const qc = useQueryClient();
 
   const { data: pending = [] } = useQuery({
@@ -22,7 +24,7 @@ export default function QuestsPage() {
 
   const { data: schedules = [] } = useQuery({
     queryKey: ['admin-quests', 'schedules'],
-    queryFn: () => api.get<any[]>('/admin/quests/schedules'),
+    queryFn: () => api.get<QuestSchedule[]>('/admin/quests/schedules'),
   });
 
   const act = useMutation({
@@ -69,11 +71,21 @@ export default function QuestsPage() {
             >
               Scheduler
             </button>
+            <button
+              onClick={() => setTab('completions')}
+              className={`px-4 py-1.5 rounded-lg text-[13px] font-bold transition-all ${
+                tab === 'completions' ? 'bg-white text-ink shadow-sm' : 'text-muted hover:text-white'
+              }`}
+            >
+              Completions
+            </button>
           </div>
         </header>
 
         <div className="flex-1 overflow-auto p-6">
-          {tab === 'queue' ? (
+          {tab === 'completions' ? (
+            <CompletionsTab />
+          ) : tab === 'queue' ? (
             <div className="space-y-4 max-w-3xl">
               {pending.length === 0 ? (
                 <div className="text-center py-12 text-muted text-[14px]">No pending sponsorships</div>
@@ -139,7 +151,7 @@ export default function QuestsPage() {
               <div>
                 <h2 className="text-[14px] font-bold mb-4">Upcoming Quests</h2>
                 <div className="space-y-3">
-                  {schedules.map((s: any) => {
+                  {schedules.map((s) => {
                     // Split the YYYY-MM-DD date string so it doesn't get messed up by local timezone
                     const [year, month, day] = s.date.split('-');
                     const d = new Date(parseInt(year), parseInt(month)-1, parseInt(day));
@@ -149,9 +161,13 @@ export default function QuestsPage() {
                           <span className="text-[10px] text-muted font-bold uppercase">{d.toLocaleString('default', { month: 'short' })}</span>
                           <span className="text-[16px] font-extrabold">{d.getDate()}</span>
                         </div>
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <div className="font-bold text-[14px]">{s.sponsorName}</div>
                           <div className="text-[12.5px] text-muted">{s.rewardDescription}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-[13px] font-bold tabular-nums">{s.completions} completed</div>
+                          <div className="text-[12px] text-muted font-semibold tabular-nums">{s.redemptions} redeemed</div>
                         </div>
                       </div>
                     );
@@ -164,5 +180,90 @@ export default function QuestsPage() {
         </div>
       </div>
     </Shell>
+  );
+}
+
+// Who finished which day's quest, newest first, paged by completedAt.
+function CompletionsTab() {
+  const [date, setDate] = useState('');
+  const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+    queryKey: ['admin-quests', 'completions', date],
+    initialPageParam: '',
+    queryFn: ({ pageParam }) => {
+      const q = new URLSearchParams();
+      if (date) q.set('date', date);
+      if (pageParam) q.set('before', pageParam);
+      return api.get<QuestCompletion[]>(`/admin/quests/completions?${q}`);
+    },
+    // A short page means there's nothing older left.
+    getNextPageParam: (last) => (last.length < 100 ? undefined : last[last.length - 1].completedAt),
+  });
+  const rows = data?.pages.flat() ?? [];
+
+  return (
+    <div className="max-w-5xl">
+      <div className="flex items-end gap-3 mb-4">
+        <label className="block">
+          <span className="block text-[12px] font-bold text-muted mb-1.5">Quest day (UTC)</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-accent" />
+        </label>
+        {date && (
+          <button onClick={() => setDate('')} className="text-[12.5px] font-bold text-muted hover:text-white pb-2.5">Show all days</button>
+        )}
+      </div>
+      {isError && <InlineErrorBanner message="Couldn't load quest completions — try refreshing." />}
+      <div className="card overflow-x-auto">
+        <table className="w-full text-[13px] min-w-[720px]">
+          <thead>
+            <tr className="text-muted text-left text-[11px] uppercase tracking-wide">
+              <th className="font-bold px-4 py-3">Traveller</th>
+              <th className="font-bold px-4 py-3">Day</th>
+              <th className="font-bold px-4 py-3">Sponsor · reward</th>
+              <th className="font-bold px-4 py-3">Completed</th>
+              <th className="font-bold px-4 py-3 text-right">Reward</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((c) => (
+              <tr key={`${c.travellerId}-${c.date}`} className="border-t border-white/5">
+                <td className="px-4 py-2.5">
+                  <div className="font-bold">{c.travellerName || 'Traveller'}</div>
+                  {c.travellerEmail && <div className="text-[12px] text-muted">{c.travellerEmail}</div>}
+                </td>
+                <td className="px-4 py-2.5 font-semibold tabular-nums">{c.date}</td>
+                <td className="px-4 py-2.5">
+                  <div className="font-semibold">{c.sponsorName}</div>
+                  <div className="text-[12px] text-muted">{c.rewardDescription} · goal {c.goal}</div>
+                </td>
+                <td className="px-4 py-2.5 text-muted font-semibold" title={new Date(c.completedAt).toLocaleString()}>{timeAgo(c.completedAt)}</td>
+                <td className="px-4 py-2.5 text-right">
+                  {c.redeemedAt ? (
+                    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold bg-green-500/10 text-green-500"
+                      title={new Date(c.redeemedAt).toLocaleString()}>
+                      <CheckCircle2 size={11} /> Redeemed
+                    </span>
+                  ) : (
+                    <span className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold bg-white/5 text-muted">Not redeemed</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {isLoading && <p className="px-4 py-8 text-center text-muted text-[13px] font-semibold">Loading…</p>}
+        {!isLoading && rows.length === 0 && (
+          <p className="px-4 py-8 text-center text-muted text-[13px] font-semibold">
+            {date ? 'Nobody completed the quest on this day.' : 'No quest completions yet.'}
+          </p>
+        )}
+      </div>
+      {hasNextPage && (
+        <button onClick={() => fetchNextPage()} disabled={isFetchingNextPage}
+          className="mt-3 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-[13px] font-bold">
+          {isFetchingNextPage ? 'Loading…' : 'Load older'}
+        </button>
+      )}
+    </div>
   );
 }
