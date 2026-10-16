@@ -82,6 +82,7 @@ export default function LocalGuidePage() {
           <div className="panel px-4 py-4">
             <CardTitle icon={Wrench}>Tool usage · 7 days</CardTitle>
             {toolUsage.length === 0 && <p className="text-[12px] text-muted font-semibold">No tool calls yet.</p>}
+            <div className="max-h-80 overflow-y-auto pr-1">
             {toolUsage.map((t) => (
               <div key={t.tool} className="mb-2.5 last:mb-0">
                 <div className="flex items-baseline justify-between gap-2 mb-1">
@@ -91,6 +92,7 @@ export default function LocalGuidePage() {
                 <Meter pct={(t.count / maxTool) * 100} color="var(--accent)" />
               </div>
             ))}
+            </div>
           </div>
 
           <div className="panel px-4 py-4">
@@ -305,11 +307,12 @@ function AIUsageSection({ data }: { data: AdminGuideStatsResponse }) {
       </div>
 
       {aiUsage.length > 0 && (
-        <div className="panel px-4 py-4 mb-6 overflow-x-auto">
+        <div className="panel px-4 py-4 mb-6">
           <CardTitle icon={Sparkles}>By feature · 30 days</CardTitle>
+          <div className="max-h-96 overflow-auto">
           <table className="w-full text-[12px] min-w-[640px]">
             <thead>
-              <tr className="text-muted text-left text-[11px] uppercase tracking-wide">
+              <tr className="text-muted text-left text-[11px] uppercase tracking-wide sticky top-0 z-10" style={{ background: 'var(--surface)' }}>
                 <th className="font-bold pb-2 pr-3">Feature</th>
                 <th className="font-bold pb-2 pr-3">Model</th>
                 <th className="font-bold pb-2 pr-3 text-right">Calls today</th>
@@ -347,6 +350,7 @@ function AIUsageSection({ data }: { data: AdminGuideStatsResponse }) {
               })}
             </tbody>
           </table>
+          </div>
           <p className="text-[11px] text-muted font-semibold mt-3">~ Embedding tokens are estimated (characters ÷ 4); Google doesn&apos;t report them.</p>
         </div>
       )}

@@ -110,7 +110,7 @@ function UserTranscript({ travellerId, travellerName }: { travellerId: string; t
       </h2>
       {isError && <InlineErrorBanner message="Couldn't load this transcript." />}
       {isLoading && <p className="text-muted font-semibold text-[13px] mt-4">Loading transcript…</p>}
-      <div className="space-y-4 mt-4">
+      <div className="space-y-4 mt-4 max-h-[calc(100vh-300px)] overflow-y-auto pr-2">
         {messages.map((m, i) => {
           const isNewConv = m.conversationId !== currentConvId;
           if (isNewConv) currentConvId = m.conversationId;
