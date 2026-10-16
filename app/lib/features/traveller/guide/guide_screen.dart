@@ -6,16 +6,15 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
-import '../../../core/widgets/spotto_icons.dart';
 import '../../../data/mock/places.dart' as data;
-import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
-import '../place_detail/business_drawer.dart';
+import 'guide_place.dart';
 
 const _guideSuggestions = [
   'Where can I work today with a sea view?',
@@ -42,8 +41,16 @@ class _Msg {
   final bool mine;
   final String content;
   final List<String> placeIds;
-  const _Msg(this.mine, this.content, {this.placeIds = const []});
+  // Card summaries from the server; empty for replies from older servers,
+  // which fall back to placeIds (see guideCardsFor).
+  final List<GuidePlace> cards;
+  const _Msg(this.mine, this.content, {this.placeIds = const [], this.cards = const []});
 }
+
+List<GuidePlace> _parseCards(Object? raw) => [
+  for (final p in (raw as List? ?? const []))
+    if (p is Map) GuidePlace.fromJson(p.cast<String, dynamic>()),
+];
 
 class GuideScreen extends ConsumerStatefulWidget {
   const GuideScreen({super.key});
@@ -78,6 +85,11 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
       final res = await ref.read(apiProvider).dio.get('/guide/conversations/latest');
       final body = (res.data as Map).cast<String, dynamic>();
       final msgs = (body['messages'] as List? ?? const []).cast<Map>();
+      // Cards for past replies, keyed by place id.
+      final saved = <String, GuidePlace>{
+        for (final e in ((body['places'] as Map?) ?? const {}).entries)
+          if (e.value is Map) e.key as String: GuidePlace.fromJson((e.value as Map).cast<String, dynamic>()),
+      };
       if (msgs.isNotEmpty) {
         if (!mounted) return;
         setState(() {
@@ -88,6 +100,10 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                 m['role'] == 'user',
                 m['content'] as String? ?? '',
                 placeIds: (m['placeIds'] as List? ?? const []).cast<String>(),
+                cards: [
+                  for (final id in (m['placeIds'] as List? ?? const []).cast<String>())
+                    if (saved[id] != null) saved[id]!,
+                ],
               ),
           ]);
         });
@@ -111,16 +127,6 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     super.dispose();
   }
 
-  /// Resolves an assistant message's recommended place ids against the
-  /// real, API-backed places list — capped to 3 inline cards so a broad
-  /// search result doesn't overwhelm the chat. Takes the list rather than
-  /// reading the provider itself so callers watch it and rebuild once a
-  /// still-loading list (e.g. right after a cold start) catches up.
-  List<Place> _placesFor(_Msg m, List<Place> all) {
-    if (m.mine || m.placeIds.isEmpty) return const [];
-    final byId = {for (final p in all) p.id: p};
-    return [for (final id in m.placeIds) if (byId[id] != null) byId[id]!].take(3).toList();
-  }
 
   void _scrollDown() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -147,15 +153,19 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     // the provider hasn't resolved yet and .value would silently be null,
     // sending this message with no location context at all. bestEffortPosition
     // already caps every branch with its own timeout, so this can't hang.
-    final pos = (await ref.read(devicePositionProvider.future)).$1;
+    final (pos, locationResult) = await ref.read(devicePositionProvider.future);
+    // Only a real fix counts: when permission is off the provider falls back
+    // to Weligama Bay, and the guide must not recommend around that.
+    final locationKnown = locationResult == DeviceLocationResult.granted;
     try {
       final res = await ref.read(apiProvider).dio.post(
         '/guide/chat',
         data: {
           if (_conversationId != null) 'conversationId': _conversationId,
           'message': q,
-          'lat': pos.lat,
-          'lng': pos.lng,
+          'locationKnown': locationKnown,
+          if (locationKnown) 'lat': pos.lat,
+          if (locationKnown) 'lng': pos.lng,
         },
         // The app-wide 10s receiveTimeout is shorter than one model reply
         // with tool calls; the server caps the whole reply at 60s.
@@ -166,7 +176,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
       setState(() {
         _conversationId = body['conversationId'] as String?;
         _messages.add(_Msg(false, body['reply'] as String? ?? '',
-            placeIds: (body['placeIds'] as List? ?? const []).cast<String>()));
+            placeIds: (body['placeIds'] as List? ?? const []).cast<String>(), cards: _parseCards(body['places'])));
         _busy = false;
       });
     } catch (e) {
@@ -195,6 +205,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     final rainy = ref.watch(weatherConditionProvider) == 'rainy';
     final suggestions = rainy ? _guideSuggestionsRainy : _guideSuggestions;
     final places = ref.watch(placesProvider);
+    final locationResult = ref.watch(devicePositionProvider).value?.$2;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -271,7 +282,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                 itemBuilder: (context, i) {
                   if (i == _messages.length) return const _TypingBubble();
                   final m = _messages[i];
-                  final msgPlaces = _placesFor(m, places);
+                  final msgPlaces = m.mine ? const <GuidePlace>[] : guideCardsFor(m.cards, m.placeIds, places);
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Column(
@@ -315,54 +326,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                         for (final place in msgPlaces)
                           Padding(
                             padding: const EdgeInsets.only(top: 6),
-                            child: PressScale(
-                              scale: 0.98,
-                              onTap: () => showBusinessDrawer(context, place),
-                              child: Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.surface,
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                        color: Color(0x2E103D3A),
-                                        blurRadius: 12,
-                                        offset: Offset(0, 2))
-                                  ],
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      width: 32,
-                                      height: 32,
-                                      decoration: BoxDecoration(
-                                        color: SpottoColors.accentTint,
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Icon(spottoIcon(place.icon),
-                                          size: 16, color: SpottoColors.accent),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(place.name,
-                                            style: TextStyle(
-                                                fontSize: 12.5,
-                                                fontWeight: FontWeight.w800,
-                                                color: Theme.of(context).colorScheme.onSurface)),
-                                        const Text('View details →',
-                                            style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w700,
-                                                color: SpottoColors.accent)),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                            child: GuidePlaceCard(place: place),
                           ),
                       ],
                     ),
@@ -370,6 +334,17 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                 },
               ),
             ),
+            if (locationResult != null && locationResult != DeviceLocationResult.granted)
+              _LocationHint(
+                deniedForever: locationResult == DeviceLocationResult.deniedForever,
+                onTap: () async {
+                  if (locationResult == DeviceLocationResult.deniedForever) {
+                    await Geolocator.openAppSettings();
+                  } else {
+                    ref.invalidate(devicePositionProvider);
+                  }
+                },
+              ),
             // suggestion chips (only after just the greeting)
             if (_messages.length <= 1)
               Padding(
@@ -462,6 +437,44 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown while the guide can't see the traveller's location, so its "which
+/// town are you in?" makes sense — tapping asks for permission again (or
+/// opens settings once it's been permanently denied).
+class _LocationHint extends StatelessWidget {
+  final bool deniedForever;
+  final VoidCallback onTap;
+  const _LocationHint({required this.deniedForever, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: PressScale(
+        scale: 0.98,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(color: SpottoColors.accentTint, borderRadius: BorderRadius.circular(14)),
+          child: Row(
+            children: [
+              const Icon(Icons.location_off_outlined, size: 17, color: SpottoColors.accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  deniedForever
+                      ? 'Location is off for Spotto. Turn it on in Settings for nearby picks.'
+                      : 'Turn on location so I can suggest places near you.',
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: SpottoColors.accent),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
