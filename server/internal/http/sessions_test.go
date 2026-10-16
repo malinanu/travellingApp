@@ -80,6 +80,34 @@ func TestRefreshSessions(t *testing.T) {
 		}
 	})
 
+	t.Run("admin sign-out-everywhere ends every token", func(t *testing.T) {
+		adminEmail := fmt.Sprintf("sessadmin%d@edgecase.test", run)
+		must(t, store.CreateUser(ctx, domain.User{ID: fmt.Sprintf("usr_sessadmin_%d", run), Email: adminEmail, PasswordHash: pw, Role: domain.RoleAdmin, CreatedAt: time.Now()}))
+		admin := loginAs(t, srv, adminEmail, "testpass123")
+
+		_, login := doJSON(t, http.MethodPost, srv.URL+"/auth/login", "", map[string]string{"email": email, "password": "testpass123"})
+		access, refresh := login["token"].(string), login["refreshToken"].(string)
+
+		if code, _ := doJSON(t, http.MethodPost, srv.URL+"/admin/users/"+u.ID+"/revoke-sessions", admin, map[string]string{}); code != http.StatusBadRequest {
+			t.Fatalf("revoke without a reason = %d, want 400", code)
+		}
+		code, out := doJSON(t, http.MethodPost, srv.URL+"/admin/users/"+u.ID+"/revoke-sessions", admin, map[string]string{"reason": "lost phone"})
+		if code != http.StatusOK {
+			t.Fatalf("revoke = %d %v", code, out)
+		}
+		if code, _ := doJSON(t, http.MethodGet, srv.URL+"/me", access, nil); code != http.StatusUnauthorized {
+			t.Fatalf("access token still works after revoke: %d", code)
+		}
+		if code, _ := doJSON(t, http.MethodPost, srv.URL+"/auth/refresh", "", map[string]string{"refreshToken": refresh}); code != http.StatusUnauthorized {
+			t.Fatalf("refresh token still works after revoke: %d", code)
+		}
+		entries, err := store.AuditLogsByTarget(ctx, "user", u.ID, 10)
+		must(t, err)
+		if len(entries) == 0 || entries[0].Action != "user.revoke_sessions" {
+			t.Fatalf("no user.revoke_sessions audit entry: %+v", entries)
+		}
+	})
+
 	t.Run("a pre-session token can be upgraded once", func(t *testing.T) {
 		current, err := store.UserByID(ctx, u.ID)
 		must(t, err)

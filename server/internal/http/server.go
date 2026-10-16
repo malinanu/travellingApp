@@ -461,6 +461,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/quests/schedules", s.handleAdminListQuestSchedules)
 		r.Post("/admin/quests/schedules", s.handleAdminSetQuestSchedule)
 		r.Get("/admin/quests/completions", s.handleAdminQuestCompletions)
+		r.Get("/admin/users", s.handleAdminUsers)
+		r.Get("/admin/users/{id}", s.handleAdminUserDetail)
+		r.Post("/admin/users/{id}/revoke-sessions", s.handleAdminRevokeUserSessions)
 
 		// Categories
 		r.Get("/admin/categories", s.handleAdminCategories)

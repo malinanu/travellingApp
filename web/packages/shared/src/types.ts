@@ -419,6 +419,37 @@ export interface QuestCompletion {
   redeemedAt?: string;
 }
 
+/** One row of GET /admin/users?q=. */
+export interface AdminUserSummary {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  vendorName?: string;
+  createdAt: string;
+  activeSessions: number;
+  lastActiveAt?: string;
+}
+
+/** A signed-in device (server session); the refresh token is never sent. */
+export interface AdminUserSession {
+  id: string;
+  userId: string;
+  client: 'app' | 'admin' | 'vendor';
+  deviceLabel: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+}
+
+/** GET /admin/users/{id}. */
+export interface AdminUserDetail {
+  user: User;
+  sessions: AdminUserSession[];
+  questCompletions: QuestCompletion[];
+  audit: AdminAuditLogEntry[];
+}
+
 /** One scheduled day (GET /admin/quests/schedules). */
 export interface QuestSchedule {
   date: string;

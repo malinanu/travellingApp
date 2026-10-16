@@ -753,3 +753,15 @@ type Session struct {
 	RevokedAt   *time.Time `json:"revokedAt,omitempty"`
 	RotatedAt   *time.Time `json:"-"`
 }
+
+// AdminUserSummary is one row of the admin Users list.
+type AdminUserSummary struct {
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	Email          string     `json:"email"`
+	Role           Role       `json:"role"`
+	VendorName     string     `json:"vendorName,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	ActiveSessions int        `json:"activeSessions"`
+	LastActiveAt   *time.Time `json:"lastActiveAt,omitempty"`
+}
