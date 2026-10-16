@@ -67,6 +67,8 @@ type facts struct {
 	CategoryID string   `json:"categoryId"`
 	Tags       []string `json:"tags"`
 	Styles     []string `json:"styles"`
+	Region     string   `json:"region"`
+	Blurb      string   `json:"blurb"`
 	PriceLevel string   `json:"priceLevel"`
 	OpenNow    bool     `json:"openNow"`
 	SeaView    bool     `json:"seaView"`
@@ -107,6 +109,20 @@ func SummarizeForEmbedding(p domain.Place) string {
 	}
 	if len(f.Styles) > 0 {
 		parts = append(parts, strings.Join(f.Styles, ", "))
+	}
+	if f.Region != "" {
+		parts = append(parts, "in "+f.Region)
+	}
+	// A trimmed description lets searches like "rooftop seafood" match on
+	// what the place actually offers, not just its name and tags. Changing
+	// this text doesn't re-embed anything by itself (the worker only redoes
+	// places with no embedding for the current model) — use the admin
+	// "Re-embed all" when the quota allows.
+	if b := strings.TrimSpace(f.Blurb); b != "" {
+		if r := []rune(b); len(r) > 240 {
+			b = string(r[:240])
+		}
+		parts = append(parts, b)
 	}
 	return strings.Join(parts, ". ")
 }

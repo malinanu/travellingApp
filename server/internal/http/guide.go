@@ -45,18 +45,21 @@ const guideMaxHistoryMessages = 20
 
 const guideSystemPromptTemplate = `You are "Local Guide," a friendly, knowledgeable local travel assistant for Spotto, helping travellers in Sri Lanka find great places and plan their time.
 
+Traveller's location: %s
 Traveller's saved travel styles: %s
 Current weather where they are: %s
 
 Guidelines:
 - Keep replies short, warm, and conversational — like a knowledgeable local friend, not a search engine.
-- TRIP PLANNING: If the traveller asks to plan a trip (e.g., specific dates or locations), DO NOT search immediately. First, ask them about their budget (e.g., luxury $$$, mid-range $$, or budget $).
-- VIBE CHECK: If "Traveller's saved travel styles" is "none stated" and they ask for recommendations or a trip, you must ask what kind of vibe they prefer (e.g. quiet, lively, nature) before searching. Once they reply, call save_user_vibe to save their preferences.
-- If you don't have enough information to make a good recommendation (e.g. budget, interests, how much time they have, what mood they're in), ask ONE short clarifying question before searching — don't guess.
-- Once you have enough to go on (including budget and vibe), call search_places to find real matching places. Never invent or recommend a place that search_places didn't actually return. 
-- For trip plans, call save_trip to permanently save the generated itinerary using the retrieved places.
+- QUICK ASKS ("any good restaurants near me?", "where can I get coffee?", "something fun to do now"): call search_places straight away — don't ask anything first. Pick categories from what they asked for, and lean on their saved travel styles and the weather. When their location is known, never ask which city or town they're in.
+- Recommend 2-3 of the places search_places returned, by their exact name, each with one short reason. Mention how far away each is (distanceKm) when it's there, and its price level or rating when that helps.
+- Then end with ONE short follow-up offering to narrow it down — for example budget ($ / $$ / $$$), a different vibe, or somewhere closer. Only one question.
+- If their saved travel styles are "none stated", still search; make the follow-up about what vibe they like (quiet, lively, nature…). When they tell you, call save_user_vibe.
+- TRIP PLANNING (multi-day trips or specific dates): this is the one case to ask before searching — first their budget ($, $$, $$$), then their vibe if it isn't saved. Then search, and call save_trip to save the itinerary using the places you found.
+- If a request is too vague to pick any kind of place, ask ONE short clarifying question instead of guessing.
+- Never invent or recommend a place that search_places (or get_place_details) didn't actually return, and never make up distances, prices or ratings.
 - search_places' structured filters (categories, tags, vibe, price, etc.) cover the common cases, but for anything that doesn't map cleanly onto them — a specific mood, activity, or phrase the traveller used — also pass it as the free-text "query" argument so it can be matched semantically.
-- When you recommend places, mention them by name naturally in your reply so the traveller can tell which ones you mean.
+- Don't put links, URLs or ids in your reply — the app shows a card with a photo, directions and details for every place you name.
 - If it's currently raining, lean toward indoor recommendations unless the traveller says otherwise.
 - "Current weather where they are" above is only for the traveller's own location. If they ask about weather somewhere else by name (e.g. "is it going to rain in Ella today?"), call get_weather with that place name instead of guessing.`
 
@@ -82,6 +85,9 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 		Message        string  `json:"message"`
 		Lat            float64 `json:"lat"`
 		Lng            float64 `json:"lng"`
+		// False when the app has no real fix (permission denied, location
+		// off); absent from older app builds — see newGuideLocation.
+		LocationKnown *bool `json:"locationKnown"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -131,7 +137,8 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	start := time.Now()
-	reply, placeIDs, meta, err := s.runGuideChat(ctx, c.Subject, history, req.Message, req.Lat, req.Lng)
+	loc := newGuideLocation(req.Lat, req.Lng, req.LocationKnown)
+	reply, surfacedIDs, meta, err := s.runGuideChat(ctx, c.Subject, history, req.Message, loc)
 	latencyMs := int(time.Since(start).Milliseconds())
 	if err != nil {
 		status := "error"
@@ -168,6 +175,12 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordGuideRequest(ctx, convID, c.Subject, "ok", "", latencyMs, meta)
 
+	cards := s.guideCardsForReply(ctx, reply, surfacedIDs, loc)
+	placeIDs := make([]string, 0, len(cards))
+	for _, card := range cards {
+		placeIDs = append(placeIDs, card.ID)
+	}
+
 	if err := s.Store.InsertGuideMessage(ctx, domain.GuideMessage{
 		ConversationID: convID, Role: "user", Content: req.Message,
 	}); err != nil {
@@ -182,8 +195,42 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"conversationId": convID,
 		"reply":          reply,
-		"placeIds":       placeIDs,
+		"placeIds":       placeIDs, // kept for app builds older than "places"
+		"places":         cards,
 	})
+}
+
+// guideCardsForReply turns every place the tools surfaced into the cards
+// shown under the reply — the ones it names, in the order it names them.
+func (s *Server) guideCardsForReply(ctx context.Context, reply string, surfacedIDs []string, loc guideLocation) []guidePlaceCard {
+	byID := s.guidePlacesByID(ctx, surfacedIDs)
+	names := make(map[string]string, len(byID))
+	for id, p := range byID {
+		names[id] = p.Name
+	}
+	var cards []guidePlaceCard
+	for _, id := range guideCardOrder(reply, surfacedIDs, names) {
+		if p, ok := byID[id]; ok {
+			cards = append(cards, guidePlaceCardFor(p, s.placeJSON(ctx, p), loc))
+		}
+	}
+	return cards
+}
+
+// guidePlacesByID looks up a reply's places (a handful at most — the tools
+// return up to 8 each). A place deleted since is just skipped.
+func (s *Server) guidePlacesByID(ctx context.Context, ids []string) map[string]domain.Place {
+	ids = dedupe(ids)
+	if len(ids) > 24 {
+		ids = ids[:24]
+	}
+	out := make(map[string]domain.Place, len(ids))
+	for _, id := range ids {
+		if p, err := s.Store.PlaceByID(ctx, id); err == nil {
+			out[id] = p
+		}
+	}
+	return out
 }
 
 // recordGuideRequest is best-effort telemetry for the admin Local Guide
@@ -219,9 +266,24 @@ func (s *Server) handleGuideLatestConversation(w http.ResponseWriter, r *http.Re
 		storeErr(w, err)
 		return
 	}
+	// Cards for the places past replies named, keyed by id, so a resumed
+	// conversation shows the same photo cards (without distance — where the
+	// traveller was then isn't stored).
+	var ids []string
+	for _, m := range messages {
+		ids = append(ids, m.PlaceIDs...)
+	}
+	if len(ids) > 60 {
+		ids = ids[len(ids)-60:]
+	}
+	cards := map[string]guidePlaceCard{}
+	for id, p := range s.guidePlacesByID(r.Context(), ids) {
+		cards[id] = guidePlaceCardFor(p, s.placeJSON(r.Context(), p), guideLocation{})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"conversationId": conv.ID,
 		"messages":       messages,
+		"places":         cards,
 	})
 }
 
@@ -240,9 +302,9 @@ type guideRequestMeta struct {
 // loop until the model gives a final text answer (or guideMaxToolRounds is
 // exhausted). placeIDs accumulates every place any search_places call
 // actually returned, across all rounds, for the response's inline cards.
-func (s *Server) runGuideChat(ctx context.Context, travellerID string, history []domain.GuideMessage, userMessage string, lat, lng float64) (string, []string, guideRequestMeta, error) {
+func (s *Server) runGuideChat(ctx context.Context, travellerID string, history []domain.GuideMessage, userMessage string, loc guideLocation) (string, []string, guideRequestMeta, error) {
 	var meta guideRequestMeta
-	weatherCondition := s.guideWeatherCondition(ctx, lat, lng)
+	weatherCondition := s.guideWeatherCondition(ctx, loc.Lat, loc.Lng)
 	styles := s.guideTravellerStyles(ctx, travellerID)
 	stylesText := "none stated"
 	if len(styles) > 0 {
@@ -250,7 +312,7 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 	}
 
 	messages := []gemini.Message{
-		{Role: "system", Content: fmt.Sprintf(guideSystemPromptTemplate, stylesText, weatherCondition)},
+		{Role: "system", Content: guideSystemPrompt(loc, stylesText, weatherCondition)},
 	}
 	if len(history) > guideMaxHistoryMessages {
 		history = history[len(history)-guideMaxHistoryMessages:]
@@ -297,7 +359,7 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 		}
 		messages = append(messages, *resp)
 		for _, tc := range resp.ToolCalls {
-			result, ids, usedSemantic := s.runGuideTool(ctx, tc, lat, lng, weatherCondition)
+			result, ids, usedSemantic := s.runGuideTool(ctx, tc, loc, weatherCondition)
 			placeIDs = append(placeIDs, ids...)
 			meta.ToolsUsed = append(meta.ToolsUsed, tc.Function.Name)
 			if usedSemantic {
@@ -308,6 +370,10 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 		}
 	}
 	return "", nil, meta, fmt.Errorf("guide: model kept calling tools after %d rounds", guideMaxToolRounds)
+}
+
+func guideSystemPrompt(loc guideLocation, stylesText, weatherCondition string) string {
+	return fmt.Sprintf(guideSystemPromptTemplate, loc.promptLine(), stylesText, weatherCondition)
 }
 
 func (s *Server) guideWeatherCondition(ctx context.Context, lat, lng float64) string {
@@ -451,7 +517,7 @@ func guideTools() []gemini.Tool {
 // runGuideTool executes one tool call and returns its JSON result (fed
 // back to the model as a "tool" message), any place ids it surfaced, and
 // whether it used a free-text semantic query (search_places only).
-func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, lat, lng float64, weather string) (result string, placeIDs []string, usedSemanticQuery bool) {
+func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guideLocation, weather string) (result string, placeIDs []string, usedSemanticQuery bool) {
 	switch tc.Function.Name {
 	case "save_user_vibe":
 		var args struct {
@@ -555,21 +621,15 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, lat, lng 
 			DesiredProductive: args.DesiredProductive, DesiredLoud: args.DesiredLoud, DesiredCrowded: args.DesiredCrowded,
 			MaxDistanceKm: args.MaxDistanceKm, MaxPriceLevel: args.MaxPriceLevel,
 			RequireIndoor: args.RequireIndoor, RequireOpenNow: args.RequireOpenNow, RequireSeaView: args.RequireSeaView,
-			WantsDeals: args.WantsDeals, Lat: lat, Lng: lng, QueryEmbedding: queryEmbedding,
+			WantsDeals: args.WantsDeals, Lat: loc.Lat, Lng: loc.Lng, QueryEmbedding: queryEmbedding,
 		}, weather)
 		if len(ranked) > 8 {
 			ranked = ranked[:8]
 		}
 
-		type resultPlace struct {
-			ID      string   `json:"id"`
-			Name    string   `json:"name"`
-			Reasons []string `json:"reasons"`
-		}
-		out := make([]resultPlace, 0, len(ranked))
-		for _, sc := range ranked {
-			out = append(out, resultPlace{ID: sc.Place.ID, Name: sc.Place.Name, Reasons: sc.Reasons})
-			placeIDs = append(placeIDs, sc.Place.ID)
+		out := guideSearchResults(ranked, loc)
+		for _, p := range out {
+			placeIDs = append(placeIDs, p.ID)
 		}
 		b, _ := json.Marshal(map[string]any{"places": out})
 		return string(b), placeIDs, len(queryEmbedding) > 0

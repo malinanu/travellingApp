@@ -167,7 +167,7 @@ func (s *Server) matchExtractedPlaceName(ctx context.Context, name string) extra
 	args, _ := json.Marshal(map[string]string{"query": name})
 	_, placeIDs, _ := s.runGuideTool(ctx, gemini.ToolCall{
 		Function: gemini.FunctionCall{Name: "search_places", Arguments: string(args)},
-	}, 0, 0, "")
+	}, guideLocation{}, "")
 
 	if len(placeIDs) == 0 {
 		return extractedPlace{Name: name, Matched: false}
