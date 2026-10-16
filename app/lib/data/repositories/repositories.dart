@@ -195,7 +195,9 @@ class AuthNotifier extends Notifier<bool> {
   @override
   bool build() {
     final token = ref.read(localStoreProvider).getToken();
-    return token != null && token.isNotEmpty;
+    final signedIn = token != null && token.isNotEmpty;
+    if (signedIn) Future.microtask(() => ref.read(apiProvider).upgradeLegacySession());
+    return signedIn;
   }
 
   /// Returns null on success, or a user-facing error message.
@@ -270,7 +272,7 @@ class AuthNotifier extends Notifier<bool> {
 
   Future<void> _adoptSession(Map<String, dynamic> data) async {
     final store = ref.read(localStoreProvider);
-    await store.setToken(data['token'] as String);
+    await store.setToken(data['token'] as String, refreshToken: data['refreshToken'] as String?);
     await store.setBool(StoreKeys.auth, true);
 
     // Adopt server-side prefs so a returning user skips onboarding.
@@ -298,6 +300,9 @@ class AuthNotifier extends Notifier<bool> {
   void signOut() {
     state = false;
     final store = ref.read(localStoreProvider);
+    // Before clearToken(): logout() needs the refresh token to end the
+    // server-side session.
+    ref.read(apiProvider).logout();
     store.clearToken();
     store.setBool(StoreKeys.auth, false);
     store.remove(StoreKeys.prefs);
