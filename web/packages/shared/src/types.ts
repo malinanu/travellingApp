@@ -106,6 +106,8 @@ export interface AdminVendorProfileGrant extends VendorProfileGrant {
 
 export interface AuthResponse {
   token: string;
+  /** The session's refresh token (absent from servers before sessions). */
+  refreshToken?: string;
   user: User;
 }
 
@@ -399,6 +401,64 @@ export interface DashboardBlob {
   popular?: { h: number; v: number }[];
   trend?: { wk: string; you: number; cat: number }[];
   questClaimsToday?: number;
+  questCompletionsToday?: number;
+}
+
+/** A traveller finishing one day's quest (GET /admin/quests/completions,
+ * GET /vendor/quest/completions — the vendor list has no travellerEmail). */
+export interface QuestCompletion {
+  travellerId: string;
+  travellerName: string;
+  travellerEmail?: string;
+  date: string; // UTC quest day, YYYY-MM-DD
+  vendorId?: string;
+  sponsorName: string;
+  goal: number;
+  rewardDescription: string;
+  completedAt: string;
+  redeemedAt?: string;
+}
+
+/** One row of GET /admin/users?q=. */
+export interface AdminUserSummary {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  vendorName?: string;
+  createdAt: string;
+  activeSessions: number;
+  lastActiveAt?: string;
+}
+
+/** A signed-in device (server session); the refresh token is never sent. */
+export interface AdminUserSession {
+  id: string;
+  userId: string;
+  client: 'app' | 'admin' | 'vendor';
+  deviceLabel: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+}
+
+/** GET /admin/users/{id}. */
+export interface AdminUserDetail {
+  user: User;
+  sessions: AdminUserSession[];
+  questCompletions: QuestCompletion[];
+  audit: AdminAuditLogEntry[];
+}
+
+/** One scheduled day (GET /admin/quests/schedules). */
+export interface QuestSchedule {
+  date: string;
+  vendorId: string;
+  goal: number;
+  sponsorName?: string;
+  rewardDescription?: string;
+  completions: number;
+  redemptions: number;
 }
 
 export interface GrowthBlob {

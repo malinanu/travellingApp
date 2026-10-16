@@ -91,12 +91,12 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 		payload = map[string]any{"twoFactorRequired": true, "twoFactorToken": pending}
 	} else {
-		token, err := s.Tokens.Issue(u)
+		token, refresh, err := s.startSession(r, u)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 			return
 		}
-		payload = authResp{Token: token, User: u}
+		payload = authResp{Token: token, RefreshToken: refresh, User: u}
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {
@@ -173,12 +173,12 @@ func (s *Server) handleGoogleMobileAuth(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusForbidden, "this account must sign in with email and password")
 		return
 	}
-	token, err := s.Tokens.Issue(u)
+	token, refresh, err := s.startSession(r, u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "token generation failed")
 		return
 	}
-	writeJSON(w, status, map[string]any{"token": token, "user": u})
+	writeJSON(w, status, map[string]any{"token": token, "refreshToken": refresh, "user": u})
 }
 
 // handleAuthExchange trades a one-time authCode (minted by

@@ -65,14 +65,18 @@ Future<(Position?, DeviceLocationResult)> bestEffortPosition() {
 
 Future<(Position?, DeviceLocationResult)> _resolvePosition() async {
   try {
-    var permission = await Geolocator.checkPermission()
-        .timeout(const Duration(seconds: 5), onTimeout: () => LocationPermission.denied);
+    var permission = await Geolocator.checkPermission().timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => LocationPermission.denied,
+    );
     if (permission == LocationPermission.denied) {
       // Belt-and-suspenders alongside the single-flight de-dup above: even
       // a single, non-racing request could in principle hang on some
       // device, so this still can't be allowed to wait forever.
-      permission = await Geolocator.requestPermission()
-          .timeout(const Duration(seconds: 20), onTimeout: () => LocationPermission.denied);
+      permission = await Geolocator.requestPermission().timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => LocationPermission.denied,
+      );
     }
     if (permission == LocationPermission.deniedForever) {
       return (null, DeviceLocationResult.deniedForever);
@@ -120,15 +124,61 @@ final devicePositionProvider = FutureProvider<(LatLngAt, DeviceLocationResult)>(
 /// actually confirmed granted: on Android the map's tile layer can fail
 /// to initialize at all (not just skip the blue dot) if it's told to show
 /// a location layer it doesn't have permission for yet.
-final locationPermissionProvider = FutureProvider<bool>((ref) async {
+final locationPermissionProvider = FutureProvider<bool>((ref) => hasLocationPermission());
+
+/// A plain permission read (never a prompt): true only for always/whileInUse.
+Future<bool> hasLocationPermission() async {
   try {
-    final permission = await Geolocator.checkPermission()
-        .timeout(const Duration(seconds: 5), onTimeout: () => LocationPermission.denied);
+    final permission = await Geolocator.checkPermission().timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => LocationPermission.denied,
+    );
     return permission == LocationPermission.always || permission == LocationPermission.whileInUse;
   } catch (_) {
     return false;
   }
-});
+}
+
+/// How much longer something saved at [atMs] (epoch ms) stays fresh under
+/// [maxAge], or null if it's already stale, missing, or from the future
+/// (clock changed).
+Duration? freshFor(int? atMs, Duration maxAge) {
+  if (atMs == null) return null;
+  final age = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(atMs));
+  if (age.isNegative || age >= maxAge) return null;
+  return maxAge - age;
+}
+
+/// How long a saved device fix stays good enough to start a places fetch
+/// with while the real fix is still resolving.
+const kSavedPositionMaxAge = Duration(hours: 6);
+
+/// A fresh fix further than this from the saved one triggers a second
+/// places fetch; closer than this, the first (saved-position) result stands.
+const kRefetchDistanceMeters = 1000.0;
+
+void rememberPosition(LocalStore store, Position pos) {
+  store.setJson(StoreKeys.lastPosition, {
+    'lat': pos.latitude,
+    'lng': pos.longitude,
+    // When the fix was taken, not when it was saved: bestEffortPosition can
+    // hand back the OS's last known position, which may be days old.
+    'at': pos.timestamp.millisecondsSinceEpoch,
+  });
+}
+
+/// The last device fix saved on this device, if it's recent and location
+/// permission is still granted right now. Only for things like sorting
+/// places — never for geofenced actions such as check-ins, which need a
+/// real current fix.
+Future<LatLngAt?> recentSavedPosition(LocalStore store) async {
+  final saved = store.getJson(StoreKeys.lastPosition);
+  final lat = saved?['lat'], lng = saved?['lng'], at = saved?['at'];
+  if (lat is! num || lng is! num || at is! int) return null;
+  if (freshFor(at, kSavedPositionMaxAge) == null) return null;
+  if (!await hasLocationPermission()) return null;
+  return (lat: lat.toDouble(), lng: lng.toDouble());
+}
 
 /// Overridden in main() with the initialized instance.
 final localStoreProvider = Provider<LocalStore>((ref) => throw UnimplementedError());
@@ -145,14 +195,15 @@ class AuthNotifier extends Notifier<bool> {
   @override
   bool build() {
     final token = ref.read(localStoreProvider).getToken();
-    return token != null && token.isNotEmpty;
+    final signedIn = token != null && token.isNotEmpty;
+    if (signedIn) Future.microtask(() => ref.read(apiProvider).upgradeLegacySession());
+    return signedIn;
   }
 
   /// Returns null on success, or a user-facing error message.
   Future<String?> login(String email, String password) async {
     try {
-      final res = await ref.read(apiProvider).dio.post('/auth/login',
-          data: {'email': email, 'password': password});
+      final res = await ref.read(apiProvider).dio.post('/auth/login', data: {'email': email, 'password': password});
       await _adoptSession(res.data as Map<String, dynamic>);
       return null;
     } catch (e) {
@@ -162,8 +213,10 @@ class AuthNotifier extends Notifier<bool> {
 
   Future<String?> register(String name, String email, String password) async {
     try {
-      final res = await ref.read(apiProvider).dio.post('/auth/register',
-          data: {'name': name, 'email': email, 'password': password});
+      final res = await ref
+          .read(apiProvider)
+          .dio
+          .post('/auth/register', data: {'name': name, 'email': email, 'password': password});
       await _adoptSession(res.data as Map<String, dynamic>);
       return null;
     } catch (e) {
@@ -176,10 +229,10 @@ class AuthNotifier extends Notifier<bool> {
   /// else about the user is sent as a claim.
   Future<String?> appleAuth(String identityToken, {String? name}) async {
     try {
-      final res = await ref.read(apiProvider).dio.post('/auth/apple', data: {
-        'identityToken': identityToken,
-        'name': ?name,
-      });
+      final res = await ref
+          .read(apiProvider)
+          .dio
+          .post('/auth/apple', data: {'identityToken': identityToken, 'name': ?name});
       await _adoptSession(res.data as Map<String, dynamic>);
       return null;
     } catch (e) {
@@ -191,9 +244,7 @@ class AuthNotifier extends Notifier<bool> {
   /// server verifies it with Google and takes the id/email from the token.
   Future<String?> googleAuth(String idToken) async {
     try {
-      final res = await ref.read(apiProvider).dio.post('/auth/google/mobile', data: {
-        'idToken': idToken,
-      });
+      final res = await ref.read(apiProvider).dio.post('/auth/google/mobile', data: {'idToken': idToken});
       await _adoptSession(res.data as Map<String, dynamic>);
       return null;
     } catch (e) {
@@ -212,10 +263,7 @@ class AuthNotifier extends Notifier<bool> {
 
   Future<String?> resetPassword(String token, String newPassword) async {
     try {
-      await ref.read(apiProvider).dio.post('/auth/reset-password', data: {
-        'token': token,
-        'newPassword': newPassword,
-      });
+      await ref.read(apiProvider).dio.post('/auth/reset-password', data: {'token': token, 'newPassword': newPassword});
       return null;
     } catch (e) {
       return ApiClient.errorMessage(e);
@@ -224,38 +272,50 @@ class AuthNotifier extends Notifier<bool> {
 
   Future<void> _adoptSession(Map<String, dynamic> data) async {
     final store = ref.read(localStoreProvider);
-    await store.setToken(data['token'] as String);
+    await store.setToken(data['token'] as String, refreshToken: data['refreshToken'] as String?);
     await store.setBool(StoreKeys.auth, true);
 
     // Adopt server-side prefs so a returning user skips onboarding.
     final user = data['user'] as Map<String, dynamic>? ?? const {};
     final styles = parseStringList(user['travelStyle']);
     if (styles.isNotEmpty) {
-      ref.read(prefsProvider.notifier).saveLocal(UserPrefs(
-            styles: styles,
-            interests: [for (final i in (user['interests'] as List? ?? const [])) i as String],
-          ));
+      ref
+          .read(prefsProvider.notifier)
+          .saveLocal(
+            UserPrefs(
+              styles: styles,
+              interests: [for (final i in (user['interests'] as List? ?? const [])) i as String],
+            ),
+          );
     }
     state = true;
     ref.invalidate(claimsProvider);
     ref.invalidate(tripProvider);
     ref.invalidate(groupProvider);
     ref.invalidate(placesProvider);
+    ref.invalidate(meProvider);
+    ref.invalidate(dailyQuestProvider);
   }
 
   void signOut() {
     state = false;
     final store = ref.read(localStoreProvider);
+    // Before clearToken(): logout() needs the refresh token to end the
+    // server-side session.
+    ref.read(apiProvider).logout();
     store.clearToken();
     store.setBool(StoreKeys.auth, false);
     store.remove(StoreKeys.prefs);
     store.remove(StoreKeys.claims);
     store.remove(StoreKeys.trip);
     store.remove(StoreKeys.group);
+    store.remove(StoreKeys.me);
+    store.remove(StoreKeys.quest);
     ref.invalidate(prefsProvider);
     ref.invalidate(claimsProvider);
     ref.invalidate(tripProvider);
     ref.invalidate(groupProvider);
+    ref.invalidate(meProvider);
   }
 }
 
@@ -265,20 +325,39 @@ final authProvider = NotifierProvider<AuthNotifier, bool>(AuthNotifier.new);
 
 /// Raw `/me` response — read directly by the security/privacy profile pages
 /// rather than modeled, since those are the only consumers so far.
+///
+/// Starts from the last /me saved on the device (so the avatar initial and
+/// shareLocation are right on the first frame), then refreshes in the
+/// background.
 class MeNotifier extends Notifier<Map<String, dynamic>?> {
   @override
   Map<String, dynamic>? build() {
     Future.microtask(refresh);
-    return null;
+    if (!ref.read(authProvider)) return null;
+    final cached = ref.read(localStoreProvider).getJson(StoreKeys.me);
+    if (cached == null) return null;
+    try {
+      seed.me = Traveler.fromMe(cached);
+    } catch (e) {
+      debugPrint('meProvider: ignoring unparseable cached /me: $e');
+      return null;
+    }
+    return cached;
   }
 
   Future<void> refresh() async {
     if (!ref.read(authProvider)) return;
+    final store = ref.read(localStoreProvider);
+    final token = store.getToken();
     try {
       final res = await ref.read(apiProvider).dio.get('/me');
+      // Signed out (or into another account) while this was in flight —
+      // this /me belongs to the old session, so don't show or save it.
+      if (store.getToken() != token || !ref.mounted) return;
       final data = (res.data as Map).cast<String, dynamic>();
       state = data;
       seed.me = Traveler.fromMe(data);
+      await store.setJson(StoreKeys.me, data);
       // prefsProvider is otherwise local-storage-only until the user
       // explicitly saves — hydrate it from the server's real values here so
       // a fresh install/login shows the traveller's actual saved
@@ -313,11 +392,7 @@ class PrefsNotifier extends Notifier<UserPrefs?> {
   /// Persists locally and pushes to the server (fire-and-forget).
   void save(UserPrefs prefs) {
     saveLocal(prefs);
-    ref
-        .read(apiProvider)
-        .dio
-        .put('/me', data: {'travelStyle': prefs.styles, 'interests': prefs.interests})
-        .ignore();
+    ref.read(apiProvider).dio.put('/me', data: {'travelStyle': prefs.styles, 'interests': prefs.interests}).ignore();
   }
 }
 
@@ -330,8 +405,7 @@ final prefsProvider = NotifierProvider<PrefsNotifier, UserPrefs?>(PrefsNotifier.
 /// an unsorted list that looks identical to "the feature is broken".
 enum PlacesLocationStatus { unknown, sorted, deniedForever, unavailable }
 
-final placesLocationStatusProvider =
-    StateProvider<PlacesLocationStatus>((ref) => PlacesLocationStatus.unknown);
+final placesLocationStatusProvider = StateProvider<PlacesLocationStatus>((ref) => PlacesLocationStatus.unknown);
 
 /// Parses each raw place row independently, skipping (and logging) any
 /// single record that fails instead of throwing and losing the whole batch
@@ -371,27 +445,62 @@ class PlacesNotifier extends Notifier<List<Place>> {
     tripCatalog = [for (final p in places) TripCatalogItem.fromPlace(p)];
   }
 
+  /// Fetches places sorted around the last saved device fix straight away,
+  /// instead of waiting several seconds for GPS, then refetches only if the
+  /// fresh fix turns out to be somewhere else. The GPS lookup starts at the
+  /// same time as the first fetch rather than after it.
   Future<void> refresh() async {
+    final store = ref.read(localStoreProvider);
+    final saved = await recentSavedPosition(store);
+    final freshPos = _currentPosition();
+    var fetchedSaved = false;
+    if (saved != null) {
+      try {
+        await _fetch(saved);
+        fetchedSaved = true;
+      } catch (e) {
+        debugPrint('placesProvider fetch from saved position failed: $e');
+      }
+    }
+    final pos = await freshPos;
+    if (pos != null) rememberPosition(store, pos);
+    final moved =
+        saved != null &&
+        pos != null &&
+        Geolocator.distanceBetween(saved.lat, saved.lng, pos.latitude, pos.longitude) > kRefetchDistanceMeters;
+    if (fetchedSaved && !moved) {
+      // Sorted around a recent real fix that the fresh one agrees with (or
+      // there's no fresh fix to contradict it).
+      ref.read(placesLocationStatusProvider.notifier).state = PlacesLocationStatus.sorted;
+      return;
+    }
     try {
-      final pos = await _currentPosition();
-      final res = await ref.read(apiProvider).dio.get('/places',
-          queryParameters: pos == null ? null : {'lat': pos.latitude, 'lng': pos.longitude});
-      final list = res.data as List;
-      if (list.isEmpty) return;
-      final places = _parsePlaces(list);
-      if (places.isEmpty) return;
-      state = places;
-      _syncTripCatalog(places);
-      await ref.read(localStoreProvider).setJsonList(StoreKeys.places, list);
+      await _fetch(pos == null ? null : (lat: pos.latitude, lng: pos.longitude));
     } catch (e) {
       // Offline or unauthenticated — keep the cached/seed state, but log so
       // a real failure (bad API_URL, server error) isn't indistinguishable
       // from "not logged in yet". _currentPosition() may have already set
-      // status to sorted before this request failed, which would leave the
-      // UI treating stale cached places as freshly location-sorted.
+      // status to sorted before this request failed; whatever list is on
+      // screen isn't sorted around where the user is now (if a saved-position
+      // list loaded, the fresh fix has just shown it's more than
+      // kRefetchDistanceMeters off), so say so.
       ref.read(placesLocationStatusProvider.notifier).state = PlacesLocationStatus.unavailable;
       debugPrint('placesProvider refresh failed: $e');
     }
+  }
+
+  Future<void> _fetch(LatLngAt? at) async {
+    final res = await ref
+        .read(apiProvider)
+        .dio
+        .get('/places', queryParameters: at == null ? null : {'lat': at.lat, 'lng': at.lng});
+    final list = res.data as List;
+    if (list.isEmpty) return;
+    final places = _parsePlaces(list);
+    if (places.isEmpty) return;
+    state = places;
+    _syncTripCatalog(places);
+    await ref.read(localStoreProvider).setJsonList(StoreKeys.places, list);
   }
 
   /// Best-effort device position for nearest-first sorting — delegates to
@@ -413,6 +522,10 @@ final placesProvider = NotifierProvider<PlacesNotifier, List<Place>>(PlacesNotif
 
 // ── categories (dynamic from server) ──────────────────────────────
 
+/// How long a fetched category list counts as fresh enough to skip the
+/// launch/resume refetch.
+const kCategoriesFreshFor = Duration(minutes: 30);
+
 class CategoriesNotifier extends Notifier<List<VendorCategory>> {
   Timer? _timer;
   AppLifecycleListener? _lifecycleListener;
@@ -423,15 +536,17 @@ class CategoriesNotifier extends Notifier<List<VendorCategory>> {
       _timer?.cancel();
       _lifecycleListener?.dispose();
     });
-    Future.microtask(refresh);
-    // Re-poll periodically as a backstop, and also refresh the moment the
-    // app comes back to the foreground — an admin-added category (or icon
+    Future.microtask(_refreshIfStale);
+    // Re-poll periodically as a backstop, and also refresh when the app
+    // comes back to the foreground — an admin-added category (or icon
     // change) then reaches an already-running app instance on the next
-    // resume instead of waiting up to 24h for the periodic timer.
+    // resume instead of waiting up to 24h for the periodic timer. Both the
+    // launch and resume checks skip the request if the list was fetched in
+    // the last kCategoriesFreshFor, so quick app switches don't refetch it.
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(hours: 24), (_) => refresh());
     _lifecycleListener?.dispose();
-    _lifecycleListener = AppLifecycleListener(onResume: refresh);
+    _lifecycleListener = AppLifecycleListener(onResume: _refreshIfStale);
     final cached = ref.read(localStoreProvider).getJsonList(StoreKeys.categories);
     if (cached != null && cached.isNotEmpty) {
       final categories = <VendorCategory>[];
@@ -454,6 +569,12 @@ class CategoriesNotifier extends Notifier<List<VendorCategory>> {
     return vendorCategories;
   }
 
+  Future<void> _refreshIfStale() async {
+    final at = int.tryParse(ref.read(localStoreProvider).getString(StoreKeys.categoriesAt) ?? '');
+    if (freshFor(at, kCategoriesFreshFor) != null) return;
+    await refresh();
+  }
+
   Future<void> refresh() async {
     try {
       final res = await ref.read(apiProvider).dio.get('/categories');
@@ -474,7 +595,9 @@ class CategoriesNotifier extends Notifier<List<VendorCategory>> {
       if (categories.isEmpty) return;
       state = categories;
       vendorCategories = categories; // update global fallback synchronously
-      await ref.read(localStoreProvider).setJsonList(StoreKeys.categories, list);
+      final store = ref.read(localStoreProvider);
+      await store.setJsonList(StoreKeys.categories, list);
+      await store.setString(StoreKeys.categoriesAt, '${DateTime.now().millisecondsSinceEpoch}');
     } catch (e) {
       debugPrint('categoriesProvider refresh failed: $e');
     }
@@ -558,14 +681,9 @@ class NearbyTravellersNotifier extends Notifier<List<NearbyTraveller>> {
     try {
       final (pos, _) = await bestEffortPosition();
       if (pos == null) return;
-      await ref
-          .read(apiProvider)
-          .dio
-          .put('/me/location', data: {'lat': pos.latitude, 'lng': pos.longitude});
+      await ref.read(apiProvider).dio.put('/me/location', data: {'lat': pos.latitude, 'lng': pos.longitude});
       final res = await ref.read(apiProvider).dio.get('/travellers/nearby');
-      state = [
-        for (final t in (res.data as List)) NearbyTraveller.fromJson((t as Map).cast<String, dynamic>())
-      ];
+      state = [for (final t in (res.data as List)) NearbyTraveller.fromJson((t as Map).cast<String, dynamic>())];
       // Extend tripWho()'s lookup pool (trip_common.dart) with real nearby
       // travellers too, alongside group members — trip_share_sheet.dart's
       // "invite travellers" suggestions draw from the same pool.
@@ -582,8 +700,9 @@ class NearbyTravellersNotifier extends Notifier<List<NearbyTraveller>> {
   }
 }
 
-final nearbyTravellersProvider =
-    NotifierProvider<NearbyTravellersNotifier, List<NearbyTraveller>>(NearbyTravellersNotifier.new);
+final nearbyTravellersProvider = NotifierProvider<NearbyTravellersNotifier, List<NearbyTraveller>>(
+  NearbyTravellersNotifier.new,
+);
 
 final groupProvider = NotifierProvider<GroupNotifier, Group>(GroupNotifier.new);
 
@@ -641,15 +760,15 @@ class TripNotifier extends Notifier<Trip> {
 
   void removeStop(int dayIndex, String stopId) {
     final days = [...state.days];
-    days[dayIndex] =
-        days[dayIndex].copyWith(stops: days[dayIndex].stops.where((s) => s.id != stopId).toList());
+    days[dayIndex] = days[dayIndex].copyWith(stops: days[dayIndex].stops.where((s) => s.id != stopId).toList());
     update(state.copyWith(days: days));
   }
 
   void setStopTime(int dayIndex, String stopId, int mins) {
     final days = [...state.days];
     days[dayIndex] = days[dayIndex].copyWith(
-        stops: [for (final s in days[dayIndex].stops) s.id == stopId ? s.copyWith(time: mins) : s]);
+      stops: [for (final s in days[dayIndex].stops) s.id == stopId ? s.copyWith(time: mins) : s],
+    );
     update(state.copyWith(days: days));
   }
 
@@ -670,23 +789,23 @@ class TripNotifier extends Notifier<Trip> {
   /// Move a stop from one index to another, possibly crossing days.
   void moveStopBetweenDays(int oldDayIx, int oldStopIx, int newDayIx, int newStopIx) {
     if (oldDayIx < 0 || oldDayIx >= state.days.length || newDayIx < 0 || newDayIx >= state.days.length) return;
-    
+
     final oldStops = [...state.days[oldDayIx].stops];
     if (oldStopIx < 0 || oldStopIx >= oldStops.length) return;
-    
+
     final stop = oldStops.removeAt(oldStopIx);
-    
+
     if (oldDayIx == newDayIx) {
       if (newStopIx > oldStops.length) newStopIx = oldStops.length;
       oldStops.insert(newStopIx, stop);
-      
+
       final days = [...state.days];
       days[oldDayIx] = days[oldDayIx].copyWith(stops: oldStops);
       update(state.copyWith(days: days));
     } else {
       final newStops = [...state.days[newDayIx].stops];
       if (newStopIx > newStops.length) newStopIx = newStops.length;
-      
+
       int time = 9 * 60;
       if (newStops.isNotEmpty) {
         if (newStopIx == 0) {
@@ -697,15 +816,16 @@ class TripNotifier extends Notifier<Trip> {
           time = (newStops[newStopIx - 1].time + newStops[newStopIx].time) ~/ 2;
         }
       }
-      
+
       newStops.insert(newStopIx, stop.copyWith(time: time));
-      
+
       final days = [...state.days];
       days[oldDayIx] = days[oldDayIx].copyWith(stops: oldStops);
       days[newDayIx] = days[newDayIx].copyWith(stops: newStops);
       update(state.copyWith(days: days));
     }
   }
+
   /// New stop from the catalog: 90 min after the last stop (clamped to
   /// 23:30), or the item's suggested time on an empty day.
   void addCatalogStop(int dayIndex, TripCatalogItem item) {
@@ -719,8 +839,16 @@ class TripNotifier extends Notifier<Trip> {
   void addCustomStop(int dayIndex, String name) {
     final stops = state.days[dayIndex].stops;
     final t = stops.isEmpty ? 9 * 60 : (stops.last.time + 90).clamp(0, 23 * 60 + 30);
-    addStop(dayIndex,
-        TripStop(id: tripNewId('s'), placeId: '', time: t, by: 'me', custom: CustomStopInfo(name: name)));
+    addStop(
+      dayIndex,
+      TripStop(
+        id: tripNewId('s'),
+        placeId: '',
+        time: t,
+        by: 'me',
+        custom: CustomStopInfo(name: name),
+      ),
+    );
   }
 
   void addPlaceStop(int dayIndex, Place place) {
@@ -739,17 +867,26 @@ class TripNotifier extends Notifier<Trip> {
   }
 
   void addDay() {
-    update(state.copyWith(days: [...state.days, TripDay(id: tripNewId('d'), stops: const [])]));
+    update(
+      state.copyWith(
+        days: [
+          ...state.days,
+          TripDay(id: tripNewId('d'), stops: const []),
+        ],
+      ),
+    );
   }
 
   void createTrip(String name, int days, String startDate) {
-    update(Trip(
-      name: name.trim().isEmpty ? 'Spotto Trip' : name.trim(),
-      code: newTripCode(),
-      startDate: startDate,
-      collaborators: const [],
-      days: [for (var i = 0; i < days; i++) TripDay(id: tripNewId('d'), stops: const [])],
-    ));
+    update(
+      Trip(
+        name: name.trim().isEmpty ? 'Spotto Trip' : name.trim(),
+        code: newTripCode(),
+        startDate: startDate,
+        collaborators: const [],
+        days: [for (var i = 0; i < days; i++) TripDay(id: tripNewId('d'), stops: const [])],
+      ),
+    );
   }
 
   void switchActiveTrip(String code) {
@@ -783,11 +920,7 @@ class TripNotifier extends Notifier<Trip> {
       days = days.take(newDays).toList();
     }
 
-    final updated = target.copyWith(
-      name: trimmedName,
-      startDate: newStartDate,
-      days: days,
-    );
+    final updated = target.copyWith(name: trimmedName, startDate: newStartDate, days: days);
 
     ref.read(savedTripsProvider.notifier).saveTrip(updated);
     if (state.code == code) {
@@ -817,11 +950,7 @@ class TripNotifier extends Notifier<Trip> {
   }
 
   void editInspirationNote(String id, String note) {
-    update(state.copyWith(
-      inspirations: [
-        for (final l in state.inspirations) l.id == id ? l.copyWith(note: note) : l,
-      ],
-    ));
+    update(state.copyWith(inspirations: [for (final l in state.inspirations) l.id == id ? l.copyWith(note: note) : l]));
   }
 }
 
@@ -880,8 +1009,7 @@ class ClaimsNotifier extends Notifier<Map<String, String>> {
     try {
       final res = await ref.read(apiProvider).dio.get('/me/claims');
       final map = <String, String>{
-        for (final c in (res.data as List))
-          (c as Map)['placeId'] as String: c['code'] as String,
+        for (final c in (res.data as List)) (c as Map)['placeId'] as String: c['code'] as String,
       };
       if (map.isNotEmpty) {
         state = {...map, ...state};
@@ -897,12 +1025,13 @@ class ClaimsNotifier extends Notifier<Map<String, String>> {
   Future<String> claim(String placeId, {String? offerId, String offerLabel = '', String offerValue = ''}) async {
     final existing = state[placeId];
     if (existing != null) return existing;
-    final res = await ref.read(apiProvider).dio.post('/claims', data: {
-      'placeId': placeId,
-      'offerId': ?offerId,
-      'offerLabel': offerLabel,
-      'offerValue': offerValue,
-    });
+    final res = await ref
+        .read(apiProvider)
+        .dio
+        .post(
+          '/claims',
+          data: {'placeId': placeId, 'offerId': ?offerId, 'offerLabel': offerLabel, 'offerValue': offerValue},
+        );
     final code = (res.data as Map)['code'] as String;
     state = {...state, placeId: code};
     ref.read(localStoreProvider).setJson(StoreKeys.claims, state);
@@ -917,12 +1046,9 @@ final claimsProvider = NotifierProvider<ClaimsNotifier, Map<String, String>>(Cla
 // ── bookings (real, auto-confirmed commitments — see server's booking.go) ─
 
 /// A place's active bookable services — empty for a non-bookable place.
-final placeServicesProvider =
-    FutureProvider.family<List<BookableService>, String>((ref, placeId) async {
+final placeServicesProvider = FutureProvider.family<List<BookableService>, String>((ref, placeId) async {
   final res = await ref.read(apiProvider).dio.get('/places/$placeId/services');
-  return [
-    for (final s in (res.data as List)) BookableService.fromJson((s as Map).cast<String, dynamic>()),
-  ];
+  return [for (final s in (res.data as List)) BookableService.fromJson((s as Map).cast<String, dynamic>())];
 });
 
 /// Raw availability response for one service — `query` is the caller-built
@@ -930,14 +1056,14 @@ final placeServicesProvider =
 /// for stay), since the two service shapes need different params (see
 /// server's handleServiceAvailability). UI reads `slots` or `remaining` out
 /// of the decoded map depending on the service's type.
-final serviceAvailabilityProvider = FutureProvider.family<
-    Map<String, dynamic>, ({String placeId, String serviceId, String query})>((ref, args) async {
-  final res = await ref
-      .read(apiProvider)
-      .dio
-      .get('/places/${args.placeId}/services/${args.serviceId}/availability?${args.query}');
-  return (res.data as Map).cast<String, dynamic>();
-});
+final serviceAvailabilityProvider =
+    FutureProvider.family<Map<String, dynamic>, ({String placeId, String serviceId, String query})>((ref, args) async {
+      final res = await ref
+          .read(apiProvider)
+          .dio
+          .get('/places/${args.placeId}/services/${args.serviceId}/availability?${args.query}');
+      return (res.data as Map).cast<String, dynamic>();
+    });
 
 /// The traveller's own bookings — no optimistic write (unlike claims'
 /// single key-flip, a booking is a genuinely new record with real fields),
@@ -947,26 +1073,19 @@ class BookingsNotifier extends Notifier<List<Booking>> {
   List<Booking> build() {
     Future.microtask(_pull);
     final cached = ref.read(localStoreProvider).getJsonList(StoreKeys.bookings);
-    return cached == null
-        ? []
-        : [for (final b in cached) Booking.fromJson((b as Map).cast<String, dynamic>())];
+    return cached == null ? [] : [for (final b in cached) Booking.fromJson((b as Map).cast<String, dynamic>())];
   }
 
   Future<void> _pull() async {
     if (!ref.read(authProvider)) return;
     try {
       final res = await ref.read(apiProvider).dio.get('/me/bookings');
-      state = [
-        for (final b in (res.data as List)) Booking.fromJson((b as Map).cast<String, dynamic>()),
-      ];
+      state = [for (final b in (res.data as List)) Booking.fromJson((b as Map).cast<String, dynamic>())];
       _persist();
     } catch (_) {}
   }
 
-  void _persist() => ref.read(localStoreProvider).setJsonList(
-        StoreKeys.bookings,
-        [for (final b in state) b.toJson()],
-      );
+  void _persist() => ref.read(localStoreProvider).setJsonList(StoreKeys.bookings, [for (final b in state) b.toJson()]);
 
   /// Creates a real booking. Throws on failure (caller shows the error via
   /// ApiClient.errorMessage) — same convention as ClaimsNotifier.claim.
@@ -979,15 +1098,21 @@ class BookingsNotifier extends Notifier<List<Booking>> {
     required int partySize,
     String note = '',
   }) async {
-    final res = await ref.read(apiProvider).dio.post('/bookings', data: {
-      'placeId': placeId,
-      'serviceId': serviceId,
-      if (startAt != null) 'startAt': startAt.toUtc().toIso8601String(),
-      if (checkIn != null) 'checkIn': checkIn.toIso8601String().split('T').first,
-      if (checkOut != null) 'checkOut': checkOut.toIso8601String().split('T').first,
-      'partySize': partySize,
-      'note': note,
-    });
+    final res = await ref
+        .read(apiProvider)
+        .dio
+        .post(
+          '/bookings',
+          data: {
+            'placeId': placeId,
+            'serviceId': serviceId,
+            if (startAt != null) 'startAt': startAt.toUtc().toIso8601String(),
+            if (checkIn != null) 'checkIn': checkIn.toIso8601String().split('T').first,
+            if (checkOut != null) 'checkOut': checkOut.toIso8601String().split('T').first,
+            'partySize': partySize,
+            'note': note,
+          },
+        );
     final booking = Booking.fromJson((res.data as Map).cast<String, dynamic>());
     state = [booking, ...state];
     _persist();
@@ -1028,17 +1153,51 @@ final weatherLocationProvider = FutureProvider<LatLngAt>((ref) async {
   return (lat: round(pos.latitude), lng: round(pos.longitude));
 });
 
-/// Raw GET /weather for one location.
-final weatherSnapshotProvider = FutureProvider.family<WeatherSnapshot, LatLngAt>((ref, at) async {
+/// Raw GET /weather JSON for one location.
+final _weatherJsonProvider = FutureProvider.family<Map<String, dynamic>, LatLngAt>((ref, at) async {
   final res = await ref.read(apiProvider).dio.get('/weather', queryParameters: {'lat': at.lat, 'lng': at.lng});
-  return WeatherSnapshot.fromJson((res.data as Map).cast<String, dynamic>());
+  return (res.data as Map).cast<String, dynamic>();
+});
+
+/// GET /weather for one location.
+final weatherSnapshotProvider = FutureProvider.family<WeatherSnapshot, LatLngAt>((ref, at) async {
+  return WeatherSnapshot.fromJson(await ref.watch(_weatherJsonProvider(at).future));
 });
 
 /// The provider screens actually watch — chains device location to the
 /// weather fetch. Not autoDispose: keeps the snapshot warm for the session.
+/// Saves each result so the next launch can show it via
+/// [cachedWeatherProvider] while this one is still loading.
 final currentWeatherProvider = FutureProvider<WeatherSnapshot>((ref) async {
+  final store = ref.read(localStoreProvider); // before the awaits, see dailyQuestProvider
   final at = await ref.watch(weatherLocationProvider.future);
-  return ref.watch(weatherSnapshotProvider(at).future);
+  final json = await ref.watch(_weatherJsonProvider(at).future);
+  final snapshot = WeatherSnapshot.fromJson(json);
+  store.setJson(StoreKeys.weather, {'at': DateTime.now().millisecondsSinceEpoch, 'data': json});
+  return snapshot;
+});
+
+/// How old a saved weather snapshot can be and still be shown at launch.
+const kCachedWeatherMaxAge = Duration(hours: 1);
+
+/// The last current-location weather saved on this device, if it's under
+/// [kCachedWeatherMaxAge] old — shown while [currentWeatherProvider] loads
+/// (or if it fails). Rebuilds itself when the snapshot passes that age, so
+/// it never keeps serving an expired snapshot for the rest of the session.
+final cachedWeatherProvider = Provider<WeatherSnapshot?>((ref) {
+  final saved = ref.read(localStoreProvider).getJson(StoreKeys.weather);
+  final at = saved?['at'], data = saved?['data'];
+  if (at is! int || data is! Map) return null;
+  final left = freshFor(at, kCachedWeatherMaxAge);
+  if (left == null) return null;
+  final expiry = Timer(left, ref.invalidateSelf);
+  ref.onDispose(expiry.cancel);
+  try {
+    return WeatherSnapshot.fromJson(data.cast<String, dynamic>());
+  } catch (e) {
+    debugPrint('cachedWeatherProvider: ignoring unparseable snapshot: $e');
+    return null;
+  }
 });
 
 /// Single batched provider that fetches weather for Current Location + all Pinned Locations
@@ -1053,9 +1212,7 @@ final batchedWeatherDeckProvider = FutureProvider<Map<String, WeatherSnapshot>>(
   ];
 
   try {
-    final res = await ref.read(apiProvider).dio.post('/weather/batch', data: {
-      'locations': locations,
-    });
+    final res = await ref.read(apiProvider).dio.post('/weather/batch', data: {'locations': locations});
     final rawResults = (res.data as Map)['results'] as Map? ?? {};
     final out = <String, WeatherSnapshot>{};
     for (final entry in rawResults.entries) {
@@ -1082,19 +1239,15 @@ final batchedWeatherDeckProvider = FutureProvider<Map<String, WeatherSnapshot>>(
 /// Legacy sunny|cloudy|rainy string derived from live data — drives
 /// guide_screen.dart's weather-aware greeting/suggestion chips locally.
 final weatherConditionProvider = Provider<String>((ref) {
-  return ref.watch(currentWeatherProvider).maybeWhen(
-        data: (s) => s.now.condition,
-        orElse: () => 'sunny',
-      );
+  final snapshot = ref.watch(currentWeatherProvider).value ?? ref.watch(cachedWeatherProvider);
+  return snapshot?.now.condition ?? 'sunny';
 });
 
 final paymentMethodsProvider = FutureProvider<List<PaymentCard>>((ref) async {
   try {
     final res = await ref.read(apiProvider).dio.get('/me/payment-methods');
     if (res.data is List) {
-      return (res.data as List)
-          .map((e) => PaymentCard.fromJson((e as Map).cast<String, dynamic>()))
-          .toList();
+      return (res.data as List).map((e) => PaymentCard.fromJson((e as Map).cast<String, dynamic>())).toList();
     }
   } catch (_) {}
   return const [];
@@ -1181,13 +1334,19 @@ class VibeCheckInsNotifier extends Notifier<Map<String, VibeState>> {
     );
     state = {...state, placeId: (vibe: currentVibe, mine: optimisticMine)};
     try {
-      final res = await ref.read(apiProvider).dio.post('/places/$placeId/vibe-checkin', data: {
-        'productive': optimisticMine.productive,
-        'loud': optimisticMine.loud,
-        'crowded': optimisticMine.crowded,
-        'lat': lat,
-        'lng': lng,
-      });
+      final res = await ref
+          .read(apiProvider)
+          .dio
+          .post(
+            '/places/$placeId/vibe-checkin',
+            data: {
+              'productive': optimisticMine.productive,
+              'loud': optimisticMine.loud,
+              'crowded': optimisticMine.crowded,
+              'lat': lat,
+              'lng': lng,
+            },
+          );
       final resp = (res.data as Map).cast<String, dynamic>();
       state = {
         ...state,
@@ -1207,8 +1366,7 @@ class VibeCheckInsNotifier extends Notifier<Map<String, VibeState>> {
   }
 }
 
-final vibeCheckInsProvider =
-    NotifierProvider<VibeCheckInsNotifier, Map<String, VibeState>>(VibeCheckInsNotifier.new);
+final vibeCheckInsProvider = NotifierProvider<VibeCheckInsNotifier, Map<String, VibeState>>(VibeCheckInsNotifier.new);
 
 /// Artisan check-ins for the daily quest (optimistic, posted to the server).
 /// Persisted locally so "already checked in" survives an app restart —
@@ -1227,8 +1385,16 @@ class CheckInsNotifier extends Notifier<Set<String>> {
     ref.read(localStoreProvider).setJsonList(StoreKeys.checkIns, state.toList());
     if (ref.read(authProvider)) {
       try {
-        await ref.read(apiProvider).dio.post('/checkins', data: {'placeId': placeId});
-        // Refresh the daily quest progress
+        final store = ref.read(localStoreProvider);
+        final res = await ref.read(apiProvider).dio.post('/checkins', data: {'placeId': placeId});
+        // The server returns the updated quest with the check-in (and records
+        // a completion there the moment the goal is reached). Show it right
+        // away via the saved copy while dailyQuestProvider refetches.
+        final quest = res.data is Map ? (res.data as Map)['quest'] : null;
+        if (quest is Map) {
+          _saveQuest(store, quest.cast<String, dynamic>());
+          ref.invalidate(cachedQuestProvider);
+        }
         ref.invalidate(dailyQuestProvider);
       } catch (_) {
         // Optimistic, ignore errors for MVP
@@ -1239,13 +1405,60 @@ class CheckInsNotifier extends Notifier<Set<String>> {
 
 final checkInsProvider = NotifierProvider<CheckInsNotifier, Set<String>>(CheckInsNotifier.new);
 
+const kDefaultQuest = DailyQuest(goal: 2, progress: 0, rewardDescription: 'Free Ceylon Tea', isComplete: false);
+
+/// The server's quest day for [t], in the same 'YYYY-MM-DD' (UTC) form as
+/// the `date` it returns with each quest. handleGetQuest picks the schedule
+/// by the UTC date, so the saved quest must be keyed the same way — keying
+/// by the local date would keep showing yesterday's quest for hours after the
+/// server has reset it (from 05:30 to midnight in Sri Lanka).
+String questDay(DateTime t) {
+  final u = t.toUtc();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${u.year}-${two(u.month)}-${two(u.day)}';
+}
+
+/// Saves a quest the server just returned, under the day the server says it
+/// is for (falling back to today's UTC day for an older server).
+void _saveQuest(LocalStore store, Map<String, dynamic> data) {
+  final day = data['date'] is String ? data['date'] as String : questDay(DateTime.now());
+  store.setJson(StoreKeys.quest, {'day': day, 'data': data});
+}
+
+/// Today's quest as last saved on this device (null if it's from another
+/// quest day) — shown while [dailyQuestProvider] loads, and kept if it fails.
+final cachedQuestProvider = Provider<DailyQuest?>((ref) {
+  if (!ref.watch(authProvider)) return null;
+  return _savedQuest(ref.read(localStoreProvider));
+});
+
+DailyQuest? _savedQuest(LocalStore store) {
+  final saved = store.getJson(StoreKeys.quest);
+  final data = saved?['data'];
+  if (saved?['day'] != questDay(DateTime.now()) || data is! Map) return null;
+  try {
+    return DailyQuest.fromJson(data.cast<String, dynamic>());
+  } catch (e) {
+    debugPrint('cachedQuestProvider: ignoring unparseable quest: $e');
+    return null;
+  }
+}
+
 final dailyQuestProvider = FutureProvider<DailyQuest>((ref) async {
-  if (!ref.watch(authProvider)) return const DailyQuest(goal: 2, progress: 0, rewardDescription: 'Free Ceylon Tea', isComplete: false);
+  if (!ref.watch(authProvider)) return kDefaultQuest;
+  // Read before the await: ref.read isn't safe after it.
+  final store = ref.read(localStoreProvider);
+  final token = store.getToken();
   try {
     final res = await ref.read(apiProvider).dio.get('/me/quest');
-    return DailyQuest.fromJson((res.data as Map).cast<String, dynamic>());
+    final data = (res.data as Map).cast<String, dynamic>();
+    final quest = DailyQuest.fromJson(data);
+    // Don't save the old session's quest if the user signed out meanwhile.
+    if (store.getToken() == token) _saveQuest(store, data);
+    return quest;
   } catch (e) {
-    return const DailyQuest(goal: 2, progress: 0, rewardDescription: 'Free Ceylon Tea', isComplete: false);
+    debugPrint('dailyQuestProvider refresh failed: $e');
+    return _savedQuest(store) ?? kDefaultQuest;
   }
 });
 
@@ -1284,8 +1497,7 @@ const _placeDetailCacheTtl = Duration(minutes: 3);
 
 /// Reviews for a single place, newest first. Call
 /// `ref.invalidate(placeReviewsProvider(placeId))` after submitting to refresh.
-final placeReviewsProvider =
-    FutureProvider.family<List<Review>, String>((ref, placeId) async {
+final placeReviewsProvider = FutureProvider.family<List<Review>, String>((ref, placeId) async {
   final timer = Timer(_placeDetailCacheTtl, ref.invalidateSelf);
   ref.onDispose(timer.cancel);
   final res = await ref.read(apiProvider).dio.get('/places/$placeId/reviews');
@@ -1295,15 +1507,11 @@ final placeReviewsProvider =
 /// Traveller-contributed photos for a place (media role "contrib").
 /// Invalidate after uploading/deleting to refresh the place detail's photo
 /// grid.
-final placePhotosProvider =
-    FutureProvider.family<List<PlacePhoto>, String>((ref, placeId) async {
+final placePhotosProvider = FutureProvider.family<List<PlacePhoto>, String>((ref, placeId) async {
   final timer = Timer(_placeDetailCacheTtl, ref.invalidateSelf);
   ref.onDispose(timer.cancel);
   final res = await ref.read(apiProvider).dio.get('/places/$placeId/photos');
-  return [
-    for (final m in (res.data as List))
-      PlacePhoto.fromJson((m as Map).cast<String, dynamic>()),
-  ];
+  return [for (final m in (res.data as List)) PlacePhoto.fromJson((m as Map).cast<String, dynamic>())];
 });
 
 /// Fetches a single place fresh from `GET /places/{id}` — unlike the bulk
@@ -1327,18 +1535,13 @@ final placeDetailsProvider = FutureProvider.family<Place, String>((ref, placeId)
 Future<List<ExtractedPlace>> extractPlacesFromLink(WidgetRef ref, String url) async {
   final res = await ref.read(apiProvider).dio.post('/trip/inspiration/extract-places', data: {'url': url});
   final list = (res.data as Map)['places'] as List? ?? [];
-  return list
-      .map((e) => ExtractedPlace.fromJson((e as Map).cast<String, dynamic>()))
-      .toList();
+  return list.map((e) => ExtractedPlace.fromJson((e as Map).cast<String, dynamic>())).toList();
 }
 
 /// Submits (or edits) the current traveller's review for a place, then
 /// refreshes [placeReviewsProvider] for that place.
 Future<String> submitReview(WidgetRef ref, String placeId, int rating, String text) async {
-  final res = await ref.read(apiProvider).dio.post('/places/$placeId/reviews', data: {
-    'rating': rating,
-    'text': text,
-  });
+  final res = await ref.read(apiProvider).dio.post('/places/$placeId/reviews', data: {'rating': rating, 'text': text});
   ref.invalidate(placeReviewsProvider(placeId));
   return (res.data as Map)['id'] as String? ?? '';
 }

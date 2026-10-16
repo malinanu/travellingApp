@@ -49,7 +49,7 @@ export default function AdminProfilePage() {
         <button
           className="btn btn-danger px-5 py-2.5 flex items-center gap-2"
           onClick={() => {
-            api.setToken(null);
+            api.logout();
             router.replace('/login');
           }}
         >

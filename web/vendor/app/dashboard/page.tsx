@@ -138,6 +138,17 @@ export default function DashboardPage() {
                 hint: 'Today',
               });
             }
+            if (dash?.questCompletionsToday !== undefined) {
+              kpis.push({
+                id: 'quest-completions',
+                label: 'Quests Completed',
+                value: dash.questCompletionsToday,
+                icon: 'Ticket',
+                delta: null,
+                tone: 'teal',
+                hint: 'Today',
+              });
+            }
             return kpis.map((k) => {
             const Icon = KPI_ICONS[k.icon] ?? Tag;
             const tone = KPI_TONES[k.tone] ?? KPI_TONES.teal;

@@ -229,6 +229,37 @@ type DailyQuest struct {
 	IsComplete        bool   `json:"isComplete"`
 	SponsorName       string `json:"sponsorName,omitempty"`
 	SponsorID         string `json:"sponsorId,omitempty"`
+	// Date is the UTC quest day this status is for — clients key any saved
+	// copy by it rather than by their own clock.
+	Date        string     `json:"date"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	RedeemedAt  *time.Time `json:"redeemedAt,omitempty"`
+}
+
+// QuestCompletion is a traveller finishing one day's quest, joined with who
+// they are and whether the sponsor has scanned their reward yet.
+type QuestCompletion struct {
+	TravellerID       string     `json:"travellerId"`
+	TravellerName     string     `json:"travellerName"`
+	TravellerEmail    string     `json:"travellerEmail,omitempty"`
+	Date              string     `json:"date"`
+	VendorID          *string    `json:"vendorId,omitempty"`
+	SponsorName       string     `json:"sponsorName"`
+	Goal              int        `json:"goal"`
+	RewardDescription string     `json:"rewardDescription"`
+	CompletedAt       time.Time  `json:"completedAt"`
+	RedeemedAt        *time.Time `json:"redeemedAt,omitempty"`
+}
+
+// QuestCompletionFilter narrows ListQuestCompletions. Empty fields don't
+// filter; Since is an inclusive 'YYYY-MM-DD'; Before pages by completed_at.
+type QuestCompletionFilter struct {
+	Date        string
+	Since       string
+	VendorID    string
+	TravellerID string
+	Before      *time.Time
+	Limit       int
 }
 
 type VendorSponsorship struct {
@@ -246,6 +277,9 @@ type QuestSchedule struct {
 	Goal              int    `json:"goal"`
 	SponsorName       string `json:"sponsorName,omitempty"`
 	RewardDescription string `json:"rewardDescription,omitempty"`
+	// Filled by ListQuestSchedules only.
+	Completions int `json:"completions"`
+	Redemptions int `json:"redemptions"`
 }
 
 type QuestClaim struct {
@@ -704,4 +738,30 @@ type PlatformAnalytics struct {
 	TotalVendors  int `json:"totalVendors"`
 	TotalClaims   int `json:"totalClaims"`
 	TotalReviews  int `json:"totalReviews"`
+}
+
+// Session is one signed-in device (a user_sessions row). The refresh token
+// itself is never stored or returned.
+type Session struct {
+	ID          string     `json:"id"`
+	UserID      string     `json:"userId"`
+	Client      string     `json:"client"` // app | admin | vendor
+	DeviceLabel string     `json:"deviceLabel"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	LastUsedAt  time.Time  `json:"lastUsedAt"`
+	ExpiresAt   time.Time  `json:"expiresAt"`
+	RevokedAt   *time.Time `json:"revokedAt,omitempty"`
+	RotatedAt   *time.Time `json:"-"`
+}
+
+// AdminUserSummary is one row of the admin Users list.
+type AdminUserSummary struct {
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	Email          string     `json:"email"`
+	Role           Role       `json:"role"`
+	VendorName     string     `json:"vendorName,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	ActiveSessions int        `json:"activeSessions"`
+	LastActiveAt   *time.Time `json:"lastActiveAt,omitempty"`
 }

@@ -1,7 +1,9 @@
 ﻿package httpapi
 
 import (
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/spotto/server/internal/domain"
@@ -80,4 +82,32 @@ func (s *Server) handleAdminSetQuestSchedule(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleAdminQuestCompletions lists recorded quest completions, newest
+// first. Filters: ?date=YYYY-MM-DD, ?vendorId=, ?travellerId=, and
+// ?before=<RFC3339 completedAt of the last row> to page.
+func (s *Server) handleAdminQuestCompletions(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := domain.QuestCompletionFilter{
+		Date:        q.Get("date"),
+		VendorID:    q.Get("vendorId"),
+		TravellerID: q.Get("travellerId"),
+		Limit:       100,
+	}
+	if b := q.Get("before"); b != "" {
+		t, err := time.Parse(time.RFC3339Nano, b)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "before must be an RFC3339 timestamp")
+			return
+		}
+		f.Before = &t
+	}
+	list, err := s.Store.ListQuestCompletions(r.Context(), f)
+	if err != nil {
+		log.Printf("admin quest completions: %v", err)
+		writeErr(w, http.StatusInternalServerError, "Couldn't load quest completions. Please try again.")
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
 }

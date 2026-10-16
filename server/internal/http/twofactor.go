@@ -39,13 +39,13 @@ func (s *Server) handleTwoFactorLoginVerify(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	s.totpLimit.reset(limitKey)
-	token, err := s.Tokens.Issue(u)
+	token, refresh, err := s.startSession(r, u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	u.AvatarURL = s.signMediaPath(u.AvatarURL)
-	writeJSON(w, http.StatusOK, authResp{Token: token, User: u})
+	writeJSON(w, http.StatusOK, authResp{Token: token, RefreshToken: refresh, User: u})
 }
 
 // handleTwoFactorSetup generates a new pending secret + otpauth:// URL for
@@ -144,7 +144,7 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 	// via a valid code) isn't immediately logged out by its own action.
 	u.TOTPEnabled = false
 	u.TokenVersion++
-	token, err := s.Tokens.Issue(u)
+	token, err := s.keepOnlyThisSession(r, u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return

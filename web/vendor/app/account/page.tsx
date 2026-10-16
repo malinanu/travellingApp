@@ -211,7 +211,7 @@ export default function AccountPage() {
             className="rounded-xl px-4 py-2.5 font-extrabold text-[13.5px] text-white shrink-0"
             style={{ background: '#e11d48' }}
             onClick={() => {
-              api.setToken(null);
+              api.logout();
               router.replace('/login');
             }}
           >

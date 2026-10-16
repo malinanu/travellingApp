@@ -1,6 +1,7 @@
 // Spot detail bottom sheet — port of BusinessDrawer.jsx: illustration
 // header, stats, deal claim, vibe voting, artisan check-in, menu, actions.
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -79,9 +80,7 @@ class BusinessDrawerBody extends ConsumerWidget {
     final details = ref.watch(placeDetailsProvider(place.id)).value;
     final contact = (details != null && !details.contact.isEmpty) ? details.contact : place.contact;
     final wheelchairAccessible = details?.wheelchairAccessible ?? place.wheelchairAccessible;
-    final priceLevel = (details != null && details.priceLevel.isNotEmpty)
-        ? details.priceLevel
-        : place.priceLevel;
+    final priceLevel = (details != null && details.priceLevel.isNotEmpty) ? details.priceLevel : place.priceLevel;
     final favorites = ref.watch(favoritesProvider);
     final isFavorite = favorites.contains(place.id);
 
@@ -132,11 +131,9 @@ class BusinessDrawerBody extends ConsumerWidget {
                       children: [
                         Text(place.name, style: text.titleLarge?.copyWith(color: Colors.white)),
                         Text(
-                            [place.type, place.distance, priceLevel]
-                                .where((s) => s.isNotEmpty)
-                                .join(' · '),
-                            style: text.bodyMedium
-                                ?.copyWith(color: Colors.white.withValues(alpha: 0.9))),
+                          [place.type, place.distance, priceLevel].where((s) => s.isNotEmpty).join(' · '),
+                          style: text.bodyMedium?.copyWith(color: Colors.white.withValues(alpha: 0.9)),
+                        ),
                       ],
                     ),
                   ),
@@ -145,10 +142,7 @@ class BusinessDrawerBody extends ConsumerWidget {
                     top: 12,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(999)),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -184,13 +178,8 @@ class BusinessDrawerBody extends ConsumerWidget {
                       child: Container(
                         width: 118,
                         height: 88,
-                        decoration: BoxDecoration(
-                          color: Colors.black87,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Center(
-                          child: Icon(Icons.play_circle_fill, color: Colors.white, size: 34),
-                        ),
+                        decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12)),
+                        child: const Center(child: Icon(Icons.play_circle_fill, color: Colors.white, size: 34)),
                       ),
                     ),
                   ),
@@ -210,9 +199,10 @@ class BusinessDrawerBody extends ConsumerWidget {
                       ),
                       child: ProgressiveImage(
                         url: resolveMediaUrl(
-                            i < place.galleryThumbs.length && place.galleryThumbs[i].isNotEmpty
-                                ? place.galleryThumbs[i]
-                                : url),
+                          i < place.galleryThumbs.length && place.galleryThumbs[i].isNotEmpty
+                              ? place.galleryThumbs[i]
+                              : url,
+                        ),
                         width: 118,
                         height: 88,
                         fit: BoxFit.cover,
@@ -238,9 +228,10 @@ class BusinessDrawerBody extends ConsumerWidget {
                   if (place.wifi.score > 0) ...[
                     Expanded(
                       child: StatChip(
-                          icon: Icons.wifi,
-                          value: '${place.wifi.score}',
-                          label: '${place.wifi.speed} · ${place.wifi.label}'),
+                        icon: Icons.wifi,
+                        value: '${place.wifi.score}',
+                        label: '${place.wifi.speed} · ${place.wifi.label}',
+                      ),
                     ),
                     const SizedBox(width: 10),
                   ],
@@ -257,8 +248,7 @@ class BusinessDrawerBody extends ConsumerWidget {
                 PressScale(
                   scale: 0.98,
                   onTap: () => launchUrl(
-                    Uri.parse(
-                        'https://www.google.com/maps/search/?api=1&query=${_mapsQuery(place)}'),
+                    Uri.parse('https://www.google.com/maps/search/?api=1&query=${_mapsQuery(place)}'),
                     mode: LaunchMode.externalApplication,
                   ),
                   child: Row(
@@ -267,8 +257,7 @@ class BusinessDrawerBody extends ConsumerWidget {
                       const Icon(Icons.place_outlined, size: 16, color: SpottoColors.muted),
                       const SizedBox(width: 6),
                       Expanded(
-                        child: Text(place.address,
-                            style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
+                        child: Text(place.address, style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
                       ),
                     ],
                   ),
@@ -296,10 +285,7 @@ class BusinessDrawerBody extends ConsumerWidget {
               ],
 
               // deal claim
-              if (place.deal.active) ...[
-                _DealCard(place: place, claimedCode: claimedCode),
-                const SizedBox(height: 14),
-              ],
+              if (place.deal.active) ...[_DealCard(place: place, claimedCode: claimedCode), const SizedBox(height: 14)],
 
               // real booking (session/table/stay — see placeServicesProvider)
               _BookingSection(place: place),
@@ -309,17 +295,10 @@ class BusinessDrawerBody extends ConsumerWidget {
               const SizedBox(height: 14),
 
               // artisan quest check-in
-              if (place.artisan) ...[
-                _CheckInButton(place: place),
-                const SizedBox(height: 14),
-              ],
+              if (place.artisan) ...[_CheckInButton(place: place), const SizedBox(height: 14)],
 
               // tags
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [for (final t in place.tags) Pill(label: t)],
-              ),
+              Wrap(spacing: 8, runSpacing: 8, children: [for (final t in place.tags) Pill(label: t)]),
               const SizedBox(height: 14),
               Text(place.blurb, style: text.bodyLarge),
 
@@ -333,8 +312,7 @@ class BusinessDrawerBody extends ConsumerWidget {
                 Text('Menu', style: text.titleMedium),
                 const SizedBox(height: 8),
                 for (final section in place.menu) ...[
-                  Text(section.name,
-                      style: text.labelMedium?.copyWith(color: SpottoColors.accent)),
+                  Text(section.name, style: text.labelMedium?.copyWith(color: SpottoColors.accent)),
                   const SizedBox(height: 6),
                   for (final item in section.items)
                     Padding(
@@ -344,11 +322,13 @@ class BusinessDrawerBody extends ConsumerWidget {
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
                             child: item.img.isNotEmpty
-                                ? Image.network(resolveMediaUrl(item.img),
+                                ? Image(
+                                    image: CachedNetworkImageProvider(resolveMediaUrl(item.img)),
                                     width: 40,
                                     height: 40,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => _MenuIconTile(icon: item.icon))
+                                    errorBuilder: (_, _, _) => _MenuIconTile(icon: item.icon),
+                                  )
                                 : _MenuIconTile(icon: item.icon),
                           ),
                           const SizedBox(width: 12),
@@ -372,10 +352,7 @@ class BusinessDrawerBody extends ConsumerWidget {
               const SizedBox(height: 18),
               _ReviewsSection(place: place),
 
-              if (!contact.isEmpty) ...[
-                const SizedBox(height: 18),
-                _ContactLinks(contact: contact),
-              ],
+              if (!contact.isEmpty) ...[const SizedBox(height: 18), _ContactLinks(contact: contact)],
 
               // bottom actions
               const SizedBox(height: 18),
@@ -385,13 +362,10 @@ class BusinessDrawerBody extends ConsumerWidget {
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
                         backgroundColor: SpottoColors.ink,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       ),
                       onPressed: () => launchUrl(
-                        Uri.parse(
-                          'https://www.google.com/maps/search/?api=1&query=${_mapsQuery(place)}',
-                        ),
+                        Uri.parse('https://www.google.com/maps/search/?api=1&query=${_mapsQuery(place)}'),
                         mode: LaunchMode.externalApplication,
                       ),
                       icon: const Icon(Icons.near_me, size: 17),
@@ -402,8 +376,7 @@ class BusinessDrawerBody extends ConsumerWidget {
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
                       backgroundColor: SpottoColors.accent,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                     onPressed: () {
                       final trip = ref.read(tripProvider);
@@ -445,9 +418,7 @@ class BusinessDrawerBody extends ConsumerWidget {
                     onTap: () {
                       ref.read(favoritesProvider.notifier).toggle(place.id);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(isFavorite ? 'Removed from bookmarks' : 'Saved to bookmarks'),
-                        ),
+                        SnackBar(content: Text(isFavorite ? 'Removed from bookmarks' : 'Saved to bookmarks')),
                       );
                     },
                     child: Container(
@@ -457,8 +428,11 @@ class BusinessDrawerBody extends ConsumerWidget {
                         color: isFavorite ? SpottoColors.accentTint : SpottoColors.sand,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: Icon(isFavorite ? Icons.bookmark : Icons.bookmark_outline,
-                          size: 19, color: SpottoColors.ink),
+                      child: Icon(
+                        isFavorite ? Icons.bookmark : Icons.bookmark_outline,
+                        size: 19,
+                        color: SpottoColors.ink,
+                      ),
                     ),
                   ),
                 ],
@@ -480,9 +454,7 @@ class _DayHours {
   const _DayHours(this.day, this.range);
 }
 
-const _weekdayNames = [
-  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
-];
+const _weekdayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 /// Parses the comma-separated `"Day: range"` hours string. Returns an empty
 /// list (never throws) for any shape it doesn't recognize, so the caller
@@ -586,24 +558,27 @@ const kVibeCheckinGeofenceMeters = 150.0;
 /// only, no meaningless Productive slider.
 List<VibeTag> _relevantVibes(String categoryId) {
   final relevant = relevantVibeDimensions(categoryId);
-  return [for (final v in data.vibes) if (relevant.contains(v.id)) v];
+  return [
+    for (final v in data.vibes)
+      if (relevant.contains(v.id)) v,
+  ];
 }
 
 /// Reads one dimension's value out of a VibeAggregate/VibeCheckin by the
 /// shared vibe id (see data.vibes) — keeps _VibeCheck's build method from
 /// hardcoding a productive/loud/crowded switch three times over.
 double _vibeAverageFor(VibeAggregate v, String id) => switch (id) {
-      'productive' => v.productive,
-      'loud' => v.loud,
-      'crowded' => v.crowded,
-      _ => 0,
-    };
+  'productive' => v.productive,
+  'loud' => v.loud,
+  'crowded' => v.crowded,
+  _ => 0,
+};
 int? _vibeMineFor(VibeCheckin? v, String id) => switch (id) {
-      'productive' => v?.productive,
-      'loud' => v?.loud,
-      'crowded' => v?.crowded,
-      _ => null,
-    };
+  'productive' => v?.productive,
+  'loud' => v?.loud,
+  'crowded' => v?.crowded,
+  _ => null,
+};
 
 class _VibeCheck extends ConsumerStatefulWidget {
   final Place place;
@@ -660,11 +635,11 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
   }
 
   int? _draftFor(String vibeId) => switch (vibeId) {
-        'productive' => _draftProductive,
-        'loud' => _draftLoud,
-        'crowded' => _draftCrowded,
-        _ => null,
-      };
+    'productive' => _draftProductive,
+    'loud' => _draftLoud,
+    'crowded' => _draftCrowded,
+    _ => null,
+  };
 
   void _setDraft(String vibeId, int value) {
     HapticFeedback.selectionClick();
@@ -685,7 +660,9 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
   Future<void> _flush() async {
     if (!_dirty || _lastDevicePos == null) return;
     try {
-      await ref.read(vibeCheckInsProvider.notifier).rate(
+      await ref
+          .read(vibeCheckInsProvider.notifier)
+          .rate(
             widget.place.id,
             productive: _draftProductive ?? 0,
             loud: _draftLoud ?? 0,
@@ -702,8 +679,7 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
       // card is still open to see it; a dispose()-triggered flush has
       // nothing left to show it to.
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
       }
     }
   }
@@ -752,22 +728,15 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
     // or be sent as the check-in's lat/lng.
     final granted = locationResult == DeviceLocationResult.granted;
     final locationDenied = !resolvingLocation && !granted;
-    final withinGeofence = granted &&
+    final withinGeofence =
+        granted &&
         devicePos != null &&
-        Geolocator.distanceBetween(
-              devicePos.lat,
-              devicePos.lng,
-              widget.place.lat,
-              widget.place.lng,
-            ) <=
+        Geolocator.distanceBetween(devicePos.lat, devicePos.lng, widget.place.lat, widget.place.lng) <=
             kVibeCheckinGeofenceMeters;
 
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: SpottoColors.sand,
-        borderRadius: BorderRadius.circular(16),
-      ),
+      decoration: BoxDecoration(color: SpottoColors.sand, borderRadius: BorderRadius.circular(16)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -775,13 +744,13 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
             children: [
               const Icon(Icons.monitor_heart_outlined, size: 14, color: SpottoColors.muted),
               const SizedBox(width: 5),
-              Text('CURRENT VIBE',
-                  style: text.labelSmall
-                      ?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6)),
+              Text('CURRENT VIBE', style: text.labelSmall?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6)),
               const Spacer(),
               if (vibe.sampleSize > 0)
-                Text('${vibe.sampleSize} traveller${vibe.sampleSize == 1 ? '' : 's'}',
-                    style: text.labelSmall?.copyWith(color: SpottoColors.muted)),
+                Text(
+                  '${vibe.sampleSize} traveller${vibe.sampleSize == 1 ? '' : 's'}',
+                  style: text.labelSmall?.copyWith(color: SpottoColors.muted),
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -809,9 +778,10 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
           if (!withinGeofence) ...[
             const SizedBox(height: 8),
             if (resolvingLocation)
-              Text('Finding your location…',
-                  style: text.labelSmall
-                      ?.copyWith(color: SpottoColors.muted, fontStyle: FontStyle.italic))
+              Text(
+                'Finding your location…',
+                style: text.labelSmall?.copyWith(color: SpottoColors.muted, fontStyle: FontStyle.italic),
+              )
             else if (locationDenied)
               GestureDetector(
                 onTap: () async {
@@ -826,15 +796,17 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
                       ? 'Location is off — tap to enable it in Settings.'
                       : 'Enable location to rate this spot — tap to try again.',
                   style: text.labelSmall?.copyWith(
-                      color: SpottoColors.accent,
-                      fontStyle: FontStyle.italic,
-                      decoration: TextDecoration.underline),
+                    color: SpottoColors.accent,
+                    fontStyle: FontStyle.italic,
+                    decoration: TextDecoration.underline,
+                  ),
                 ),
               )
             else
-              Text("Rate this once you're here.",
-                  style: text.labelSmall
-                      ?.copyWith(color: SpottoColors.muted, fontStyle: FontStyle.italic)),
+              Text(
+                "Rate this once you're here.",
+                style: text.labelSmall?.copyWith(color: SpottoColors.muted, fontStyle: FontStyle.italic),
+              ),
           ],
         ],
       ),
@@ -876,8 +848,7 @@ class _VibeCard extends StatelessWidget {
     // `average` never is.
     final filled = (isMine ? mine!.toDouble() : average).round().clamp(0, 5);
     final segmentOn = isMine ? Colors.white : color;
-    final segmentOff =
-        isMine ? Colors.white.withValues(alpha: 0.3) : SpottoColors.ink.withValues(alpha: 0.08);
+    final segmentOff = isMine ? Colors.white.withValues(alpha: 0.3) : SpottoColors.ink.withValues(alpha: 0.08);
 
     return Container(
       padding: const EdgeInsets.all(10),
@@ -891,11 +862,14 @@ class _VibeCard extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: isMine ? Colors.white : color),
           const SizedBox(height: 4),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: isMine ? Colors.white : SpottoColors.ink)),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: isMine ? Colors.white : SpottoColors.ink,
+            ),
+          ),
           const SizedBox(height: 6),
           Row(
             children: [
@@ -924,9 +898,10 @@ class _VibeCard extends StatelessWidget {
           ),
           if (isMine) ...[
             const SizedBox(height: 6),
-            Text('You: $mine',
-                style: const TextStyle(
-                    fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+            Text(
+              'You: $mine',
+              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white),
+            ),
           ],
         ],
       ),
@@ -944,9 +919,7 @@ class _CheckInButton extends ConsumerWidget {
 
     return PressScale(
       scale: 0.98,
-      onTap: didCheckIn
-          ? null
-          : () => ref.read(checkInsProvider.notifier).checkIn(place.id),
+      onTap: didCheckIn ? null : () => ref.read(checkInsProvider.notifier).checkIn(place.id),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -957,14 +930,14 @@ class _CheckInButton extends ConsumerWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(didCheckIn ? Icons.verified_outlined : Icons.explore,
-                size: 17,
-                color: didCheckIn ? SpottoColors.accent : const Color(0xFF5A3B00)),
+            Icon(
+              didCheckIn ? Icons.verified_outlined : Icons.explore,
+              size: 17,
+              color: didCheckIn ? SpottoColors.accent : const Color(0xFF5A3B00),
+            ),
             const SizedBox(width: 6),
             Text(
-              didCheckIn
-                  ? 'Checked in — quest progress saved'
-                  : 'Check in for Daily Quest',
+              didCheckIn ? 'Checked in — quest progress saved' : 'Check in for Daily Quest',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
@@ -1019,8 +992,7 @@ class _DealCardState extends ConsumerState<_DealCard> {
       decoration: BoxDecoration(
         color: claimed ? SpottoColors.ink : const Color(0xFFFDF3D7),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-            color: claimed ? SpottoColors.ink : const Color(0xFFF2DCA0), width: 1.5),
+        border: Border.all(color: claimed ? SpottoColors.ink : const Color(0xFFF2DCA0), width: 1.5),
       ),
       child: claimed
           ? Row(
@@ -1031,10 +1003,7 @@ class _DealCardState extends ConsumerState<_DealCard> {
                 // QR rendered directly on a dark background has no contrast.
                 Container(
                   padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
                   child: QrImageView(data: claimedCode, size: 64, gapless: false),
                 ),
                 const SizedBox(width: 12),
@@ -1043,17 +1012,11 @@ class _DealCardState extends ConsumerState<_DealCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('Show at counter',
-                          style: text.labelMedium
-                              ?.copyWith(color: SpottoColors.paleTeal)),
+                      Text('Show at counter', style: text.labelMedium?.copyWith(color: SpottoColors.paleTeal)),
                       const SizedBox(height: 4),
-                      Text(claimedCode,
-                          style: text.headlineSmall
-                              ?.copyWith(color: Colors.white, letterSpacing: 2)),
+                      Text(claimedCode, style: text.headlineSmall?.copyWith(color: Colors.white, letterSpacing: 2)),
                       const SizedBox(height: 4),
-                      Text(place.deal.label ?? '',
-                          style: text.bodySmall
-                              ?.copyWith(color: SpottoColors.paleTeal)),
+                      Text(place.deal.label ?? '', style: text.bodySmall?.copyWith(color: SpottoColors.paleTeal)),
                     ],
                   ),
                 ),
@@ -1063,12 +1026,8 @@ class _DealCardState extends ConsumerState<_DealCard> {
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: SpottoColors.sun,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(place.deal.tag ?? 'Deal',
-                      style: text.labelSmall?.copyWith(color: SpottoColors.ink)),
+                  decoration: BoxDecoration(color: SpottoColors.sun, borderRadius: BorderRadius.circular(8)),
+                  child: Text(place.deal.tag ?? 'Deal', style: text.labelSmall?.copyWith(color: SpottoColors.ink)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(child: Text(place.deal.label ?? '', style: text.bodyMedium)),
@@ -1081,15 +1040,16 @@ class _DealCardState extends ConsumerState<_DealCard> {
                   onPressed: () async {
                     final messenger = ScaffoldMessenger.of(context);
                     try {
-                      await ref.read(claimsProvider.notifier).claim(
+                      await ref
+                          .read(claimsProvider.notifier)
+                          .claim(
                             place.id,
                             offerId: place.deal.id,
                             offerLabel: place.deal.label ?? '',
                             offerValue: place.deal.tag ?? '',
                           );
                     } catch (e) {
-                      messenger.showSnackBar(
-                          SnackBar(content: Text(ApiClient.errorMessage(e))));
+                      messenger.showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
                     }
                   },
                   child: const Text('Claim'),
@@ -1129,20 +1089,14 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
     return servicesAsync.when(
       data: (services) {
         if (services.isEmpty) return const SizedBox.shrink();
-        final service = services.firstWhere(
-          (s) => s.id == _selectedServiceId,
-          orElse: () => services.first,
-        );
+        final service = services.firstWhere((s) => s.id == _selectedServiceId, orElse: () => services.first);
         _selectedServiceId ??= service.id;
         if (_partySize < service.partySizeMin) _partySize = service.partySizeMin;
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 14),
           child: _confirmed != null
-              ? _BookingConfirmedCard(
-                  booking: _confirmed!,
-                  onDone: () => setState(() => _confirmed = null),
-                )
+              ? _BookingConfirmedCard(booking: _confirmed!, onDone: () => setState(() => _confirmed = null))
               : _BookingForm(
                   place: widget.place,
                   services: services,
@@ -1183,7 +1137,9 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
     }
     setState(() => _submitting = true);
     try {
-      final booking = await ref.read(bookingsProvider.notifier).create(
+      final booking = await ref
+          .read(bookingsProvider.notifier)
+          .create(
             placeId: widget.place.id,
             serviceId: service.id,
             startAt: service.type == 'stay' ? null : _selectedSlotStart,
@@ -1250,10 +1206,7 @@ class _BookingForm extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: SpottoColors.sand,
-        borderRadius: BorderRadius.circular(16),
-      ),
+      decoration: BoxDecoration(color: SpottoColors.sand, borderRadius: BorderRadius.circular(16)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1261,8 +1214,7 @@ class _BookingForm extends StatelessWidget {
             children: [
               const Icon(Icons.event_available_outlined, size: 14, color: SpottoColors.muted),
               const SizedBox(width: 5),
-              Text('BOOK',
-                  style: text.labelSmall?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6)),
+              Text('BOOK', style: text.labelSmall?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6)),
             ],
           ),
           const SizedBox(height: 10),
@@ -1285,8 +1237,10 @@ class _BookingForm extends StatelessWidget {
           if (selected.priceLabel.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 2, bottom: 8),
-              child: Text(selected.priceLabel,
-                  style: text.bodySmall?.copyWith(color: SpottoColors.muted, fontWeight: FontWeight.w700)),
+              child: Text(
+                selected.priceLabel,
+                style: text.bodySmall?.copyWith(color: SpottoColors.muted, fontWeight: FontWeight.w700),
+              ),
             ),
           if (isStay) ...[
             Row(
@@ -1333,9 +1287,7 @@ class _BookingForm extends StatelessWidget {
                 separatorBuilder: (_, _) => const SizedBox(width: 6),
                 itemBuilder: (context, i) {
                   final d = DateTime.now().add(Duration(days: i));
-                  final on = d.year == selectedDate.year &&
-                      d.month == selectedDate.month &&
-                      d.day == selectedDate.day;
+                  final on = d.year == selectedDate.year && d.month == selectedDate.month && d.day == selectedDate.day;
                   return PressScale(
                     onTap: () => onSelectDate(d),
                     child: Container(
@@ -1349,16 +1301,22 @@ class _BookingForm extends StatelessWidget {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(_weekdayShort(d.weekday),
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: on ? Colors.white : SpottoColors.muted)),
-                          Text('${d.day}',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w800,
-                                  color: on ? Colors.white : SpottoColors.ink)),
+                          Text(
+                            _weekdayShort(d.weekday),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: on ? Colors.white : SpottoColors.muted,
+                            ),
+                          ),
+                          Text(
+                            '${d.day}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: on ? Colors.white : SpottoColors.ink,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1378,21 +1336,23 @@ class _BookingForm extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              Text(isRental ? 'Quantity' : isStay ? 'Guests' : 'Party size',
-                  style: text.bodySmall?.copyWith(fontWeight: FontWeight.w800)),
+              Text(
+                isRental
+                    ? 'Quantity'
+                    : isStay
+                    ? 'Guests'
+                    : 'Party size',
+                style: text.bodySmall?.copyWith(fontWeight: FontWeight.w800),
+              ),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.remove_circle_outline, size: 20),
-                onPressed: partySize > (isStay ? 1 : selected.partySizeMin)
-                    ? () => onPartySize(partySize - 1)
-                    : null,
+                onPressed: partySize > (isStay ? 1 : selected.partySizeMin) ? () => onPartySize(partySize - 1) : null,
               ),
               Text('$partySize', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
               IconButton(
                 icon: const Icon(Icons.add_circle_outline, size: 20),
-                onPressed: partySize < (isStay ? 20 : selected.partySizeMax)
-                    ? () => onPartySize(partySize + 1)
-                    : null,
+                onPressed: partySize < (isStay ? 20 : selected.partySizeMax) ? () => onPartySize(partySize + 1) : null,
               ),
             ],
           ),
@@ -1432,8 +1392,10 @@ class _DateButton extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label,
-                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: SpottoColors.muted)),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: SpottoColors.muted),
+            ),
             Text(
               value == null ? 'Select' : '${value!.month}/${value!.day}/${value!.year}',
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
@@ -1473,8 +1435,10 @@ class _SlotPicker extends ConsumerWidget {
             BookingSlot.fromJson((s as Map).cast<String, dynamic>()),
         ];
         if (slots.isEmpty) {
-          return const Text('No availability this day',
-              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: SpottoColors.muted));
+          return const Text(
+            'No availability this day',
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: SpottoColors.muted),
+          );
         }
         return Wrap(
           spacing: 6,
@@ -1511,8 +1475,10 @@ class _SlotPicker extends ConsumerWidget {
         height: 32,
         child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
       ),
-      error: (_, _) => const Text('Could not load availability',
-          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: SpottoColors.muted)),
+      error: (_, _) => const Text(
+        'Could not load availability',
+        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: SpottoColors.muted),
+      ),
     );
   }
 }
@@ -1539,15 +1505,25 @@ class _BookingConfirmedCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Booked — show at check-in',
-                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white70)),
+                const Text(
+                  'Booked — show at check-in',
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white70),
+                ),
                 const SizedBox(height: 3),
-                Text(booking.code,
-                    style: const TextStyle(
-                        fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 0.5)),
+                Text(
+                  booking.code,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 0.5,
+                  ),
+                ),
                 const SizedBox(height: 3),
-                Text('Party of ${booking.partySize}',
-                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.white70)),
+                Text(
+                  'Party of ${booking.partySize}',
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.white70),
+                ),
               ],
             ),
           ),
@@ -1565,8 +1541,7 @@ class _ContactLinks extends StatelessWidget {
   final ContactInfo contact;
   const _ContactLinks({required this.contact});
 
-  Future<void> _open(String url) =>
-      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  Future<void> _open(String url) => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
 
   @override
   Widget build(BuildContext context) {
@@ -1575,34 +1550,40 @@ class _ContactLinks extends StatelessWidget {
 
     void addChip(String? value, IconData icon, String label, String Function(String) toUrl) {
       if (value == null || value.isEmpty) return;
-      chips.add(PressScale(
-        scale: 0.96,
-        onTap: () => _open(toUrl(value)),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: SpottoColors.sand,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: SpottoColors.ink),
-              const SizedBox(width: 6),
-              Text(label, style: text.labelMedium?.copyWith(color: SpottoColors.ink)),
-            ],
+      chips.add(
+        PressScale(
+          scale: 0.96,
+          onTap: () => _open(toUrl(value)),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(color: SpottoColors.sand, borderRadius: BorderRadius.circular(14)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16, color: SpottoColors.ink),
+                const SizedBox(width: 6),
+                Text(label, style: text.labelMedium?.copyWith(color: SpottoColors.ink)),
+              ],
+            ),
           ),
         ),
-      ));
+      );
     }
 
     addChip(contact.phone, Icons.call_outlined, 'Call', (v) => 'tel:$v');
-    addChip(contact.website, Icons.language, 'Website',
-        (v) => v.startsWith('http') ? v : 'https://$v');
-    addChip(contact.instagram, Icons.camera_alt_outlined, 'Instagram',
-        (v) => v.startsWith('http') ? v : 'https://instagram.com/${v.replaceAll('@', '')}');
-    addChip(contact.facebook, Icons.groups_outlined, 'Facebook',
-        (v) => v.startsWith('http') ? v : 'https://facebook.com/$v');
+    addChip(contact.website, Icons.language, 'Website', (v) => v.startsWith('http') ? v : 'https://$v');
+    addChip(
+      contact.instagram,
+      Icons.camera_alt_outlined,
+      'Instagram',
+      (v) => v.startsWith('http') ? v : 'https://instagram.com/${v.replaceAll('@', '')}',
+    );
+    addChip(
+      contact.facebook,
+      Icons.groups_outlined,
+      'Facebook',
+      (v) => v.startsWith('http') ? v : 'https://facebook.com/$v',
+    );
 
     if (chips.isEmpty) return const SizedBox.shrink();
     return Wrap(spacing: 8, runSpacing: 8, children: chips);
@@ -1635,8 +1616,7 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
   Future<void> _pickPhoto() async {
     final remaining = kMaxPhotosPerUpload - _photos.length;
     if (remaining <= 0) return;
-    final files = await ImagePicker().pickMultiImage(
-        maxWidth: 1600, imageQuality: 85, limit: remaining);
+    final files = await ImagePicker().pickMultiImage(maxWidth: 1600, imageQuality: 85, limit: remaining);
     if (files.isEmpty) return;
     final picked = <_PickedImage>[];
     var rejected = false;
@@ -1649,8 +1629,7 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
       picked.add(_PickedImage(await f.readAsBytes(), contentType));
     }
     if (mounted && rejected) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Unsupported image type.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unsupported image type.')));
     }
     if (picked.isNotEmpty) setState(() => _photos.addAll(picked));
   }
@@ -1660,11 +1639,12 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
     setState(() => _submitting = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final reviewId =
-          await submitReview(ref, widget.place.id, _draftRating, _textController.text.trim());
+      final reviewId = await submitReview(ref, widget.place.id, _draftRating, _textController.text.trim());
       // Attach any picked photos to the review just created/edited.
       for (final photo in _photos) {
-        await ref.read(uploadServiceProvider).upload(
+        await ref
+            .read(uploadServiceProvider)
+            .upload(
               bytes: photo.bytes,
               contentType: photo.contentType,
               ownerType: 'review',
@@ -1699,10 +1679,7 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
         // write/edit form
         Container(
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: SpottoColors.sand,
-            borderRadius: BorderRadius.circular(16),
-          ),
+          decoration: BoxDecoration(color: SpottoColors.sand, borderRadius: BorderRadius.circular(16)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1751,8 +1728,7 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: SpottoColors.accentTint, width: 1.5),
                           ),
-                          child: const Icon(Icons.add_a_photo_outlined,
-                              color: SpottoColors.accent, size: 20),
+                          child: const Icon(Icons.add_a_photo_outlined, color: SpottoColors.accent, size: 20),
                         ),
                       ),
                     for (var i = 0; i < _photos.length; i++)
@@ -1762,8 +1738,7 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
                           children: [
                             ClipRRect(
                               borderRadius: BorderRadius.circular(12),
-                              child: Image.memory(_photos[i].bytes,
-                                  width: 56, height: 56, fit: BoxFit.cover),
+                              child: Image.memory(_photos[i].bytes, width: 56, height: 56, fit: BoxFit.cover),
                             ),
                             Positioned(
                               right: 0,
@@ -1771,8 +1746,7 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
                               child: PressScale(
                                 onTap: () => setState(() => _photos.removeAt(i)),
                                 child: Container(
-                                  decoration: const BoxDecoration(
-                                      color: Colors.black54, shape: BoxShape.circle),
+                                  decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                                   padding: const EdgeInsets.all(2),
                                   child: const Icon(Icons.close, size: 12, color: Colors.white),
                                 ),
@@ -1800,15 +1774,11 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
         reviewsAsync.when(
           data: (reviews) {
             if (reviews.isEmpty) {
-              return Text('No reviews yet — be the first.',
-                  style: text.bodySmall?.copyWith(color: SpottoColors.muted));
+              return Text('No reviews yet — be the first.', style: text.bodySmall?.copyWith(color: SpottoColors.muted));
             }
             return Column(
               children: [
-                for (final r in reviews) ...[
-                  _ReviewTile(review: r),
-                  const SizedBox(height: 8),
-                ],
+                for (final r in reviews) ...[_ReviewTile(review: r), const SizedBox(height: 8)],
               ],
             );
           },
@@ -1816,8 +1786,7 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
           ),
-          error: (_, _) => Text('Couldn\'t load reviews.',
-              style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
+          error: (_, _) => Text('Couldn\'t load reviews.', style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
         ),
       ],
     );
@@ -1847,67 +1816,59 @@ class _ReviewTile extends StatelessWidget {
               Row(
                 children: [
                   for (var i = 1; i <= 5; i++)
-                    Icon(
-                      i <= review.rating ? Icons.star : Icons.star_border,
-                      color: SpottoColors.sun,
-                      size: 15,
-                    ),
+                    Icon(i <= review.rating ? Icons.star : Icons.star_border, color: SpottoColors.sun, size: 15),
                 ],
               ),
               if (review.travellerName != null && review.travellerName!.isNotEmpty) ...[
                 const SizedBox(width: 8),
-                Text(review.travellerName!,
-                    style: text.labelSmall?.copyWith(fontWeight: FontWeight.w800)),
+                Text(review.travellerName!, style: text.labelSmall?.copyWith(fontWeight: FontWeight.w800)),
               ],
             ],
           ),
-          if (review.text.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(review.text, style: text.bodySmall),
-          ],
+          if (review.text.isNotEmpty) ...[const SizedBox(height: 6), Text(review.text, style: text.bodySmall)],
           if (review.photos.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Builder(builder: (context) {
-              // The grid shows the small thumbnail derivative (falling back
-              // to the full image for photos uploaded before thumbnails
-              // existed); the full-screen viewer always uses the original.
-              final fullUrls = [for (final p in review.photos) resolveMediaUrl(p.url)];
-              final thumbUrls = [
-                for (final p in review.photos)
-                  resolveMediaUrl(p.thumbUrl.isNotEmpty ? p.thumbUrl : p.url),
-              ];
-              return SizedBox(
-                height: 84,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    for (final (i, url) in thumbUrls.indexed)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: GestureDetector(
-                          onTap: () => showDialog<void>(
-                            context: context,
-                            // Tapping still escalates to the genuine
-                            // full-resolution image — only the grid tile
-                            // itself is capped at the thumb tier.
-                            builder: (_) => _PhotoViewerDialog(urls: fullUrls, initialIndex: i),
-                          ),
-                          child: ProgressiveImage(
-                            url: url,
-                            microThumb: review.photos[i].microThumb,
-                            width: 84,
-                            height: 84,
-                            fit: BoxFit.cover,
-                            borderRadius: BorderRadius.circular(14),
-                            errorBuilder: (_) =>
-                                Container(width: 84, height: 84, color: SpottoColors.sand),
+            Builder(
+              builder: (context) {
+                // The grid shows the small thumbnail derivative (falling back
+                // to the full image for photos uploaded before thumbnails
+                // existed); the full-screen viewer always uses the original.
+                final fullUrls = [for (final p in review.photos) resolveMediaUrl(p.url)];
+                final thumbUrls = [
+                  for (final p in review.photos) resolveMediaUrl(p.thumbUrl.isNotEmpty ? p.thumbUrl : p.url),
+                ];
+                return SizedBox(
+                  height: 84,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      for (final (i, url) in thumbUrls.indexed)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: GestureDetector(
+                            onTap: () => showDialog<void>(
+                              context: context,
+                              // Tapping still escalates to the genuine
+                              // full-resolution image — only the grid tile
+                              // itself is capped at the thumb tier.
+                              builder: (_) => _PhotoViewerDialog(urls: fullUrls, initialIndex: i),
+                            ),
+                            child: ProgressiveImage(
+                              url: url,
+                              microThumb: review.photos[i].microThumb,
+                              width: 84,
+                              height: 84,
+                              fit: BoxFit.cover,
+                              borderRadius: BorderRadius.circular(14),
+                              errorBuilder: (_) => Container(width: 84, height: 84, color: SpottoColors.sand),
+                            ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-              );
-            }),
+                    ],
+                  ),
+                );
+              },
+            ),
           ],
         ],
       ),
@@ -1944,10 +1905,7 @@ class _AddPhotoTile extends StatelessWidget {
     return PressScale(
       onTap: uploading ? null : onTap,
       child: Container(
-        decoration: BoxDecoration(
-          color: SpottoColors.accentTint,
-          borderRadius: BorderRadius.circular(14),
-        ),
+        decoration: BoxDecoration(color: SpottoColors.accentTint, borderRadius: BorderRadius.circular(14)),
         child: Center(
           child: uploading
               ? const SizedBox(
@@ -1981,15 +1939,10 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
 
   Future<void> _add() async {
     if (_uploading) return;
-    final current =
-        ref.read(placePhotosProvider(widget.place.id)).value ?? const <PlacePhoto>[];
+    final current = ref.read(placePhotosProvider(widget.place.id)).value ?? const <PlacePhoto>[];
     final remaining = kMaxPhotosPerUpload - current.length;
     if (remaining <= 0) return;
-    final files = await ImagePicker().pickMultiImage(
-      maxWidth: 1600,
-      imageQuality: 85,
-      limit: remaining,
-    );
+    final files = await ImagePicker().pickMultiImage(maxWidth: 1600, imageQuality: 85, limit: remaining);
     if (files.isEmpty) return;
     setState(() => _uploading = true);
     var anyRejected = false;
@@ -2003,7 +1956,9 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
         }
         try {
           final bytes = await file.readAsBytes();
-          await ref.read(uploadServiceProvider).upload(
+          await ref
+              .read(uploadServiceProvider)
+              .upload(
                 bytes: bytes,
                 contentType: contentType,
                 ownerType: 'place',
@@ -2043,15 +1998,12 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final photos =
-        ref.watch(placePhotosProvider(widget.place.id)).value ?? const <PlacePhoto>[];
+    final photos = ref.watch(placePhotosProvider(widget.place.id)).value ?? const <PlacePhoto>[];
     final urls = [for (final p in photos) resolveMediaUrl(p.url)];
     // Grid tiles load the small thumbnail (falling back to the full image
     // for photos uploaded before thumbnails existed); the full-screen
     // viewer always opens the full-resolution `urls` above.
-    final thumbUrls = [
-      for (final p in photos) resolveMediaUrl(p.thumbUrl.isNotEmpty ? p.thumbUrl : p.url),
-    ];
+    final thumbUrls = [for (final p in photos) resolveMediaUrl(p.thumbUrl.isNotEmpty ? p.thumbUrl : p.url)];
     final myId = ref.watch(meProvider)?['id'] as String?;
     final canAddMore = photos.length < kMaxPhotosPerUpload;
 
@@ -2070,8 +2022,10 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text('No photos yet — be the first to share one.',
-                    style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
+                child: Text(
+                  'No photos yet — be the first to share one.',
+                  style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+                ),
               ),
             ],
           )
@@ -2115,13 +2069,11 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
                         bottom: 4,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(6),
+                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+                          child: Text(
+                            _timeAgo(photo.createdAt),
+                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700),
                           ),
-                          child: Text(_timeAgo(photo.createdAt),
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
                         ),
                       ),
                     if (isMine)
@@ -2132,16 +2084,12 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
                           onTap: () => _delete(photo),
                           child: Container(
                             padding: const EdgeInsets.all(3),
-                            decoration: const BoxDecoration(
-                              color: Colors.black54,
-                              shape: BoxShape.circle,
-                            ),
+                            decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                             child: _deletingId == photo.id
                                 ? const SizedBox(
                                     width: 12,
                                     height: 12,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 1.5, color: Colors.white),
+                                    child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white),
                                   )
                                 : const Icon(Icons.close, size: 14, color: Colors.white),
                           ),
@@ -2167,10 +2115,7 @@ class _MenuIconTile extends StatelessWidget {
     return Container(
       width: 40,
       height: 40,
-      decoration: BoxDecoration(
-        color: SpottoColors.accentTint,
-        borderRadius: BorderRadius.circular(12),
-      ),
+      decoration: BoxDecoration(color: SpottoColors.accentTint, borderRadius: BorderRadius.circular(12)),
       child: Icon(spottoIcon(icon), size: 20, color: SpottoColors.accent),
     );
   }
@@ -2202,13 +2147,15 @@ class _PromoVideoDialogState extends State<_PromoVideoDialog> {
   void initState() {
     super.initState();
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) {
-        if (!mounted) return;
-        setState(() => _ready = true);
-        _controller.play();
-      }).catchError((_) {
-        if (mounted) setState(() => _failed = true);
-      });
+      ..initialize()
+          .then((_) {
+            if (!mounted) return;
+            setState(() => _ready = true);
+            _controller.play();
+          })
+          .catchError((_) {
+            if (mounted) setState(() => _failed = true);
+          });
     _controller.addListener(() {
       if (mounted) setState(() {});
     });
@@ -2231,17 +2178,13 @@ class _PromoVideoDialogState extends State<_PromoVideoDialog> {
           if (_failed)
             const Padding(
               padding: EdgeInsets.all(40),
-              child: Text("Couldn't play this video.",
-                  style: TextStyle(color: Colors.white)),
+              child: Text("Couldn't play this video.", style: TextStyle(color: Colors.white)),
             )
           else if (_ready)
             AspectRatio(
-              aspectRatio: _controller.value.aspectRatio == 0
-                  ? 16 / 9
-                  : _controller.value.aspectRatio,
+              aspectRatio: _controller.value.aspectRatio == 0 ? 16 / 9 : _controller.value.aspectRatio,
               child: GestureDetector(
-                onTap: () => setState(() =>
-                    _controller.value.isPlaying ? _controller.pause() : _controller.play()),
+                onTap: () => setState(() => _controller.value.isPlaying ? _controller.pause() : _controller.play()),
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
@@ -2341,11 +2284,10 @@ class _PhotoViewerDialogState extends State<_PhotoViewerDialog> {
                       child: Image.network(
                         widget.urls[i],
                         fit: BoxFit.contain,
-                        errorBuilder: (_, _, _) => const Text("Couldn't load this photo.",
-                            style: TextStyle(color: Colors.white)),
-                        loadingBuilder: (_, child, progress) => progress == null
-                            ? child
-                            : const CircularProgressIndicator(color: Colors.white),
+                        errorBuilder: (_, _, _) =>
+                            const Text("Couldn't load this photo.", style: TextStyle(color: Colors.white)),
+                        loadingBuilder: (_, child, progress) =>
+                            progress == null ? child : const CircularProgressIndicator(color: Colors.white),
                       ),
                     ),
                   ),
@@ -2355,13 +2297,11 @@ class _PhotoViewerDialogState extends State<_PhotoViewerDialog> {
                     bottom: 24,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(20),
+                      decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
+                      child: Text(
+                        '${_index + 1} / ${widget.urls.length}',
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
                       ),
-                      child: Text('${_index + 1} / ${widget.urls.length}',
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
                     ),
                   ),
                 Positioned(

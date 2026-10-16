@@ -6,7 +6,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -46,17 +48,58 @@ type Claims struct {
 	// before a revoking event (e.g. 2FA disable) and is rejected even
 	// though its signature is still valid.
 	TokenVersion int `json:"tokenVersion"`
+	// SessionID is the user_sessions row this access token was issued for
+	// (empty on tokens from before sessions existed). Only used to tell the
+	// current device apart, e.g. to keep it signed in after a password change.
+	SessionID string `json:"sid,omitempty"`
 	jwt.RegisteredClaims
 }
 
 const twoFactorPurpose = "2fa-pending"
 
-// sessionLifetime bounds how long a stolen/leaked token stays valid. There's
-// no refresh-token flow yet, so this is a straight tradeoff against
-// re-login frequency — 24h was chosen over the previous 7 days to shrink
-// the exposure window significantly without requiring users to sign in
-// more than once a day.
-const sessionLifetime = 24 * time.Hour
+// accessLifetime bounds how long a stolen/leaked access token stays valid.
+// Clients keep signed in past it with a refresh token (POST /auth/refresh),
+// so this can stay short without making anyone log in again.
+const accessLifetime = time.Hour
+
+// legacyAccessLifetime is for clients that can't refresh (app builds from
+// before sessions, which don't send X-Spotto-Client): they keep the old 24h
+// token instead of being signed out every hour until they update.
+const legacyAccessLifetime = 24 * time.Hour
+
+// A session stays signed in as long as it's refreshed at least once within
+// its idle limit — so effectively until logout or revocation. Admin and
+// vendor web sessions carry more power, so they lapse sooner.
+const (
+	AppSessionIdleLimit = 90 * 24 * time.Hour
+	WebSessionIdleLimit = 30 * 24 * time.Hour
+)
+
+// SessionIdleLimit is the idle limit for a session started from client
+// ("app", "admin" or "vendor").
+func SessionIdleLimit(client string) time.Duration {
+	if client == "app" {
+		return AppSessionIdleLimit
+	}
+	return WebSessionIdleLimit
+}
+
+// NewRefreshToken returns a random opaque refresh token and the hash that
+// is stored for it — the token itself is never stored.
+func NewRefreshToken() (token, hash string, err error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", "", err
+	}
+	token = base64.RawURLEncoding.EncodeToString(b)
+	return token, HashRefreshToken(token), nil
+}
+
+// HashRefreshToken is how a refresh token is looked up in user_sessions.
+func HashRefreshToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
 
 type Tokens struct {
 	secret []byte
@@ -64,14 +107,31 @@ type Tokens struct {
 
 func NewTokens(secret string) *Tokens { return &Tokens{secret: []byte(secret)} }
 
+// Issue signs an access token that belongs to no session. Sign-in flows use
+// IssueForSession so the token can be refreshed.
 func (t *Tokens) Issue(u domain.User) (string, error) {
+	return t.IssueForSession(u, "")
+}
+
+// IssueForSession signs a short-lived access token for session sessionID.
+func (t *Tokens) IssueForSession(u domain.User, sessionID string) (string, error) {
+	return t.issue(u, sessionID, accessLifetime)
+}
+
+// IssueLegacy signs a 24h access token for a client that can't refresh.
+func (t *Tokens) IssueLegacy(u domain.User, sessionID string) (string, error) {
+	return t.issue(u, sessionID, legacyAccessLifetime)
+}
+
+func (t *Tokens) issue(u domain.User, sessionID string, lifetime time.Duration) (string, error) {
 	c := Claims{
 		Role:         u.Role,
 		TokenVersion: u.TokenVersion,
+		SessionID:    sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   u.ID,
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(sessionLifetime)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(lifetime)),
 		},
 	}
 	if u.VendorID != nil {

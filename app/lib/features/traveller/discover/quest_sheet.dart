@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../data/repositories/repositories.dart';
-import '../../../data/models/models.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 Future<void> showQuestSheet(BuildContext context) {
@@ -21,7 +20,7 @@ class _QuestSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final questAsync = ref.watch(dailyQuestProvider);
-    final quest = questAsync.value ?? const DailyQuest(goal: 2, progress: 0, rewardDescription: 'Free Ceylon Tea', isComplete: false);
+    final quest = questAsync.value ?? ref.watch(cachedQuestProvider) ?? kDefaultQuest;
 
     final done = quest.progress.clamp(0, quest.goal);
     final isComplete = quest.isComplete;
@@ -61,18 +60,13 @@ class _QuestSheet extends ConsumerWidget {
             const SizedBox(height: 8),
             Text(
               'Sponsored by $sponsor',
-              style: textTheme.bodyMedium?.copyWith(
-                color: SpottoColors.accent,
-                fontWeight: FontWeight.w700,
-              ),
+              style: textTheme.bodyMedium?.copyWith(color: SpottoColors.accent, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 32),
             _buildStampCard(done, quest.goal),
             const SizedBox(height: 32),
             Text(
-              isComplete
-                  ? 'Reward Unlocked!'
-                  : 'Check in at ${quest.goal} spots today',
+              isComplete ? 'Reward Unlocked!' : 'Check in at ${quest.goal} spots today',
               style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
@@ -105,7 +99,10 @@ class _QuestSheet extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    const Text('Vendor Scan Code', style: TextStyle(fontWeight: FontWeight.w700, color: SpottoColors.ink)),
+                    const Text(
+                      'Vendor Scan Code',
+                      style: TextStyle(fontWeight: FontWeight.w700, color: SpottoColors.ink),
+                    ),
                   ],
                 ),
               )
@@ -116,15 +113,11 @@ class _QuestSheet extends ConsumerWidget {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: SpottoColors.ink,
-                    borderRadius: BorderRadius.circular(999),
+                  decoration: BoxDecoration(color: SpottoColors.ink, borderRadius: BorderRadius.circular(999)),
+                  child: const Text(
+                    'Find spots nearby',
+                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
                   ),
-                  child: const Text('Find spots nearby',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800)),
                 ),
               ),
             const SizedBox(height: 12),
@@ -140,13 +133,7 @@ class _QuestSheet extends ConsumerWidget {
       decoration: BoxDecoration(
         color: SpottoColors.ink,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: const [
-          BoxShadow(
-            color: SpottoColors.inkShadow,
-            blurRadius: 16,
-            offset: Offset(0, 8),
-          ),
-        ],
+        boxShadow: const [BoxShadow(color: SpottoColors.inkShadow, blurRadius: 16, offset: Offset(0, 8))],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -165,21 +152,14 @@ class _QuestSheet extends ConsumerWidget {
       decoration: BoxDecoration(
         color: isStamped ? SpottoColors.sun : Colors.transparent,
         shape: BoxShape.circle,
-        border: Border.all(
-          color: isStamped ? SpottoColors.sun : Colors.white.withValues(alpha: 0.2),
-          width: 3,
-        ),
+        border: Border.all(color: isStamped ? SpottoColors.sun : Colors.white.withValues(alpha: 0.2), width: 3),
       ),
       child: Center(
         child: isStamped
             ? const Icon(Icons.check_rounded, color: SpottoColors.ink, size: 40)
             : Text(
                 '$number',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.3),
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 24, fontWeight: FontWeight.w800),
               ),
       ),
     );

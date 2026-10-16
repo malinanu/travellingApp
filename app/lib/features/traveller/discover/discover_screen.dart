@@ -113,24 +113,21 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
   void _updateCamera() {
     if (_lastKnownLatLng == null) return;
-    final bearing =
-        _locationMode == _LocationMode.heading ? _currentBearing : 0.0;
-    _animateCamera(CameraUpdate.newCameraPosition(
-      CameraPosition(target: _lastKnownLatLng!, zoom: 16, bearing: bearing),
-    ));
+    final bearing = _locationMode == _LocationMode.heading ? _currentBearing : 0.0;
+    _animateCamera(
+      CameraUpdate.newCameraPosition(CameraPosition(target: _lastKnownLatLng!, zoom: 16, bearing: bearing)),
+    );
   }
 
   void _startPositionStream() {
     _positionSub?.cancel();
-    _positionSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
-      ),
-    ).listen((pos) {
-      _lastKnownLatLng = LatLng(pos.latitude, pos.longitude);
-      if (_locationMode != _LocationMode.idle) _updateCamera();
-    });
+    _positionSub =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
+        ).listen((pos) {
+          _lastKnownLatLng = LatLng(pos.latitude, pos.longitude);
+          if (_locationMode != _LocationMode.idle) _updateCamera();
+        });
   }
 
   void _startCompassStream() {
@@ -139,8 +136,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       final heading = event.heading;
       if (heading == null) return;
       final now = DateTime.now();
-      if (now.difference(_lastHeadingApply) <
-              const Duration(milliseconds: 150) &&
+      if (now.difference(_lastHeadingApply) < const Duration(milliseconds: 150) &&
           (heading - _currentBearing).abs() < 3) {
         return;
       }
@@ -157,10 +153,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       if (pos == null) {
         if (result == DeviceLocationResult.deniedForever) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                  'Location is off — enable it in Settings to center the map on you.'),
-            ),
+            const SnackBar(content: Text('Location is off — enable it in Settings to center the map on you.')),
           );
         }
         return;
@@ -200,22 +193,19 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   double _currentZoom = 15.0;
   String? _selectedPlaceId;
 
-
-
   List<Place> _filterPlaces(List<Place> places, Set<String> favoriteIds) {
     if (_selectedCategories.contains('All')) return places;
-    
+
     return places.where((p) {
       if (_selectedCategories.contains('Deals') && p.deal.active) return true;
       if (_selectedCategories.contains('Favorites') && favoriteIds.contains(p.id)) return true;
-      
+
       final cat = categoryById(p.categoryId);
       if (cat != null && _selectedCategories.contains(cat.label)) return true;
-      
+
       return false;
     }).toList();
   }
-
 
   /// Map-pin vibe badge icon for [p] — the category's primary relevant
   /// dimension (see relevantVibeDimensions), or null if there's no real
@@ -264,10 +254,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final q = _searchQuery.trim().toLowerCase();
     if (q.isEmpty) return const [];
     return localPlaces
-        .where((p) =>
-            p.name.toLowerCase().contains(q) ||
-            p.type.toLowerCase().contains(q) ||
-            p.region.toLowerCase().contains(q))
+        .where(
+          (p) =>
+              p.name.toLowerCase().contains(q) ||
+              p.type.toLowerCase().contains(q) ||
+              p.region.toLowerCase().contains(q),
+        )
         .take(5)
         .toList();
   }
@@ -328,10 +320,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       if (p.lat == 0 && p.lng == 0) continue;
       final emphasized = p.bestTimes.contains(time);
       final isFavorite = favoriteIds.contains(p.id);
-      final inTripCalendar = tripCalendarPlaceNames.contains(p.id) ||
-          tripCalendarPlaceNames.contains(p.name.toLowerCase());
-      final matchesInterest =
-          userInterests.any((style) => p.styles.contains(style));
+      final inTripCalendar =
+          tripCalendarPlaceNames.contains(p.id) || tripCalendarPlaceNames.contains(p.name.toLowerCase());
+      final matchesInterest = userInterests.any((style) => p.styles.contains(style));
 
       final color = SpottoColors.pinTones[p.color] ?? SpottoColors.accent;
       var icon = categoryIcon(p.categoryId);
@@ -343,9 +334,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       }
 
       final isSelected = _selectedPlaceId == p.id;
-      final showBanner = isSelected ||
-          (_currentZoom >= 14.5 &&
-              (p.deal.active || inTripCalendar || isFavorite));
+      final showBanner = isSelected || (_currentZoom >= 14.5 && (p.deal.active || inTripCalendar || isFavorite));
       final pinEmphasized = emphasized || isFavorite || matchesInterest;
 
       final BitmapDescriptor icon_;
@@ -370,7 +359,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         );
       } else {
         final vibeIcon = _vibeBadgeIcon(p);
-        final key = 'pin|${color.toARGB32()}|${icon.codePoint}|${p.deal.active}|'
+        final key =
+            'pin|${color.toARGB32()}|${icon.codePoint}|${p.deal.active}|'
             '$pinEmphasized|${vibeIcon?.codePoint}';
         icon_ = _resolveBitmap(
           key: key,
@@ -407,14 +397,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         final lat = livePos?.latitude ?? m.lat;
         final lng = livePos?.longitude ?? m.lng;
         if (lat == 0 && lng == 0) continue;
-        
+
         final key = 'avatar|${m.initial}|${m.color}';
         final icon = _resolveBitmap(
           key: key,
           slotSize: _kAvatarSlotSize,
           placeholderHue: BitmapDescriptor.hueViolet,
-          build: () =>
-              AvatarPinMarker(initial: m.initial, color: Color(m.color)),
+          build: () => AvatarPinMarker(initial: m.initial, color: Color(m.color)),
         );
         markers.add(
           Marker(
@@ -423,9 +412,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             icon: icon,
             anchor: const Offset(0.5, 0.5),
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('${m.name} · ${m.sub}')),
-              );
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${m.name} · ${m.sub}')));
             },
           ),
         );
@@ -459,6 +446,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   Widget build(BuildContext context) {
     final time = ref.watch(timeFilterProvider);
     final weatherAsync = ref.watch(currentWeatherProvider);
+    // Last saved snapshot while the live one loads (or if it fails).
+    final weather = weatherAsync.value ?? ref.watch(cachedWeatherProvider);
     final prefs = ref.watch(prefsProvider);
     final category = resolveCategory(prefs);
     final text = Theme.of(context).textTheme;
@@ -474,9 +463,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final favoriteIds = favorites;
     final Set<String> tripCalendarPlaceNames = trip.days
         .expand((d) => d.stops)
-        .map((s) => s.placeId.isNotEmpty
-            ? s.placeId
-            : (s.custom?.name.toLowerCase() ?? ''))
+        .map((s) => s.placeId.isNotEmpty ? s.placeId : (s.custom?.name.toLowerCase() ?? ''))
         .where((id) => id.isNotEmpty)
         .toSet();
     final userInterests = prefs?.styles ?? const <String>[];
@@ -485,8 +472,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     ref.listen<AsyncValue<(LatLngAt, DeviceLocationResult)>>(devicePositionProvider, (_, next) {
       _resolvedPosition = next.value?.$1;
       if (_resolvedPosition != null && _lastKnownLatLng == null) {
-        _lastKnownLatLng =
-            LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng);
+        _lastKnownLatLng = LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng);
       }
       if (_lastKnownLatLng != null) {
         ref.read(groupLiveLocationsProvider.notifier).sendLocation(_lastKnownLatLng!);
@@ -507,17 +493,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     );
 
     final localResults = _searchResults(places);
-    final showSearchResults = localResults.isNotEmpty ||
-        _googleResults.isNotEmpty ||
-        _isSearchingGoogle;
+    final showSearchResults = localResults.isNotEmpty || _googleResults.isNotEmpty || _isSearchingGoogle;
 
     return Stack(
       fit: StackFit.expand,
       children: [
         // Interactive Google Maps engine
         GoogleMap(
-          initialCameraPosition:
-              const CameraPosition(target: _kDefaultMapCenter, zoom: 15),
+          initialCameraPosition: const CameraPosition(target: _kDefaultMapCenter, zoom: 15),
           minMaxZoomPreference: const MinMaxZoomPreference(3, 19),
           style: _mapStyle,
           markers: markers,
@@ -557,44 +540,31 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   scale: 0.98,
                   onTap: () => context.push('/t/weather'),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
-                      boxShadow: const [
-                        BoxShadow(
-                            color: SpottoColors.inkShadow,
-                            blurRadius: 12,
-                            offset: Offset(0, 4)),
-                      ],
+                      boxShadow: const [BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4))],
                     ),
                     child: Row(
                       children: [
-                        Icon(
-                            spottoIcon(
-                                weatherAsync.value?.now.icon ?? 'Sun'),
-                            color: SpottoColors.sun),
+                        Icon(spottoIcon(weather?.now.icon ?? 'Sun'), color: SpottoColors.sun),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                weatherAsync.when(
-                                  data: (s) =>
-                                      '${s.now.conditionLabel} · ${s.now.temp.round()}°',
-                                  loading: () => 'Getting conditions…',
-                                  error: (_, _) => 'Weather unavailable',
-                                ),
+                                weather != null
+                                    ? '${weather.now.conditionLabel} · ${weather.now.temp.round()}°'
+                                    : weatherAsync.hasError
+                                    ? 'Weather unavailable'
+                                    : 'Getting conditions…',
                                 style: text.labelLarge,
                               ),
                               Text(
-                                weatherAsync.value != null
-                                    ? headline(
-                                        category,
-                                        rateHours(category,
-                                            weatherAsync.value!.hourly))
+                                weather != null
+                                    ? headline(category, rateHours(category, weather.hourly))
                                     : 'Tap for the full forecast',
                                 style: text.bodySmall,
                                 maxLines: 1,
@@ -603,8 +573,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                             ],
                           ),
                         ),
-                        const Icon(Icons.chevron_right,
-                            size: 18, color: SpottoColors.muted),
+                        const Icon(Icons.chevron_right, size: 18, color: SpottoColors.muted),
                       ],
                     ),
                   ),
@@ -614,24 +583,17 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
-                    boxShadow: const [
-                      BoxShadow(
-                          color: SpottoColors.inkShadow,
-                          blurRadius: 12,
-                          offset: Offset(0, 4)),
-                    ],
+                    boxShadow: const [BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4))],
                   ),
                   child: TextField(
                     controller: _searchController,
                     onChanged: _onSearchQueryChanged,
                     decoration: InputDecoration(
                       hintText: 'Search spots or Google Maps…',
-                      prefixIcon: const Icon(Icons.search,
-                          size: 18, color: SpottoColors.muted),
+                      prefixIcon: const Icon(Icons.search, size: 18, color: SpottoColors.muted),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.close,
-                                  size: 18, color: SpottoColors.muted),
+                              icon: const Icon(Icons.close, size: 18, color: SpottoColors.muted),
                               onPressed: () => setState(() {
                                 _searchQuery = '';
                                 _searchController.clear();
@@ -640,8 +602,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                             )
                           : null,
                       border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 4),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
                     ),
                   ),
                 ),
@@ -653,8 +614,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     children: [
                       _categoryChip('All', Icons.apps_rounded),
                       _categoryChip('Deals', Icons.local_offer_rounded),
-                      for (final cat in categories.take(9))
-                        _categoryChip(cat.label, spottoIcon(cat.icon)),
+                      for (final cat in categories.take(9)) _categoryChip(cat.label, spottoIcon(cat.icon)),
                       _categoryChip('Favorites', Icons.favorite_rounded),
                       // "More" button
                       Padding(
@@ -686,7 +646,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                               children: [
                                 Icon(Icons.more_horiz_rounded, size: 16, color: SpottoColors.ink),
                                 SizedBox(width: 6),
-                                Text('More', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: SpottoColors.ink)),
+                                Text(
+                                  'More',
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: SpottoColors.ink),
+                                ),
                               ],
                             ),
                           ),
@@ -704,12 +667,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
-                      boxShadow: const [
-                        BoxShadow(
-                            color: SpottoColors.inkShadow,
-                            blurRadius: 12,
-                            offset: Offset(0, 4)),
-                      ],
+                      boxShadow: const [BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4))],
                     ),
                     child: ListView(
                       shrinkWrap: true,
@@ -718,24 +676,26 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         if (localResults.isNotEmpty) ...[
                           const Padding(
                             padding: EdgeInsets.fromLTRB(16, 10, 16, 4),
-                            child: Text('SPOTTO SPOTS',
-                                style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: SpottoColors.muted,
-                                    letterSpacing: 0.8)),
+                            child: Text(
+                              'SPOTTO SPOTS',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: SpottoColors.muted,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
                           ),
                           for (final p in localResults)
                             ListTile(
                               dense: true,
-                              leading: Icon(spottoIcon(p.icon),
-                                  color: SpottoColors.pinTones[p.color] ??
-                                      SpottoColors.accent),
-                              title: Text(p.name,
-                                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                              leading: Icon(
+                                spottoIcon(p.icon),
+                                color: SpottoColors.pinTones[p.color] ?? SpottoColors.accent,
+                              ),
+                              title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                               subtitle: Text(
-                                [p.type, if (p.region.isNotEmpty) p.region]
-                                    .join(' · '),
+                                [p.type, if (p.region.isNotEmpty) p.region].join(' · '),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -745,34 +705,36 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         if (_googleResults.isNotEmpty) ...[
                           const Padding(
                             padding: EdgeInsets.fromLTRB(16, 10, 16, 4),
-                            child: Text('GOOGLE MAPS PLACES',
-                                style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: SpottoColors.accent,
-                                    letterSpacing: 0.8)),
+                            child: Text(
+                              'GOOGLE MAPS PLACES',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: SpottoColors.accent,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
                           ),
                           for (final gres in _googleResults)
                             ListTile(
                               dense: true,
-                              leading: const Icon(Icons.place_rounded,
-                                  color: SpottoColors.accent),
-                              title: Text(gres.name,
-                                  maxLines: 1, overflow: TextOverflow.ellipsis),
-                              subtitle: Text(gres.address,
-                                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                              leading: const Icon(Icons.place_rounded, color: SpottoColors.accent),
+                              title: Text(gres.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              subtitle: Text(gres.address, maxLines: 1, overflow: TextOverflow.ellipsis),
                               trailing: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                    color: SpottoColors.accent
-                                        .withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(6)),
-                                child: const Text('Google',
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        color: SpottoColors.accent,
-                                        fontWeight: FontWeight.bold)),
+                                  color: SpottoColors.accent.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'Google',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: SpottoColors.accent,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                               onTap: () => _selectSearchResult(gres.toPlace()),
                             ),
@@ -781,11 +743,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                           const Padding(
                             padding: EdgeInsets.all(12),
                             child: Center(
-                                child: SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2))),
+                              child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                            ),
                           ),
                       ],
                     ),
@@ -812,30 +771,20 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                           color: groupMode ? SpottoColors.accent : Colors.white,
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: const [
-                            BoxShadow(
-                                color: SpottoColors.inkShadow,
-                                blurRadius: 10,
-                                offset: Offset(0, 3)),
+                            BoxShadow(color: SpottoColors.inkShadow, blurRadius: 10, offset: Offset(0, 3)),
                           ],
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.group_outlined,
-                                size: 17,
-                                color: groupMode
-                                    ? Colors.white
-                                    : SpottoColors.accent),
+                            Icon(Icons.group_outlined, size: 17, color: groupMode ? Colors.white : SpottoColors.accent),
                             const SizedBox(width: 6),
                             Text(
-                              groupMode
-                                  ? '${group.name} · ${members.length + 1}'
-                                  : 'Group',
+                              groupMode ? '${group.name} · ${members.length + 1}' : 'Group',
                               style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: groupMode
-                                      ? Colors.white
-                                      : SpottoColors.ink),
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                                color: groupMode ? Colors.white : SpottoColors.ink,
+                              ),
                             ),
                           ],
                         ),
@@ -853,14 +802,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: const [
-                              BoxShadow(
-                                  color: SpottoColors.inkShadow,
-                                  blurRadius: 10,
-                                  offset: Offset(0, 3)),
+                              BoxShadow(color: SpottoColors.inkShadow, blurRadius: 10, offset: Offset(0, 3)),
                             ],
                           ),
-                          child: const Icon(Icons.person_add_outlined,
-                              size: 17, color: SpottoColors.accent),
+                          child: const Icon(Icons.person_add_outlined, size: 17, color: SpottoColors.accent),
                         ),
                       ),
                     ],
@@ -881,17 +826,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2.5),
                           boxShadow: const [
-                            BoxShadow(
-                                color: SpottoColors.inkShadow,
-                                blurRadius: 10,
-                                offset: Offset(0, 3)),
+                            BoxShadow(color: SpottoColors.inkShadow, blurRadius: 10, offset: Offset(0, 3)),
                           ],
                         ),
-                        child: Text(_myInitial(ref),
-                            style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white)),
+                        child: Text(
+                          _myInitial(ref),
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white),
+                        ),
                       ),
                     ),
                   ],
@@ -905,11 +846,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         Positioned(
           right: 16,
           bottom: 150,
-          child: _LocationCompassButton(
-              mode: _locationMode, onTap: _onLocationButtonTap),
+          child: _LocationCompassButton(mode: _locationMode, onTap: _onLocationButtonTap),
         ),
-
-
 
         // bottom: daily quest chip + time filter pills
         Positioned(
@@ -925,42 +863,34 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(999),
-                  boxShadow: const [
-                    BoxShadow(
-                        color: SpottoColors.inkShadow,
-                        blurRadius: 12,
-                        offset: Offset(0, 4)),
-                  ],
+                  boxShadow: const [BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4))],
                 ),
                 child: Row(
                   children: [
                     for (final t in data.timeSlots)
                       Expanded(
                         child: PressScale(
-                          onTap: () => ref
-                              .read(timeFilterProvider.notifier)
-                              .state = t.id,
+                          onTap: () => ref.read(timeFilterProvider.notifier).state = t.id,
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
                             padding: const EdgeInsets.symmetric(vertical: 9),
                             decoration: BoxDecoration(
-                              color: time == t.id
-                                  ? SpottoColors.accent
-                                  : Colors.transparent,
+                              color: time == t.id ? SpottoColors.accent : Colors.transparent,
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Column(
                               children: [
-                                Icon(spottoIcon(t.icon),
-                                    size: 18,
-                                    color: time == t.id
-                                        ? Colors.white
-                                        : SpottoColors.muted),
-                                Text(t.label,
-                                    style: text.labelSmall?.copyWith(
-                                        color: time == t.id
-                                            ? Colors.white
-                                            : SpottoColors.muted)),
+                                Icon(
+                                  spottoIcon(t.icon),
+                                  size: 18,
+                                  color: time == t.id ? Colors.white : SpottoColors.muted,
+                                ),
+                                Text(
+                                  t.label,
+                                  style: text.labelSmall?.copyWith(
+                                    color: time == t.id ? Colors.white : SpottoColors.muted,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -977,34 +907,31 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   }
 
   LinearGradient _lighting(String time) => switch (time) {
-        'morning' => LinearGradient(
-            begin: Alignment.topRight,
-            end: Alignment.bottomLeft,
-            colors: [
-              const Color(0xFFFFE0A6).withValues(alpha: 0.35),
-              const Color(0xFFFFEECD).withValues(alpha: 0.08),
-              Colors.transparent,
-            ],
-          ),
-        'evening' => LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              const Color(0xFFFF9646).withValues(alpha: 0.42),
-              const Color(0xFFFF5E78).withValues(alpha: 0.22),
-              const Color(0xFF46285A).withValues(alpha: 0.34),
-              const Color(0xFF231637).withValues(alpha: 0.45),
-            ],
-          ),
-        _ => LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.white.withValues(alpha: 0.16),
-              Colors.transparent,
-            ],
-          ),
-      };
+    'morning' => LinearGradient(
+      begin: Alignment.topRight,
+      end: Alignment.bottomLeft,
+      colors: [
+        const Color(0xFFFFE0A6).withValues(alpha: 0.35),
+        const Color(0xFFFFEECD).withValues(alpha: 0.08),
+        Colors.transparent,
+      ],
+    ),
+    'evening' => LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        const Color(0xFFFF9646).withValues(alpha: 0.42),
+        const Color(0xFFFF5E78).withValues(alpha: 0.22),
+        const Color(0xFF46285A).withValues(alpha: 0.34),
+        const Color(0xFF231637).withValues(alpha: 0.45),
+      ],
+    ),
+    _ => LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [Colors.white.withValues(alpha: 0.16), Colors.transparent],
+    ),
+  };
 
   Widget _categoryChip(String label, IconData icon) {
     final isSelected = _selectedCategories.contains(label);
@@ -1019,9 +946,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
               _selectedCategories.add('All');
               return;
             }
-            
+
             _selectedCategories.remove('All');
-            
+
             if (_selectedCategories.contains(label)) {
               _selectedCategories.remove(label);
               if (_selectedCategories.isEmpty) {
@@ -1037,23 +964,17 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           decoration: BoxDecoration(
             color: isSelected ? SpottoColors.accent : Colors.white,
             borderRadius: BorderRadius.circular(999), // Google Maps style pill
-            border: Border.all(
-              color: isSelected ? SpottoColors.accent : SpottoColors.line,
-              width: 1.2,
-            ),
-            boxShadow: const [
-              BoxShadow(
-                  color: Color(0x18103D3A),
-                  blurRadius: 6,
-                  offset: Offset(0, 2)),
-            ],
+            border: Border.all(color: isSelected ? SpottoColors.accent : SpottoColors.line, width: 1.2),
+            boxShadow: const [BoxShadow(color: Color(0x18103D3A), blurRadius: 6, offset: Offset(0, 2))],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon,
-                  size: 16, // Slightly larger icon to match Maps style
-                  color: isSelected ? Colors.white : SpottoColors.accent),
+              Icon(
+                icon,
+                size: 16, // Slightly larger icon to match Maps style
+                color: isSelected ? Colors.white : SpottoColors.accent,
+              ),
               const SizedBox(width: 6),
               Text(
                 label,
@@ -1095,15 +1016,9 @@ class _LocationCompassButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: active ? SpottoColors.accent : Colors.white,
           shape: BoxShape.circle,
-          boxShadow: const [
-            BoxShadow(
-                color: SpottoColors.inkShadow,
-                blurRadius: 12,
-                offset: Offset(0, 4)),
-          ],
+          boxShadow: const [BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4))],
         ),
-        child: Icon(icon,
-            size: 22, color: active ? Colors.white : SpottoColors.ink),
+        child: Icon(icon, size: 22, color: active ? Colors.white : SpottoColors.ink),
       ),
     );
   }
@@ -1115,7 +1030,7 @@ class _QuestChip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final questAsync = ref.watch(dailyQuestProvider);
-    final quest = questAsync.value ?? const DailyQuest(goal: 2, progress: 0, rewardDescription: 'Free Ceylon Tea', isComplete: false);
+    final quest = questAsync.value ?? ref.watch(cachedQuestProvider) ?? kDefaultQuest;
 
     final done = quest.progress.clamp(0, quest.goal);
     final complete = quest.isComplete;
@@ -1129,39 +1044,30 @@ class _QuestChip extends ConsumerWidget {
         decoration: BoxDecoration(
           color: complete ? SpottoColors.ink : Colors.white,
           borderRadius: BorderRadius.circular(18),
-          boxShadow: const [
-            BoxShadow(
-                color: SpottoColors.inkShadow,
-                blurRadius: 12,
-                offset: Offset(0, 4)),
-          ],
+          boxShadow: const [BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4))],
         ),
         child: Row(
           children: [
-            Icon(complete ? Icons.emoji_events : Icons.explore,
-                size: 18, color: SpottoColors.sun),
+            Icon(complete ? Icons.emoji_events : Icons.explore, size: 18, color: SpottoColors.sun),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    complete
-                        ? '${quest.rewardDescription} unlocked!'
-                        : 'Daily quest · visit $goal spots',
+                    complete ? '${quest.rewardDescription} unlocked!' : 'Daily quest · visit $goal spots',
                     style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                        color: complete ? Colors.white : SpottoColors.ink),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: complete ? Colors.white : SpottoColors.ink,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(999),
                     child: Container(
                       height: 5,
-                      color: complete
-                          ? Colors.white.withValues(alpha: 0.25)
-                          : SpottoColors.ink.withValues(alpha: 0.08),
+                      color: complete ? Colors.white.withValues(alpha: 0.25) : SpottoColors.ink.withValues(alpha: 0.08),
                       child: AnimatedFractionallySizedBox(
                         duration: const Duration(milliseconds: 400),
                         alignment: Alignment.centerLeft,
@@ -1174,11 +1080,14 @@ class _QuestChip extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 10),
-            Text('$done/$goal',
-                style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                    color: complete ? SpottoColors.sun : SpottoColors.muted)),
+            Text(
+              '$done/$goal',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: complete ? SpottoColors.sun : SpottoColors.muted,
+              ),
+            ),
           ],
         ),
       ),

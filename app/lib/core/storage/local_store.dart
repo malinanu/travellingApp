@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 abstract final class StoreKeys {
   static const auth = 'spotto_auth';
   static const token = 'spotto_token'; // API JWT — secure storage, see below
+  static const refreshToken = 'spotto_refresh_token'; // session refresh token — secure storage too
   static const prefs = 'spotto_prefs';
   static const group = 'spotto_group';
   static const trip = 'spotto_trip';
@@ -24,6 +25,13 @@ abstract final class StoreKeys {
   static const checkIns = 'spotto_checkins'; // placeIds checked into (artisan quest)
   static const favorites = 'spotto_favorites'; // bookmarked placeIds
   static const categories = 'spotto_categories'; // fetched dynamic categories
+  static const categoriesAt = 'spotto_categories_at'; // when categories were last fetched (ms epoch)
+  static const lastPosition = 'spotto_last_pos'; // {lat, lng, at} of the last device fix
+  // Last good responses for the rest of the Discover screen, so it opens
+  // fully populated instead of on placeholders while the network catches up.
+  static const me = 'spotto_me'; // last /me
+  static const quest = 'spotto_quest'; // {day, data} of the last /me/quest
+  static const weather = 'spotto_weather'; // {at, data} of the last current-location /weather
 }
 
 class LocalStore {
@@ -35,8 +43,11 @@ class LocalStore {
   // expect a synchronous getToken() — so it's loaded once into memory here
   // during init() and kept current on every write/clear.
   String? _cachedToken;
+  // Same in-memory copy for the refresh token, which keeps the session alive
+  // past the 1-hour access token (see ApiClient's refresh-and-retry).
+  String? _cachedRefresh;
 
-  LocalStore(this._prefs, this._secure, this._cachedToken);
+  LocalStore(this._prefs, this._secure, this._cachedToken, [this._cachedRefresh]);
 
   static Future<LocalStore> init() async {
     final prefs = await SharedPreferences.getInstance();
@@ -71,19 +82,33 @@ class LocalStore {
     if (legacy != null && migrated) {
       await prefs.remove(StoreKeys.token);
     }
-    return LocalStore(prefs, secure, token);
+    String? refresh;
+    try {
+      refresh = await secure.read(key: StoreKeys.refreshToken);
+    } catch (_) {
+      // Same unrecoverable-keystore case as the token above; without it the
+      // app just signs in again once the access token expires.
+    }
+    return LocalStore(prefs, secure, token, refresh);
   }
 
   String? getToken() => _cachedToken;
+  String? getRefreshToken() => _cachedRefresh;
 
-  Future<void> setToken(String token) async {
+  /// Saves a new access token, and the refresh token when the server sent one.
+  Future<void> setToken(String token, {String? refreshToken}) async {
     _cachedToken = token;
+    if (refreshToken != null) _cachedRefresh = refreshToken;
     await _secure.write(key: StoreKeys.token, value: token);
+    if (refreshToken != null) await _secure.write(key: StoreKeys.refreshToken, value: refreshToken);
   }
 
+  /// Signs this device out locally: drops both the access and refresh token.
   Future<void> clearToken() async {
     _cachedToken = null;
+    _cachedRefresh = null;
     await _secure.delete(key: StoreKeys.token);
+    await _secure.delete(key: StoreKeys.refreshToken);
   }
 
   bool getBool(String key) => _prefs.getBool(key) ?? false;
@@ -102,8 +127,7 @@ class LocalStore {
     }
   }
 
-  Future<void> setJson(String key, Map<String, dynamic> value) =>
-      _prefs.setString(key, jsonEncode(value));
+  Future<void> setJson(String key, Map<String, dynamic> value) => _prefs.setString(key, jsonEncode(value));
 
   List<dynamic>? getJsonList(String key) {
     final raw = _prefs.getString(key);
@@ -115,8 +139,7 @@ class LocalStore {
     }
   }
 
-  Future<void> setJsonList(String key, List<dynamic> value) =>
-      _prefs.setString(key, jsonEncode(value));
+  Future<void> setJsonList(String key, List<dynamic> value) => _prefs.setString(key, jsonEncode(value));
 
   Future<void> remove(String key) => _prefs.remove(key);
 }

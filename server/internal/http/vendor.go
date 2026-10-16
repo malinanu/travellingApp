@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -967,7 +968,9 @@ func (s *Server) handleVendorDashboard(w http.ResponseWriter, r *http.Request) {
 	dateStr := time.Now().UTC().Format("2006-01-02")
 	claims, _ := s.Store.GetQuestClaimsCount(r.Context(), v.ID, dateStr)
 	blob["questClaimsToday"] = claims
-	
+	completed, _ := s.Store.QuestCompletionsCount(r.Context(), v.ID, dateStr)
+	blob["questCompletionsToday"] = completed
+
 	writeJSON(w, http.StatusOK, blob)
 }
 
@@ -1296,11 +1299,18 @@ func (s *Server) handleQuestValidate(w http.ResponseWriter, r *http.Request, v d
 		return
 	}
 	
-	dateStr := time.Now().UTC().Format("2006-01-02")
-	
+	// Today's quest for this traveller, as the server records it (this also
+	// saves the completion if it hadn't been yet).
+	quest, schedule, err := s.questStatus(r.Context(), travellerID)
+	if err != nil {
+		log.Printf("quest validate vendor=%s traveller=%s: %v", v.ID, travellerID, err)
+		writeJSON(w, http.StatusOK, map[string]any{"result": "unknown"})
+		return
+	}
+	dateStr := quest.Date
+
 	// Check if this vendor is scheduled for today
-	schedule, err := s.Store.GetQuestSchedule(r.Context(), dateStr)
-	if err != nil || schedule.VendorID != v.ID {
+	if schedule == nil || schedule.VendorID != v.ID {
 		writeJSON(w, http.StatusOK, map[string]any{"result": "unknown"})
 		return
 	}
@@ -1312,14 +1322,7 @@ func (s *Server) handleQuestValidate(w http.ResponseWriter, r *http.Request, v d
 		return
 	}
 	
-	// Check if traveller completed the daily quest
-	progress, err := s.Store.GetDailyQuestProgress(r.Context(), travellerID)
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"result": "unknown"})
-		return
-	}
-	
-	if progress < schedule.Goal {
+	if !quest.IsComplete {
 		writeJSON(w, http.StatusOK, map[string]any{"result": "unknown"}) // Progress not complete
 		return
 	}
@@ -1344,12 +1347,46 @@ func (s *Server) handleQuestValidate(w http.ResponseWriter, r *http.Request, v d
 		return
 	}
 
+	travellerName := "Traveller"
+	if u, err := s.Store.UserByID(r.Context(), travellerID); err == nil && strings.TrimSpace(u.Name) != "" {
+		travellerName = u.Name
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"result": "valid",
 		"claim": map[string]any{
-			"travellerName": "Traveller", // We don't join User for simplicity in this proof-of-concept
+			"travellerName": travellerName,
 			"offerLabel":    spons.RewardDescription,
 			"code":          code,
 		},
 	})
+}
+
+// handleVendorQuestCompletions lists who finished this vendor's sponsored
+// quests in the last ?days= (default 30, max 90). Names only — vendors don't
+// get travellers' contact details.
+func (s *Server) handleVendorQuestCompletions(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	days := 30
+	if n, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && n > 0 && n <= 90 {
+		days = n
+	}
+	since := time.Now().UTC().AddDate(0, 0, -(days - 1)).Format("2006-01-02")
+	list, err := s.Store.ListQuestCompletions(r.Context(), domain.QuestCompletionFilter{
+		VendorID: v.ID, Since: since, Limit: 200,
+	})
+	if err != nil {
+		log.Printf("vendor quest completions vendor=%s: %v", v.ID, err)
+		writeErr(w, http.StatusInternalServerError, "Couldn't load quest completions. Please try again.")
+		return
+	}
+	for i := range list {
+		list[i].TravellerEmail = ""
+		if strings.TrimSpace(list[i].TravellerName) == "" {
+			list[i].TravellerName = "Traveller"
+		}
+	}
+	writeJSON(w, http.StatusOK, list)
 }

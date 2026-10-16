@@ -217,7 +217,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Spotto-Client", "X-Spotto-Device"},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
@@ -263,6 +263,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Post("/auth/apple", s.handleAppleAuth)
 	r.Post("/auth/google/mobile", s.handleGoogleMobileAuth)
 	r.Post("/auth/exchange", s.handleAuthExchange)
+	r.Post("/auth/refresh", s.handleRefresh)
+	r.Post("/auth/logout", s.handleLogout)
 
 	// Authenticated (any role).
 	r.Group(func(r chi.Router) {
@@ -282,6 +284,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Post("/me/payment-methods/{id}/default", s.handleSetDefaultPaymentMethod)
 		r.Post("/vendor/subscription/checkout", s.handleVendorSubscriptionCheckout)
 		r.Put("/auth/password", s.handleChangePassword)
+		r.Post("/auth/session/upgrade", s.handleSessionUpgrade)
 		r.Post("/auth/2fa/setup", s.handleTwoFactorSetup)
 		r.Post("/auth/2fa/enable", s.handleTwoFactorEnable)
 		r.Post("/auth/2fa/disable", s.handleTwoFactorDisable)
@@ -342,6 +345,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Patch("/vendor/business/identity", s.handleUpdateVendorIdentity)
 		r.Patch("/vendor/business/br-cert-number", s.handleUpdateVendorBRCertNumber)
 		r.Get("/vendor/sponsorship", s.handleGetSponsorship)
+		r.Get("/vendor/quest/completions", s.handleVendorQuestCompletions)
 		r.Put("/vendor/sponsorship", s.handlePutSponsorship)
 		r.Get("/vendor/menu", s.handleVendorMenu)
 		r.Get("/vendor/offers", s.handleVendorOffers)
@@ -456,6 +460,10 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Post("/admin/quests/sponsorships/{vendor_id}/status", s.handleAdminUpdateSponsorshipStatus)
 		r.Get("/admin/quests/schedules", s.handleAdminListQuestSchedules)
 		r.Post("/admin/quests/schedules", s.handleAdminSetQuestSchedule)
+		r.Get("/admin/quests/completions", s.handleAdminQuestCompletions)
+		r.Get("/admin/users", s.handleAdminUsers)
+		r.Get("/admin/users/{id}", s.handleAdminUserDetail)
+		r.Post("/admin/users/{id}/revoke-sessions", s.handleAdminRevokeUserSessions)
 
 		// Categories
 		r.Get("/admin/categories", s.handleAdminCategories)

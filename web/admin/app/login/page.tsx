@@ -55,10 +55,11 @@ function AdminLoginPageInner() {
   const finishSession = (res: AuthResponse) => {
     if (res.user.role !== 'admin') {
       api.setToken(null);
+      api.logout(res.refreshToken);
       setError('This account is not an admin.');
       return;
     }
-    api.setToken(res.token);
+    api.setToken(res.token, true, res.refreshToken);
     router.replace('/queue');
   };
 
