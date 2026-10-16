@@ -57,7 +57,13 @@ func (s *Server) startSession(r *http.Request, u domain.User) (access, refresh s
 	if err := s.Store.CreateSession(r.Context(), sess, hash); err != nil {
 		return "", "", err
 	}
-	access, err = s.Tokens.IssueForSession(u, sess.ID)
+	if r.Header.Get("X-Spotto-Client") == "" {
+		// An app build from before sessions: it ignores the refresh token, so
+		// give it the old 24h access token rather than signing it out hourly.
+		access, err = s.Tokens.IssueLegacy(u, sess.ID)
+	} else {
+		access, err = s.Tokens.IssueForSession(u, sess.ID)
+	}
 	if err != nil {
 		return "", "", err
 	}
@@ -189,6 +195,9 @@ func (s *Server) keepOnlyThisSession(r *http.Request, u domain.User) (string, er
 	c := auth.FromContext(r.Context())
 	if _, err := s.Store.RevokeOtherUserSessions(r.Context(), u.ID, c.SessionID); err != nil {
 		return "", err
+	}
+	if r.Header.Get("X-Spotto-Client") == "" {
+		return s.Tokens.IssueLegacy(u, c.SessionID) // see startSession
 	}
 	return s.Tokens.IssueForSession(u, c.SessionID)
 }

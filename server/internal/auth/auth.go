@@ -62,6 +62,11 @@ const twoFactorPurpose = "2fa-pending"
 // so this can stay short without making anyone log in again.
 const accessLifetime = time.Hour
 
+// legacyAccessLifetime is for clients that can't refresh (app builds from
+// before sessions, which don't send X-Spotto-Client): they keep the old 24h
+// token instead of being signed out every hour until they update.
+const legacyAccessLifetime = 24 * time.Hour
+
 // A session stays signed in as long as it's refreshed at least once within
 // its idle limit — so effectively until logout or revocation. Admin and
 // vendor web sessions carry more power, so they lapse sooner.
@@ -110,6 +115,15 @@ func (t *Tokens) Issue(u domain.User) (string, error) {
 
 // IssueForSession signs a short-lived access token for session sessionID.
 func (t *Tokens) IssueForSession(u domain.User, sessionID string) (string, error) {
+	return t.issue(u, sessionID, accessLifetime)
+}
+
+// IssueLegacy signs a 24h access token for a client that can't refresh.
+func (t *Tokens) IssueLegacy(u domain.User, sessionID string) (string, error) {
+	return t.issue(u, sessionID, legacyAccessLifetime)
+}
+
+func (t *Tokens) issue(u domain.User, sessionID string, lifetime time.Duration) (string, error) {
 	c := Claims{
 		Role:         u.Role,
 		TokenVersion: u.TokenVersion,
@@ -117,7 +131,7 @@ func (t *Tokens) IssueForSession(u domain.User, sessionID string) (string, error
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   u.ID,
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(accessLifetime)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(lifetime)),
 		},
 	}
 	if u.VendorID != nil {
