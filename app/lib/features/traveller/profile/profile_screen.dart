@@ -1,6 +1,7 @@
 // Traveller profile — port of Profile.jsx: details, travel style, interests,
 // notifications, account rows + mock sub-pages, logout.
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -32,14 +33,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _uploadingAvatar = false;
   final _name = TextEditingController();
   final _email = TextEditingController();
+  // The name last copied in from /me — lets a fresher /me replace it while
+  // the field is unedited, and keeps auto-save from sending it back.
+  String _filledName = '';
   late Set<String> _styles;
   late List<String> _interests;
-  final Map<String, bool> _notif = {
-    'deals': true,
-    'quest': true,
-    'group': true,
-    'email': false,
-  };
+  final Map<String, bool> _notif = {'deals': true, 'quest': true, 'group': true, 'email': false};
   bool _savedFlash = false;
   // Auto-save: debounced while editing, plus an immediate flush() wired to
   // the Name field losing focus and to the header's manual "Save" pill
@@ -50,10 +49,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   void initState() {
     super.initState();
     final prefs = ref.read(prefsProvider);
-    _styles = {...(prefs?.styles ?? const ['nomad'])};
+    _styles = {
+      ...(prefs?.styles ?? const ['nomad']),
+    };
     _interests = [...(prefs?.interests ?? const [])];
     final me = ref.read(meProvider);
-    _name.text = me?['name'] as String? ?? '';
+    _name.text = _filledName = me?['name'] as String? ?? '';
     _email.text = me?['email'] as String? ?? '';
   }
 
@@ -69,8 +70,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     ref.read(prefsProvider.notifier).save(UserPrefs(styles: _styles.toList(), interests: _interests));
     // Email isn't editable server-side yet (handleUpdateMe has no email
     // field — changing it would need a verification flow), so only name
-    // round-trips here; the field stays display-only for email.
-    ref.read(apiProvider).dio.put('/me', data: {'name': _name.text.trim()}).ignore();
+    // round-trips here; the field stays display-only for email. Only sent
+    // once the user has actually changed it, so saving a style toggle can't
+    // write back a name that is out of date (e.g. renamed on another device
+    // while this screen still shows the saved /me).
+    final name = _name.text.trim();
+    if (name != _filledName.trim()) {
+      ref.read(apiProvider).dio.put('/me', data: {'name': name}).ignore();
+      _filledName = name;
+    }
     setState(() => _savedFlash = true);
     Future.delayed(const Duration(milliseconds: 1800), () {
       if (mounted) setState(() => _savedFlash = false);
@@ -81,11 +89,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (_uploadingAvatar) return;
     final userId = ref.read(meProvider)?['id'] as String? ?? '';
     if (userId.isEmpty) return;
-    final XFile? file = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1024,
-      imageQuality: 85,
-    );
+    final XFile? file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1024, imageQuality: 85);
     if (file == null) return;
     final contentType = mimeForUpload(file.mimeType, file.name);
     if (contentType == null) {
@@ -95,13 +99,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     setState(() => _uploadingAvatar = true);
     try {
       final bytes = await file.readAsBytes();
-      await ref.read(uploadServiceProvider).upload(
-            bytes: bytes,
-            contentType: contentType,
-            ownerType: 'user',
-            ownerId: userId,
-            role: 'avatar',
-          );
+      await ref
+          .read(uploadServiceProvider)
+          .upload(bytes: bytes, contentType: contentType, ownerType: 'user', ownerId: userId, role: 'avatar');
       await ref.read(meProvider.notifier).refresh();
     } catch (_) {
       _snack('Upload failed — try again.');
@@ -130,17 +130,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     final text = Theme.of(context).textTheme;
     final avatarUrl = ref.watch(meProvider)?['avatarUrl'] as String? ?? '';
-    // /me loads asynchronously (Future.microtask in MeNotifier.build()), so
-    // it may still be null when this screen first builds — seed the
-    // controllers the moment real data actually arrives, once, rather than
-    // only in initState (which can run before /me has resolved).
+    // initState fills the controllers from whatever meProvider had then —
+    // nothing yet, or the /me saved on the device. When a fresher /me
+    // arrives, take its values, but leave a name the user has started
+    // editing alone.
     ref.listen<Map<String, dynamic>?>(meProvider, (prev, next) {
-      if (prev == null && next != null) {
-        setState(() {
-          _name.text = next['name'] as String? ?? '';
-          _email.text = next['email'] as String? ?? '';
-        });
-      }
+      if (next == null) return;
+      final name = next['name'] as String? ?? '';
+      final email = next['email'] as String? ?? '';
+      final takeName = _name.text == _filledName && name != _filledName;
+      if (!takeName && email == _email.text) return;
+      setState(() {
+        if (takeName) _name.text = _filledName = name;
+        _email.text = email;
+      });
     });
     // Same async-timing issue as name/email above: prefsProvider may still
     // be un-hydrated (from MeNotifier.refresh()) when initState ran.
@@ -153,17 +156,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       }
     });
     final name = _name.text.trim();
-    final initials = name
-        .split(' ')
-        .where((w) => w.isNotEmpty)
-        .map((w) => w[0])
-        .take(2)
-        .join()
-        .toUpperCase();
+    final initials = name.split(' ').where((w) => w.isNotEmpty).map((w) => w[0]).take(2).join().toUpperCase();
     // Badge shows the first selected style — a small simplification rather
     // than redesigning the pill to list several.
-    final styleObj =
-        data.travelStyles.where((s) => s.id == _styles.firstOrNull).firstOrNull;
+    final styleObj = data.travelStyles.where((s) => s.id == _styles.firstOrNull).firstOrNull;
 
     return Scaffold(
       backgroundColor: SpottoColors.sand,
@@ -176,10 +172,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 children: [
                   circleButton(Icons.chevron_left, () => context.pop()),
                   Expanded(
-                    child: Center(
-                      child:
-                          Text('Profile', style: text.titleMedium?.copyWith(fontSize: 17)),
-                    ),
+                    child: Center(child: Text('Profile', style: text.titleMedium?.copyWith(fontSize: 17))),
                   ),
                   PressScale(
                     scale: 0.95,
@@ -197,11 +190,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             const Icon(Icons.check, size: 15, color: Colors.white),
                             const SizedBox(width: 5),
                           ],
-                          Text(_savedFlash ? 'Saved' : 'Save',
-                              style: const TextStyle(
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white)),
+                          Text(
+                            _savedFlash ? 'Saved' : 'Save',
+                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Colors.white),
+                          ),
                         ],
                       ),
                     ),
@@ -220,95 +212,94 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         scale: 0.97,
                         onTap: _pickAvatar,
                         child: SizedBox(
-                        width: 100,
-                        height: 96,
-                        child: Stack(
-                          children: [
-                            Container(
-                              width: 92,
-                              height: 92,
-                              alignment: Alignment.center,
-                              clipBehavior: Clip.antiAlias,
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [SpottoColors.accent, SpottoColors.accent2],
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                      color: Color(0x660B6F86),
-                                      blurRadius: 30,
-                                      offset: Offset(0, 14),
-                                      spreadRadius: -12)
-                                ],
-                              ),
-                              child: avatarUrl.isNotEmpty
-                                  ? Image.network(resolveMediaUrl(avatarUrl),
-                                      width: 92,
-                                      height: 92,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, _, _) => Text(
-                                          initials.isEmpty ? 'LM' : initials,
-                                          style: const TextStyle(
-                                              fontSize: 32,
-                                              fontWeight: FontWeight.w800,
-                                              color: Colors.white)))
-                                  : Text(initials.isEmpty ? 'LM' : initials,
-                                      style: const TextStyle(
-                                          fontSize: 32,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white)),
-                            ),
-                            if (_uploadingAvatar)
+                          width: 100,
+                          height: 96,
+                          child: Stack(
+                            children: [
                               Container(
                                 width: 92,
                                 height: 92,
+                                alignment: Alignment.center,
+                                clipBehavior: Clip.antiAlias,
                                 decoration: const BoxDecoration(
-                                    shape: BoxShape.circle, color: Colors.black38),
-                                child: const Center(
-                                  child: SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2.5, color: Colors.white),
-                                  ),
-                                ),
-                              ),
-                            Positioned(
-                              right: 0,
-                              bottom: 0,
-                              child: Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
                                   shape: BoxShape.circle,
-                                  border: Border.all(
-                                      color: SpottoColors.accentTint, width: 1.5),
-                                  boxShadow: const [
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [SpottoColors.accent, SpottoColors.accent2],
+                                  ),
+                                  boxShadow: [
                                     BoxShadow(
-                                        color: Color(0x33103D3A),
-                                        blurRadius: 10,
-                                        offset: Offset(0, 3))
+                                      color: Color(0x660B6F86),
+                                      blurRadius: 30,
+                                      offset: Offset(0, 14),
+                                      spreadRadius: -12,
+                                    ),
                                   ],
                                 ),
-                                child: const Icon(Icons.photo_camera_outlined,
-                                    size: 15, color: SpottoColors.accent),
+                                child: avatarUrl.isNotEmpty
+                                    ? Image(
+                                        image: CachedNetworkImageProvider(resolveMediaUrl(avatarUrl)),
+                                        width: 92,
+                                        height: 92,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, _, _) => Text(
+                                          initials.isEmpty ? 'LM' : initials,
+                                          style: const TextStyle(
+                                            fontSize: 32,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      )
+                                    : Text(
+                                        initials.isEmpty ? 'LM' : initials,
+                                        style: const TextStyle(
+                                          fontSize: 32,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white,
+                                        ),
+                                      ),
                               ),
-                            ),
-                          ],
+                              if (_uploadingAvatar)
+                                Container(
+                                  width: 92,
+                                  height: 92,
+                                  decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black38),
+                                  child: const Center(
+                                    child: SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              Positioned(
+                                right: 0,
+                                bottom: 0,
+                                child: Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: SpottoColors.accentTint, width: 1.5),
+                                    boxShadow: const [
+                                      BoxShadow(color: Color(0x33103D3A), blurRadius: 10, offset: Offset(0, 3)),
+                                    ],
+                                  ),
+                                  child: const Icon(Icons.photo_camera_outlined, size: 15, color: SpottoColors.accent),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      ),
                       const SizedBox(height: 12),
-                      Text(name.isEmpty ? 'Traveller' : name,
-                          style: text.headlineSmall?.copyWith(fontSize: 21)),
+                      Text(name.isEmpty ? 'Traveller' : name, style: text.headlineSmall?.copyWith(fontSize: 21)),
                       const SizedBox(height: 6),
                       Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                         decoration: BoxDecoration(
                           color: SpottoColors.accentTint,
                           borderRadius: BorderRadius.circular(999),
@@ -317,15 +308,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (styleObj != null) ...[
-                              Icon(spottoIcon(styleObj.icon),
-                                  size: 13, color: SpottoColors.accent),
+                              Icon(spottoIcon(styleObj.icon), size: 13, color: SpottoColors.accent),
                               const SizedBox(width: 5),
                             ],
-                            Text(styleObj?.label ?? 'Traveler',
-                                style: const TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: SpottoColors.accent)),
+                            Text(
+                              styleObj?.label ?? 'Traveler',
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                                color: SpottoColors.accent,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -338,15 +331,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       onFocusChange: (hasFocus) {
                         if (!hasFocus) _saver.flush();
                       },
-                      child: profField(context, 'Name', _name, Icons.person_outline,
-                          onChanged: () {
-                            setState(() {});
-                            _saver.schedule();
-                          }),
+                      child: profField(
+                        context,
+                        'Name',
+                        _name,
+                        Icons.person_outline,
+                        onChanged: () {
+                          setState(() {});
+                          _saver.schedule();
+                        },
+                      ),
                     ),
                     const SizedBox(height: 14),
-                    profField(context, 'Email', _email, Icons.mail_outline,
-                        readOnly: true, helperText: 'Contact support to change your email'),
+                    profField(
+                      context,
+                      'Email',
+                      _email,
+                      Icons.mail_outline,
+                      readOnly: true,
+                      helperText: 'Contact support to change your email',
+                    ),
                   ]),
                   const SizedBox(height: 22),
 
@@ -371,29 +375,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12),
                               decoration: BoxDecoration(
-                                color: _styles.contains(s.id)
-                                    ? SpottoColors.accent
-                                    : SpottoColors.sand,
+                                color: _styles.contains(s.id) ? SpottoColors.accent : SpottoColors.sand,
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Row(
                                 children: [
-                                  Icon(spottoIcon(s.icon),
-                                      size: 18,
-                                      color: _styles.contains(s.id)
-                                          ? Colors.white
-                                          : SpottoColors.ink),
+                                  Icon(
+                                    spottoIcon(s.icon),
+                                    size: 18,
+                                    color: _styles.contains(s.id) ? Colors.white : SpottoColors.ink,
+                                  ),
                                   const SizedBox(width: 10),
                                   Expanded(
-                                    child: Text(s.label,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w800,
-                                            color: _styles.contains(s.id)
-                                                ? Colors.white
-                                                : SpottoColors.ink)),
+                                    child: Text(
+                                      s.label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w800,
+                                        color: _styles.contains(s.id) ? Colors.white : SpottoColors.ink,
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -413,35 +416,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           PressScale(
                             scale: 0.95,
                             onTap: () {
-                              setState(() => _interests.contains(it.id)
-                                  ? _interests.remove(it.id)
-                                  : _interests.add(it.id));
+                              setState(
+                                () => _interests.contains(it.id) ? _interests.remove(it.id) : _interests.add(it.id),
+                              );
                               _saver.schedule();
                             },
                             child: Container(
                               padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
                               decoration: BoxDecoration(
-                                color: _interests.contains(it.id)
-                                    ? SpottoColors.accent
-                                    : SpottoColors.sand,
+                                color: _interests.contains(it.id) ? SpottoColors.accent : SpottoColors.sand,
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(spottoIcon(it.icon),
-                                      size: 15,
-                                      color: _interests.contains(it.id)
-                                          ? Colors.white
-                                          : SpottoColors.ink),
+                                  Icon(
+                                    spottoIcon(it.icon),
+                                    size: 15,
+                                    color: _interests.contains(it.id) ? Colors.white : SpottoColors.ink,
+                                  ),
                                   const SizedBox(width: 6),
-                                  Text(it.label,
-                                      style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                          color: _interests.contains(it.id)
-                                              ? Colors.white
-                                              : SpottoColors.ink)),
+                                  Text(
+                                    it.label,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: _interests.contains(it.id) ? Colors.white : SpottoColors.ink,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -453,10 +455,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
                   sectionCard(context, 'Notifications', [
                     for (final (i, n) in const [
-                      (k: 'deals', icon: Icons.local_offer_outlined, title: 'Deal alerts near me', sub: 'When a perk is within walking distance'),
-                      (k: 'quest', icon: Icons.explore_outlined, title: 'Daily quest reminders', sub: "Nudge me to finish the day's quest"),
-                      (k: 'group', icon: Icons.group_outlined, title: 'Group activity', sub: 'When friends check in nearby'),
-                      (k: 'email', icon: Icons.mail_outline, title: 'Email updates', sub: 'Occasional travel tips & news'),
+                      (
+                        k: 'deals',
+                        icon: Icons.local_offer_outlined,
+                        title: 'Deal alerts near me',
+                        sub: 'When a perk is within walking distance',
+                      ),
+                      (
+                        k: 'quest',
+                        icon: Icons.explore_outlined,
+                        title: 'Daily quest reminders',
+                        sub: "Nudge me to finish the day's quest",
+                      ),
+                      (
+                        k: 'group',
+                        icon: Icons.group_outlined,
+                        title: 'Group activity',
+                        sub: 'When friends check in nearby',
+                      ),
+                      (
+                        k: 'email',
+                        icon: Icons.mail_outline,
+                        title: 'Email updates',
+                        sub: 'Occasional travel tips & news',
+                      ),
                     ].indexed) ...[
                       if (i > 0) const Divider(height: 1),
                       Padding(
@@ -470,9 +492,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(n.title, style: text.titleSmall),
-                                  Text(n.sub,
-                                      style: text.bodySmall
-                                          ?.copyWith(color: SpottoColors.muted)),
+                                  Text(n.sub, style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
                                 ],
                               ),
                             ),
@@ -490,32 +510,53 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const SizedBox(height: 22),
 
                   sectionCard(context, 'Account', [
-                    profRow(context, Icons.event_available_outlined, 'My Bookings',
-                        sub: 'Upcoming & past bookings',
-                        onTap: () => context.push('/t/bookings')),
+                    profRow(
+                      context,
+                      Icons.event_available_outlined,
+                      'My Bookings',
+                      sub: 'Upcoming & past bookings',
+                      onTap: () => context.push('/t/bookings'),
+                    ),
                     const Divider(height: 1),
-                    profRow(context, Icons.lock_outline, 'Password & security',
-                        sub: 'Change password, 2FA',
-                        onTap: () => setState(() => _sub = 'security')),
+                    profRow(
+                      context,
+                      Icons.lock_outline,
+                      'Password & security',
+                      sub: 'Change password, 2FA',
+                      onTap: () => setState(() => _sub = 'security'),
+                    ),
                     const Divider(height: 1),
-                    profRow(context, Icons.credit_card, 'Saved payment',
-                        sub: 'Visa ·· 4291',
-                        onTap: () => setState(() => _sub = 'payment')),
+                    profRow(
+                      context,
+                      Icons.credit_card,
+                      'Saved payment',
+                      sub: 'Visa ·· 4291',
+                      onTap: () => setState(() => _sub = 'payment'),
+                    ),
                     const Divider(height: 1),
-                    profRow(context, Icons.verified_user_outlined, 'Privacy',
-                        sub: 'Location & data sharing',
-                        onTap: () => setState(() => _sub = 'privacy')),
+                    profRow(
+                      context,
+                      Icons.verified_user_outlined,
+                      'Privacy',
+                      sub: 'Location & data sharing',
+                      onTap: () => setState(() => _sub = 'privacy'),
+                    ),
                     const Divider(height: 1),
-                    profRow(context, Icons.help_outline, 'Help & support',
-                        onTap: () => setState(() => _sub = 'help')),
+                    profRow(context, Icons.help_outline, 'Help & support', onTap: () => setState(() => _sub = 'help')),
                   ]),
                   const SizedBox(height: 22),
 
                   sectionCard(context, null, [
-                    profRow(context, Icons.logout, 'Log out', danger: true, onTap: () {
-                      ref.read(authProvider.notifier).signOut();
-                      context.go('/t/auth');
-                    }),
+                    profRow(
+                      context,
+                      Icons.logout,
+                      'Log out',
+                      danger: true,
+                      onTap: () {
+                        ref.read(authProvider.notifier).signOut();
+                        context.go('/t/auth');
+                      },
+                    ),
                   ]),
                 ],
               ),
@@ -530,29 +571,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 // ── shared profile building blocks (also used by the sub-pages) ──
 
 Widget circleButton(IconData icon, VoidCallback onTap) => PressScale(
-      scale: 0.9,
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: Color(0x14103D3A), blurRadius: 8, offset: Offset(0, 2))],
-        ),
-        child: Icon(icon, size: 22, color: SpottoColors.ink),
-      ),
-    );
+  scale: 0.9,
+  onTap: onTap,
+  child: Container(
+    width: 40,
+    height: 40,
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      shape: BoxShape.circle,
+      boxShadow: [BoxShadow(color: Color(0x14103D3A), blurRadius: 8, offset: Offset(0, 2))],
+    ),
+    child: Icon(icon, size: 22, color: SpottoColors.ink),
+  ),
+);
 
 Widget iconTile(IconData icon, {bool danger = false}) => Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        color: danger ? _danger.withValues(alpha: 0.1) : SpottoColors.accentTint,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Icon(icon, size: 18, color: danger ? _danger : SpottoColors.accent),
-    );
+  width: 36,
+  height: 36,
+  decoration: BoxDecoration(
+    color: danger ? _danger.withValues(alpha: 0.1) : SpottoColors.accentTint,
+    borderRadius: BorderRadius.circular(12),
+  ),
+  child: Icon(icon, size: 18, color: danger ? _danger : SpottoColors.accent),
+);
 
 Widget sectionCard(BuildContext context, String? title, List<Widget> children) {
   final text = Theme.of(context).textTheme;
@@ -562,8 +603,10 @@ Widget sectionCard(BuildContext context, String? title, List<Widget> children) {
       if (title != null)
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(title.toUpperCase(),
-              style: text.labelSmall?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6)),
+          child: Text(
+            title.toUpperCase(),
+            style: text.labelSmall?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6),
+          ),
         ),
       Container(
         width: double.infinity,
@@ -572,7 +615,7 @@ Widget sectionCard(BuildContext context, String? title, List<Widget> children) {
           color: Colors.white,
           borderRadius: BorderRadius.circular(24),
           boxShadow: const [
-            BoxShadow(color: Color(0x33103D3A), blurRadius: 14, offset: Offset(0, 2), spreadRadius: -8)
+            BoxShadow(color: Color(0x33103D3A), blurRadius: 14, offset: Offset(0, 2), spreadRadius: -8),
           ],
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
@@ -581,9 +624,16 @@ Widget sectionCard(BuildContext context, String? title, List<Widget> children) {
   );
 }
 
-Widget profField(BuildContext context, String label, TextEditingController controller,
-    IconData icon,
-    {VoidCallback? onChanged, bool obscure = false, bool readOnly = false, String? helperText}) {
+Widget profField(
+  BuildContext context,
+  String label,
+  TextEditingController controller,
+  IconData icon, {
+  VoidCallback? onChanged,
+  bool obscure = false,
+  bool readOnly = false,
+  String? helperText,
+}) {
   final text = Theme.of(context).textTheme;
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -605,8 +655,14 @@ Widget profField(BuildContext context, String label, TextEditingController contr
   );
 }
 
-Widget profRow(BuildContext context, IconData icon, String title,
-    {String? sub, VoidCallback? onTap, bool danger = false}) {
+Widget profRow(
+  BuildContext context,
+  IconData icon,
+  String title, {
+  String? sub,
+  VoidCallback? onTap,
+  bool danger = false,
+}) {
   final text = Theme.of(context).textTheme;
   return PressScale(
     onTap: onTap,
@@ -620,15 +676,12 @@ Widget profRow(BuildContext context, IconData icon, String title,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: text.titleSmall?.copyWith(color: danger ? _danger : null)),
-                if (sub != null)
-                  Text(sub, style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
+                Text(title, style: text.titleSmall?.copyWith(color: danger ? _danger : null)),
+                if (sub != null) Text(sub, style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
               ],
             ),
           ),
-          if (!danger)
-            const Icon(Icons.chevron_right, size: 18, color: SpottoColors.muted),
+          if (!danger) const Icon(Icons.chevron_right, size: 18, color: SpottoColors.muted),
         ],
       ),
     ),

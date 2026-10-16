@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/router.dart';
-import 'core/api/api_client.dart';
 import 'core/api/push_notification_service.dart';
 import 'core/storage/local_store.dart';
 import 'core/theme/theme.dart';
@@ -23,23 +22,22 @@ Future<void> main() async {
     runApp(_StartupErrorApp(error: e));
     return;
   }
-  final api = ApiClient(store);
-  runApp(
-    ProviderScope(
-      // Riverpod 3 auto-retries a failing provider by default. This app
-      // already has its own hand-rolled cache/retry patterns (manual
-      // Timer + ref.invalidateSelf TTLs on the .family FutureProviders) —
-      // stacking Riverpod's own retry on top risks double-retrying and
-      // delaying/masking error surfacing that existing UI wasn't designed
-      // for. Disabled to keep pre-3.0 behavior: fail once, surface it.
-      retry: (retryCount, error) => null,
-      overrides: [localStoreProvider.overrideWithValue(store)],
-      child: const SpottoApp(),
-    ),
+  // Built outside the widget tree so push setup below can share the app's
+  // ApiClient — the one whose 401 handler signs the user out.
+  final container = ProviderContainer(
+    // Riverpod 3 auto-retries a failing provider by default. This app
+    // already has its own hand-rolled cache/retry patterns (manual
+    // Timer + ref.invalidateSelf TTLs on the .family FutureProviders) —
+    // stacking Riverpod's own retry on top risks double-retrying and
+    // delaying/masking error surfacing that existing UI wasn't designed
+    // for. Disabled to keep pre-3.0 behavior: fail once, surface it.
+    retry: (retryCount, error) => null,
+    overrides: [localStoreProvider.overrideWithValue(store)],
   );
+  runApp(UncontrolledProviderScope(container: container, child: const SpottoApp()));
   // After the first frame is scheduled, never before: push setup can fail or
   // hang on iOS builds without the push entitlement and must not block the UI.
-  unawaited(PushNotificationService.instance.initialize(api));
+  unawaited(PushNotificationService.instance.initialize(container.read(apiProvider)));
 }
 
 class SpottoApp extends ConsumerWidget {
@@ -69,10 +67,7 @@ class _StartupErrorApp extends StatelessWidget {
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(
-              "Spotto couldn't start.\n\n$error",
-              textAlign: TextAlign.center,
-            ),
+            child: Text("Spotto couldn't start.\n\n$error", textAlign: TextAlign.center),
           ),
         ),
       ),

@@ -2,9 +2,22 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/palette.dart';
+
+/// Disk-cache key for [url] with the signed `token` query parameter removed
+/// (see server/internal/http/media.go signMediaPath), so the same object keeps
+/// one cache entry across token rotations. Other query parameters stay part
+/// of the key.
+String mediaCacheKey(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null || !uri.queryParameters.containsKey('token')) return url;
+  final rest = Map.of(uri.queryParameters)..remove('token');
+  final base = url.split('?').first;
+  return rest.isEmpty ? base : '$base?${Uri(queryParameters: rest).query}';
+}
 
 /// A "blur-up" progressive image: shows [microThumb] (a tiny inline base64
 /// placeholder, e.g. `data:image/jpeg;base64,...`) instantly with a blur
@@ -85,8 +98,11 @@ class _ProgressiveImageState extends State<ProgressiveImage> {
           AnimatedOpacity(
             opacity: _loaded ? 1 : 0,
             duration: const Duration(milliseconds: 200),
-            child: Image.network(
-              widget.url,
+            // Disk-cached, so a photo seen in a previous session shows
+            // without downloading it again. Keyed without the signed
+            // ?token=, which the server rotates every hour.
+            child: Image(
+              image: CachedNetworkImageProvider(widget.url, cacheKey: mediaCacheKey(widget.url)),
               fit: widget.fit,
               gaplessPlayback: true,
               frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
