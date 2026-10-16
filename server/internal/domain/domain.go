@@ -739,3 +739,17 @@ type PlatformAnalytics struct {
 	TotalClaims   int `json:"totalClaims"`
 	TotalReviews  int `json:"totalReviews"`
 }
+
+// Session is one signed-in device (a user_sessions row). The refresh token
+// itself is never stored or returned.
+type Session struct {
+	ID          string     `json:"id"`
+	UserID      string     `json:"userId"`
+	Client      string     `json:"client"` // app | admin | vendor
+	DeviceLabel string     `json:"deviceLabel"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	LastUsedAt  time.Time  `json:"lastUsedAt"`
+	ExpiresAt   time.Time  `json:"expiresAt"`
+	RevokedAt   *time.Time `json:"revokedAt,omitempty"`
+	RotatedAt   *time.Time `json:"-"`
+}

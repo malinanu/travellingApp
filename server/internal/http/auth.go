@@ -116,8 +116,9 @@ type registerReq struct {
 }
 
 type authResp struct {
-	Token string      `json:"token"`
-	User  domain.User `json:"user"`
+	Token        string      `json:"token"`
+	RefreshToken string      `json:"refreshToken,omitempty"`
+	User         domain.User `json:"user"`
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -255,13 +256,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
-	token, err := s.Tokens.Issue(u)
+	token, refresh, err := s.startSession(r, u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	u.AvatarURL = s.signMediaPath(u.AvatarURL)
-	writeJSON(w, http.StatusCreated, authResp{Token: token, User: u})
+	writeJSON(w, http.StatusCreated, authResp{Token: token, RefreshToken: refresh, User: u})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -302,13 +303,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	token, err := s.Tokens.Issue(u)
+	token, refresh, err := s.startSession(r, u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
 	u.AvatarURL = s.signMediaPath(u.AvatarURL)
-	writeJSON(w, http.StatusOK, authResp{Token: token, User: u})
+	writeJSON(w, http.StatusOK, authResp{Token: token, RefreshToken: refresh, User: u})
 }
 
 // meResp includes vendor status so vendor clients can show the pending gate.
@@ -418,8 +419,9 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	// failing Server.Authenticated's version check on the very next request.
 	u.TokenVersion++
 	// Re-issue a token for THIS session (the one that just proved current
-	// possession) since its old token_version no longer matches.
-	token, err := s.Tokens.Issue(u)
+	// possession) since its old token_version no longer matches, and sign
+	// every other device out.
+	token, err := s.keepOnlyThisSession(r, u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
@@ -736,12 +738,12 @@ func (s *Server) handleAppleAuth(w http.ResponseWriter, r *http.Request) {
 		if !travellerOnly(u) {
 			return
 		}
-		token, err := s.Tokens.Issue(u)
+		token, refresh, err := s.startSession(r, u)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "token generation failed")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": u})
+		writeJSON(w, http.StatusOK, map[string]any{"token": token, "refreshToken": refresh, "user": u})
 		return
 	}
 
@@ -753,12 +755,12 @@ func (s *Server) handleAppleAuth(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			_ = s.Store.LinkUserAppleID(r.Context(), existing.ID, appleID)
-			token, err := s.Tokens.Issue(existing)
+			token, refresh, err := s.startSession(r, existing)
 			if err != nil {
 				writeErr(w, http.StatusInternalServerError, "token generation failed")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": existing})
+			writeJSON(w, http.StatusOK, map[string]any{"token": token, "refreshToken": refresh, "user": existing})
 			return
 		}
 	}
@@ -795,11 +797,11 @@ func (s *Server) handleAppleAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := s.Tokens.Issue(u)
+	token, refresh, err := s.startSession(r, u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "token generation failed")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"token": token, "user": u})
+	writeJSON(w, http.StatusCreated, map[string]any{"token": token, "refreshToken": refresh, "user": u})
 }

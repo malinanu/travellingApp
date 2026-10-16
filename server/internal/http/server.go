@@ -217,7 +217,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Spotto-Client", "X-Spotto-Device"},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
@@ -263,6 +263,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Post("/auth/apple", s.handleAppleAuth)
 	r.Post("/auth/google/mobile", s.handleGoogleMobileAuth)
 	r.Post("/auth/exchange", s.handleAuthExchange)
+	r.Post("/auth/refresh", s.handleRefresh)
+	r.Post("/auth/logout", s.handleLogout)
 
 	// Authenticated (any role).
 	r.Group(func(r chi.Router) {
@@ -282,6 +284,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Post("/me/payment-methods/{id}/default", s.handleSetDefaultPaymentMethod)
 		r.Post("/vendor/subscription/checkout", s.handleVendorSubscriptionCheckout)
 		r.Put("/auth/password", s.handleChangePassword)
+		r.Post("/auth/session/upgrade", s.handleSessionUpgrade)
 		r.Post("/auth/2fa/setup", s.handleTwoFactorSetup)
 		r.Post("/auth/2fa/enable", s.handleTwoFactorEnable)
 		r.Post("/auth/2fa/disable", s.handleTwoFactorDisable)
