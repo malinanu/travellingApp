@@ -332,10 +332,11 @@ function LoginPageInner() {
   const finishSession = (res: AuthResponse, rememberOverride?: boolean) => {
     if (res.user.role !== 'vendor') {
       api.setToken(null);
+      api.logout(res.refreshToken);
       setError('This portal is for business accounts. Use the Spotto app instead.');
       return;
     }
-    api.setToken(res.token, rememberOverride ?? remember);
+    api.setToken(res.token, rememberOverride ?? remember, res.refreshToken);
     router.replace('/dashboard');
   };
 
@@ -380,7 +381,7 @@ function LoginPageInner() {
       }
       // Hold onto the session but don't navigate yet — show the
       // "Application received" confirmation first (registerStep 4).
-      api.setToken(res.token, remember);
+      api.setToken(res.token, remember, res.refreshToken);
       setRegisterStep(4);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');

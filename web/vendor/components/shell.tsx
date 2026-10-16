@@ -356,7 +356,7 @@ function PendingGate({ status }: { status: 'rejected' | 'suspended' }) {
         </p>
         <button
           onClick={() => {
-            api.setToken(null);
+            api.logout();
             router.replace('/login');
           }}
           className="mt-6 inline-flex items-center gap-2 font-extrabold text-accent hover:underline"

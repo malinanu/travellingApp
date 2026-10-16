@@ -29,27 +29,62 @@ export interface Api {
   del<T>(path: string): Promise<T>;
   getToken(): string | null;
   /**
-   * remember (default true) picks localStorage (survives closing the
+   * Stores the access token, plus the session's refresh token when the
+   * server sent one (sign-in responses do; password change/2FA disable keep
+   * the existing one). remember picks localStorage (survives closing the
    * browser) vs sessionStorage (cleared on tab close) — a real "Remember
-   * me" checkbox, not just cosmetic. Every existing call site that omits
-   * it keeps today's always-localStorage behavior.
+   * me" checkbox, not just cosmetic. Omitted, it keeps wherever the session
+   * already lives (localStorage for a new one). null clears both tokens.
    */
-  setToken(token: string | null, remember?: boolean): void;
+  setToken(token: string | null, remember?: boolean, refreshToken?: string): void;
+  /**
+   * Signs this browser out: ends the server session (best effort) and
+   * clears the stored tokens. Pass refreshToken for a session that was
+   * started but never stored (e.g. a sign-in rejected for the wrong role).
+   */
+  logout(refreshToken?: string): void;
   onUnauthorized?: () => void;
 }
 
-export function createApi(tokenKey: string): Api {
-  const getToken = () =>
-    typeof window === 'undefined' ? null : window.localStorage.getItem(tokenKey) ?? window.sessionStorage.getItem(tokenKey);
+type RefreshResult = 'refreshed' | 'rejected' | 'failed';
+
+/** client is sent as X-Spotto-Client, so the server applies the web
+ * session limits and can label the session for admins. */
+export function createApi(tokenKey: string, client: 'admin' | 'vendor' = 'vendor'): Api {
+  const refreshKey = `${tokenKey}_refresh`;
+  const read = (key: string) =>
+    typeof window === 'undefined' ? null : window.localStorage.getItem(key) ?? window.sessionStorage.getItem(key);
+  const getToken = () => read(tokenKey);
+  const getRefresh = () => read(refreshKey);
+  const clientHeaders = { 'X-Spotto-Client': client };
 
   const api: Api = {
     getToken,
-    setToken(token, remember = true) {
+    setToken(token, remember, refreshToken) {
       if (typeof window === 'undefined') return;
-      window.localStorage.removeItem(tokenKey);
-      window.sessionStorage.removeItem(tokenKey);
+      const refresh = refreshToken ?? (token ? getRefresh() : null);
+      const keep = remember ?? window.sessionStorage.getItem(tokenKey) === null;
+      for (const store of [window.localStorage, window.sessionStorage]) {
+        store.removeItem(tokenKey);
+        store.removeItem(refreshKey);
+      }
       if (!token) return;
-      (remember ? window.localStorage : window.sessionStorage).setItem(tokenKey, token);
+      const store = keep ? window.localStorage : window.sessionStorage;
+      store.setItem(tokenKey, token);
+      if (refresh) store.setItem(refreshKey, refresh);
+    },
+    logout(refreshToken) {
+      const refresh = refreshToken ?? getRefresh();
+      if (refresh) {
+        // keepalive: the request still goes out if the page navigates away.
+        fetch(`${API_URL}/auth/logout`, {
+          method: 'POST',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json', ...clientHeaders },
+          body: JSON.stringify({ refreshToken: refresh }),
+        }).catch(() => {});
+      }
+      if (!refreshToken) api.setToken(null);
     },
     get: (path) => request('GET', path),
     post: (path, body) => request('POST', path, body),
@@ -58,8 +93,63 @@ export function createApi(tokenKey: string): Api {
     del: (path) => request('DELETE', path),
   };
 
-  async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const headers: Record<string, string> = {};
+  // Single-flight: requests that hit 401 together share one refresh.
+  let refreshing: Promise<RefreshResult> | null = null;
+
+  async function refreshSession(sentToken: string | null): Promise<RefreshResult> {
+    // Another request (or tab) already refreshed since this one was sent.
+    const current = getToken();
+    if (sentToken && current && current !== sentToken) return 'refreshed';
+    refreshing ??= doRefresh().finally(() => { refreshing = null; });
+    return refreshing;
+  }
+
+  async function doRefresh(): Promise<RefreshResult> {
+    const used = getRefresh();
+    if (!used) return 'rejected';
+    let res: Response;
+    try {
+      res = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...clientHeaders },
+        body: JSON.stringify({ refreshToken: used }),
+      });
+    } catch {
+      return 'failed';
+    }
+    if (res.ok) {
+      const data = (await res.json()) as { token: string; refreshToken: string };
+      api.setToken(data.token, undefined, data.refreshToken);
+      return 'refreshed';
+    }
+    // Another tab sharing this storage rotated the token first.
+    if (getRefresh() !== used && getToken()) return 'refreshed';
+    return res.status === 401 || res.status === 400 ? 'rejected' : 'failed';
+  }
+
+  // A token from before server sessions existed has no refresh token; trade
+  // it for a session once, so this deploy doesn't sign anyone out.
+  let upgradeChecked = false;
+  async function upgradeLegacySession() {
+    upgradeChecked = true;
+    const token = getToken();
+    if (!token || getRefresh()) return;
+    try {
+      const res = await fetch(`${API_URL}/auth/session/upgrade`, {
+        method: 'POST',
+        headers: { ...clientHeaders, Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { token: string; refreshToken: string };
+      api.setToken(data.token, undefined, data.refreshToken);
+    } catch {
+      /* offline: try again on the next page load */
+    }
+  }
+
+  async function request<T>(method: string, path: string, body?: unknown, retried = false): Promise<T> {
+    if (!upgradeChecked && !path.startsWith('/auth/')) await upgradeLegacySession();
+    const headers: Record<string, string> = { ...clientHeaders };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -69,6 +159,13 @@ export function createApi(tokenKey: string): Api {
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+    if (res.status === 401 && !retried && !path.startsWith('/auth/')) {
+      const result = await refreshSession(token);
+      if (result === 'refreshed') return request<T>(method, path, body, true);
+      // Couldn't reach the server to refresh: keep the session and fail
+      // this request like any other network error.
+      if (result === 'failed') throw new ApiError(res.status, 'Your session could not be refreshed. Check your connection and try again.');
+    }
     if (res.status === 401) {
       api.setToken(null);
       api.onUnauthorized?.();

@@ -106,6 +106,8 @@ export interface AdminVendorProfileGrant extends VendorProfileGrant {
 
 export interface AuthResponse {
   token: string;
+  /** The session's refresh token (absent from servers before sessions). */
+  refreshToken?: string;
   user: User;
 }
 

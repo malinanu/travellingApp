@@ -29,7 +29,7 @@ export default function JoinPage() {
       const res = await api.post<AuthResponse>('/auth/register', {
         email, password, name, role: 'vendor', inviteCode: params.code,
       });
-      api.setToken(res.token);
+      api.setToken(res.token, true, res.refreshToken);
       router.replace('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
