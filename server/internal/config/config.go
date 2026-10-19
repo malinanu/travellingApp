@@ -67,6 +67,12 @@ type Config struct {
 	// way as VendorAppURL, but for admin-role accounts (e.g. the
 	// forgot-password reset link must point at the admin app, not vendor's).
 	AdminAppURL string
+	// PublicAPIURL is this API's public base URL (e.g.
+	// https://spottoapi.threelogiq.com). Traveller reset emails link to the
+	// /reset-password page the API serves itself, since travellers have no
+	// web app. Taken from config, never the request's Host header, so a
+	// spoofed Host can't redirect reset links.
+	PublicAPIURL string
 	// SuperAdminEmails lists admin accounts (by email, case-insensitive)
 	// granted the "super-admin" tier — e.g. viewing the cross-admin audit
 	// log. Deliberately env-var-driven rather than a DB role/invite system:
@@ -135,6 +141,7 @@ func Load() Config {
 		GeminiEmbedModel:     getenv("GEMINI_EMBED_MODEL", ""),
 		VendorAppURL:         getenv("VENDOR_APP_URL", "http://localhost:3000"),
 		AdminAppURL:          getenv("ADMIN_APP_URL", "http://localhost:3001"),
+		PublicAPIURL:         strings.TrimRight(getenv("PUBLIC_API_URL", ""), "/"),
 		SuperAdminEmails:     splitNonEmpty(getenv("SUPER_ADMIN_EMAILS", "")),
 		FirebaseServiceAccount: getenv("FIREBASE_SERVICE_ACCOUNT_JSON", ""),
 

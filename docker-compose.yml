@@ -17,6 +17,7 @@ services:
       # forwarded here, so Google sign-in/transactional email/live holiday
       # lookups have silently no-op'd on this deployment until now.
       VENDOR_APP_URL: ${VENDOR_APP_URL}
+      PUBLIC_API_URL: ${PUBLIC_API_URL}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
       SMTP_USER: ${SMTP_USER}

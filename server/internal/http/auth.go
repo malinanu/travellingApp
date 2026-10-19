@@ -1,11 +1,14 @@
 ﻿package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -280,6 +283,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u, err := s.Store.UserByEmail(r.Context(), email)
+	if err != nil && !errors.Is(err, postgres.ErrNotFound) {
+		// A lookup failure isn't a wrong password; don't report it as one.
+		log.Printf("login lookup email=%q: %v", email, err)
+		writeErr(w, http.StatusInternalServerError, "Sign-in is temporarily unavailable (account lookup failed). Please try again later.")
+		return
+	}
 	hash := dummyPasswordHash
 	if err == nil {
 		hash = u.PasswordHash
@@ -527,8 +536,8 @@ func sha256Hex(raw string) string {
 // differences. If it does match, a reset email is queued (see
 // internal/jobs) rather than sent inline, so this handler doesn't block
 // on SMTP latency. The emailed link's host is picked by the matched
-// user's role (VendorAppURL vs AdminAppURL) â€” travellers don't have a
-// reset UI yet, so they fall back to the vendor app's like before.
+// user's role: AdminAppURL for admins, the API's own /reset-password page
+// (PublicAPIURL, see reset_page.go) for travellers, VendorAppURL otherwise.
 func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email string `json:"email"`
@@ -547,11 +556,15 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	if u, err := s.Store.UserByEmail(r.Context(), email); err == nil {
 		raw := newResetToken()
 		if err := s.Store.CreatePasswordResetToken(r.Context(), newID("prt"), u.ID, hashResetToken(raw), time.Now().Add(1*time.Hour)); err == nil {
-			appURL := s.VendorAppURL
-			if u.Role == domain.RoleAdmin {
-				appURL = s.AdminAppURL
+			link := s.VendorAppURL + "/login?resetToken=" + raw
+			switch {
+			case u.Role == domain.RoleAdmin:
+				link = s.AdminAppURL + "/login?resetToken=" + raw
+			case u.Role == domain.RoleTraveller && s.PublicAPIURL != "":
+				link = s.PublicAPIURL + "/reset-password?token=" + raw
+			case u.Role == domain.RoleTraveller:
+				log.Printf("forgot password: PUBLIC_API_URL unset, sending traveller %s the vendor-app reset link", u.ID)
 			}
-			link := appURL + "/login?resetToken=" + raw
 			to, body := u.Email, resetEmailHTML(link)
 			s.Jobs.Enqueue(func() { s.Mail.Send(to, "Reset your Spotto password", body) })
 		}
@@ -577,42 +590,50 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Token == "" {
-		writeErr(w, http.StatusBadRequest, "invalid or expired reset link")
-		return
-	}
-	rt, err := s.Store.PasswordResetTokenByHash(r.Context(), hashResetToken(req.Token))
-	if err != nil || rt.UsedAt != nil || time.Now().After(rt.ExpiresAt) {
-		writeErr(w, http.StatusBadRequest, "invalid or expired reset link")
-		return
-	}
-	u, err := s.Store.UserByID(r.Context(), rt.UserID)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
-		return
-	}
-	if len(req.NewPassword) < 10 {
-		writeErr(w, http.StatusBadRequest, "new password must be at least 10 characters")
-		return
-	}
-	if isWeakPassword(req.NewPassword, u.Email) {
-		writeErr(w, http.StatusBadRequest, "password is too weak â€” avoid all-digit, all-repeated, or email-derived passwords")
-		return
-	}
-	hash, err := auth.HashPassword(req.NewPassword)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
-		return
-	}
-	if err := s.Store.UpdateUserPassword(r.Context(), u.ID, hash); err != nil {
-		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
-		return
-	}
-	if err := s.Store.MarkPasswordResetTokenUsed(r.Context(), rt.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
+	if status, msg := s.resetPassword(r.Context(), req.Token, req.NewPassword); status != http.StatusOK {
+		writeErr(w, status, msg)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// resetPassword applies a reset token. It returns http.StatusOK on success,
+// otherwise the status and user-facing message to report. Shared by the
+// JSON endpoint and the traveller reset page (reset_page.go).
+func (s *Server) resetPassword(ctx context.Context, token, newPassword string) (int, string) {
+	const unexpected = "An unexpected error occurred. Please try again later."
+	if token == "" {
+		return http.StatusBadRequest, "invalid or expired reset link"
+	}
+	rt, err := s.Store.PasswordResetTokenByHash(ctx, hashResetToken(token))
+	if err != nil || rt.UsedAt != nil || time.Now().After(rt.ExpiresAt) {
+		return http.StatusBadRequest, "invalid or expired reset link"
+	}
+	u, err := s.Store.UserByID(ctx, rt.UserID)
+	if err != nil {
+		log.Printf("reset password user=%s: %v", rt.UserID, err)
+		return http.StatusInternalServerError, unexpected
+	}
+	if len(newPassword) < 10 {
+		return http.StatusBadRequest, "new password must be at least 10 characters"
+	}
+	if isWeakPassword(newPassword, u.Email) {
+		return http.StatusBadRequest, "password is too weak — avoid all-digit, all-repeated, or email-derived passwords"
+	}
+	hash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		log.Printf("reset password hash user=%s: %v", u.ID, err)
+		return http.StatusInternalServerError, unexpected
+	}
+	if err := s.Store.UpdateUserPassword(ctx, u.ID, hash); err != nil {
+		log.Printf("reset password update user=%s: %v", u.ID, err)
+		return http.StatusInternalServerError, unexpected
+	}
+	if err := s.Store.MarkPasswordResetTokenUsed(ctx, rt.ID); err != nil {
+		log.Printf("reset password mark used token=%s: %v", rt.ID, err)
+		return http.StatusInternalServerError, unexpected
+	}
+	return http.StatusOK, ""
 }
 
 // requireVendor loads the caller's vendor, or writes an error and returns false.

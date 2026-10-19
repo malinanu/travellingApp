@@ -62,7 +62,7 @@ Two different kinds of "optional" here, by how they take effect:
   make the map picker work — the vendor image needs an actual rebuild to
   pick it up.
 - **Runtime** (everything else — `GOOGLE_CALENDAR_API_KEY`, the SMTP vars,
-  the Google OAuth vars, `VENDOR_APP_URL`): read by the `api` container each
+  the Google OAuth vars, `VENDOR_APP_URL`, `PUBLIC_API_URL`): read by the `api` container each
   time it starts — a plain restart after changing these is enough.
 
 If your Postgres runs as another container on the same Docker host (not via
