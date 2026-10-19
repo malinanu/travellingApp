@@ -15,6 +15,7 @@ import '../../../core/widgets/press_scale.dart';
 import '../../../data/models/inspiration.dart';
 import '../../../data/repositories/inspiration_repository.dart';
 import 'board_widgets.dart';
+import 'nearby_alerts_ui.dart';
 
 class InspirationBoardScreen extends ConsumerStatefulWidget {
   /// A link to add straight away (from Share → Spotto).
@@ -436,6 +437,8 @@ class SavedPlacesTab extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
+          const NearbyAlertsCard(),
+          const SizedBox(height: 14),
           BoardPlacesMap(places: refs, height: 200),
           for (final entry in groups.entries) ...[
             Padding(

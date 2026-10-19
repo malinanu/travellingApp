@@ -26,6 +26,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>If you turn on nearby alerts, Spotto lets you know when you're close to a place you saved, even when the app is closed. Your phone does the checking; your location isn't sent to Spotto for this.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Spotto uses your location to show nearby travellers who've also opted in to sharing theirs, sort spots by distance, get local weather from your Local Guide, and confirm check-ins.</string>
 	<key>GMSApiKey</key>
