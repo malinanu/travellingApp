@@ -23,6 +23,7 @@ import (
 	"github.com/spotto/server/internal/media"
 	"github.com/spotto/server/internal/googleplaces"
 	"github.com/spotto/server/internal/placedetails"
+	"github.com/spotto/server/internal/reelextract"
 	"github.com/spotto/server/internal/store/postgres"
 	"github.com/spotto/server/internal/weather"
 )
@@ -79,9 +80,10 @@ type Server struct {
 	PlaceDetailsCache *placedetails.Cache
 	// Inspiration Board extraction (inspiration_worker.go). Places is nil
 	// when no Places key is configured: places then stay unresolved.
-	Places                *googleplaces.Client
-	GeminiVideoModel      string
-	YtdlpCookiesFile      string
+	Places *googleplaces.Client
+	// Reels reads saved video links (internal/reelextract). In-process
+	// today; an HTTP client for a separate extraction service can replace it.
+	Reels                 reelextract.Interface
 	InspirationDailyLimit int
 	// GoogleOAuth is nil when GOOGLE_CLIENT_ID/SECRET aren't configured â€”
 	// handleGoogleLogin/handleGoogleCallback report 501 in that case rather
@@ -142,8 +144,6 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		// Same key as GoogleCalendarAPIKey â€” see its doc comment.
 		GooglePlacesAPIKey: cfg.GoogleCalendarAPIKey,
 		PlaceDetailsCache:  placedetails.NewCache(),
-		GeminiVideoModel:      cfg.GeminiVideoModel,
-		YtdlpCookiesFile:      cfg.YtdlpCookiesFile,
 		InspirationDailyLimit: cfg.InspirationDailyLimit,
 		loginLimit:         newLoginLimiter(5, 15*time.Minute),
 		totpLimit:          newLoginLimiter(5, 15*time.Minute),
@@ -173,6 +173,14 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 			},
 			Endpoint: google.Endpoint,
 		}
+	}
+	s.Reels = &reelextract.Extractor{
+		Gemini:      s.Gemini,
+		VideoModel:  cfg.GeminiVideoModel,
+		CookiesFile: cfg.YtdlpCookiesFile,
+		OnAICall: func(ctx context.Context, kind, model string, usage *gemini.Usage, start time.Time, err error) {
+			s.recordAIUsage(ctx, aiFeatureInspiration, kind, model, 1, usage, start, err)
+		},
 	}
 	if cfg.GooglePlacesAPIKey != "" {
 		s.Places = googleplaces.New(cfg.GooglePlacesAPIKey)

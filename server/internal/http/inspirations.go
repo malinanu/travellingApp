@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
+	"github.com/spotto/server/internal/reelextract"
 	"github.com/spotto/server/internal/store/postgres"
 )
 
@@ -145,7 +146,7 @@ func (s *Server) handleAddInspiration(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	canonical, platform, err := canonicalLink(req.URL)
+	canonical, platform, err := reelextract.Canonical(req.URL)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "Paste a link to an Instagram reel or post, a TikTok video, or a YouTube video.")
 		return

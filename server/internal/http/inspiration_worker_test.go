@@ -10,38 +10,11 @@ import (
 	"time"
 
 	"github.com/spotto/server/internal/domain"
+	"github.com/spotto/server/internal/gemini"
 	"github.com/spotto/server/internal/googleplaces"
+	"github.com/spotto/server/internal/reelextract"
 	"github.com/spotto/server/internal/store/postgres"
 )
-
-func TestCanonicalLink(t *testing.T) {
-	cases := []struct {
-		in, want, platform string
-	}{
-		{"https://www.instagram.com/reels/DbQSwgwMM_n/", "https://www.instagram.com/reel/DbQSwgwMM_n/", "instagram"},
-		{"https://instagram.com/reel/DbQSwgwMM_n/?igsh=abc&utm_source=ig_web", "https://www.instagram.com/reel/DbQSwgwMM_n/", "instagram"},
-		{"instagram.com/p/Cx1y2Z3/", "https://www.instagram.com/p/Cx1y2Z3/", "instagram"},
-		{"https://www.instagram.com/some.user/reel/Abc_12-3/", "https://www.instagram.com/reel/Abc_12-3/", "instagram"},
-		{"https://www.tiktok.com/@phuket.eats/video/7312345678901234567?is_from_webapp=1", "https://www.tiktok.com/@phuket.eats/video/7312345678901234567", "tiktok"},
-		{"https://vm.tiktok.com/ZMabc123/", "https://vm.tiktok.com/ZMabc123/", "tiktok"},
-		{"https://youtube.com/shorts/aBcDeFgHiJk?si=x", "https://www.youtube.com/shorts/aBcDeFgHiJk", "youtube"},
-		{"https://youtu.be/aBcDeFgHiJk", "https://www.youtube.com/watch?v=aBcDeFgHiJk", "youtube"},
-	}
-	for _, c := range cases {
-		got, platform, err := canonicalLink(c.in)
-		if err != nil || got != c.want || platform != c.platform {
-			t.Errorf("canonicalLink(%q) = %q, %q, %v; want %q, %q", c.in, got, platform, err, c.want, c.platform)
-		}
-	}
-	for _, bad := range []string{
-		"", "https://instagram.com/", "https://instagram.com.evil.example/reel/abc/",
-		"ftp://instagram.com/reel/abc/", "https://example.com/reel/abc/", "https://www.instagram.com/explore/",
-	} {
-		if got, _, err := canonicalLink(bad); err == nil {
-			t.Errorf("canonicalLink(%q) = %q, want an error", bad, got)
-		}
-	}
-}
 
 func TestNameSimilarity(t *testing.T) {
 	cases := []struct {
@@ -79,8 +52,8 @@ func TestExtractionPushText(t *testing.T) {
 	if title, body := extractionPushText(job); title != "14 places found" || body == "" {
 		t.Errorf("push text = %q / %q", title, body)
 	}
-	job = domain.LinkExtraction{Status: domain.ExtractionFailed, Error: msgCantOpen}
-	if title, body := extractionPushText(job); title != "We couldn't read that link" || body != msgCantOpen {
+	job = domain.LinkExtraction{Status: domain.ExtractionFailed, Error: reelextract.MsgCantOpen}
+	if title, body := extractionPushText(job); title != "We couldn't read that link" || body != reelextract.MsgCantOpen {
 		t.Errorf("failed push text = %q / %q", title, body)
 	}
 }
@@ -192,14 +165,14 @@ func TestExtractionQueue(t *testing.T) {
 		t.Fatalf("claimed = %+v", claimed)
 	}
 
-	if err := store.RetryExtractionLater(ctx, url, msgCantOpen, time.Hour); err != nil {
+	if err := store.RetryExtractionLater(ctx, url, reelextract.MsgCantOpen, time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	if e, _ := store.LinkExtraction(ctx, url); e.Status != domain.ExtractionPending || e.Error != msgCantOpen {
+	if e, _ := store.LinkExtraction(ctx, url); e.Status != domain.ExtractionPending || e.Error != reelextract.MsgCantOpen {
 		t.Errorf("after retry later = %+v", e)
 	}
 
-	done := domain.LinkExtraction{CanonicalURL: url, Status: domain.ExtractionFailed, Error: msgCantOpen}
+	done := domain.LinkExtraction{CanonicalURL: url, Status: domain.ExtractionFailed, Error: reelextract.MsgCantOpen}
 	if err := store.FinishExtraction(ctx, done); err != nil {
 		t.Fatal(err)
 	}
@@ -208,5 +181,52 @@ func TestExtractionQueue(t *testing.T) {
 	}
 	if e, _ := store.LinkExtraction(ctx, url); e.Status != domain.ExtractionPending || e.Error != "" || e.Attempts != 0 {
 		t.Errorf("after requeue = %+v", e)
+	}
+}
+
+// fakeReels stands in for the extraction service.
+type fakeReels struct {
+	res reelextract.Result
+	err error
+}
+
+func (f fakeReels) Extract(context.Context, string, string) (reelextract.Result, error) {
+	return f.res, f.err
+}
+
+// The worker turns the extractor's outcome into the job's status: places
+// (done), caption-only places (partial), a retryable failure (back in the
+// queue) and a final one (failed), and records what the job cost.
+func TestProcessExtractionOutcomes(t *testing.T) {
+	store := connectTestStore(t)
+	ctx := context.Background()
+	run := func(reels reelextract.Interface) domain.LinkExtraction {
+		t.Helper()
+		url := "https://www.instagram.com/reel/" + newID("w") + "/"
+		if err := store.EnsureLinkExtraction(ctx, url, "instagram"); err != nil {
+			t.Fatal(err)
+		}
+		job, _ := store.LinkExtraction(ctx, url)
+		job.Attempts = 1
+		(&Server{Store: store, Reels: reels}).processExtraction(ctx, job)
+		out, err := store.LinkExtraction(ctx, url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	two := []gemini.VideoPlace{{Name: "Big Buddha", Kind: "see"}, {Name: "Kata Noodle House", Kind: "eat"}}
+	if e := run(fakeReels{res: reelextract.Result{Author: "itsemandty", Places: two, VideoBytes: 3 << 20, VideoSecs: 18}}); e.Status != domain.ExtractionDone || len(e.Results) != 2 || e.Author != "itsemandty" {
+		t.Errorf("done: %+v", e)
+	}
+	if e := run(fakeReels{res: reelextract.Result{Places: two[:1], PartialReason: reelextract.MsgCaptionOnly}}); e.Status != domain.ExtractionPartial || e.Error != reelextract.MsgCaptionOnly {
+		t.Errorf("partial: %+v", e)
+	}
+	if e := run(fakeReels{err: &reelextract.Error{Message: reelextract.MsgCantOpen, Retryable: true}}); e.Status != domain.ExtractionPending || e.Error != reelextract.MsgCantOpen {
+		t.Errorf("retryable: %+v", e)
+	}
+	if e := run(fakeReels{err: &reelextract.Error{Message: reelextract.MsgNothingToRead}}); e.Status != domain.ExtractionFailed || e.Error != reelextract.MsgNothingToRead {
+		t.Errorf("final: %+v", e)
 	}
 }
