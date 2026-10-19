@@ -21,6 +21,7 @@ import '../mock/trip_catalog.dart';
 import '../models/models.dart';
 import '../vendor_categories.dart';
 import 'inspiration_repository.dart';
+import 'nearby_alerts_repository.dart';
 
 /// Parses a string-list field from server JSON that may still be in an
 /// older single-string shape (e.g. travelStyle before it became
@@ -312,6 +313,7 @@ class AuthNotifier extends Notifier<bool> {
     store.remove(StoreKeys.group);
     store.remove(StoreKeys.me);
     store.remove(StoreKeys.quest);
+    ref.read(nearbyAlertsProvider.notifier).disable();
     store.remove(StoreKeys.boardLinks);
     store.remove(StoreKeys.savedPlaces);
     store.remove(StoreKeys.favorites);

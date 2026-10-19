@@ -1,6 +1,8 @@
 import Flutter
 import GoogleMaps
 import UIKit
+import UserNotifications
+import native_geofence
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -21,6 +23,13 @@ import UIKit
       mapsApiKey = configured
     }
     GMSServices.provideAPIKey(mapsApiKey)
+    // Nearby saved-place alerts: the geofence callback runs in a background
+    // engine, which needs the app's plugins (e.g. local notifications).
+    NativeGeofencePlugin.setPluginRegistrantCallback { registry in
+      GeneratedPluginRegistrant.register(with: registry)
+    }
+    // Show local notifications while the app is in the foreground too.
+    UNUserNotificationCenter.current().delegate = self
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

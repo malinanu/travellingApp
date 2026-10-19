@@ -2,6 +2,8 @@
 // Payment is a deferred "coming soon" stub (needs a payment processor
 // decision); Help is legitimate static content.
 
+import '../../../data/repositories/nearby_alerts_repository.dart';
+import '../inspiration/nearby_alerts_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -564,6 +566,16 @@ class _PrivacyPageState extends ConsumerState<PrivacyPage> {
             value: ref.watch(meProvider)?['shareLocation'] as bool? ?? false,
             onChanged: _setShareLocation,
             busy: _locationBusy,
+          ),
+          const Divider(height: 1),
+          toggleRow(
+            'Nearby saved-place alerts',
+            "A heads-up when you're close to a place you saved",
+            Icons.notifications_active_outlined,
+            value: ref.watch(nearbyAlertsProvider).enabled,
+            onChanged: (on) => on
+                ? enableNearbyAlertsFlow(context, ref)
+                : ref.read(nearbyAlertsProvider.notifier).disable(),
           ),
           const Divider(height: 1),
           toggleRow('Visible to group', 'Appear in the group member list',

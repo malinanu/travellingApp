@@ -10,6 +10,7 @@ import 'core/storage/local_store.dart';
 import 'core/theme/theme.dart';
 import 'core/utils/analytics_service.dart';
 import 'data/repositories/inspiration_repository.dart';
+import 'data/repositories/nearby_alerts_repository.dart';
 import 'data/repositories/repositories.dart';
 
 Future<void> main() async {
@@ -47,6 +48,8 @@ Future<void> main() async {
     },
   ));
   IncomingLinks.start(container);
+  unawaited(IncomingLinks.startNearbyAlerts(container));
+  container.read(nearbyAlertsProvider); // keeps watched regions in step with saved places
 }
 
 class SpottoApp extends ConsumerWidget {
