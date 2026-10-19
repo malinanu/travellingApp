@@ -20,6 +20,7 @@ import '../mock/places.dart' as seed;
 import '../mock/trip_catalog.dart';
 import '../models/models.dart';
 import '../vendor_categories.dart';
+import 'inspiration_repository.dart';
 
 /// Parses a string-list field from server JSON that may still be in an
 /// older single-string shape (e.g. travelStyle before it became
@@ -311,6 +312,12 @@ class AuthNotifier extends Notifier<bool> {
     store.remove(StoreKeys.group);
     store.remove(StoreKeys.me);
     store.remove(StoreKeys.quest);
+    store.remove(StoreKeys.boardLinks);
+    store.remove(StoreKeys.savedPlaces);
+    store.remove(StoreKeys.favorites);
+    ref.invalidate(boardLinksProvider);
+    ref.invalidate(savedPlacesProvider);
+    ref.invalidate(favoritesProvider);
     ref.invalidate(prefsProvider);
     ref.invalidate(claimsProvider);
     ref.invalidate(tripProvider);
@@ -847,6 +854,23 @@ class TripNotifier extends Notifier<Trip> {
         time: t,
         by: 'me',
         custom: CustomStopInfo(name: name),
+      ),
+    );
+  }
+
+  /// A place found outside the catalog (e.g. from a reel), with its real
+  /// coordinates rather than CustomStopInfo's default position.
+  void addGeoStop(int dayIndex, {required String name, required double lat, required double lng, String type = 'Saved place', String icon = 'MapPin'}) {
+    final stops = state.days[dayIndex].stops;
+    final t = stops.isEmpty ? 9 * 60 : (stops.last.time + 90).clamp(0, 23 * 60 + 30);
+    addStop(
+      dayIndex,
+      TripStop(
+        id: tripNewId('s'),
+        placeId: '',
+        time: t,
+        by: 'me',
+        custom: CustomStopInfo(name: name, type: type, icon: icon, lat: lat, lng: lng),
       ),
     );
   }
@@ -1462,8 +1486,9 @@ final dailyQuestProvider = FutureProvider<DailyQuest>((ref) async {
   }
 });
 
-/// Bookmarked / favorited places for the traveller — local-only (no server
-/// endpoint yet), persisted so bookmarks survive an app restart.
+/// Bookmarked catalog places (map hearts, the Favorites filter). The source
+/// of truth is the server's saved places (savedPlacesProvider); this keeps a
+/// quick local set of their place ids so the map can render instantly.
 class FavoritesNotifier extends Notifier<Set<String>> {
   @override
   Set<String> build() {
@@ -1471,13 +1496,34 @@ class FavoritesNotifier extends Notifier<Set<String>> {
     return saved?.cast<String>().toSet() ?? {};
   }
 
-  void toggle(String placeId) {
-    if (state.contains(placeId)) {
-      state = state.where((id) => id != placeId).toSet();
-    } else {
-      state = {...state, placeId};
+  /// Bookmarks or un-bookmarks a place, optimistically, then on the server.
+  Future<void> toggle(String placeId) async {
+    final saved = ref.read(savedPlacesProvider.notifier);
+    final wasSaved = state.contains(placeId);
+    _write(wasSaved ? state.where((id) => id != placeId).toSet() : {...state, placeId});
+    try {
+      if (wasSaved) {
+        final entry = saved.forCatalogPlace(placeId);
+        if (entry != null) await saved.remove(entry.id);
+      } else {
+        await saved.saveCatalogPlace(placeId);
+      }
+    } catch (e) {
+      _write(wasSaved ? {...state, placeId} : state.where((id) => id != placeId).toSet());
+      debugPrint('favorite toggle failed: ${ApiClient.errorMessage(e)}');
     }
-    ref.read(localStoreProvider).setJsonList(StoreKeys.favorites, state.toList());
+  }
+
+  /// Mirrors the server's saved catalog places. Until older local bookmarks
+  /// have been uploaded once, they're kept alongside.
+  void syncFromServer(Set<String> placeIds) {
+    final store = ref.read(localStoreProvider);
+    _write(store.getBool(StoreKeys.favoritesUploaded) ? placeIds : {...state, ...placeIds});
+  }
+
+  void _write(Set<String> ids) {
+    state = ids;
+    ref.read(localStoreProvider).setJsonList(StoreKeys.favorites, ids.toList());
   }
 }
 
@@ -1527,16 +1573,6 @@ final placeDetailsProvider = FutureProvider.family<Place, String>((ref, placeId)
   final res = await ref.read(apiProvider).dio.get('/places/$placeId');
   return Place.fromJson((res.data as Map).cast<String, dynamic>());
 });
-
-/// Pulls the real places mentioned in an Instagram inspiration link's
-/// caption — see POST /trip/inspiration/extract-places and
-/// [ExtractedPlace]. Throws on network/server failure; caller shows a
-/// friendly "couldn't read that link" state.
-Future<List<ExtractedPlace>> extractPlacesFromLink(WidgetRef ref, String url) async {
-  final res = await ref.read(apiProvider).dio.post('/trip/inspiration/extract-places', data: {'url': url});
-  final list = (res.data as Map)['places'] as List? ?? [];
-  return list.map((e) => ExtractedPlace.fromJson((e as Map).cast<String, dynamic>())).toList();
-}
 
 /// Submits (or edits) the current traveller's review for a place, then
 /// refreshes [placeReviewsProvider] for that place.

@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/router.dart';
 import 'core/api/push_notification_service.dart';
+import 'core/share/incoming_links.dart';
 import 'core/storage/local_store.dart';
 import 'core/theme/theme.dart';
 import 'core/utils/analytics_service.dart';
+import 'data/repositories/inspiration_repository.dart';
 import 'data/repositories/repositories.dart';
 
 Future<void> main() async {
@@ -37,7 +39,14 @@ Future<void> main() async {
   runApp(UncontrolledProviderScope(container: container, child: const SpottoApp()));
   // After the first frame is scheduled, never before: push setup can fail or
   // hang on iOS builds without the push entitlement and must not block the UI.
-  unawaited(PushNotificationService.instance.initialize(container.read(apiProvider)));
+  unawaited(PushNotificationService.instance.initialize(
+    container.read(apiProvider),
+    onOpen: (data) => IncomingLinks.openNotification(container, data),
+    onForeground: (data) {
+      if (data['type'] == 'inspiration_ready') container.read(boardLinksProvider.notifier).refresh();
+    },
+  ));
+  IncomingLinks.start(container);
 }
 
 class SpottoApp extends ConsumerWidget {

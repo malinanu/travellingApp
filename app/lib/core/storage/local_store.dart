@@ -24,6 +24,10 @@ abstract final class StoreKeys {
   static const weatherPins = 'spotto_weather_pins'; // saved Weather-screen locations
   static const checkIns = 'spotto_checkins'; // placeIds checked into (artisan quest)
   static const favorites = 'spotto_favorites'; // bookmarked placeIds
+  static const favoritesUploaded = 'spotto_favorites_uploaded'; // local bookmarks sent to /me/saved-places once
+  static const boardLinks = 'spotto_board_links'; // last /me/inspirations response
+  static const boardMigrated = 'spotto_board_migrated'; // trip-only inspiration links uploaded once
+  static const savedPlaces = 'spotto_saved_places'; // last /me/saved-places response
   static const categories = 'spotto_categories'; // fetched dynamic categories
   static const categoriesAt = 'spotto_categories_at'; // when categories were last fetched (ms epoch)
   static const lastPosition = 'spotto_last_pos'; // {lat, lng, at} of the last device fix
