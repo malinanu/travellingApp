@@ -37,7 +37,7 @@ type VideoPlaces struct {
 }
 
 // MaxVideoPlaces caps how many places one reel can return.
-const MaxVideoPlaces = 25
+const MaxVideoPlaces = 50
 
 // inlineVideoLimit keeps a base64-encoded video under the 20 MB request cap;
 // anything bigger goes through the Files API.
@@ -48,6 +48,8 @@ specific, named place the video recommends or shows: restaurants, cafes, street-
 bars, hotels, beaches, viewpoints, temples, markets, attractions, activities.
 
 Use all three sources: text shown on screen, what is said, and the caption.
+Captions often list many more places than the video shows ("50 best things to do in …"):
+include every named place from the caption too, even if it never appears in the video.
 - Only real places with a proper name. Skip generic things like "a beach" or "street food".
 - Never invent a place. If a name is only partly readable, give your best reading and lower the confidence.
 - area is the neighbourhood or beach (e.g. "Kata Beach"); city and country are where the place is.
@@ -56,7 +58,7 @@ Use all three sources: text shown on screen, what is said, and the caption.
 - atSec is the second in the video where the place first appears (omit for caption-only).
 - confidence is 0 to 1.
 - regionHint is the main city/region the reel is about, e.g. "Phuket, Thailand".
-List places in the order the video shows them, at most 25.`
+List places in the order the video shows them, then the caption-only ones, at most 50.`
 
 // placesSchema is the structured-output schema for VideoPlaces.
 var placesSchema = map[string]any{

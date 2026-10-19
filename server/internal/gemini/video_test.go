@@ -27,7 +27,7 @@ func TestParseVideoPlaces(t *testing.T) {
 	}
 
 	var many []string
-	for i := 0; i < 40; i++ {
+	for i := 0; i < MaxVideoPlaces+15; i++ {
 		many = append(many, fmt.Sprintf(`{"name":"Place %d","kind":"see","evidence":"caption","confidence":0.5}`, i))
 	}
 	got, err = ParseVideoPlaces(`{"places":[` + strings.Join(many, ",") + `]}`)

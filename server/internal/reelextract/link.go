@@ -8,9 +8,10 @@ import (
 )
 
 var (
-	igPathRe      = regexp.MustCompile(`^/(?:[\w.]+/)?(reels?|p|tv)/([\w-]+)`)
-	tiktokVideoRe = regexp.MustCompile(`^/(@[\w.-]+)/(?:video|photo)/(\d+)`)
-	ytShortsRe    = regexp.MustCompile(`^/(?:shorts|live)/([\w-]{6,})`)
+	igPathRe       = regexp.MustCompile(`^/(?:[\w.]+/)?(reels?|p|tv)/([\w-]+)`)
+	tiktokPostRe   = regexp.MustCompile(`^/(?:@[\w.-]*/)?(video|photo)/(\d+)`)
+	tiktokMobileRe = regexp.MustCompile(`^/v/(\d+)(?:\.html)?$`)
+	ytShortsRe     = regexp.MustCompile(`^/(?:shorts|live)/([\w-]{6,})`)
 )
 
 // ErrUnsupportedLink means the link isn't a video on a supported platform.
@@ -44,11 +45,15 @@ func Canonical(raw string) (canonical, platform string, err error) {
 		}
 		return "https://www.instagram.com/" + kind + "/" + m[2] + "/", "instagram", nil
 	case host == "tiktok.com":
-		m := tiktokVideoRe.FindStringSubmatch(u.Path)
-		if m == nil {
-			return "", "", ErrUnsupportedLink
+		// The username is left out: it can change, the post id can't, and
+		// yt-dlp accepts tiktok.com/@/video/{id}.
+		if m := tiktokPostRe.FindStringSubmatch(u.Path); m != nil {
+			return "https://www.tiktok.com/@/" + m[1] + "/" + m[2], "tiktok", nil
 		}
-		return "https://www.tiktok.com/" + m[1] + "/video/" + m[2], "tiktok", nil
+		if m := tiktokMobileRe.FindStringSubmatch(u.Path); m != nil {
+			return "https://www.tiktok.com/@/video/" + m[1], "tiktok", nil
+		}
+		return "", "", ErrUnsupportedLink
 	case host == "vm.tiktok.com" || host == "vt.tiktok.com":
 		code := strings.Trim(u.Path, "/")
 		if code == "" || strings.Contains(code, "/") {

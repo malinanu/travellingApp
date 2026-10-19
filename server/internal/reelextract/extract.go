@@ -67,11 +67,13 @@ func (e *Error) Unwrap() error { return e.Err }
 
 // Messages travellers see on a link card.
 const (
-	MsgNotConfigured = "Reading reels isn't set up on this server yet."
-	MsgCantOpen      = "We couldn't open this link. It may be private, deleted, or blocked from downloading."
-	MsgNothingToRead = "We couldn't watch this video and it has no caption to read."
-	MsgCaptionOnly   = "We couldn't watch the video, so these places come from the caption only."
-	MsgAnalysisFail  = "We couldn't analyse this video right now. Tap Retry to try again."
+	MsgNotConfigured       = "Reading reels isn't set up on this server yet."
+	MsgCantOpen            = "We couldn't open this link. It may be private, deleted, or blocked from downloading."
+	MsgNothingToRead       = "We couldn't watch this video and it has no caption to read."
+	MsgCaptionOnly         = "We couldn't watch the video, so these places come from the caption only."
+	MsgPhotoPost           = "This is a photo post, so these places come from its caption only."
+	MsgPhotoPostUnreadable = "We can't read TikTok photo posts yet. Try a video post instead."
+	MsgAnalysisFail        = "We couldn't analyse this video right now. Tap Retry to try again."
 )
 
 const (
@@ -109,15 +111,21 @@ func (x *Extractor) Extract(ctx context.Context, link, platform string) (Result,
 		return Result{}, &Error{Message: MsgNotConfigured, Err: errors.New("yt-dlp not installed")}
 	}
 
+	// TikTok photo carousels have no video; yt-dlp may still read their caption.
+	photoPost := platform == "tiktok" && strings.Contains(link, "/photo/")
 	meta, err := x.metadata(ctx, link)
 	if err != nil {
-		return Result{}, &Error{Message: MsgCantOpen, Retryable: true, Err: err}
+		msg := MsgCantOpen
+		if photoPost {
+			msg = MsgPhotoPostUnreadable
+		}
+		return Result{}, &Error{Message: msg, Retryable: !photoPost, Err: err}
 	}
 	res := Result{Caption: meta.caption(), Author: meta.author(), ThumbnailURL: meta.Thumbnail, VideoSecs: meta.Duration}
 
 	var video *gemini.Video
 	var downloadErr error
-	if meta.Duration <= maxVideoSecs {
+	if !photoPost && meta.Duration <= maxVideoSecs {
 		video, downloadErr = x.download(ctx, link)
 		if video != nil {
 			res.VideoBytes = int64(len(video.Data))
@@ -143,6 +151,9 @@ func (x *Extractor) Extract(ctx context.Context, link, platform string) (Result,
 	res.RegionHint, res.Places = found.RegionHint, found.Places
 	if video == nil {
 		res.PartialReason = MsgCaptionOnly
+		if photoPost {
+			res.PartialReason = MsgPhotoPost
+		}
 	}
 	return res, nil
 }
