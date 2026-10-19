@@ -39,3 +39,18 @@ func TestParseVideoPlaces(t *testing.T) {
 		t.Error("expected an error for a non-JSON answer")
 	}
 }
+
+func TestVideoRequestSettings(t *testing.T) {
+	if got := fileURIPart("https://www.youtube.com/watch?v=abc")["file_data"].(map[string]string)["file_uri"]; got != "https://www.youtube.com/watch?v=abc" {
+		t.Errorf("file_uri = %q", got)
+	}
+	if c := videoGenerationConfig(&Video{FileURI: "x", LowResolution: true}); c["mediaResolution"] != "MEDIA_RESOLUTION_LOW" {
+		t.Errorf("long video config = %v", c)
+	}
+	if c := videoGenerationConfig(&Video{Data: []byte{1}}); c["mediaResolution"] != nil {
+		t.Errorf("short video should use default resolution: %v", c)
+	}
+	if c := videoGenerationConfig(nil); c["responseSchema"] == nil {
+		t.Error("structured output schema missing")
+	}
+}
