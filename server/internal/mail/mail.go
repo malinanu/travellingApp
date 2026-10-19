@@ -7,6 +7,7 @@ package mail
 import (
 	"fmt"
 	"log"
+	netmail "net/mail"
 	"net/smtp"
 )
 
@@ -50,11 +51,22 @@ func (m *Mailer) Send(to, subject, bodyHTML string) error {
 		a = smtp.PlainAuth("", m.cfg.User, m.cfg.Pass, m.cfg.Host)
 	}
 	msg := buildMessage(m.cfg.From, to, subject, bodyHTML)
-	if err := smtp.SendMail(addr, a, m.cfg.From, []string{to}, msg); err != nil {
+	if err := smtp.SendMail(addr, a, envelopeAddress(m.cfg.From), []string{to}, msg); err != nil {
 		log.Printf("mail: send to=%q failed: %v", to, err)
 		return err
 	}
 	return nil
+}
+
+// envelopeAddress returns the bare address for SMTP's MAIL FROM. EMAIL_FROM
+// may carry a display name ("Spotto <no-reply@spotto.dev>") for the From
+// header, but MAIL FROM only accepts the address itself — Gmail rejects the
+// full form with "555 5.5.2 Syntax error".
+func envelopeAddress(from string) string {
+	if a, err := netmail.ParseAddress(from); err == nil {
+		return a.Address
+	}
+	return from
 }
 
 func buildMessage(from, to, subject, bodyHTML string) []byte {

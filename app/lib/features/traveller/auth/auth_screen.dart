@@ -108,12 +108,20 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         err = await ref.read(authProvider.notifier).googleAuth(idToken);
       }
     } on GoogleSignInException catch (e) {
-      if (e.code == GoogleSignInExceptionCode.canceled) {
+      debugPrint('Google sign-in: ${e.code.name} ${e.description ?? ''}');
+      // Android's Credential Manager also reports setup problems (e.g. this
+      // build's signing SHA-1 not registered) as `canceled`, but with a
+      // description; only a bare cancel is the user closing the sheet.
+      final detail = e.description?.trim() ?? '';
+      if (e.code == GoogleSignInExceptionCode.canceled && detail.isEmpty) {
         cancelled = true;
       } else {
-        err = 'Google sign-in failed (${e.code.name}).';
+        err = detail.isEmpty
+            ? 'Google sign-in failed (${e.code.name}).'
+            : 'Google sign-in failed (${e.code.name}): $detail';
       }
     } catch (e) {
+      debugPrint('Google sign-in: $e');
       err = 'Google sign-in is not available right now.';
     }
     if (!mounted) return;

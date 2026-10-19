@@ -37,6 +37,7 @@ type Server struct {
 	Jobs         *jobs.Queue
 	VendorAppURL string
 	AdminAppURL  string
+	PublicAPIURL string
 	// SuperAdminEmails holds lowercased, trimmed emails from
 	// config.Config.SuperAdminEmails for O(1) membership checks â€” see
 	// isSuperAdmin in superadmin.go.
@@ -124,6 +125,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		Jobs:                 jobs.NewQueue(4, 256),
 		VendorAppURL:         cfg.VendorAppURL,
 		AdminAppURL:          cfg.AdminAppURL,
+		PublicAPIURL:         cfg.PublicAPIURL,
 		SuperAdminEmails:     superAdminSet(cfg.SuperAdminEmails),
 		GoogleCalendarAPIKey: cfg.GoogleCalendarAPIKey,
 		TomorrowIOAPIKey:     cfg.TomorrowIOAPIKey,
@@ -258,6 +260,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Post("/auth/2fa/login-verify", s.handleTwoFactorLoginVerify)
 	r.Post("/auth/forgot-password", s.handleForgotPassword)
 	r.Post("/auth/reset-password", s.handleResetPassword)
+	// Browser reset page for travellers (no web app) — see reset_page.go.
+	r.Get("/reset-password", s.handleResetPasswordPage)
+	r.Post("/reset-password", s.handleResetPasswordPage)
 	r.Get("/auth/google/login", s.handleGoogleLogin)
 	r.Get("/auth/google/callback", s.handleGoogleCallback)
 	r.Post("/auth/apple", s.handleAppleAuth)

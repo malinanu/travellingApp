@@ -35,6 +35,10 @@ class PushNotificationService {
 
       final messaging = FirebaseMessaging.instance;
       await messaging.requestPermission().timeout(_stepTimeout);
+      // register()/onRegistered (the replacement) yields a Firebase
+      // Installation ID, not the FCM registration token the server sends
+      // to, so keep getToken() until the server supports FID direct-send.
+      // ignore: deprecated_member_use
       _deviceToken = await messaging.getToken().timeout(_stepTimeout);
 
       if (_deviceToken != null) {
