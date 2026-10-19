@@ -161,7 +161,7 @@ class BoardLink {
   final String note;
   final DateTime createdAt;
 
-  /// instagram | tiktok | youtube
+  /// instagram | tiktok | youtube | facebook
   final String platform;
 
   /// pending | processing | done | partial | failed
@@ -292,7 +292,7 @@ class SavedPlace {
 }
 
 final _shareUrlRe = RegExp(
-  r'https?://(?:www\.|m\.|vm\.|vt\.)?(?:instagram\.com|tiktok\.com|youtube\.com|youtu\.be)/\S+',
+  r'https?://(?:www\.|m\.|vm\.|vt\.|web\.)?(?:instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.watch)/\S+',
   caseSensitive: false,
 );
 

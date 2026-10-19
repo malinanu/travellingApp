@@ -16,6 +16,13 @@ func TestCanonical(t *testing.T) {
 		{"https://vm.tiktok.com/ZMabc123/", "https://vm.tiktok.com/ZMabc123/", "tiktok"},
 		{"https://youtube.com/shorts/aBcDeFgHiJk?si=x", "https://www.youtube.com/shorts/aBcDeFgHiJk", "youtube"},
 		{"https://youtu.be/aBcDeFgHiJk", "https://www.youtube.com/watch?v=aBcDeFgHiJk", "youtube"},
+		{"https://www.facebook.com/reel/4720710134913664", "https://www.facebook.com/watch/?v=4720710134913664", "facebook"},
+		{"https://m.facebook.com/reel/4720710134913664/?mibextid=abc", "https://www.facebook.com/watch/?v=4720710134913664", "facebook"},
+		{"https://www.facebook.com/phuketist/videos/save-these-15-places-/4720710134913664/", "https://www.facebook.com/watch/?v=4720710134913664", "facebook"},
+		{"https://www.facebook.com/phuketist/videos/4720710134913664", "https://www.facebook.com/watch/?v=4720710134913664", "facebook"},
+		{"https://web.facebook.com/watch/?v=4720710134913664&ref=sharing", "https://www.facebook.com/watch/?v=4720710134913664", "facebook"},
+		{"https://www.facebook.com/share/r/1AbCdEfGh/", "https://www.facebook.com/share/r/1AbCdEfGh/", "facebook"},
+		{"https://fb.watch/qWeRtY12/", "https://fb.watch/qWeRtY12/", "facebook"},
 	}
 	for _, c := range cases {
 		got, platform, err := Canonical(c.in)
@@ -26,6 +33,8 @@ func TestCanonical(t *testing.T) {
 	for _, bad := range []string{
 		"", "https://instagram.com/", "https://instagram.com.evil.example/reel/abc/",
 		"ftp://instagram.com/reel/abc/", "https://example.com/reel/abc/", "https://www.instagram.com/explore/",
+		"https://www.facebook.com/phuketist", "https://www.facebook.com/login/?next=%2Freel%2F1", "https://facebook.com.evil.example/reel/1",
+		"https://www.facebook.com/watch/?v=notanid",
 	} {
 		if got, _, err := Canonical(bad); err == nil {
 			t.Errorf("Canonical(%q) = %q, want an error", bad, got)
