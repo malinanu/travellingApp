@@ -197,38 +197,6 @@ class InspirationLink {
   }
 }
 
-/// One place suggestion pulled from an Instagram inspiration link's caption
-/// — see POST /trip/inspiration/extract-places. [matched] means it's a real
-/// catalog place ([placeId]/[lat]/[lng]/[category] populated); otherwise
-/// it's a loose, name-only suggestion (same "just a name" shape as
-/// [CustomStopInfo]) that can still be added to a trip, just not favorited.
-class ExtractedPlace {
-  final String name;
-  final bool matched;
-  final String? placeId;
-  final double? lat;
-  final double? lng;
-  final String? category;
-
-  const ExtractedPlace({
-    required this.name,
-    required this.matched,
-    this.placeId,
-    this.lat,
-    this.lng,
-    this.category,
-  });
-
-  factory ExtractedPlace.fromJson(Map<String, dynamic> json) => ExtractedPlace(
-        name: json['name'] as String? ?? '',
-        matched: json['matched'] as bool? ?? false,
-        placeId: json['placeId'] as String?,
-        lat: (json['lat'] as num?)?.toDouble(),
-        lng: (json['lng'] as num?)?.toDouble(),
-        category: json['category'] as String?,
-      );
-}
-
 class Trip {
   final String name;
   final String code;

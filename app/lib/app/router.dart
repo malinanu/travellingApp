@@ -6,6 +6,8 @@ import '../data/repositories/repositories.dart';
 import '../features/traveller/auth/auth_screen.dart';
 import '../features/traveller/bookings/my_bookings_screen.dart';
 import '../features/traveller/guide/guide_screen.dart';
+import '../features/traveller/inspiration/inspiration_board_screen.dart';
+import '../features/traveller/inspiration/inspiration_link_screen.dart';
 import '../features/traveller/onboarding/onboarding_screen.dart';
 import '../features/traveller/profile/profile_screen.dart';
 import '../features/traveller/shell/traveller_shell.dart';
@@ -37,6 +39,19 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/t/profile', builder: (context, state) => const ProfileScreen()),
       GoRoute(path: '/t/weather', builder: (context, state) => const WeatherScreen()),
       GoRoute(path: '/t/bookings', builder: (context, state) => const MyBookingsScreen()),
+      GoRoute(
+        path: '/t/inspiration',
+        redirect: (context, state) => ref.read(authProvider) ? null : '/t/auth',
+        builder: (context, state) => InspirationBoardScreen(
+          sharedUrl: state.uri.queryParameters['add'],
+          savedTab: state.uri.queryParameters['tab'] == 'saved',
+        ),
+      ),
+      GoRoute(
+        path: '/t/inspiration/:id',
+        redirect: (context, state) => ref.read(authProvider) ? null : '/t/auth',
+        builder: (context, state) => InspirationLinkScreen(linkId: state.pathParameters['id']!),
+      ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => TravellerShell(shell: shell),
         redirect: (context, state) {

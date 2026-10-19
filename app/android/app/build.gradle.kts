@@ -32,7 +32,9 @@ if (keyPropertiesFile.exists()) {
 
 android {
     namespace = "com.spotto.spotto"
-    compileSdk = flutter.compileSdkVersion
+    // 37 rather than Flutter's default 36: receive_sharing_intent (Share → Spotto)
+    // requires it. Only the compile SDK; targetSdk (runtime behaviour) is unchanged.
+    compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

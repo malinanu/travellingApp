@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -10,12 +11,12 @@ import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../data/mock/places.dart' as data;
 import '../../../data/mock/trip_catalog.dart';
+import '../../../data/repositories/inspiration_repository.dart';
 import '../../../data/repositories/repositories.dart';
 import '../place_detail/business_drawer.dart';
 import 'widgets/add_stop_sheet.dart';
 import 'widgets/calendar_month.dart';
 import 'widgets/confirm_delete_dialog.dart';
-import 'widgets/inspiration_sheet.dart';
 import 'widgets/my_trips_sheet.dart';
 import 'widgets/stop_card.dart';
 import 'widgets/trip_common.dart';
@@ -206,10 +207,10 @@ class _TripScreenState extends ConsumerState<TripScreen> {
   }
 
   Widget _inspirationButton(Trip trip) {
-    final count = trip.inspirations.length;
+    final count = ref.watch(boardLinksProvider).length;
     return PressScale(
       scale: 0.92,
-      onTap: () => showInspirationSheet(context),
+      onTap: () => context.push('/t/inspiration'),
       child: Stack(
         clipBehavior: Clip.none,
         children: [

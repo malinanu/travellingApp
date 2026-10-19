@@ -24,7 +24,15 @@ class PushNotificationService {
   /// entitlement (e.g. an unsigned sideloaded .ipa) no APNs token can be
   /// issued, so these calls can fail or hang. Push is best-effort — the app
   /// works without it — so any failure here is logged and swallowed.
-  Future<void> initialize(ApiClient api) async {
+  ///
+  /// [onOpen] gets the data of a notification the traveller tapped (also
+  /// one that launched the app); [onForeground] gets data arriving while the
+  /// app is open, e.g. to refresh what's on screen.
+  Future<void> initialize(
+    ApiClient api, {
+    void Function(Map<String, dynamic> data)? onOpen,
+    void Function(Map<String, dynamic> data)? onForeground,
+  }) async {
     if (_initialized) return;
     _initialized = true;
 
@@ -39,7 +47,10 @@ class PushNotificationService {
 
       if (_deviceToken != null) {
         try {
-          await api.dio.post('/me/push-token', data: {'deviceToken': _deviceToken});
+          await api.dio.post('/me/push-token', data: {
+            'deviceToken': _deviceToken,
+            'platform': defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android',
+          });
         } catch (e) {
           developer.log('[PushNotifications] Failed to register token: $e');
         }
@@ -47,7 +58,13 @@ class PushNotificationService {
 
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         developer.log('[PushNotificationReceived] ${message.notification?.title} — ${message.notification?.body}');
+        onForeground?.call(message.data);
       });
+      if (onOpen != null) {
+        FirebaseMessaging.onMessageOpenedApp.listen((m) => onOpen(m.data));
+        final launch = await messaging.getInitialMessage().timeout(_stepTimeout, onTimeout: () => null);
+        if (launch != null) onOpen(launch.data);
+      }
 
       if (kDebugMode) {
         developer.log('[PushNotifications] Device push token initialized: $_deviceToken');
