@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -60,6 +61,17 @@ type Config struct {
 	// retirement is an env change rather than a code change.
 	GeminiChatModel  string
 	GeminiEmbedModel string
+	// Inspiration Board link extraction (see internal/http/inspiration_worker.go).
+	// GeminiVideoModel watches reels (defaults to GeminiChatModel).
+	// GooglePlacesAPIKey needs Places API (New); it falls back to
+	// GoogleCalendarAPIKey, the shared Maps/Places key, when unset.
+	// YtdlpCookiesFile is an optional Netscape cookies file for yt-dlp when
+	// Instagram refuses anonymous downloads. InspirationDailyLimit caps links
+	// one traveller can add per 24 hours.
+	GeminiVideoModel      string
+	GooglePlacesAPIKey    string
+	YtdlpCookiesFile      string
+	InspirationDailyLimit int
 	// VendorAppURL is the base URL of the vendor Next.js app, used to build
 	// links embedded in emails (invite accept, password reset).
 	VendorAppURL string
@@ -142,6 +154,10 @@ func Load() Config {
 		VendorAppURL:         getenv("VENDOR_APP_URL", "http://localhost:3000"),
 		AdminAppURL:          getenv("ADMIN_APP_URL", "http://localhost:3001"),
 		PublicAPIURL:         strings.TrimRight(getenv("PUBLIC_API_URL", ""), "/"),
+		GeminiVideoModel:      getenv("GEMINI_VIDEO_MODEL", ""),
+		GooglePlacesAPIKey:    getenv("GOOGLE_PLACES_API_KEY", getenv("GOOGLE_CALENDAR_API_KEY", "")),
+		YtdlpCookiesFile:      getenv("YTDLP_COOKIES_FILE", ""),
+		InspirationDailyLimit: getenvInt("INSPIRATION_DAILY_LIMIT", 20),
 		SuperAdminEmails:     splitNonEmpty(getenv("SUPER_ADMIN_EMAILS", "")),
 		FirebaseServiceAccount: getenv("FIREBASE_SERVICE_ACCOUNT_JSON", ""),
 
@@ -206,6 +222,20 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// getenvInt reads a positive integer, logging and falling back on a bad value.
+func getenvInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		log.Printf("config: %s=%q is not a positive integer, using %d", key, v, fallback)
+		return fallback
+	}
+	return n
 }
 
 // mustGetenv fails startup rather than silently falling back to a hardcoded

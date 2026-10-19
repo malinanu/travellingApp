@@ -49,6 +49,7 @@ func main() {
 	go srv.StartVendorReportScheduler(ctx)
 	go srv.StartThumbnailWorker(ctx)
 	go srv.StartEmbeddingWorker(ctx)
+	go srv.StartInspirationWorker(ctx)
 
 	// Explicit timeouts rather than the zero-value (unbounded) defaults —
 	// ReadHeaderTimeout guards against slow-header (slowloris-style)
