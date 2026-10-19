@@ -572,12 +572,6 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func resetEmailHTML(link string) string {
-	return `<p>Someone requested a password reset for your Spotto account.</p>` +
-		`<p><a href="` + link + `">Reset your password</a> (expires in 1 hour).</p>` +
-		`<p>If this wasn't you, you can safely ignore this email.</p>`
-}
-
 // handleResetPassword validates the token (by hash â€” the raw token is
 // never stored), applies the same password-strength rules as
 // registration, and bumps token_version so any existing sessions are

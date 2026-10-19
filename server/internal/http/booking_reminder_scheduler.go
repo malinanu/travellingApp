@@ -9,7 +9,6 @@
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 )
@@ -51,8 +50,7 @@ func (s *Server) runBookingReminderCheck(ctx context.Context) {
 			continue
 		}
 		subject := "Your Spotto booking is coming up"
-		body := fmt.Sprintf("<p>Your booking for <strong>%s</strong> is coming up on %s.</p><p>Code: <strong>%s</strong></p>",
-			b.ServiceName, b.StartAt.Format("Jan 2, 3:04 PM"), b.Code)
+		body := bookingReminderEmailHTML(b)
 		if err := s.Mail.Send(b.TravellerEmail, subject, body); err != nil {
 			log.Printf("booking reminder scheduler: send booking=%s: %v", b.ID, err)
 			continue

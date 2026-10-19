@@ -2,7 +2,6 @@
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 )
@@ -43,20 +42,8 @@ func (s *Server) runVendorReportCheck(ctx context.Context) {
 			continue
 		}
 
-		subject := fmt.Sprintf("Weekly Performance Report â€” %s", v.Name)
-		body := fmt.Sprintf(`
-			<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-				<h2>Weekly Digest for %s</h2>
-				<p>Here is your weekly activity summary on Spotto:</p>
-				<ul>
-					<li><strong>Status:</strong> %s</li>
-					<li><strong>Tier:</strong> %s</li>
-					<li><strong>Town:</strong> %s</li>
-				</ul>
-				<p>Log in to your vendor dashboard for full analytics and live offer stats.</p>
-				<p><a href="%s/dashboard" style="display: inline-block; background: #0d9488; color: #fff; padding: 10px 20px; border-radius: 12px; text-decoration: none; font-weight: bold;">Go to Dashboard</a></p>
-			</div>
-		`, v.Name, v.Status, v.Tier, v.Town, s.VendorAppURL)
+		subject := "Weekly Performance Report — " + v.Name
+		body := vendorReportEmailHTML(v, s.VendorAppURL+"/dashboard")
 
 		if err := s.Mail.Send(owner.Email, subject, body); err != nil {
 			log.Printf("vendor report scheduler: send vendor=%s: %v", v.ID, err)

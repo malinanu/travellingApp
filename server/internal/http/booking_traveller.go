@@ -286,8 +286,7 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 	me, meErr := s.Store.UserByID(r.Context(), c.Subject)
 	if meErr == nil && me.Email != "" {
 		s.Jobs.Enqueue(func() {
-			s.Mail.Send(me.Email, "Your Spotto booking is confirmed",
-				fmt.Sprintf("<p>Your booking for <strong>%s</strong> is confirmed.</p><p>Code: <strong>%s</strong></p>", svc.Name, created.Code))
+			s.Mail.Send(me.Email, "Your Spotto booking is confirmed", bookingConfirmedEmailHTML(created, svc.Name))
 		})
 	}
 	s.Store.UpsertVendorNotification(r.Context(), svc.VendorID, domain.VendorNotification{
