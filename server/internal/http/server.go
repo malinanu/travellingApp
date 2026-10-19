@@ -21,6 +21,7 @@ import (
 	"github.com/spotto/server/internal/jobs"
 	"github.com/spotto/server/internal/mail"
 	"github.com/spotto/server/internal/media"
+	"github.com/spotto/server/internal/googleplaces"
 	"github.com/spotto/server/internal/placedetails"
 	"github.com/spotto/server/internal/store/postgres"
 	"github.com/spotto/server/internal/weather"
@@ -76,6 +77,12 @@ type Server struct {
 	// place ID (see internal/placedetails/cache.go) to keep paid API spend
 	// down â€” these attributes rarely change, so the TTL is long.
 	PlaceDetailsCache *placedetails.Cache
+	// Inspiration Board extraction (inspiration_worker.go). Places is nil
+	// when no Places key is configured: places then stay unresolved.
+	Places                *googleplaces.Client
+	GeminiVideoModel      string
+	YtdlpCookiesFile      string
+	InspirationDailyLimit int
 	// GoogleOAuth is nil when GOOGLE_CLIENT_ID/SECRET aren't configured â€”
 	// handleGoogleLogin/handleGoogleCallback report 501 in that case rather
 	// than panicking on a nil config.
@@ -135,6 +142,9 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		// Same key as GoogleCalendarAPIKey â€” see its doc comment.
 		GooglePlacesAPIKey: cfg.GoogleCalendarAPIKey,
 		PlaceDetailsCache:  placedetails.NewCache(),
+		GeminiVideoModel:      cfg.GeminiVideoModel,
+		YtdlpCookiesFile:      cfg.YtdlpCookiesFile,
+		InspirationDailyLimit: cfg.InspirationDailyLimit,
 		loginLimit:         newLoginLimiter(5, 15*time.Minute),
 		totpLimit:          newLoginLimiter(5, 15*time.Minute),
 		resetLimit:         newLoginLimiter(5, 15*time.Minute),
@@ -163,6 +173,9 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 			},
 			Endpoint: google.Endpoint,
 		}
+	}
+	if cfg.GooglePlacesAPIKey != "" {
+		s.Places = googleplaces.New(cfg.GooglePlacesAPIKey)
 	}
 	if cfg.R2Configured() {
 		s.Media = media.NewR2(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
@@ -249,6 +262,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	// handleMediaRaw). The trailing "*" is chi's wildcard match, needed
 	// because object keys contain slashes (e.g. vendor/ven_x/m_y.jpg).
 	r.Get("/media/raw/*", s.handleMediaRaw)
+	// Public for the same reason: place photos load through plain image
+	// widgets. Ids are random and responses are cached (inspirations.go).
+	r.Get("/geo-places/{id}/photo", s.handleGeoPlacePhoto)
 
 	r.Get("/healthz", s.handleHealthz)
 	r.Get("/categories", s.handleAdminCategories)
@@ -335,6 +351,14 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Post("/guide/chat", s.handleGuideChat)
 		r.Get("/guide/conversations/latest", s.handleGuideLatestConversation)
 		r.Post("/trip/inspiration/extract-places", s.handleExtractPlacesFromLink)
+		r.Get("/me/inspirations", s.handleListInspirations)
+		r.Post("/me/inspirations", s.handleAddInspiration)
+		r.Get("/me/inspirations/{id}", s.handleGetInspiration)
+		r.Delete("/me/inspirations/{id}", s.handleDeleteInspiration)
+		r.Post("/me/inspirations/{id}/retry", s.handleRetryInspiration)
+		r.Get("/me/saved-places", s.handleListSavedPlaces)
+		r.Post("/me/saved-places", s.handleAddSavedPlace)
+		r.Delete("/me/saved-places/{id}", s.handleDeleteSavedPlace)
 	})
 
 	// Vendor (approved vendors only, checked in handlers where relevant).

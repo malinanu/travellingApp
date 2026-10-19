@@ -46,6 +46,7 @@ NEXT_PUBLIC_API_URL=https://spotto-api.yourdomain.com
 # the two vars below). Blank is fine; each feature just no-ops until filled in.
 GOOGLE_CALENDAR_API_KEY=<your Google Cloud API key, Calendar API enabled>
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=<same key works, with Maps JS API + Places API also enabled>
+GOOGLE_PLACES_API_KEY=<Google key with Places API (New) enabled, for the Inspiration Board; falls back to GOOGLE_CALENDAR_API_KEY>
 ```
 
 `TOTP_ENCRYPTION_KEY` must be exactly 32 raw bytes, base64-encoded — the api

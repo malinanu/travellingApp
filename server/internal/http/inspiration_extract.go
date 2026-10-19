@@ -133,7 +133,7 @@ func fetchInstagramCaption(ctx context.Context, url string) (string, error) {
 // places mentioned in the caption — no tools, just extraction, kept
 // separate from the matching step so each is easy to reason about.
 func (s *Server) extractPlaceNames(ctx context.Context, caption string) ([]string, error) {
-	prompt := "Below is an Instagram post caption from a travel video about Sri Lanka. " +
+	prompt := "Below is the caption of a travel video post. " +
 		"List any real, specific, named places mentioned or clearly implied (restaurants, cafes, " +
 		"hotels, beaches, attractions, viewpoints, etc.) — not generic terms like \"the beach\" or \"a cafe\". " +
 		"Respond with ONLY a JSON array of place name strings, nothing else. If none, respond with []." +
@@ -173,8 +173,10 @@ func (s *Server) matchExtractedPlaceName(ctx context.Context, name string) extra
 		return extractedPlace{Name: name, Matched: false}
 	}
 
+	// search_places ranks by meaning and always returns its closest places,
+	// so the top hit is only a match when the names actually agree.
 	p, err := s.Store.PlaceByID(ctx, placeIDs[0])
-	if err != nil {
+	if err != nil || nameSimilarity(name, p.Name) < 0.5 {
 		return extractedPlace{Name: name, Matched: false}
 	}
 	var facts struct {
