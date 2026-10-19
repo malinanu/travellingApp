@@ -1,6 +1,41 @@
 package mail
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestRender(t *testing.T) {
+	out, err := Render(Email{
+		Preheader: "Your code is inside",
+		Title:     `<script>alert(1)</script> Booking`,
+		Intro:     []string{"Hi there"},
+		Code:      "AB12",
+		Button:    Button{Label: "Open", URL: "https://spotto.example/x?token=abc"},
+		Details:   []Detail{{Label: "Place", Value: `Café "<b>"`}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Your code is inside", "Hi there", "AB12", `href="https://spotto.example/x?token=abc"`, "&lt;script&gt;", "&lt;b&gt;"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered email missing %q", want)
+		}
+	}
+	if strings.Contains(out, "<script>") || strings.Contains(out, "<b>") {
+		t.Error("user text was not escaped")
+	}
+
+	bare, err := Render(Email{Title: "Only a title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, absent := range []string{"Button not working", "letter-spacing:4px", "display:none;max-height:0"} {
+		if strings.Contains(bare, absent) {
+			t.Errorf("empty section rendered: %q", absent)
+		}
+	}
+}
 
 func TestEnvelopeAddress(t *testing.T) {
 	cases := map[string]string{

@@ -3,7 +3,6 @@
 import (
 	"crypto/rand"
 	"crypto/subtle"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -93,14 +92,6 @@ func (s *Server) handleCreateVendorProfileGrant(w http.ResponseWriter, r *http.R
 		"id": g.ID, "granteeId": g.GranteeID, "durationMins": g.DurationMins,
 		"pinExpiresAt": g.PinExpiresAt, "pin": pin,
 	})
-}
-
-func profileGrantEmailHTML(vendorName, pin string, durationMins int) string {
-	return fmt.Sprintf(
-		`<p>You've been granted temporary Business Profile edit access for <strong>%s</strong> on Spotto.</p>
-		<p>Your PIN: <strong style="font-size:20px;letter-spacing:2px">%s</strong></p>
-		<p>Enter it on the Business Profile page within 10 minutes to unlock %d minutes of edit access.</p>`,
-		vendorName, pin, durationMins)
 }
 
 // handleRedeemVendorProfileGrant lets the grantee unlock their access

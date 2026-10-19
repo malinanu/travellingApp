@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -1200,18 +1199,10 @@ func (s *Server) handleCreateVendorInvite(w http.ResponseWriter, r *http.Request
 	}
 	if inv.Email != "" {
 		link := s.VendorAppURL + "/join/" + inv.Code
-		email, subject, body := inv.Email, "You've been invited to join "+v.Name+" on Spotto", inviteEmailHTML(v.Name, role, link)
+		email, subject, body := inv.Email, "You've been invited to join "+v.Name+" on Spotto", inviteEmailHTML(v.Name, role, inv.Code, link)
 		s.Jobs.Enqueue(func() { s.Mail.Send(email, subject, body) })
 	}
 	writeJSON(w, http.StatusCreated, teamInvite{ID: inv.ID, Code: inv.Code, Email: inv.Email, Role: inv.Role, CreatedAt: inv.CreatedAt, ExpiresAt: inv.ExpiresAt})
-}
-
-func inviteEmailHTML(vendorName, role, link string) string {
-	return fmt.Sprintf(
-		`<p>You've been invited to join <strong>%s</strong> on Spotto as a <strong>%s</strong>.</p>
-		<p><a href="%s">Accept the invite</a> (expires in 7 days).</p>
-		<p>If the link doesn't work, use invite code from the vendor who invited you at %s.</p>`,
-		vendorName, role, link, link)
 }
 
 // handleRemoveVendorTeamMember detaches a staff or manager member from
