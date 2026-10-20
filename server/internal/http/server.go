@@ -269,7 +269,6 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Get("/healthz", s.handleHealthz)
 	r.Get("/categories", s.handleAdminCategories)
 	r.Get("/readyz", s.handleReadyz)
-	r.Get("/ws/group", s.handleGroupWS)
 
 	r.Post("/auth/register", s.handleRegister)
 	r.Post("/auth/login", s.handleLogin)
@@ -290,6 +289,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	// Authenticated (any role).
 	r.Group(func(r chi.Router) {
 		r.Use(s.Authenticated)
+		r.Get("/ws/group", s.handleGroupWS)
 		r.Get("/me", s.handleMe)
 		r.Delete("/me", s.handleDeleteAccount)
 		r.Get("/me/export", s.handleExportData)

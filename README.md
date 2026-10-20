@@ -92,6 +92,10 @@ free Leaflet map picker) when its key is unset.
 
 ## Demo accounts (created by `cmd/seed`, password `spotto123`)
 
+For local and staging only: this password is public. With
+`APP_ENV=production` the API locks every `*@spotto.dev` login at boot, and
+the real admin comes from `ADMIN_EMAIL`/`ADMIN_PASSWORD` instead.
+
 - Traveller: `lena@spotto.dev`
 - Vendor (Driftwood Coffee, approved): `vendor@driftwood.dev`
 - Admin: `admin@spotto.dev`

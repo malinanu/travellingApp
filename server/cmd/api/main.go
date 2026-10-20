@@ -28,6 +28,25 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
+	if cfg.AdminEmail != "" {
+		if err := seed.EnsureAdmin(ctx, store, cfg.AdminEmail, cfg.AdminPassword); err != nil {
+			log.Fatalf("ensure admin account: %v", err)
+		}
+		log.Printf("admin account %s is ready", cfg.AdminEmail)
+	}
+	// The demo and import logins are public knowledge (README, public
+	// dataset), so production never lets them in, even on a DB that was
+	// seeded once.
+	if cfg.IsProduction() {
+		n, err := seed.LockDemoAccounts(ctx, store, cfg.AdminEmail)
+		if err != nil {
+			log.Fatalf("lock demo accounts: %v", err)
+		}
+		if n > 0 {
+			log.Printf("production: locked %d demo/import accounts", n)
+		}
+	}
+
 	// Make sure the full category taxonomy exists (insert-only, never
 	// overwrites admin edits), then load it into the in-memory cache.
 	if added, err := store.EnsureVendorCategories(ctx, seed.InitialCategories); err != nil {
