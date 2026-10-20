@@ -22,6 +22,8 @@ export interface User {
   vendorStatus?: VendorStatus; // present on GET /me for vendor users
   /** True only for admin accounts listed in the server's SUPER_ADMIN_EMAILS. */
   isSuperAdmin?: boolean;
+  /** Admin may hand vendor logins over to their owners (super-admins always). */
+  canManageVendorLogins?: boolean;
   totpEnabled: boolean;
   phone: string;
   shareLocation: boolean;
@@ -448,6 +450,9 @@ export interface AdminUserDetail {
   sessions: AdminUserSession[];
   questCompletions: QuestCompletion[];
   audit: AdminAuditLogEntry[];
+  /** Extra powers granted to an admin by a super-admin, e.g. 'vendor_logins'. */
+  adminPermissions: string[];
+  isSuperAdmin: boolean;
 }
 
 /** One scheduled day (GET /admin/quests/schedules). */
@@ -637,6 +642,16 @@ export interface VendorInvite {
 
 /** Team tab payload for the admin vendor detail: staff roster, pending
  * invites, and any profile-access PIN grants for this vendor. */
+/** POST /admin/vendors/{id}/members/{userId}/login result. */
+export interface VendorLoginHandoverResult {
+  mode: 'password' | 'link' | 'none';
+  email: string;
+  emailSent: boolean;
+  /** Returned when the set-password email couldn't be sent, to pass on by hand. */
+  setupLink?: string;
+  emailError?: string;
+}
+
 export interface AdminVendorTeam {
   members: User[];
   invites: VendorInvite[];

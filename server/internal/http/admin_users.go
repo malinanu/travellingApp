@@ -56,11 +56,23 @@ func (s *Server) handleAdminUserDetail(w http.ResponseWriter, r *http.Request) {
 	if audit == nil {
 		audit = []domain.AdminAuditLog{}
 	}
+	perms := []string{}
+	if u.Role == domain.RoleAdmin {
+		got, err := s.Store.AdminPermissions(ctx, id)
+		if err != nil {
+			log.Printf("admin user detail permissions user=%s: %v", id, err)
+			writeErr(w, http.StatusInternalServerError, "Couldn't load this admin's permissions. Please try again.")
+			return
+		}
+		perms = nonNilStrings(got)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user":             u,
 		"sessions":         sessions,
 		"questCompletions": quests,
 		"audit":            audit,
+		"adminPermissions": perms,
+		"isSuperAdmin":     u.Role == domain.RoleAdmin && s.isSuperAdmin(u.Email),
 	})
 }
 
