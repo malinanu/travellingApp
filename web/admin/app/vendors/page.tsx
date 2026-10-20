@@ -9,7 +9,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle, CheckCircle2, Clock, CreditCard, Edit3, Eye, FileText, Film, Globe, History,
-  ImagePlus, Loader2, MapPin, Pencil, Phone, Power, Radio, Save, ShieldAlert, ShieldCheck, Star, Store, Tag,
+  ImagePlus, KeyRound, Loader2, MapPin, Pencil, Phone, Power, Radio, Save, ShieldAlert, ShieldCheck, Star, Store, Tag,
   Ticket, Trash2, Users, Wifi, XCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -19,9 +19,10 @@ import {
   categoriesBySegment, VENDOR_SEGMENTS,
   resolveMediaUrl, timeAgo, uploadMedia, useAutoSave, validateFile, type AdminAuditLogEntry, type AdminVendorProfileGrant,
   type AdminVendorStats, type AdminVendorSummary, type AdminVendorTeam, type Claim, type Media,
-  type MediaRole, type Offer, type Review, type Vendor, type VendorProfile, type VendorStatus, type VibeAggregate,
+  type MediaRole, type Offer, type Review, type User, type Vendor, type VendorLoginHandoverResult, type VendorProfile,
+  type VendorStatus, type VibeAggregate,
 } from '@spotto/shared';
-import Shell from '../../components/shell';
+import Shell, { useMe } from '../../components/shell';
 import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
 
@@ -646,6 +647,7 @@ function ActivityTab({ vendorId, stats }: { vendorId: string; stats?: AdminVendo
 }
 
 function TeamTab({ vendorId }: { vendorId: string }) {
+  const { data: me } = useMe();
   const { data, isError, isLoading } = useQuery<AdminVendorTeam>({
     queryKey: ['admin-vendor-team', vendorId],
     queryFn: () => api.get<AdminVendorTeam>(`/admin/vendors/${vendorId}/team`),
@@ -658,14 +660,17 @@ function TeamTab({ vendorId }: { vendorId: string }) {
         <p className="text-[11.5px] font-bold text-muted uppercase mb-2">Members ({data.members.length})</p>
         <div className="space-y-2">
           {data.members.map((m) => (
-            <div key={m.id} className="flex items-center justify-between rounded-xl px-3.5 py-2.5"
+            <div key={m.id} className="rounded-xl px-3.5 py-2.5"
               style={{ background: 'var(--bg)', border: '1px solid var(--line)' }}>
-              <div>
-                <p className="font-bold text-[13px]">{m.name || m.email}</p>
-                <p className="text-[11.5px] text-muted font-semibold">{m.email}</p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-bold text-[13px]">{m.name || m.email}</p>
+                  <p className="text-[11.5px] text-muted font-semibold truncate">{m.email}</p>
+                </div>
+                <span className="text-[11px] font-bold uppercase rounded-full px-2 py-0.5 shrink-0"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>{m.vendorRole || '—'}</span>
               </div>
-              <span className="text-[11px] font-bold uppercase rounded-full px-2 py-0.5"
-                style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>{m.vendorRole || '—'}</span>
+              {me?.canManageVendorLogins && <ChangeLogin vendorId={vendorId} member={m} />}
             </div>
           ))}
           {data.members.length === 0 && <TabEmpty label="No members." />}
@@ -703,6 +708,119 @@ function TeamTab({ vendorId }: { vendorId: string }) {
   );
 }
 
+type LoginMode = 'password' | 'link' | 'none';
+
+// A strong random password for the admin to pass on to the new owner.
+function generatePassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => chars[b % chars.length]).join('');
+}
+
+// Hands a vendor login over to the business's real owner: a new email, and
+// either a password the admin passes on or a set-password link emailed to
+// the owner. Whoever held the account is signed out everywhere.
+function ChangeLogin({ vendorId, member }: { vendorId: string; member: User }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState(member.email);
+  const [mode, setMode] = useState<LoginMode>('link');
+  const [password, setPassword] = useState('');
+  const [reason, setReason] = useState('');
+  const save = useMutation({
+    mutationFn: () => api.post<VendorLoginHandoverResult>(
+      `/admin/vendors/${vendorId}/members/${encodeURIComponent(member.id)}/login`,
+      { email: email.trim(), mode, password: mode === 'password' ? password : undefined, reason: reason.trim() },
+    ),
+    onSuccess: () => {
+      setOpen(false);
+      setReason('');
+      qc.invalidateQueries({ queryKey: ['admin-vendor-team', vendorId] });
+      qc.invalidateQueries({ queryKey: ['admin-vendor-audit', vendorId] });
+    },
+  });
+  const emailChanged = email.trim().toLowerCase() !== member.email;
+  const canSubmit = !!reason.trim() && (emailChanged || mode !== 'none') && (mode !== 'password' || password.length >= 10);
+
+  if (!open) {
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <button className="btn py-1 px-2.5 text-[11.5px] flex items-center gap-1.5"
+          onClick={() => { save.reset(); setEmail(member.email); setPassword(''); setMode('link'); setOpen(true); }}>
+          <KeyRound size={12} /> Change login
+        </button>
+        {save.isSuccess && <HandoverResult result={save.data} />}
+      </div>
+    );
+  }
+  return (
+    <form className="mt-3 pt-3 border-t border-line space-y-2.5" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
+      <label className="block">
+        <span className="text-[12px] font-bold block mb-1">Login email</span>
+        <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="input w-full py-1.5" />
+      </label>
+      <fieldset className="space-y-1">
+        <legend className="text-[12px] font-bold mb-1">Password</legend>
+        {([
+          ['link', 'Email the owner a link to choose their own (valid 24 hours)'],
+          ['password', 'Set it now and give it to the owner'],
+          ['none', 'Keep the current password'],
+        ] as const).map(([value, label]) => (
+          <label key={value} className="flex items-center gap-2 text-[12.5px] font-semibold">
+            <input type="radio" name={`mode-${member.id}`} checked={mode === value} onChange={() => setMode(value)} />
+            {label}
+          </label>
+        ))}
+      </fieldset>
+      {mode === 'password' && (
+        <div className="flex items-center gap-2">
+          <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 10 characters"
+            className="input flex-1 py-1.5 font-mono" autoComplete="new-password" />
+          <button type="button" className="btn py-1 px-2.5 text-[11.5px]" onClick={() => setPassword(generatePassword())}>Generate</button>
+        </div>
+      )}
+      <label className="block">
+        <span className="text-[12px] font-bold block mb-1">Reason (saved in the audit log)</span>
+        <input required value={reason} onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. Owner verified with BR certificate and NIC" className="input w-full py-1.5" />
+      </label>
+      <div className="flex items-center gap-2">
+        <span className="text-[11.5px] font-semibold text-muted mr-auto">
+          {mode === 'none' ? 'The account' : 'The old password stops working, and the account'} is signed out on every device.
+        </span>
+        <button type="button" className="btn py-1 px-3 text-[12px]" onClick={() => setOpen(false)}>Cancel</button>
+        <button type="submit" className="btn btn-danger py-1 px-3 text-[12px]" disabled={save.isPending || !canSubmit}>
+          {save.isPending ? 'Saving…' : 'Hand over login'}
+        </button>
+      </div>
+      {save.isError && <p className="text-[11.5px] font-semibold" style={{ color: '#e11d48' }}>{(save.error as Error).message}</p>}
+    </form>
+  );
+}
+
+function HandoverResult({ result }: { result: VendorLoginHandoverResult }) {
+  if (result.setupLink) {
+    return (
+      <div className="w-full text-[11.5px] font-semibold">
+        <p style={{ color: '#a97b00' }}>
+          {result.emailError ?? 'Email isn’t set up on this server, so nothing was sent. Give the owner this link (valid for 24 hours):'}
+        </p>
+        <input readOnly value={result.setupLink} onFocus={(e) => e.target.select()} className="input w-full py-1 mt-1 font-mono text-[11px]" />
+      </div>
+    );
+  }
+  return (
+    <span className="text-[11.5px] font-semibold flex items-center gap-1" style={{ color: '#16a34a' }}>
+      <CheckCircle2 size={12} />
+      {result.mode === 'link' ? `Set-password link emailed to ${result.email}` : `Login updated to ${result.email}`}
+    </span>
+  );
+}
+
+const AUDIT_ACTION_LABEL: Record<string, string> = {
+  'vendor.login_change': 'Login handed over',
+};
+
 function HistoryTab({ vendorId }: { vendorId: string }) {
   const { data: entries = [], isError, isLoading } = useQuery<AdminAuditLogEntry[]>({
     queryKey: ['admin-vendor-audit', vendorId],
@@ -718,7 +836,7 @@ function HistoryTab({ vendorId }: { vendorId: string }) {
           style={{ background: 'var(--bg)', border: '1px solid var(--line)' }}>
           <History size={14} className="mt-0.5 shrink-0 text-muted" />
           <div className="min-w-0 flex-1">
-            <p className="font-bold text-[13px]">{e.action}</p>
+            <p className="font-bold text-[13px]">{AUDIT_ACTION_LABEL[e.action] ?? e.action}</p>
             <p className="text-[11.5px] text-muted font-semibold">
               {e.actorName || e.actorEmail} · {timeAgo(e.createdAt)}
               {e.metadata ? ` · ${JSON.stringify(e.metadata)}` : ''}

@@ -505,6 +505,14 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(s.RequireSuperAdmin)
 			r.Get("/admin/audit-log", s.handleAdminAuditLog)
+			r.Put("/admin/users/{id}/permissions", s.handleAdminSetUserPermissions)
+		})
+
+		// Handing a business account over to its real owner. Super-admins
+		// can always; other admins only once a super-admin grants it.
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermVendorLogins))
+			r.Post("/admin/vendors/{id}/members/{userId}/login", s.handleAdminVendorMemberLogin)
 		})
 	})
 

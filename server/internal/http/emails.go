@@ -43,6 +43,31 @@ func resetEmailHTML(link string) string {
 	})
 }
 
+// accountSetupEmailHTML goes to a vendor account's new owner after an admin
+// moves the login to their email: they choose their own password.
+func accountSetupEmailHTML(vendorName, link string) string {
+	return renderEmail(mail.Email{
+		Preheader: "Choose a password to start managing " + vendorName + " on Spotto.",
+		Title:     "Your " + vendorName + " account is ready",
+		Intro:     []string{"Spotto support has moved the " + vendorName + " business account to this email address. Choose a password to sign in to the vendor portal."},
+		Button:    mail.Button{Label: "Choose a password", URL: link},
+		Note:      "This link expires in 24 hours and can only be used once. If you weren't expecting this, contact Spotto support.",
+		Footer:    "You're receiving this because Spotto support set this address as the login for a business account.",
+	})
+}
+
+// loginEmailChangedEmailHTML tells the previous address that it no longer
+// signs in to the account, so a hand-over is never silent.
+func loginEmailChangedEmailHTML(vendorName string) string {
+	return renderEmail(mail.Email{
+		Preheader: "This address no longer signs in to " + vendorName + " on Spotto.",
+		Title:     "Your Spotto login was changed",
+		Intro:     []string{"Spotto support moved the login for the " + vendorName + " business account to a different email address, and signed it out on every device. This address can no longer sign in to it."},
+		Note:      "If you think this was a mistake, reply to this email or contact Spotto support.",
+		Footer:    "You're receiving this because this address used to sign in to a Spotto business account.",
+	})
+}
+
 func bookingConfirmedEmailHTML(b domain.Booking, serviceName string) string {
 	return renderEmail(mail.Email{
 		Preheader: "Your booking code for " + serviceName + " is inside.",
