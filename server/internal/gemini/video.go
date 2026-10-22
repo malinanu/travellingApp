@@ -84,10 +84,17 @@ var placesSchema = map[string]any{
 	"required": []string{"places"},
 }
 
-// Video is a downloaded reel to analyse.
+// Video is a reel to analyse: either downloaded bytes, or a URI Gemini
+// fetches itself (public YouTube videos only).
 type Video struct {
 	Data     []byte
 	MimeType string
+	URI      string
+}
+
+// uriPart is the request part for a video Gemini fetches by URI.
+func uriPart(uri string) map[string]any {
+	return map[string]any{"file_data": map[string]string{"file_uri": uri}}
 }
 
 // ExtractPlacesFromVideo asks model (ChatModel when "") which places a reel
@@ -101,7 +108,9 @@ func (c *Client) ExtractPlacesFromVideo(ctx context.Context, model string, video
 
 	var parts []any
 	if video != nil {
-		if len(video.Data) <= inlineVideoLimit {
+		if video.URI != "" {
+			parts = append(parts, uriPart(video.URI))
+		} else if len(video.Data) <= inlineVideoLimit {
 			parts = append(parts, map[string]any{"inline_data": map[string]string{
 				"mime_type": video.MimeType,
 				"data":      base64.StdEncoding.EncodeToString(video.Data),

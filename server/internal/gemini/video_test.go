@@ -39,3 +39,11 @@ func TestParseVideoPlaces(t *testing.T) {
 		t.Error("expected an error for a non-JSON answer")
 	}
 }
+
+func TestURIPart(t *testing.T) {
+	got := uriPart("https://www.youtube.com/shorts/aBcDeFgHiJk")
+	fd, ok := got["file_data"].(map[string]string)
+	if !ok || fd["file_uri"] != "https://www.youtube.com/shorts/aBcDeFgHiJk" || len(got) != 1 {
+		t.Errorf("uriPart = %#v", got)
+	}
+}
