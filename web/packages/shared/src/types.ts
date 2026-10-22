@@ -780,7 +780,16 @@ export interface AdminGuideMessage {
   role: 'user' | 'model';
   content: string;
   placeIds?: string[];
+  /** Card shown with a trip-planner reply (server guide_planner.go). */
+  payload?: AdminGuidePayload;
   createdAt: string;
+}
+
+export interface AdminGuidePayload {
+  type: 'questions' | 'plan' | 'calendar';
+  questions?: { questions: { id: string; text: string }[] };
+  plan?: { title: string; days: { stops: unknown[] }[] };
+  calendar?: { mode: string; stops: unknown[] };
 }
 
 /** One failed Gemini call from any feature — GET /admin/local-guide/errors.

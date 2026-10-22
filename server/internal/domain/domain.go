@@ -478,12 +478,13 @@ type GuideConversation struct {
 // message re-derives whatever tool calls it needs from the conversation's
 // prior plain-text turns, so there's nothing to replay.
 type GuideMessage struct {
-	ID             int64     `json:"-"`
-	ConversationID string    `json:"conversationId"`
-	Role           string    `json:"role"` // "user" | "assistant"
-	Content        string    `json:"content"`
-	PlaceIDs       []string  `json:"placeIds,omitempty"` // places referenced/recommended in this turn
-	CreatedAt      time.Time `json:"createdAt"`
+	ID             int64           `json:"-"`
+	ConversationID string          `json:"conversationId"`
+	Role           string          `json:"role"` // "user" | "assistant"
+	Content        string          `json:"content"`
+	PlaceIDs       []string        `json:"placeIds,omitempty"` // places referenced/recommended in this turn
+	Payload        json.RawMessage `json:"payload,omitempty"`  // card shown with an assistant turn; see guide_planner.go
+	CreatedAt      time.Time       `json:"createdAt"`
 }
 
 // GuideRequest is one row per POST /guide/chat call, success or failure —

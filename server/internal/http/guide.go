@@ -1,7 +1,7 @@
 package httpapi
 
 // Local Guide: a conversational assistant that recommends real places and
-// (eventually, in a fast-follow) plans trips. Uses the configured Gemini chat
+// plans trips (the planner's tools are in guide_planner.go). Uses the configured Gemini chat
 // model (GEMINI_CHAT_MODEL, see internal/gemini) via its OpenAI-compatibility endpoint, with tool
 // calling — the model decides for itself whether it has enough information to
 // search, or should ask a clarifying question first, steered entirely by
@@ -33,35 +33,43 @@ import (
 
 // guideMaxToolRounds bounds how many times the model can call tools before
 // it must give a final answer — prevents a runaway loop if it never stops.
-const guideMaxToolRounds = 4
+// Planning a trip takes several: find_places a few times, then the plan.
+const guideMaxToolRounds = 6
 
 // guideBudget bounds one whole guide reply (all tool rounds plus retries).
-const guideBudget = 60 * time.Second
+const guideBudget = 90 * time.Second
 
 // guideMaxHistoryMessages caps how much stored conversation gets replayed
 // into each request — conversations persist indefinitely, but the model's
 // context window doesn't, so only the most recent turns are sent.
 const guideMaxHistoryMessages = 20
 
-const guideSystemPromptTemplate = `You are "Local Guide," a friendly, knowledgeable local travel assistant for Spotto, helping travellers in Sri Lanka find great places and plan their time.
+const guideSystemPromptTemplate = `You are "Local Guide," a friendly, knowledgeable travel assistant in the Spotto app. You help travellers anywhere in the world find great places and plan their trips.
 
 Traveller's location: %s
 Traveller's saved travel styles: %s
 Current weather where they are: %s
 
-Guidelines:
-- Keep replies short, warm, and conversational — like a knowledgeable local friend, not a search engine.
-- QUICK ASKS ("any good restaurants near me?", "where can I get coffee?", "something fun to do now"): call search_places straight away — don't ask anything first. Pick categories from what they asked for, and lean on their saved travel styles and the weather. When their location is known, never ask which city or town they're in.
-- Recommend 2-3 of the places search_places returned, by their exact name, each with one short reason. Mention how far away each is (distanceKm) when it's there, and its price level or rating when that helps.
-- Then end with ONE short follow-up offering to narrow it down — for example budget ($ / $$ / $$$), a different vibe, or somewhere closer. Only one question.
+QUICK ASKS ("any good restaurants near me?", "where can I get coffee?", "something fun to do now"):
+- Call search_places straight away — don't ask anything first. Pick categories from what they asked for, and lean on their saved travel styles and the weather. When their location is known, never ask which city or town they're in. If they ask about somewhere else by name, use find_places with that place in the query instead.
+- Recommend 2-3 of the places the tools returned, by their exact name, each with one short reason. Mention distance (distanceKm), price level or rating when it helps.
+- Then end with ONE short follow-up offering to narrow it down (budget, a different vibe, somewhere closer). Only one question.
 - If their saved travel styles are "none stated", still search; make the follow-up about what vibe they like (quiet, lively, nature…). When they tell you, call save_user_vibe.
-- TRIP PLANNING (multi-day trips or specific dates): this is the one case to ask before searching — first their budget ($, $$, $$$), then their vibe if it isn't saved. Then search, and call save_trip to save the itinerary using the places you found.
-- If a request is too vague to pick any kind of place, ask ONE short clarifying question instead of guessing.
-- Never invent or recommend a place that search_places (or get_place_details) didn't actually return, and never make up distances, prices or ratings.
-- search_places' structured filters (categories, tags, vibe, price, etc.) cover the common cases, but for anything that doesn't map cleanly onto them — a specific mood, activity, or phrase the traveller used — also pass it as the free-text "query" argument so it can be matched semantically.
-- Don't put links, URLs or ids in your reply — the app shows a card with a photo, directions and details for every place you name.
+
+TRIP PLANNING ("plan a trip to…", "I'm visiting Sigiriya, create a trip", multi-day or dated plans):
+1. First call ask_trip_questions — never write a plan straight away. Ask only what they haven't told you, usually: travel dates or how many nights (kind "dates"), whether they've booked a hotel and which one (kind "text" with options like "Not booked yet"), whether they're staying only in that area or open to nearby day trips (kind "single"), what they enjoy (kind "multi": e.g. history & culture, hiking, nature & wildlife, food, relaxing, photography), and pace (relaxed / balanced / packed). 3-5 questions.
+2. When they answer, call find_places a few times with specific queries (the main sights, things matching their interests, good food near where they stay), then call propose_trip_plan. Use only refs from the tools. Put each day's stops in a sensible order with realistic times (e.g. climb rocks early, sunset spots late), 3-5 stops a day including a meal. Every note is 1-2 sentences: why it's worth it plus one practical tip.
+3. The message for a card tool is 1-2 short sentences. Never repeat the questions or the plan as text — the app shows them as cards.
+4. When they ask to add the plan, or some places, to their calendar or trip ("add this to my calendar", "put Pidurangala on day 2"), call add_to_calendar. Use mode "ask" unless they said whether it's a new trip or their current one. For only some places, pass just those as stops (refs from the plan or find_places). To add a place that isn't in the plan yet, find it with find_places first.
+5. If they ask to change the plan (more relaxed, swap a place, add a day), call propose_trip_plan again with the updated plan.
+
+ALWAYS:
+- Keep replies short, warm and conversational — like a knowledgeable local friend, not a search engine.
+- Never invent a place, distance, price or rating; only use what the tools returned.
+- search_places' structured filters cover the common cases; for anything else (a mood, an activity, a phrase they used) also pass it as the free-text "query".
+- Don't put links, URLs, ids or refs in your text — the app shows a card for every place.
 - If it's currently raining, lean toward indoor recommendations unless the traveller says otherwise.
-- "Current weather where they are" above is only for the traveller's own location. If they ask about weather somewhere else by name (e.g. "is it going to rain in Ella today?"), call get_weather with that place name instead of guessing.`
+- "Current weather where they are" is only for the traveller's own location. For weather somewhere else by name, call get_weather.`
 
 func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	if s.GeminiAPIKey == "" {
@@ -138,7 +146,7 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 	loc := newGuideLocation(req.Lat, req.Lng, req.LocationKnown)
-	reply, surfacedIDs, meta, err := s.runGuideChat(ctx, c.Subject, history, req.Message, loc)
+	res, meta, err := s.runGuideChat(ctx, c.Subject, history, req.Message, loc)
 	latencyMs := int(time.Since(start).Milliseconds())
 	if err != nil {
 		status := "error"
@@ -175,10 +183,19 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordGuideRequest(ctx, convID, c.Subject, "ok", "", latencyMs, meta)
 
-	cards := s.guideCardsForReply(ctx, reply, surfacedIDs, loc)
+	reply := res.Reply
+	// A card (questions, plan, calendar) shows its own places.
+	var cards []guidePlaceCard
+	if res.Payload == nil {
+		cards = s.guideCardsForReply(ctx, reply, res.PlaceIDs, loc)
+	}
 	placeIDs := make([]string, 0, len(cards))
 	for _, card := range cards {
 		placeIDs = append(placeIDs, card.ID)
+	}
+	var payload json.RawMessage
+	if res.Payload != nil {
+		payload, _ = json.Marshal(res.Payload)
 	}
 
 	if err := s.Store.InsertGuideMessage(ctx, domain.GuideMessage{
@@ -187,7 +204,7 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 		log.Printf("guide: save user message: %v", err)
 	}
 	if err := s.Store.InsertGuideMessage(ctx, domain.GuideMessage{
-		ConversationID: convID, Role: "assistant", Content: reply, PlaceIDs: placeIDs,
+		ConversationID: convID, Role: "assistant", Content: reply, PlaceIDs: placeIDs, Payload: payload,
 	}); err != nil {
 		log.Printf("guide: save assistant message: %v", err)
 	}
@@ -197,6 +214,7 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 		"reply":          reply,
 		"placeIds":       placeIDs, // kept for app builds older than "places"
 		"places":         cards,
+		"payload":        payload,
 	})
 }
 
@@ -298,11 +316,19 @@ type guideRequestMeta struct {
 	OutputTokens      int
 }
 
+// guideChatResult is one reply: its text, every catalog place the tools
+// surfaced (for the inline cards), and a card payload when a planner tool
+// produced one.
+type guideChatResult struct {
+	Reply    string
+	PlaceIDs []string
+	Payload  *guidePayload
+}
+
 // runGuideChat builds the conversation + tools, and runs the tool-calling
-// loop until the model gives a final text answer (or guideMaxToolRounds is
-// exhausted). placeIDs accumulates every place any search_places call
-// actually returned, across all rounds, for the response's inline cards.
-func (s *Server) runGuideChat(ctx context.Context, travellerID string, history []domain.GuideMessage, userMessage string, loc guideLocation) (string, []string, guideRequestMeta, error) {
+// loop until the model gives a final text answer, calls a card tool, or
+// guideMaxToolRounds is exhausted.
+func (s *Server) runGuideChat(ctx context.Context, travellerID string, history []domain.GuideMessage, userMessage string, loc guideLocation) (guideChatResult, guideRequestMeta, error) {
 	var meta guideRequestMeta
 	weatherCondition := s.guideWeatherCondition(ctx, loc.Lat, loc.Lng)
 	styles := s.guideTravellerStyles(ctx, travellerID)
@@ -318,11 +344,16 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 		history = history[len(history)-guideMaxHistoryMessages:]
 	}
 	for _, m := range history {
-		messages = append(messages, gemini.Message{Role: m.Role, Content: m.Content})
+		content := m.Content
+		if sum := guidePayloadSummary(m.Payload); sum != "" {
+			content += "\n" + sum
+		}
+		messages = append(messages, gemini.Message{Role: m.Role, Content: content})
 	}
 	messages = append(messages, gemini.Message{Role: "user", Content: userMessage})
 
 	tools := guideTools()
+	turn := newGuideTurn(history)
 	var placeIDs []string
 	// base is the conversation without any tool turns; toolResults collects
 	// every tool result as text, for the final round below.
@@ -349,16 +380,22 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 			meta.OutputTokens += max(usage.CompletionTokens, usage.TotalTokens-usage.PromptTokens)
 		}
 		if err != nil {
-			return "", nil, meta, err
+			return guideChatResult{}, meta, err
 		}
 		if len(resp.ToolCalls) == 0 {
 			if strings.TrimSpace(resp.Content) == "" {
-				return "", nil, meta, errors.New("guide: model returned an empty reply")
+				return guideChatResult{}, meta, errors.New("guide: model returned an empty reply")
 			}
-			return resp.Content, dedupe(placeIDs), meta, nil
+			return guideChatResult{Reply: resp.Content, PlaceIDs: dedupe(placeIDs)}, meta, nil
 		}
 		messages = append(messages, *resp)
 		for _, tc := range resp.ToolCalls {
+			if result, ok := s.runPlannerTool(ctx, tc, turn, history); ok {
+				meta.ToolsUsed = append(meta.ToolsUsed, tc.Function.Name)
+				messages = append(messages, gemini.Message{Role: "tool", ToolCallID: tc.ID, Content: result})
+				toolResults = append(toolResults, tc.Function.Name+": "+result)
+				continue
+			}
 			result, ids, usedSemantic := s.runGuideTool(ctx, tc, loc, weatherCondition)
 			placeIDs = append(placeIDs, ids...)
 			meta.ToolsUsed = append(meta.ToolsUsed, tc.Function.Name)
@@ -368,8 +405,13 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 			messages = append(messages, gemini.Message{Role: "tool", ToolCallID: tc.ID, Content: result})
 			toolResults = append(toolResults, tc.Function.Name+": "+result)
 		}
+		// A card ends the reply: the card is the answer, with its short
+		// message as the text.
+		if turn.payload != nil {
+			return guideChatResult{Reply: turn.message, PlaceIDs: dedupe(placeIDs), Payload: turn.payload}, meta, nil
+		}
 	}
-	return "", nil, meta, fmt.Errorf("guide: model kept calling tools after %d rounds", guideMaxToolRounds)
+	return guideChatResult{}, meta, fmt.Errorf("guide: model kept calling tools after %d rounds", guideMaxToolRounds)
 }
 
 func guideSystemPrompt(loc guideLocation, stylesText, weatherCondition string) string {
@@ -407,13 +449,13 @@ func vendorCategoryIDs() []string {
 }
 
 func guideTools() []gemini.Tool {
-	return []gemini.Tool{
+	return append([]gemini.Tool{
 		{
 			Type: "function",
 			Function: gemini.ToolFunction{
 				Name: "search_places",
-				Description: "Search for real places matching the traveller's preferences. " +
-					"Always use this before recommending specific places — never invent one.",
+				Description: "Search Spotto's own listings near the traveller (cafés, restaurants, stays, activities with " +
+					"vibe, price, deals and opening data). Use this for quick asks near them; use find_places for anywhere else.",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -461,7 +503,7 @@ func guideTools() []gemini.Tool {
 			Type: "function",
 			Function: gemini.ToolFunction{
 				Name: "get_weather",
-				Description: "Get the current weather/rain forecast for a named place in Sri Lanka " +
+				Description: "Get the current weather/rain forecast for a named place " +
 					"(town, landmark, or attraction), for when the traveller asks about somewhere other " +
 					"than their own current location.",
 				Parameters: map[string]any{
@@ -486,32 +528,7 @@ func guideTools() []gemini.Tool {
 				},
 			},
 		},
-		{
-			Type: "function",
-			Function: gemini.ToolFunction{
-				Name:        "save_trip",
-				Description: "Automatically save a generated itinerary to the traveller's account.",
-				Parameters: map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"name":      map[string]any{"type": "string", "description": "Name of the trip"},
-						"startDate": map[string]any{"type": "string", "description": "YYYY-MM-DD"},
-						"days": map[string]any{
-							"type": "array",
-							"items": map[string]any{
-								"type": "object",
-								"properties": map[string]any{
-									"date":   map[string]any{"type": "string"},
-									"places": map[string]any{"type": "array", "items": map[string]any{"type": "string", "description": "Place IDs"}},
-								},
-							},
-						},
-					},
-					"required": []string{"name", "startDate", "days"},
-				},
-			},
-		},
-	}
+	}, plannerTools()...)
 }
 
 // runGuideTool executes one tool call and returns its JSON result (fed
@@ -531,49 +548,6 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guide
 			}
 		}
 		return `{"error":"failed to save vibes"}`, nil, false
-
-	case "save_trip":
-		var args struct {
-			Name      string `json:"name"`
-			StartDate string `json:"startDate"`
-			Days      []any  `json:"days"`
-		}
-		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
-		c := auth.FromContext(ctx)
-
-		daysJSON, _ := json.Marshal(args.Days)
-		trip := domain.Trip{
-			OwnerID:   c.Subject,
-			Name:      args.Name,
-			StartDate: args.StartDate,
-			Days:      daysJSON,
-			UpdatedAt: time.Now(),
-		}
-
-		if existing, err := s.Store.TripByOwner(ctx, c.Subject); err == nil {
-			trip.Code = existing.Code
-			trip.Collab = existing.Collab
-		} else {
-			trip.Code = newID("trp")
-		}
-
-		// Collect all place IDs to return so the model knows which places are in the trip
-		for _, dayAny := range args.Days {
-			if dayMap, ok := dayAny.(map[string]any); ok {
-				if placesAny, ok := dayMap["places"].([]any); ok {
-					for _, p := range placesAny {
-						if pStr, ok := p.(string); ok {
-							placeIDs = append(placeIDs, pStr)
-						}
-					}
-				}
-			}
-		}
-
-		if err := s.Store.UpsertTrip(ctx, trip); err == nil {
-			return `{"status":"ok", "message":"trip saved successfully"}`, placeIDs, false
-		}
-		return `{"error":"failed to save trip"}`, nil, false
 
 	case "search_places":
 		var args struct {

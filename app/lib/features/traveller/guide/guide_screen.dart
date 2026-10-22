@@ -1,7 +1,9 @@
 // Local Guide chat — port of AIGuide.jsx, backed by the real
 // POST /guide/chat (see server/internal/http/guide.go) instead of a
 // canned keyword-matcher. Conversations persist server-side, so history
-// is fetched on open via GET /guide/conversations/latest.
+// is fetched on open via GET /guide/conversations/latest. Trip planning
+// replies carry cards (questions, a visual plan, add-to-calendar) — see
+// guide_cards.dart.
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -14,11 +16,13 @@ import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../data/mock/places.dart' as data;
 import '../../../data/repositories/repositories.dart';
+import 'guide_cards.dart';
+import 'guide_payload.dart';
 import 'guide_place.dart';
 
 const _guideSuggestions = [
   'Where can I work today with a sea view?',
-  'Best surf spot for a total beginner?',
+  'Help me plan a trip',
   "Where's the move for sunset tonight?",
   'Any deals on right now?',
 ];
@@ -26,7 +30,7 @@ const _guideSuggestions = [
 const _guideSuggestionsRainy = [
   'Where can I work today with a sea view?',
   "What's good to do in the rain?",
-  'Any indoor workshops nearby?',
+  'Help me plan a trip',
   'Any deals on right now?',
 ];
 
@@ -44,7 +48,8 @@ class _Msg {
   // Card summaries from the server; empty for replies from older servers,
   // which fall back to placeIds (see guideCardsFor).
   final List<GuidePlace> cards;
-  const _Msg(this.mine, this.content, {this.placeIds = const [], this.cards = const []});
+  final GuidePayload? payload;
+  const _Msg(this.mine, this.content, {this.placeIds = const [], this.cards = const [], this.payload});
 }
 
 List<GuidePlace> _parseCards(Object? raw) => [
@@ -65,6 +70,8 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
   final _scroll = ScrollController();
   bool _busy = false;
   String? _conversationId;
+  // Trip name each calendar card's places were added to, by message index.
+  final _addedTo = <int, String>{};
 
   String get _styleLabel {
     final style = ref.read(prefsProvider)?.styles.firstOrNull;
@@ -104,6 +111,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                   for (final id in (m['placeIds'] as List? ?? const []).cast<String>())
                     if (saved[id] != null) saved[id]!,
                 ],
+                payload: GuidePayload.tryParse(m['payload']),
               ),
           ]);
         });
@@ -168,17 +176,28 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
           if (locationKnown) 'lng': pos.lng,
         },
         // The app-wide 10s receiveTimeout is shorter than one model reply
-        // with tool calls; the server caps the whole reply at 60s.
-        options: Options(receiveTimeout: const Duration(seconds: 75)),
+        // with tool calls; the server caps the whole reply at 90s (a trip
+        // plan searches Google Places several times).
+        options: Options(receiveTimeout: const Duration(seconds: 110)),
       );
       final body = (res.data as Map).cast<String, dynamic>();
       if (!mounted) return;
+      final payload = GuidePayload.tryParse(body['payload']);
       setState(() {
         _conversationId = body['conversationId'] as String?;
         _messages.add(_Msg(false, body['reply'] as String? ?? '',
-            placeIds: (body['placeIds'] as List? ?? const []).cast<String>(), cards: _parseCards(body['places'])));
+            placeIds: (body['placeIds'] as List? ?? const []).cast<String>(),
+            cards: _parseCards(body['places']),
+            payload: payload));
         _busy = false;
       });
+      // "Add it to a new trip" / "…to my current trip": the traveller already
+      // said where, so add straight away instead of asking again.
+      final cal = payload?.calendar;
+      if (cal != null && cal.mode != 'ask') {
+        _scrollDown();
+        await _addToCalendar(cal, cal.mode, _messages.length - 1);
+      }
     } catch (e) {
       if (!mounted) return;
       // A rate-limited/errored request still creates its conversation row
@@ -198,6 +217,32 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     }
     _scrollDown();
   }
+
+  Future<void> _addToCalendar(GuideCalendarAction action, String mode, int? messageIndex) async {
+    final name = await applyGuideCalendar(context, ref, action, mode);
+    if (name == null || !mounted) return;
+    if (messageIndex != null) setState(() => _addedTo[messageIndex] = name);
+    final n = action.stops.length;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Added ${n == 1 ? action.stops.first.place.name : '$n places'} to $name.'),
+      action: SnackBarAction(label: 'Open', onPressed: () => context.go('/t/trip')),
+    ));
+  }
+
+  Widget? _payloadCard(int i, GuidePayload p) => switch (p.type) {
+        'questions' => GuideQuestionsCard(
+            questions: p.questions,
+            answered: i < _messages.length - 1 || _busy,
+            onSubmit: _send,
+          ),
+        'plan' => GuidePlanCard(plan: p.plan!, onAdd: (a) => _addToCalendar(a, 'ask', null)),
+        'calendar' => GuideCalendarCard(
+            action: p.calendar!,
+            addedTo: _addedTo[i],
+            onChoose: (mode) => _addToCalendar(p.calendar!, mode, i),
+          ),
+        _ => null,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -282,7 +327,10 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                 itemBuilder: (context, i) {
                   if (i == _messages.length) return const _TypingBubble();
                   final m = _messages[i];
-                  final msgPlaces = m.mine ? const <GuidePlace>[] : guideCardsFor(m.cards, m.placeIds, places);
+                  final msgPlaces = m.mine || m.payload != null
+                      ? const <GuidePlace>[]
+                      : guideCardsFor(m.cards, m.placeIds, places);
+                  final card = m.payload == null ? null : _payloadCard(i, m.payload!);
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Column(
@@ -327,6 +375,11 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                           Padding(
                             padding: const EdgeInsets.only(top: 6),
                             child: GuidePlaceCard(place: place),
+                          ),
+                        if (card != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: card,
                           ),
                       ],
                     ),

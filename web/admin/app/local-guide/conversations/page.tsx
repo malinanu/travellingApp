@@ -11,10 +11,27 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, type ReactNode } from 'react';
 
-import { timeAgo, type AdminGuideUserSummary, type AdminGuideMessage } from '@spotto/shared';
+import { timeAgo, type AdminGuideUserSummary, type AdminGuideMessage, type AdminGuidePayload } from '@spotto/shared';
 import Shell from '../../../components/shell';
 import { InlineErrorBanner } from '../../../components/route-status';
 import { api } from '../../../lib/api';
+
+// One line for a trip-planner card, since the transcript is text only.
+function payloadSummary(p: AdminGuidePayload): string {
+  switch (p.type) {
+    case 'questions':
+      return `Asked ${p.questions?.questions.length ?? 0} trip question(s)`;
+    case 'plan': {
+      const days = p.plan?.days ?? [];
+      const stops = days.reduce((n, d) => n + (d.stops?.length ?? 0), 0);
+      return `Trip plan: ${p.plan?.title ?? ''} · ${days.length} day(s), ${stops} stop(s)`;
+    }
+    case 'calendar':
+      return `Offered to add ${p.calendar?.stops.length ?? 0} place(s) to the Trip calendar`;
+    default:
+      return '';
+  }
+}
 
 export default function LocalGuideConversationsPage() {
   return (
@@ -134,6 +151,9 @@ function UserTranscript({ travellerId, travellerName }: { travellerId: string; t
                   <p className="text-[13px] font-medium leading-relaxed whitespace-pre-wrap">{m.content}</p>
                   {m.placeIds && m.placeIds.length > 0 && (
                     <p className="text-[11px] font-semibold mt-1 opacity-70">{m.placeIds.length} place(s) referenced</p>
+                  )}
+                  {m.payload && (
+                    <p className="text-[11px] font-semibold mt-1 opacity-70">{payloadSummary(m.payload)}</p>
                   )}
                   <p className="text-[10.5px] font-semibold mt-1 opacity-60">{timeAgo(m.createdAt)}</p>
                 </div>
