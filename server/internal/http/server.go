@@ -25,6 +25,7 @@ import (
 	"github.com/spotto/server/internal/placedetails"
 	"github.com/spotto/server/internal/store/postgres"
 	"github.com/spotto/server/internal/weather"
+	"github.com/spotto/server/internal/youtube"
 )
 
 type Server struct {
@@ -80,6 +81,8 @@ type Server struct {
 	// Inspiration Board extraction (inspiration_worker.go). Places is nil
 	// when no Places key is configured: places then stay unresolved.
 	Places                *googleplaces.Client
+	// YouTube is nil without a key: YouTube links then go through yt-dlp.
+	YouTube               *youtube.Client
 	GeminiVideoModel      string
 	YtdlpCookiesFile      string
 	InspirationDailyLimit int
@@ -176,6 +179,9 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 	}
 	if cfg.GooglePlacesAPIKey != "" {
 		s.Places = googleplaces.New(cfg.GooglePlacesAPIKey)
+	}
+	if cfg.YoutubeAPIKey != "" {
+		s.YouTube = youtube.New(cfg.YoutubeAPIKey)
 	}
 	if cfg.R2Configured() {
 		s.Media = media.NewR2(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
@@ -505,6 +511,14 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(s.RequireSuperAdmin)
 			r.Get("/admin/audit-log", s.handleAdminAuditLog)
+			r.Put("/admin/users/{id}/permissions", s.handleAdminSetUserPermissions)
+		})
+
+		// Handing a business account over to its real owner. Super-admins
+		// can always; other admins only once a super-admin grants it.
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermVendorLogins))
+			r.Post("/admin/vendors/{id}/members/{userId}/login", s.handleAdminVendorMemberLogin)
 		})
 	})
 

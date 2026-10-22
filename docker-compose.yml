@@ -48,12 +48,21 @@ services:
       GEMINI_EMBED_MODEL: ${GEMINI_EMBED_MODEL:-}
       GEMINI_VIDEO_MODEL: ${GEMINI_VIDEO_MODEL:-}
       GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-}
       INSPIRATION_DAILY_LIMIT: ${INSPIRATION_DAILY_LIMIT:-}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
       R2_BUCKET: ${R2_BUCKET}
+    # Instagram rate-limits anonymous yt-dlp requests from server IPs almost
+    # immediately, so reel extraction needs a logged-in session. Drop a
+    # Netscape cookies.txt (from a throwaway Instagram account) into
+    # /opt/spotto/ytdlp on the host and set
+    # YTDLP_COOKIES_FILE=/app/ytdlp/cookies.txt. Mounted read-write because
+    # yt-dlp saves refreshed cookies back into the file.
+    volumes:
+      - /opt/spotto/ytdlp:/app/ytdlp
     networks: [spotto]
 
   vendor:

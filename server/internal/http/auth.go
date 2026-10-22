@@ -328,6 +328,9 @@ type meResp struct {
 	// IsSuperAdmin is only ever true for RoleAdmin accounts listed in
 	// SUPER_ADMIN_EMAILS â€” see superadmin.go.
 	IsSuperAdmin bool `json:"isSuperAdmin,omitempty"`
+	// CanManageVendorLogins: may hand vendor accounts over to their owners
+	// (super-admins always; other admins when granted, see superadmin.go).
+	CanManageVendorLogins bool `json:"canManageVendorLogins,omitempty"`
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -345,6 +348,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	resp.IsSuperAdmin = u.Role == domain.RoleAdmin && s.isSuperAdmin(u.Email)
+	resp.CanManageVendorLogins = u.Role == domain.RoleAdmin && s.hasAdminPermission(r.Context(), u.ID, u.Email, PermVendorLogins)
 	writeJSON(w, http.StatusOK, resp)
 }
 

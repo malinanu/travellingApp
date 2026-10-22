@@ -65,11 +65,14 @@ type Config struct {
 	// GeminiVideoModel watches reels (defaults to GeminiChatModel).
 	// GooglePlacesAPIKey needs Places API (New); it falls back to
 	// GoogleCalendarAPIKey, the shared Maps/Places key, when unset.
+	// YoutubeAPIKey needs YouTube Data API v3 for reel metadata; it falls
+	// back to GooglePlacesAPIKey.
 	// YtdlpCookiesFile is an optional Netscape cookies file for yt-dlp when
 	// Instagram refuses anonymous downloads. InspirationDailyLimit caps links
 	// one traveller can add per 24 hours.
 	GeminiVideoModel      string
 	GooglePlacesAPIKey    string
+	YoutubeAPIKey         string
 	YtdlpCookiesFile      string
 	InspirationDailyLimit int
 	// VendorAppURL is the base URL of the vendor Next.js app, used to build
@@ -188,6 +191,7 @@ func Load() Config {
 		PublicAPIURL:         strings.TrimRight(getenv("PUBLIC_API_URL", ""), "/"),
 		GeminiVideoModel:      getenv("GEMINI_VIDEO_MODEL", ""),
 		GooglePlacesAPIKey:    getenv("GOOGLE_PLACES_API_KEY", getenv("GOOGLE_CALENDAR_API_KEY", "")),
+		YoutubeAPIKey:         getenv("YOUTUBE_API_KEY", getenv("GOOGLE_PLACES_API_KEY", getenv("GOOGLE_CALENDAR_API_KEY", ""))),
 		YtdlpCookiesFile:      getenv("YTDLP_COOKIES_FILE", ""),
 		InspirationDailyLimit: getenvInt("INSPIRATION_DAILY_LIMIT", 20),
 		SuperAdminEmails:     superAdmins,

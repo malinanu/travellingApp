@@ -1,8 +1,8 @@
 package httpapi
 
 // Inspiration Board extraction worker. A traveller saves a reel/post link
-// (inspirations.go); this worker downloads it with yt-dlp, has Gemini watch
-// the video and read the caption (internal/gemini/video.go), finds each
+// (inspirations.go); this worker reads it (inspiration_sources.go), has
+// Gemini watch the video and read the caption (internal/gemini/video.go), finds each
 // place on Google (internal/googleplaces, cached in geo_places), and tells
 // everyone who saved the link that it's ready.
 //
@@ -30,6 +30,7 @@ import (
 	"github.com/spotto/server/internal/geo"
 	"github.com/spotto/server/internal/googleplaces"
 	"github.com/spotto/server/internal/store/postgres"
+	"github.com/spotto/server/internal/youtube"
 )
 
 const (
@@ -92,13 +93,18 @@ func (s *Server) processExtraction(parent context.Context, job domain.LinkExtrac
 		s.finishExtraction(ctx, job, domain.ExtractionFailed, msgNotConfigured, nil)
 		return
 	}
-	if _, err := exec.LookPath("yt-dlp"); err != nil {
+	meta, err := s.linkMetadata(ctx, job)
+	if err != nil && isYouTubeShort(job) && !errors.Is(err, youtube.ErrNotFound) {
+		// Gemini can still watch a Short by URL; only the caption, author
+		// and thumbnail are lost. Shorts are short, so no duration check.
+		log.Printf("inspiration worker: metadata %s: %v (Short: analysing the video without details)", job.CanonicalURL, err)
+		meta, err = ytdlpMeta{}, nil
+	}
+	if errors.Is(err, errNoYtdlp) {
 		log.Printf("inspiration worker: yt-dlp not installed")
 		s.finishExtraction(ctx, job, domain.ExtractionFailed, msgNotConfigured, nil)
 		return
 	}
-
-	meta, err := s.ytdlpMetadata(ctx, job.CanonicalURL)
 	if err != nil {
 		log.Printf("inspiration worker: metadata %s: %v", job.CanonicalURL, err)
 		s.retryOrFail(ctx, job, msgCantOpen)
@@ -110,10 +116,7 @@ func (s *Server) processExtraction(parent context.Context, job domain.LinkExtrac
 
 	var video *gemini.Video
 	if meta.Duration <= inspirationMaxVideoSecs {
-		video, err = s.ytdlpDownload(ctx, job.CanonicalURL)
-		if err != nil {
-			log.Printf("inspiration worker: download %s: %v", job.CanonicalURL, err)
-		}
+		video = s.linkVideo(ctx, job)
 	}
 	if video == nil && strings.TrimSpace(job.Caption) == "" {
 		s.finishExtraction(ctx, job, domain.ExtractionFailed, msgNothingToRead, nil)
