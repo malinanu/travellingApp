@@ -51,3 +51,21 @@ func TestResolveShortLinkLeavesOtherLinksAlone(t *testing.T) {
 		}
 	}
 }
+
+func TestIsShortLink(t *testing.T) {
+	cases := map[string]bool{
+		"https://vm.tiktok.com/ZMabc123/":                true,
+		"https://fb.watch/qWeRtY12/":                     true,
+		"https://www.facebook.com/share/r/1AbCdEfGh/":    true,
+		"https://m.facebook.com/share/v/1AbCdEfGh":       true,
+		"https://www.facebook.com/reel/4720710134913664": false,
+		"https://www.tiktok.com/@a/video/1":              false,
+		"https://evil.example/share/r/1AbCdEfGh/":        false,
+	}
+	for link, want := range cases {
+		u, _ := url.Parse(link)
+		if got := isShortLink(u); got != want {
+			t.Errorf("isShortLink(%q) = %v, want %v", link, got, want)
+		}
+	}
+}

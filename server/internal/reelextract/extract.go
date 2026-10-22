@@ -111,6 +111,10 @@ func (x *Extractor) Extract(ctx context.Context, link, platform string) (Result,
 		return Result{}, &Error{Message: MsgNotConfigured, Err: errors.New("yt-dlp not installed")}
 	}
 
+	if platform == "youtube" {
+		return x.extractYouTube(ctx, link)
+	}
+
 	// TikTok photo carousels have no video; yt-dlp may still read their caption.
 	photoPost := platform == "tiktok" && strings.Contains(link, "/photo/")
 	meta, err := x.metadata(ctx, link)
@@ -135,6 +139,20 @@ func (x *Extractor) Extract(ctx context.Context, link, platform string) (Result,
 		return res, &Error{Message: MsgNothingToRead, Err: downloadErr}
 	}
 
+	if err := x.analyse(ctx, &res, video); err != nil {
+		return res, err
+	}
+	if video == nil {
+		res.PartialReason = MsgCaptionOnly
+		if photoPost {
+			res.PartialReason = MsgPhotoPost
+		}
+	}
+	return res, nil
+}
+
+// analyse asks Gemini for the places and fills them into res.
+func (x *Extractor) analyse(ctx context.Context, res *Result, video *gemini.Video) error {
 	res.Model = x.model()
 	start := time.Now()
 	found, usage, err := x.Gemini.ExtractPlacesFromVideo(ctx, res.Model, video, res.Caption)
@@ -146,16 +164,25 @@ func (x *Extractor) Extract(ctx context.Context, link, platform string) (Result,
 		x.OnAICall(ctx, kind, res.Model, usage, start, err)
 	}
 	if err != nil {
-		return res, &Error{Message: MsgAnalysisFail, Retryable: true, Err: err}
+		return &Error{Message: MsgAnalysisFail, Retryable: true, Err: err}
 	}
 	res.RegionHint, res.Places = found.RegionHint, found.Places
-	if video == nil {
-		res.PartialReason = MsgCaptionOnly
-		if photoPost {
-			res.PartialReason = MsgPhotoPost
+	dropImpossibleTimes(res.Places, res.VideoSecs)
+	return nil
+}
+
+// dropImpossibleTimes clears timestamps past the end of the video: at low
+// frame detail Gemini sometimes misplaces them, and a card saying "at
+// 14:16" in a 9-minute video is worse than none.
+func dropImpossibleTimes(places []gemini.VideoPlace, videoSecs float64) {
+	if videoSecs <= 0 {
+		return
+	}
+	for i := range places {
+		if places[i].AtSec != nil && float64(*places[i].AtSec) > videoSecs {
+			places[i].AtSec = nil
 		}
 	}
-	return res, nil
 }
 
 // ---- yt-dlp ----
@@ -168,6 +195,15 @@ type ytdlpMeta struct {
 	Channel     string  `json:"channel"`
 	Duration    float64 `json:"duration"`
 	Thumbnail   string  `json:"thumbnail"`
+
+	// YouTube
+	ID           string `json:"id"`
+	Availability string `json:"availability"` // public | unlisted | private | needs_auth | …
+	AgeLimit     int    `json:"age_limit"`
+	Chapters     []struct {
+		StartTime float64 `json:"start_time"`
+		Title     string  `json:"title"`
+	} `json:"chapters"`
 }
 
 func (m ytdlpMeta) caption() string {
