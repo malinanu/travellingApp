@@ -23,6 +23,7 @@ import (
 	"github.com/spotto/server/internal/media"
 	"github.com/spotto/server/internal/googleplaces"
 	"github.com/spotto/server/internal/placedetails"
+	"github.com/spotto/server/internal/reelextract"
 	"github.com/spotto/server/internal/store/postgres"
 	"github.com/spotto/server/internal/weather"
 	"github.com/spotto/server/internal/youtube"
@@ -80,11 +81,10 @@ type Server struct {
 	PlaceDetailsCache *placedetails.Cache
 	// Inspiration Board extraction (inspiration_worker.go). Places is nil
 	// when no Places key is configured: places then stay unresolved.
-	Places                *googleplaces.Client
-	// YouTube is nil without a key: YouTube links then go through yt-dlp.
-	YouTube               *youtube.Client
-	GeminiVideoModel      string
-	YtdlpCookiesFile      string
+	Places *googleplaces.Client
+	// Reels reads saved video links (internal/reelextract). In-process
+	// today; an HTTP client for a separate extraction service can replace it.
+	Reels                 reelextract.Interface
 	InspirationDailyLimit int
 	// GoogleOAuth is nil when GOOGLE_CLIENT_ID/SECRET aren't configured â€”
 	// handleGoogleLogin/handleGoogleCallback report 501 in that case rather
@@ -145,8 +145,6 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		// Same key as GoogleCalendarAPIKey â€” see its doc comment.
 		GooglePlacesAPIKey: cfg.GoogleCalendarAPIKey,
 		PlaceDetailsCache:  placedetails.NewCache(),
-		GeminiVideoModel:      cfg.GeminiVideoModel,
-		YtdlpCookiesFile:      cfg.YtdlpCookiesFile,
 		InspirationDailyLimit: cfg.InspirationDailyLimit,
 		loginLimit:         newLoginLimiter(5, 15*time.Minute),
 		totpLimit:          newLoginLimiter(5, 15*time.Minute),
@@ -177,11 +175,17 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 			Endpoint: google.Endpoint,
 		}
 	}
+	s.Reels = &reelextract.Extractor{
+		Gemini:      s.Gemini,
+		VideoModel:  cfg.GeminiVideoModel,
+		CookiesFile: cfg.YtdlpCookiesFile,
+		YouTube:     youtubeClient(cfg.YoutubeAPIKey),
+		OnAICall: func(ctx context.Context, kind, model string, usage *gemini.Usage, start time.Time, err error) {
+			s.recordAIUsage(ctx, aiFeatureInspiration, kind, model, 1, usage, start, err)
+		},
+	}
 	if cfg.GooglePlacesAPIKey != "" {
 		s.Places = googleplaces.New(cfg.GooglePlacesAPIKey)
-	}
-	if cfg.YoutubeAPIKey != "" {
-		s.YouTube = youtube.New(cfg.YoutubeAPIKey)
 	}
 	if cfg.R2Configured() {
 		s.Media = media.NewR2(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
@@ -535,5 +539,12 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}
+
+// youtubeClient is nil without a key, so YouTube links skip the API.
+func youtubeClient(key string) *youtube.Client {
+	if key == "" {
+		return nil
+	}
+	return youtube.New(key)
 }
-

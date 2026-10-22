@@ -27,7 +27,7 @@ func TestParseVideoPlaces(t *testing.T) {
 	}
 
 	var many []string
-	for i := 0; i < 40; i++ {
+	for i := 0; i < MaxVideoPlaces+15; i++ {
 		many = append(many, fmt.Sprintf(`{"name":"Place %d","kind":"see","evidence":"caption","confidence":0.5}`, i))
 	}
 	got, err = ParseVideoPlaces(`{"places":[` + strings.Join(many, ",") + `]}`)
@@ -40,10 +40,17 @@ func TestParseVideoPlaces(t *testing.T) {
 	}
 }
 
-func TestURIPart(t *testing.T) {
-	got := uriPart("https://www.youtube.com/shorts/aBcDeFgHiJk")
-	fd, ok := got["file_data"].(map[string]string)
-	if !ok || fd["file_uri"] != "https://www.youtube.com/shorts/aBcDeFgHiJk" || len(got) != 1 {
-		t.Errorf("uriPart = %#v", got)
+func TestVideoRequestSettings(t *testing.T) {
+	if got := fileURIPart("https://www.youtube.com/watch?v=abc")["file_data"].(map[string]string)["file_uri"]; got != "https://www.youtube.com/watch?v=abc" {
+		t.Errorf("file_uri = %q", got)
+	}
+	if c := videoGenerationConfig(&Video{FileURI: "x", LowResolution: true}); c["mediaResolution"] != "MEDIA_RESOLUTION_LOW" {
+		t.Errorf("long video config = %v", c)
+	}
+	if c := videoGenerationConfig(&Video{Data: []byte{1}}); c["mediaResolution"] != nil {
+		t.Errorf("short video should use default resolution: %v", c)
+	}
+	if c := videoGenerationConfig(nil); c["responseSchema"] == nil {
+		t.Error("structured output schema missing")
 	}
 }

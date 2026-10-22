@@ -229,9 +229,10 @@ func (s *Store) FinishExtraction(ctx context.Context, e domain.LinkExtraction) e
 	}
 	_, err := s.Pool.Exec(ctx, `
 		UPDATE link_extractions SET status=$2, error=$3, caption=$4, author=$5, thumbnail_url=$6,
-			results=$7, model=$8, updated_at=now()
+			results=$7, model=$8, video_bytes=$9, video_secs=$10, processing_ms=$11, updated_at=now()
 		WHERE canonical_url=$1`,
-		e.CanonicalURL, e.Status, e.Error, e.Caption, e.Author, e.ThumbnailURL, results, e.Model)
+		e.CanonicalURL, e.Status, e.Error, e.Caption, e.Author, e.ThumbnailURL, results, e.Model,
+		e.VideoBytes, e.VideoSecs, e.ProcessingMs)
 	return err
 }
 

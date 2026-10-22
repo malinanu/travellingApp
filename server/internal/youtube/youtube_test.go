@@ -33,7 +33,7 @@ func TestVideo(t *testing.T) {
 			t.Errorf("query = %s", r.URL.RawQuery)
 		}
 		_, _ = w.Write([]byte(`{"items":[{"snippet":{"title":"Phuket eats","description":"1. Kata Noodle House","channelTitle":"phuket.eats",
-			"thumbnails":{"default":{"url":"d.jpg"},"high":{"url":"h.jpg"}}},"contentDetails":{"duration":"PT45S"}}]}`))
+			"thumbnails":{"default":{"url":"d.jpg"},"high":{"url":"h.jpg"}}},"contentDetails":{"duration":"PT45S","contentRating":{"ytRating":"ytAgeRestricted"}},"status":{"privacyStatus":"unlisted"}}]}`))
 	}))
 	defer srv.Close()
 	c := &Client{APIKey: "k", BaseURL: srv.URL, HTTP: srv.Client()}
@@ -41,7 +41,8 @@ func TestVideo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.Description != "1. Kata Noodle House" || v.Channel != "phuket.eats" || v.Duration != 45*time.Second || v.Thumbnail != "h.jpg" {
+	if v.Description != "1. Kata Noodle House" || v.Channel != "phuket.eats" || v.Duration != 45*time.Second || v.Thumbnail != "h.jpg" ||
+		v.PrivacyStatus != "unlisted" || !v.AgeRestricted {
 		t.Errorf("video = %+v", v)
 	}
 }

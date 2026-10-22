@@ -37,7 +37,7 @@ type VideoPlaces struct {
 }
 
 // MaxVideoPlaces caps how many places one reel can return.
-const MaxVideoPlaces = 25
+const MaxVideoPlaces = 50
 
 // inlineVideoLimit keeps a base64-encoded video under the 20 MB request cap;
 // anything bigger goes through the Files API.
@@ -48,6 +48,8 @@ specific, named place the video recommends or shows: restaurants, cafes, street-
 bars, hotels, beaches, viewpoints, temples, markets, attractions, activities.
 
 Use all three sources: text shown on screen, what is said, and the caption.
+Captions often list many more places than the video shows ("50 best things to do in …"):
+include every named place from the caption too, even if it never appears in the video.
 - Only real places with a proper name. Skip generic things like "a beach" or "street food".
 - Never invent a place. If a name is only partly readable, give your best reading and lower the confidence.
 - area is the neighbourhood or beach (e.g. "Kata Beach"); city and country are where the place is.
@@ -56,7 +58,7 @@ Use all three sources: text shown on screen, what is said, and the caption.
 - atSec is the second in the video where the place first appears (omit for caption-only).
 - confidence is 0 to 1.
 - regionHint is the main city/region the reel is about, e.g. "Phuket, Thailand".
-List places in the order the video shows them, at most 25.`
+List places in the order the video shows them, then the caption-only ones, at most 50.`
 
 // placesSchema is the structured-output schema for VideoPlaces.
 var placesSchema = map[string]any{
@@ -84,17 +86,17 @@ var placesSchema = map[string]any{
 	"required": []string{"places"},
 }
 
-// Video is a reel to analyse: either downloaded bytes, or a URI Gemini
-// fetches itself (public YouTube videos only).
+// Video is a reel to analyse: downloaded bytes, or a URL Gemini fetches
+// itself (public YouTube videos).
 type Video struct {
 	Data     []byte
 	MimeType string
-	URI      string
-}
 
-// uriPart is the request part for a video Gemini fetches by URI.
-func uriPart(uri string) map[string]any {
-	return map[string]any{"file_data": map[string]string{"file_uri": uri}}
+	// FileURI, when set, is passed to Gemini instead of Data.
+	FileURI string
+	// LowResolution samples frames at lower detail: far fewer tokens for
+	// long videos, while large on-screen text stays readable.
+	LowResolution bool
 }
 
 // ExtractPlacesFromVideo asks model (ChatModel when "") which places a reel
@@ -107,10 +109,10 @@ func (c *Client) ExtractPlacesFromVideo(ctx context.Context, model string, video
 	defer cancel()
 
 	var parts []any
-	if video != nil {
-		if video.URI != "" {
-			parts = append(parts, uriPart(video.URI))
-		} else if len(video.Data) <= inlineVideoLimit {
+	if video != nil && video.FileURI != "" {
+		parts = append(parts, fileURIPart(video.FileURI))
+	} else if video != nil {
+		if len(video.Data) <= inlineVideoLimit {
 			parts = append(parts, map[string]any{"inline_data": map[string]string{
 				"mime_type": video.MimeType,
 				"data":      base64.StdEncoding.EncodeToString(video.Data),
@@ -137,12 +139,8 @@ func (c *Client) ExtractPlacesFromVideo(ctx context.Context, model string, video
 	parts = append(parts, map[string]any{"text": text})
 
 	body, err := json.Marshal(map[string]any{
-		"contents": []any{map[string]any{"role": "user", "parts": parts}},
-		"generationConfig": map[string]any{
-			"responseMimeType": "application/json",
-			"responseSchema":   placesSchema,
-			"temperature":      0.2,
-		},
+		"contents":         []any{map[string]any{"role": "user", "parts": parts}},
+		"generationConfig": videoGenerationConfig(video),
 	})
 	if err != nil {
 		return VideoPlaces{}, nil, err
@@ -161,6 +159,23 @@ func (c *Client) ExtractPlacesFromVideo(ctx context.Context, model string, video
 	}
 	places, err := ParseVideoPlaces(text)
 	return places, usage, err
+}
+
+// fileURIPart points Gemini at a video it fetches itself (e.g. YouTube).
+func fileURIPart(uri string) map[string]any {
+	return map[string]any{"file_data": map[string]string{"file_uri": uri}}
+}
+
+func videoGenerationConfig(video *Video) map[string]any {
+	c := map[string]any{
+		"responseMimeType": "application/json",
+		"responseSchema":   placesSchema,
+		"temperature":      0.2,
+	}
+	if video != nil && video.LowResolution {
+		c["mediaResolution"] = "MEDIA_RESOLUTION_LOW"
+	}
+	return c
 }
 
 // decodeGenerateText reads a generateContent response's text and usage.

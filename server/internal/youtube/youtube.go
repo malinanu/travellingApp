@@ -36,6 +36,10 @@ type Video struct {
 	Channel     string
 	Duration    time.Duration
 	Thumbnail   string
+	// PrivacyStatus is public, unlisted or private; Gemini only watches
+	// public videos.
+	PrivacyStatus string
+	AgeRestricted bool
 }
 
 // ErrNotFound means the video doesn't exist or isn't public.
@@ -43,7 +47,7 @@ var ErrNotFound = errors.New("youtube: video not found")
 
 // Video fetches one video's metadata by its 11-character ID.
 func (c *Client) Video(ctx context.Context, id string) (Video, error) {
-	q := url.Values{"part": {"snippet,contentDetails"}, "id": {id}, "key": {c.APIKey}}
+	q := url.Values{"part": {"snippet,contentDetails,status"}, "id": {id}, "key": {c.APIKey}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/youtube/v3/videos?"+q.Encode(), nil)
 	if err != nil {
 		return Video{}, err
@@ -73,8 +77,14 @@ func (c *Client) Video(ctx context.Context, id string) (Video, error) {
 				} `json:"thumbnails"`
 			} `json:"snippet"`
 			ContentDetails struct {
-				Duration string `json:"duration"`
+				Duration      string `json:"duration"`
+				ContentRating struct {
+					YtRating string `json:"ytRating"`
+				} `json:"contentRating"`
 			} `json:"contentDetails"`
+			Status struct {
+				PrivacyStatus string `json:"privacyStatus"`
+			} `json:"status"`
 		} `json:"items"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&raw); err != nil {
@@ -89,6 +99,9 @@ func (c *Client) Video(ctx context.Context, id string) (Video, error) {
 		Description: it.Snippet.Description,
 		Channel:     it.Snippet.ChannelTitle,
 		Duration:    ParseDuration(it.ContentDetails.Duration),
+
+		PrivacyStatus: it.Status.PrivacyStatus,
+		AgeRestricted: it.ContentDetails.ContentRating.YtRating == "ytAgeRestricted",
 	}
 	for _, size := range []string{"maxres", "standard", "high", "medium", "default"} {
 		if t, ok := it.Snippet.Thumbnails[size]; ok && t.URL != "" {

@@ -165,7 +165,7 @@ class _AddBar extends StatelessWidget {
         children: [
           const Text('Save a travel reel', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
           const SizedBox(height: 2),
-          const Text("Paste an Instagram, TikTok or YouTube link. We'll watch it and list the places in it.",
+          const Text("Paste an Instagram, TikTok, YouTube or Facebook link. We'll watch it and list the places in it.",
               style: TextStyle(fontSize: 12.5, color: SpottoColors.muted)),
           const SizedBox(height: 12),
           Row(
@@ -271,7 +271,7 @@ class _EmptyLinks extends StatelessWidget {
           Text('No reels yet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
           SizedBox(height: 6),
           Text(
-            'Found a "places to visit" reel? Tap Share in Instagram or TikTok and pick Spotto, or paste the link above.',
+            'Found a "places to visit" video? Tap Share in Instagram, TikTok, YouTube or Facebook and pick Spotto, or paste the link above.',
             textAlign: TextAlign.center,
             style: TextStyle(color: SpottoColors.muted, height: 1.4),
           ),
@@ -285,6 +285,7 @@ IconData platformIcon(String platform) => switch (platform) {
       'instagram' => Icons.camera_alt_rounded,
       'tiktok' => Icons.music_note_rounded,
       'youtube' => Icons.play_circle_fill_rounded,
+      'facebook' => Icons.facebook_rounded,
       _ => Icons.link_rounded,
     };
 

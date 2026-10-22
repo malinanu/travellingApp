@@ -1,10 +1,10 @@
 package httpapi
 
 // Inspiration Board extraction worker. A traveller saves a reel/post link
-// (inspirations.go); this worker reads it (inspiration_sources.go), has
-// Gemini watch the video and read the caption (internal/gemini/video.go), finds each
-// place on Google (internal/googleplaces, cached in geo_places), and tells
-// everyone who saved the link that it's ready.
+// (inspirations.go); this worker has it read by s.Reels (internal/reelextract:
+// yt-dlp + Gemini, which can move to its own server), finds each place on
+// Google (internal/googleplaces, cached in geo_places), and tells everyone
+// who saved the link that it's ready.
 //
 // Jobs live in link_extractions, so they survive restarts, and one result
 // is shared by every traveller who saves the same link. Same ticker-sweep
@@ -12,35 +12,24 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"net/url"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/spotto/server/internal/domain"
-	"github.com/spotto/server/internal/gemini"
 	"github.com/spotto/server/internal/geo"
 	"github.com/spotto/server/internal/googleplaces"
+	"github.com/spotto/server/internal/reelextract"
 	"github.com/spotto/server/internal/store/postgres"
-	"github.com/spotto/server/internal/youtube"
 )
 
 const (
 	inspirationWorkerInterval = 5 * time.Second
 	inspirationJobTimeout     = 5 * time.Minute
 	inspirationMaxAttempts    = 3
-	// Reels longer than this are read from the caption only: a long video
-	// costs far more to analyse and rarely is a "N places to visit" reel.
-	inspirationMaxVideoSecs = 180
-	inspirationMaxVideoMB   = 45
 )
 
 // StartInspirationWorker blocks until ctx is cancelled; call with `go`.
@@ -76,80 +65,49 @@ func (s *Server) runInspirationSweep(ctx context.Context) {
 	}
 }
 
-// Messages travellers see on a link card.
-const (
-	msgNotConfigured = "Reading reels isn't set up on this server yet."
-	msgCantOpen      = "We couldn't open this link. It may be private, deleted, or blocked from downloading."
-	msgNothingToRead = "We couldn't watch this video and it has no caption to read."
-	msgCaptionOnly   = "We couldn't watch the video, so these places come from the caption only."
-	msgAnalysisFail  = "We couldn't analyse this video right now. Tap Retry to try again."
-)
-
 func (s *Server) processExtraction(parent context.Context, job domain.LinkExtraction) {
 	ctx, cancel := context.WithTimeout(parent, inspirationJobTimeout)
 	defer cancel()
+	start := time.Now()
 
-	if s.GeminiAPIKey == "" {
-		s.finishExtraction(ctx, job, domain.ExtractionFailed, msgNotConfigured, nil)
-		return
-	}
-	meta, err := s.linkMetadata(ctx, job)
-	if err != nil && isYouTubeShort(job) && !errors.Is(err, youtube.ErrNotFound) {
-		// Gemini can still watch a Short by URL; only the caption, author
-		// and thumbnail are lost. Shorts are short, so no duration check.
-		log.Printf("inspiration worker: metadata %s: %v (Short: analysing the video without details)", job.CanonicalURL, err)
-		meta, err = ytdlpMeta{}, nil
-	}
-	if errors.Is(err, errNoYtdlp) {
-		log.Printf("inspiration worker: yt-dlp not installed")
-		s.finishExtraction(ctx, job, domain.ExtractionFailed, msgNotConfigured, nil)
-		return
-	}
+	res, err := s.Reels.Extract(ctx, job.CanonicalURL, job.Platform)
+	job.Caption, job.Author, job.ThumbnailURL, job.Model = res.Caption, res.Author, res.ThumbnailURL, res.Model
+	job.VideoBytes, job.VideoSecs = res.VideoBytes, res.VideoSecs
 	if err != nil {
-		log.Printf("inspiration worker: metadata %s: %v", job.CanonicalURL, err)
-		s.retryOrFail(ctx, job, msgCantOpen)
-		return
-	}
-	job.Caption = meta.caption()
-	job.Author = meta.author()
-	job.ThumbnailURL = meta.Thumbnail
-
-	var video *gemini.Video
-	if meta.Duration <= inspirationMaxVideoSecs {
-		video = s.linkVideo(ctx, job)
-	}
-	if video == nil && strings.TrimSpace(job.Caption) == "" {
-		s.finishExtraction(ctx, job, domain.ExtractionFailed, msgNothingToRead, nil)
+		job.ProcessingMs = int(time.Since(start).Milliseconds())
+		log.Printf("inspiration worker: %s %s: %v", job.Platform, job.CanonicalURL, err)
+		var xe *reelextract.Error
+		if !errors.As(err, &xe) {
+			xe = &reelextract.Error{Message: reelextract.MsgAnalysisFail, Retryable: true}
+		}
+		if xe.Retryable {
+			s.retryOrFail(ctx, job, xe.Message)
+		} else {
+			s.finishExtraction(ctx, job, domain.ExtractionFailed, xe.Message, nil)
+		}
 		return
 	}
 
-	model := s.GeminiVideoModel
-	if model == "" {
-		model = s.Gemini.ChatModel
-	}
-	found, err := s.aiExtractVideoPlaces(ctx, model, video, job.Caption)
-	if err != nil {
-		log.Printf("inspiration worker: gemini %s: %v", job.CanonicalURL, err)
-		s.retryOrFail(ctx, job, msgAnalysisFail)
-		return
-	}
-	job.Model = model
-
-	results := make([]domain.ExtractedPlace, 0, len(found.Places))
-	for _, vp := range found.Places {
+	results := make([]domain.ExtractedPlace, 0, len(res.Places))
+	for _, vp := range res.Places {
 		ep := domain.ExtractedPlace{
 			Name: vp.Name, Kind: vp.Kind, Area: vp.Area, City: vp.City, Country: vp.Country,
 			Evidence: vp.Evidence, AtSec: vp.AtSec, Confidence: vp.Confidence,
 		}
-		s.resolveExtractedPlace(ctx, &ep, found.RegionHint)
+		s.resolveExtractedPlace(ctx, &ep, res.RegionHint)
 		results = append(results, ep)
 	}
+	job.ProcessingMs = int(time.Since(start).Milliseconds())
 
-	status, msg := domain.ExtractionDone, ""
-	if video == nil {
-		status, msg = domain.ExtractionPartial, msgCaptionOnly
+	status := domain.ExtractionDone
+	if res.PartialReason != "" {
+		status = domain.ExtractionPartial
 	}
-	s.finishExtraction(ctx, job, status, msg, results)
+	// One line per job: what it cost, for deciding whether extraction
+	// needs its own server.
+	log.Printf("inspiration worker: done %s %s places=%d video=%.1fMB/%.0fs took=%dms",
+		job.Platform, job.CanonicalURL, len(results), float64(job.VideoBytes)/(1<<20), job.VideoSecs, job.ProcessingMs)
+	s.finishExtraction(ctx, job, status, res.PartialReason, results)
 }
 
 // retryOrFail schedules another attempt with backoff, or gives up after
@@ -205,17 +163,6 @@ func extractionPushText(job domain.LinkExtraction) (string, string) {
 	default:
 		return fmt.Sprintf("%d places found", n), fmt.Sprintf("We found %d places in the reel%s. Tap to save the ones you like.", n, from)
 	}
-}
-
-func (s *Server) aiExtractVideoPlaces(ctx context.Context, model string, video *gemini.Video, caption string) (gemini.VideoPlaces, error) {
-	start := time.Now()
-	out, usage, err := s.Gemini.ExtractPlacesFromVideo(ctx, model, video, caption)
-	kind := "video"
-	if video == nil {
-		kind = "chat"
-	}
-	s.recordAIUsage(ctx, aiFeatureInspiration, kind, model, 1, usage, start, err)
-	return out, err
 }
 
 // resolveExtractedPlace finds the place on Google (cached in geo_places) and,
@@ -379,167 +326,4 @@ func squash(s string) string {
 		}
 	}
 	return b.String()
-}
-
-// ---- links ----
-
-var (
-	igPathRe      = regexp.MustCompile(`^/(?:[\w.]+/)?(reels?|p|tv)/([\w-]+)`)
-	tiktokVideoRe = regexp.MustCompile(`^/(@[\w.-]+)/(?:video|photo)/(\d+)`)
-	ytShortsRe    = regexp.MustCompile(`^/(?:shorts|live)/([\w-]{6,})`)
-)
-
-var errUnsupportedLink = errors.New("unsupported link")
-
-// canonicalLink turns a shared link into one stable URL per post (dropping
-// tracking parameters and share-sheet variations) and names its platform.
-// Only these platforms are accepted, which also keeps yt-dlp from being
-// pointed at arbitrary hosts.
-func canonicalLink(raw string) (canonical, platform string, err error) {
-	raw = strings.TrimSpace(raw)
-	if raw != "" && !strings.Contains(raw, "://") {
-		raw = "https://" + raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
-		return "", "", errUnsupportedLink
-	}
-	host := strings.ToLower(u.Hostname())
-	host = strings.TrimPrefix(host, "www.")
-	host = strings.TrimPrefix(host, "m.")
-	switch {
-	case host == "instagram.com":
-		m := igPathRe.FindStringSubmatch(u.Path)
-		if m == nil {
-			return "", "", errUnsupportedLink
-		}
-		kind := m[1]
-		if kind == "reels" {
-			kind = "reel"
-		}
-		return "https://www.instagram.com/" + kind + "/" + m[2] + "/", "instagram", nil
-	case host == "tiktok.com":
-		m := tiktokVideoRe.FindStringSubmatch(u.Path)
-		if m == nil {
-			return "", "", errUnsupportedLink
-		}
-		return "https://www.tiktok.com/" + m[1] + "/video/" + m[2], "tiktok", nil
-	case host == "vm.tiktok.com" || host == "vt.tiktok.com":
-		code := strings.Trim(u.Path, "/")
-		if code == "" || strings.Contains(code, "/") {
-			return "", "", errUnsupportedLink
-		}
-		return "https://" + host + "/" + code + "/", "tiktok", nil
-	case host == "youtube.com" || host == "music.youtube.com":
-		if m := ytShortsRe.FindStringSubmatch(u.Path); m != nil {
-			return "https://www.youtube.com/shorts/" + m[1], "youtube", nil
-		}
-		if v := u.Query().Get("v"); u.Path == "/watch" && v != "" {
-			return "https://www.youtube.com/watch?v=" + url.QueryEscape(v), "youtube", nil
-		}
-	case host == "youtu.be":
-		if id := strings.Trim(u.Path, "/"); id != "" && !strings.Contains(id, "/") {
-			return "https://www.youtube.com/watch?v=" + url.QueryEscape(id), "youtube", nil
-		}
-	}
-	return "", "", errUnsupportedLink
-}
-
-// ---- yt-dlp ----
-
-type ytdlpMeta struct {
-	Description string  `json:"description"`
-	Title       string  `json:"title"`
-	Uploader    string  `json:"uploader"`
-	UploaderID  string  `json:"uploader_id"`
-	Channel     string  `json:"channel"`
-	Duration    float64 `json:"duration"`
-	Thumbnail   string  `json:"thumbnail"`
-}
-
-func (m ytdlpMeta) caption() string {
-	if m.Description != "" {
-		return m.Description
-	}
-	return m.Title
-}
-
-func (m ytdlpMeta) author() string {
-	switch {
-	case m.Channel != "":
-		return m.Channel
-	case m.Uploader != "":
-		return m.Uploader
-	default:
-		return m.UploaderID
-	}
-}
-
-func (s *Server) ytdlpArgs(extra ...string) []string {
-	args := []string{"--no-warnings", "--no-playlist", "--socket-timeout", "20"}
-	if s.YtdlpCookiesFile != "" {
-		args = append(args, "--cookies", s.YtdlpCookiesFile)
-	}
-	return append(args, extra...)
-}
-
-func (s *Server) ytdlpMetadata(ctx context.Context, link string) (ytdlpMeta, error) {
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "yt-dlp", s.ytdlpArgs("--dump-json", "--skip-download", "--", link)...).Output()
-	if err != nil {
-		return ytdlpMeta{}, fmt.Errorf("yt-dlp metadata: %w%s", err, stderrOf(err))
-	}
-	var m ytdlpMeta
-	if err := json.Unmarshal(out, &m); err != nil {
-		return ytdlpMeta{}, fmt.Errorf("yt-dlp metadata: parse: %w", err)
-	}
-	return m, nil
-}
-
-// ytdlpDownload fetches the video as a single file (no ffmpeg merge needed).
-func (s *Server) ytdlpDownload(ctx context.Context, link string) (*gemini.Video, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	dir, err := os.MkdirTemp("", "spotto-reel-*")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(dir)
-
-	limit := fmt.Sprintf("%dM", inspirationMaxVideoMB)
-	format := fmt.Sprintf("best[ext=mp4][filesize<%[1]s]/best[ext=mp4][filesize_approx<%[1]s]/best[ext=mp4]/best", limit)
-	args := s.ytdlpArgs("-f", format, "--max-filesize", limit, "-o", filepath.Join(dir, "video.%(ext)s"), "--", link)
-	if out, err := exec.CommandContext(ctx, "yt-dlp", args...).CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("yt-dlp download: %w: %s", err, lastLine(string(out)))
-	}
-	files, _ := filepath.Glob(filepath.Join(dir, "video.*"))
-	if len(files) == 0 {
-		return nil, errors.New("yt-dlp download: no file (over the size limit?)")
-	}
-	data, err := os.ReadFile(files[0])
-	if err != nil {
-		return nil, err
-	}
-	mime := "video/mp4"
-	switch strings.ToLower(filepath.Ext(files[0])) {
-	case ".webm":
-		mime = "video/webm"
-	case ".mov":
-		mime = "video/quicktime"
-	}
-	return &gemini.Video{Data: data, MimeType: mime}, nil
-}
-
-func stderrOf(err error) string {
-	var ee *exec.ExitError
-	if errors.As(err, &ee) && len(ee.Stderr) > 0 {
-		return ": " + lastLine(string(ee.Stderr))
-	}
-	return ""
-}
-
-func lastLine(s string) string {
-	lines := strings.Split(strings.TrimSpace(s), "\n")
-	return strings.TrimSpace(lines[len(lines)-1])
 }

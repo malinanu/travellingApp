@@ -59,7 +59,11 @@ type LinkExtraction struct {
 	Results      []ExtractedPlace `json:"results"`
 	Model        string           `json:"-"`
 	Attempts     int              `json:"-"`
-	UpdatedAt    time.Time        `json:"updatedAt"`
+	// What the job cost: downloaded video size and length, and wall time.
+	VideoBytes   int64     `json:"-"`
+	VideoSecs    float64   `json:"-"`
+	ProcessingMs int       `json:"-"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // InspirationLink is a link a traveller saved to their board.

@@ -89,6 +89,9 @@ void main() {
         'https://www.instagram.com/reel/DbQSwgwMM_n/?igsh=x');
     expect(findSupportedLink('https://vm.tiktok.com/ZMabc123/'), 'https://vm.tiktok.com/ZMabc123/');
     expect(findSupportedLink('https://youtu.be/aBcDeFgHiJk'), 'https://youtu.be/aBcDeFgHiJk');
+    expect(findSupportedLink('Watch this https://www.facebook.com/share/r/1AbCdEfGh/ 🌴'), 'https://www.facebook.com/share/r/1AbCdEfGh/');
+    expect(findSupportedLink('https://fb.watch/qWeRtY12/'), 'https://fb.watch/qWeRtY12/');
+    expect(findSupportedLink('https://m.facebook.com/reel/4720710134913664'), 'https://m.facebook.com/reel/4720710134913664');
     expect(findSupportedLink('https://example.com/blog'), isNull);
   });
 
