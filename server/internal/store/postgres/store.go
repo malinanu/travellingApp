@@ -95,6 +95,14 @@ func jsonb(v any) []byte {
 	return b
 }
 
+// nullJSON stores an already-encoded JSON document, or SQL NULL when empty.
+func nullJSON(raw json.RawMessage) any {
+	if len(raw) == 0 {
+		return nil
+	}
+	return string(raw)
+}
+
 // ---- users ----
 
 func (s *Store) CreateUser(ctx context.Context, u domain.User) error {
@@ -2525,9 +2533,9 @@ func (s *Store) InsertGuideMessage(ctx context.Context, m domain.GuideMessage) e
 	}
 	defer tx.Rollback(ctx)
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO guide_messages (conversation_id, role, content, place_ids)
-		VALUES ($1,$2,$3,$4)`,
-		m.ConversationID, m.Role, m.Content, jsonb(m.PlaceIDs)); err != nil {
+		INSERT INTO guide_messages (conversation_id, role, content, place_ids, payload)
+		VALUES ($1,$2,$3,$4,$5)`,
+		m.ConversationID, m.Role, m.Content, jsonb(m.PlaceIDs), nullJSON(m.Payload)); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx,
@@ -2541,7 +2549,7 @@ func (s *Store) InsertGuideMessage(ctx context.Context, m domain.GuideMessage) e
 // for both replaying history to the traveller and as context for the LLM.
 func (s *Store) GuideMessagesByConversation(ctx context.Context, conversationID string) ([]domain.GuideMessage, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT role, content, place_ids, created_at FROM guide_messages
+		SELECT role, content, place_ids, payload, created_at FROM guide_messages
 		WHERE conversation_id=$1 ORDER BY created_at ASC`, conversationID)
 	if err != nil {
 		return nil, err
@@ -2551,7 +2559,7 @@ func (s *Store) GuideMessagesByConversation(ctx context.Context, conversationID 
 	for rows.Next() {
 		var m domain.GuideMessage
 		var placeIDs []byte
-		if err := rows.Scan(&m.Role, &m.Content, &placeIDs, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.Role, &m.Content, &placeIDs, &m.Payload, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		m.ConversationID = conversationID
@@ -2564,7 +2572,7 @@ func (s *Store) GuideMessagesByConversation(ctx context.Context, conversationID 
 // GuideMessagesByTraveller returns all user-visible turns for a given traveller across all conversations
 func (s *Store) GuideMessagesByTraveller(ctx context.Context, travellerID string) ([]domain.GuideMessage, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT m.conversation_id, m.role, m.content, m.place_ids, m.created_at
+		SELECT m.conversation_id, m.role, m.content, m.place_ids, m.payload, m.created_at
 		FROM guide_messages m
 		JOIN guide_conversations c ON m.conversation_id = c.id
 		WHERE c.traveller_id = $1
@@ -2577,7 +2585,7 @@ func (s *Store) GuideMessagesByTraveller(ctx context.Context, travellerID string
 	for rows.Next() {
 		var m domain.GuideMessage
 		var placeIDs []byte
-		if err := rows.Scan(&m.ConversationID, &m.Role, &m.Content, &placeIDs, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ConversationID, &m.Role, &m.Content, &placeIDs, &m.Payload, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		json.Unmarshal(placeIDs, &m.PlaceIDs)

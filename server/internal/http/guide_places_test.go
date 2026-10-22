@@ -3,6 +3,7 @@ package httpapi
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/recommend"
@@ -26,11 +27,14 @@ func TestNewGuideLocation(t *testing.T) {
 }
 
 func TestGuideSystemPromptLocation(t *testing.T) {
-	known := guideSystemPrompt(guideLocation{Known: true, Lat: 6.03, Lng: 80.21, Area: "Galle"}, "luxury", "sunny")
+	known := guideSystemPrompt(time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC), guideLocation{Known: true, Lat: 6.03, Lng: 80.21, Area: "Galle"}, "luxury", "sunny")
 	if !strings.Contains(known, "near Galle") || !strings.Contains(known, "never ask which city or town") {
 		t.Fatalf("known-location prompt missing area or the don't-ask rule:\n%s", known)
 	}
-	unknown := guideSystemPrompt(guideLocation{}, "none stated", "unknown")
+	unknown := guideSystemPrompt(time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC), guideLocation{}, "none stated", "unknown")
+	if !strings.Contains(known, "Today's date: Friday 23 October 2026") {
+		t.Fatalf("prompt missing today's date:\n%s", known)
+	}
 	if !strings.Contains(unknown, "ask which town or area") {
 		t.Fatalf("unknown-location prompt should allow asking for a town:\n%s", unknown)
 	}

@@ -49,6 +49,7 @@ type Place struct {
 	Types       []string
 	PhotoName   string
 	MapsURL     string
+	Summary     string // Google's one-line description; SearchTextMany only
 }
 
 // ErrNoResult means Google found nothing for the query.
@@ -57,26 +58,41 @@ var ErrNoResult = errors.New("googleplaces: no result")
 // SearchText returns the best match for a free-text query such as
 // "Kata Noodle House, Kata Beach, Phuket, Thailand".
 func (c *Client) SearchText(ctx context.Context, query string) (Place, error) {
+	places, err := c.search(ctx, query, 1, fieldMask)
+	if err != nil {
+		return Place{}, err
+	}
+	return places[0], nil
+}
+
+// SearchTextMany returns up to limit results for a broader query such as
+// "best viewpoints near Sigiriya, Sri Lanka", with Google's short editorial
+// summary of each (a pricier field, so the single-result search skips it).
+func (c *Client) SearchTextMany(ctx context.Context, query string, limit int) ([]Place, error) {
+	return c.search(ctx, query, min(20, max(1, limit)), fieldMask+",places.editorialSummary")
+}
+
+func (c *Client) search(ctx context.Context, query string, pageSize int, mask string) ([]Place, error) {
 	body, _ := json.Marshal(map[string]any{
 		"textQuery":    query,
-		"pageSize":     1,
+		"pageSize":     pageSize,
 		"languageCode": "en",
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/places:searchText", bytes.NewReader(body))
 	if err != nil {
-		return Place{}, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Goog-Api-Key", c.APIKey)
-	req.Header.Set("X-Goog-FieldMask", fieldMask)
+	req.Header.Set("X-Goog-FieldMask", mask)
 	res, err := c.HTTP.Do(req)
 	if err != nil {
-		return Place{}, fmt.Errorf("googleplaces: search: %w", err)
+		return nil, fmt.Errorf("googleplaces: search: %w", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
-		return Place{}, fmt.Errorf("googleplaces: search: HTTP %d: %s", res.StatusCode, strings.TrimSpace(string(msg)))
+		return nil, fmt.Errorf("googleplaces: search: HTTP %d: %s", res.StatusCode, strings.TrimSpace(string(msg)))
 	}
 	var out struct {
 		Places []struct {
@@ -94,7 +110,10 @@ func (c *Client) SearchText(ctx context.Context, query string) (Place, error) {
 			PrimaryType      string   `json:"primaryType"`
 			Types            []string `json:"types"`
 			GoogleMapsURI    string   `json:"googleMapsUri"`
-			Photos           []struct {
+			EditorialSummary struct {
+				Text string `json:"text"`
+			} `json:"editorialSummary"`
+			Photos []struct {
 				Name string `json:"name"`
 			} `json:"photos"`
 			AddressComponents []struct {
@@ -105,35 +124,39 @@ func (c *Client) SearchText(ctx context.Context, query string) (Place, error) {
 		} `json:"places"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
-		return Place{}, fmt.Errorf("googleplaces: decode: %w", err)
+		return nil, fmt.Errorf("googleplaces: decode: %w", err)
 	}
 	if len(out.Places) == 0 {
-		return Place{}, ErrNoResult
+		return nil, ErrNoResult
 	}
-	g := out.Places[0]
-	p := Place{
-		ID: g.ID, Name: g.DisplayName.Text, Lat: g.Location.Latitude, Lng: g.Location.Longitude,
-		Address: g.FormattedAddress, Rating: g.Rating, RatingCount: g.UserRatingCount,
-		PrimaryType: g.PrimaryType, Types: g.Types, MapsURL: g.GoogleMapsURI,
-	}
-	if len(g.Photos) > 0 {
-		p.PhotoName = g.Photos[0].Name
-	}
-	for _, c := range g.AddressComponents {
-		for _, t := range c.Types {
-			switch t {
-			case "country":
-				p.CountryCode = c.ShortText
-			case "locality":
-				p.City = c.LongText
-			case "administrative_area_level_1":
-				if p.City == "" {
+	places := make([]Place, 0, len(out.Places))
+	for _, g := range out.Places {
+		p := Place{
+			ID: g.ID, Name: g.DisplayName.Text, Lat: g.Location.Latitude, Lng: g.Location.Longitude,
+			Address: g.FormattedAddress, Rating: g.Rating, RatingCount: g.UserRatingCount,
+			PrimaryType: g.PrimaryType, Types: g.Types, MapsURL: g.GoogleMapsURI,
+			Summary: g.EditorialSummary.Text,
+		}
+		if len(g.Photos) > 0 {
+			p.PhotoName = g.Photos[0].Name
+		}
+		for _, c := range g.AddressComponents {
+			for _, t := range c.Types {
+				switch t {
+				case "country":
+					p.CountryCode = c.ShortText
+				case "locality":
 					p.City = c.LongText
+				case "administrative_area_level_1":
+					if p.City == "" {
+						p.City = c.LongText
+					}
 				}
 			}
 		}
+		places = append(places, p)
 	}
-	return p, nil
+	return places, nil
 }
 
 // Photo fetches a place photo (as named in Place.PhotoName) at up to
