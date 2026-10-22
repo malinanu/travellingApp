@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spotto/server/internal/domain"
 )
@@ -107,5 +108,57 @@ func TestPlannerToolsRegistered(t *testing.T) {
 	}
 	if names["save_trip"] {
 		t.Error("save_trip should be gone")
+	}
+}
+
+func TestPlannerCardTools(t *testing.T) {
+	var names []string
+	for _, tool := range plannerCardTools() {
+		names = append(names, tool.Function.Name)
+	}
+	if strings.Join(names, ",") != "ask_trip_questions,propose_trip_plan,add_to_calendar" {
+		t.Errorf("card tools = %v", names)
+	}
+}
+
+func TestMapPayloadPhotos(t *testing.T) {
+	plan := samplePlan()
+	plan.Days[0].Stops[0].Place.PhotoURL = "/geo-places/gp_1/photo"
+	plan.Days[0].Stops[1].Place.PhotoURL = "/media/raw/cafe.jpg?token=old"
+	raw, _ := json.Marshal(guidePayload{Type: guidePayloadPlan, Plan: &plan})
+	sign := func(u string) string {
+		if strings.HasPrefix(u, "/media/raw/") {
+			base, _, _ := strings.Cut(u, "?")
+			return base + "?token=new"
+		}
+		return u
+	}
+	var got guidePayload
+	_ = json.Unmarshal(mapPayloadPhotos(raw, sign), &got)
+	stops := got.Plan.Days[0].Stops
+	if stops[0].Place.PhotoURL != "/geo-places/gp_1/photo" || stops[1].Place.PhotoURL != "/media/raw/cafe.jpg?token=new" {
+		t.Errorf("photos = %q, %q", stops[0].Place.PhotoURL, stops[1].Place.PhotoURL)
+	}
+	if string(mapPayloadPhotos(nil, sign)) != "" {
+		t.Error("empty payload should stay empty")
+	}
+}
+
+func TestTTLCache(t *testing.T) {
+	c := newTTLCache(2, time.Hour)
+	now := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	c.now = func() time.Time { return now }
+	c.put("a", "1")
+	c.put("b", "2")
+	if v, ok := c.get("a"); !ok || v != "1" {
+		t.Errorf("get a = %q %v", v, ok)
+	}
+	c.put("c", "3") // full: drops the oldest, a
+	if _, ok := c.get("a"); ok {
+		t.Error("a should have been evicted")
+	}
+	now = now.Add(2 * time.Hour)
+	if _, ok := c.get("c"); ok {
+		t.Error("c should have expired")
 	}
 }

@@ -46,6 +46,7 @@ const guideMaxHistoryMessages = 20
 
 const guideSystemPromptTemplate = `You are "Local Guide," a friendly, knowledgeable travel assistant in the Spotto app. You help travellers anywhere in the world find great places and plan their trips.
 
+Today's date: %s
 Traveller's location: %s
 Traveller's saved travel styles: %s
 Current weather where they are: %s
@@ -57,8 +58,8 @@ QUICK ASKS ("any good restaurants near me?", "where can I get coffee?", "somethi
 - If their saved travel styles are "none stated", still search; make the follow-up about what vibe they like (quiet, lively, nature…). When they tell you, call save_user_vibe.
 
 TRIP PLANNING ("plan a trip to…", "I'm visiting Sigiriya, create a trip", multi-day or dated plans):
-1. First call ask_trip_questions — never write a plan straight away. Ask only what they haven't told you, usually: travel dates or how many nights (kind "dates"), whether they've booked a hotel and which one (kind "text" with options like "Not booked yet"), whether they're staying only in that area or open to nearby day trips (kind "single"), what they enjoy (kind "multi": e.g. history & culture, hiking, nature & wildlife, food, relaxing, photography), and pace (relaxed / balanced / packed). 3-5 questions.
-2. When they answer, call find_places a few times with specific queries (the main sights, things matching their interests, good food near where they stay), then call propose_trip_plan. Use only refs from the tools. Put each day's stops in a sensible order with realistic times (e.g. climb rocks early, sunset spots late), 3-5 stops a day including a meal. Every note is 1-2 sentences: why it's worth it plus one practical tip.
+1. First call ask_trip_questions — never write a plan straight away. If they haven't said where they're going, the first question is where (kind "text"); if they only named a country or a big region, ask which towns or areas. Ask only what they haven't told you, usually: travel dates or how many nights (kind "dates"), whether they've booked a hotel and which one (kind "text" with options like "Not booked yet"), whether they're staying only in that area or open to nearby day trips (kind "single"), what they enjoy (kind "multi": e.g. history & culture, hiking, nature & wildlife, food, relaxing, photography), and pace (relaxed / balanced / packed). 3-5 questions.
+2. Turn any relative dates ("this weekend", "next Friday", "in two weeks") into real dates using today's date, and pass startDate as YYYY-MM-DD. When they answer, call find_places a few times with specific queries (the main sights, things matching their interests, good food near where they stay), then call propose_trip_plan. Use only refs from the tools. Put each day's stops in a sensible order with realistic times (e.g. climb rocks early, sunset spots late), 3-5 stops a day including a meal. Every note is 1-2 sentences: why it's worth it plus one practical tip.
 3. The message for a card tool is 1-2 short sentences. Never repeat the questions or the plan as text — the app shows them as cards.
 4. When they ask to add the plan, or some places, to their calendar or trip ("add this to my calendar", "put Pidurangala on day 2"), call add_to_calendar. Use mode "ask" unless they said whether it's a new trip or their current one. For only some places, pass just those as stops (refs from the plan or find_places). To add a place that isn't in the plan yet, find it with find_places first.
 5. If they ask to change the plan (more relaxed, swap a place, add a day), call propose_trip_plan again with the updated plan.
@@ -298,6 +299,10 @@ func (s *Server) handleGuideLatestConversation(w http.ResponseWriter, r *http.Re
 	for id, p := range s.guidePlacesByID(r.Context(), ids) {
 		cards[id] = guidePlaceCardFor(p, s.placeJSON(r.Context(), p), guideLocation{})
 	}
+	// Spotto photo links in stored cards carry short-lived tokens.
+	for i := range messages {
+		messages[i].Payload = s.resignPayload(messages[i].Payload)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"conversationId": conv.ID,
 		"messages":       messages,
@@ -338,8 +343,12 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 	}
 
 	messages := []gemini.Message{
-		{Role: "system", Content: guideSystemPrompt(loc, stylesText, weatherCondition)},
+		{Role: "system", Content: guideSystemPrompt(time.Now(), loc, stylesText, weatherCondition)},
 	}
+	// Plans from the whole conversation stay addable to the calendar; only
+	// the turns replayed to the model are capped.
+	turn := newGuideTurn(history)
+	fullHistory := history
 	if len(history) > guideMaxHistoryMessages {
 		history = history[len(history)-guideMaxHistoryMessages:]
 	}
@@ -353,7 +362,6 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 	messages = append(messages, gemini.Message{Role: "user", Content: userMessage})
 
 	tools := guideTools()
-	turn := newGuideTurn(history)
 	var placeIDs []string
 	// base is the conversation without any tool turns; toolResults collects
 	// every tool result as text, for the final round below.
@@ -363,14 +371,17 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 	for round := range guideMaxToolRounds {
 		roundMessages, roundTools := messages, tools
 		if round == guideMaxToolRounds-1 {
-			// Last round: force a text answer. Gemini keeps calling tools
+			// Last round: no more searching. Gemini keeps calling tools
 			// whenever the history holds tool turns — even with no tools
 			// declared or tool_choice "none" — so the final request drops
 			// the tool turns and hands their results over as a note instead.
+			// The card tools stay available, so a trip plan that took every
+			// round still arrives as a plan card rather than a wall of text.
 			note := "Results from the tools you already called:\n" + strings.Join(toolResults, "\n") +
-				"\nAnswer the traveller now using only these results. Do not call any more tools."
+				"\nAnswer the traveller now using only these results — don't search again. If they asked for a trip plan, " +
+				"call propose_trip_plan with these places; otherwise reply in text."
 			roundMessages = append(base[:len(base):len(base)], gemini.Message{Role: "system", Content: note})
-			roundTools = nil
+			roundTools = plannerCardTools()
 		}
 		resp, usage, err := s.aiComplete(ctx, aiFeatureGuideChat, roundMessages, roundTools)
 		if usage != nil {
@@ -390,7 +401,7 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 		}
 		messages = append(messages, *resp)
 		for _, tc := range resp.ToolCalls {
-			if result, ok := s.runPlannerTool(ctx, tc, turn, history); ok {
+			if result, ok := s.runPlannerTool(ctx, tc, turn, fullHistory); ok {
 				meta.ToolsUsed = append(meta.ToolsUsed, tc.Function.Name)
 				messages = append(messages, gemini.Message{Role: "tool", ToolCallID: tc.ID, Content: result})
 				toolResults = append(toolResults, tc.Function.Name+": "+result)
@@ -414,8 +425,8 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 	return guideChatResult{}, meta, fmt.Errorf("guide: model kept calling tools after %d rounds", guideMaxToolRounds)
 }
 
-func guideSystemPrompt(loc guideLocation, stylesText, weatherCondition string) string {
-	return fmt.Sprintf(guideSystemPromptTemplate, loc.promptLine(), stylesText, weatherCondition)
+func guideSystemPrompt(now time.Time, loc guideLocation, stylesText, weatherCondition string) string {
+	return fmt.Sprintf(guideSystemPromptTemplate, now.Format("Monday 2 January 2006"), loc.promptLine(), stylesText, weatherCondition)
 }
 
 func (s *Server) guideWeatherCondition(ctx context.Context, lat, lng float64) string {
@@ -628,15 +639,24 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guide
 		if s.TomorrowIOAPIKey == "" {
 			return `{"error":"weather is not configured"}`, nil, false
 		}
-		p, err := s.Store.PlaceByName(ctx, strings.TrimSpace(args.Location))
-		if err != nil {
-			return `{"error":"couldn't find that location"}`, nil, false
-		}
 		var facts struct {
 			Lat float64 `json:"lat"`
 			Lng float64 `json:"lng"`
 		}
-		_ = json.Unmarshal(p.Data, &facts)
+		name := strings.TrimSpace(args.Location)
+		if p, err := s.Store.PlaceByName(ctx, name); err == nil {
+			name = p.Name
+			_ = json.Unmarshal(p.Data, &facts)
+		} else if s.Places != nil {
+			// Not a Spotto listing (most towns aren't): find it on Google.
+			g, err := s.Places.SearchText(ctx, name)
+			if err != nil {
+				return `{"error":"couldn't find that location"}`, nil, false
+			}
+			name, facts.Lat, facts.Lng = g.Name, g.Lat, g.Lng
+		} else {
+			return `{"error":"couldn't find that location"}`, nil, false
+		}
 		if facts.Lat == 0 && facts.Lng == 0 {
 			return `{"error":"no coordinates for this location"}`, nil, false
 		}
@@ -645,7 +665,7 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guide
 			return `{"error":"weather unavailable right now"}`, nil, false
 		}
 		b, _ := json.Marshal(map[string]any{
-			"location":          p.Name,
+			"location":          name,
 			"condition":         snap.Now.Condition,
 			"conditionLabel":    snap.Now.ConditionLabel,
 			"tempC":             snap.Now.Temp,

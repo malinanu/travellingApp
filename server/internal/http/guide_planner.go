@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spotto/server/internal/domain"
@@ -455,6 +456,10 @@ func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query stri
 	if limit < 3 || limit > 8 {
 		limit = 6
 	}
+	key := fmt.Sprintf("%s|%d", strings.ToLower(query), limit)
+	if cached, ok := findPlacesCache.get(key); ok {
+		return cached
+	}
 	found, err := s.Places.SearchTextMany(ctx, query, limit)
 	if errors.Is(err, googleplaces.ErrNoResult) {
 		return `{"places":[]}`
@@ -495,7 +500,103 @@ func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query stri
 		})
 	}
 	b, _ := json.Marshal(map[string]any{"places": out})
+	findPlacesCache.put(key, string(b))
 	return string(b)
+}
+
+// findPlacesCache keeps recent find_places results: every Google search is
+// billed, and travellers planning the same town ask the same things.
+var findPlacesCache = newTTLCache(300, 24*time.Hour)
+
+type ttlEntry struct {
+	value   string
+	expires time.Time
+}
+
+// ttlCache is a small in-memory cache that drops the oldest entry when full.
+type ttlCache struct {
+	mu    sync.Mutex
+	max   int
+	ttl   time.Duration
+	order []string
+	items map[string]ttlEntry
+	now   func() time.Time // tests replace it
+}
+
+func newTTLCache(max int, ttl time.Duration) *ttlCache {
+	return &ttlCache{max: max, ttl: ttl, items: map[string]ttlEntry{}, now: time.Now}
+}
+
+func (c *ttlCache) get(key string) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.items[key]
+	if !ok || c.now().After(e.expires) {
+		return "", false
+	}
+	return e.value, true
+}
+
+func (c *ttlCache) put(key, value string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.items[key]; !ok {
+		if len(c.order) >= c.max {
+			delete(c.items, c.order[0])
+			c.order = c.order[1:]
+		}
+		c.order = append(c.order, key)
+	}
+	c.items[key] = ttlEntry{value: value, expires: c.now().Add(c.ttl)}
+}
+
+// plannerCardTools are the planner tools that show a card — the only tools
+// offered in the last round, when no more searching is allowed.
+func plannerCardTools() []gemini.Tool {
+	var out []gemini.Tool
+	for _, t := range plannerTools() {
+		switch t.Function.Name {
+		case "ask_trip_questions", "propose_trip_plan", "add_to_calendar":
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// resignPayload refreshes the Spotto photo links in a stored card: they
+// carry short-lived view tokens, so a plan reopened later would otherwise
+// show broken photos. Google photos (/geo-places/…) need no token.
+func (s *Server) resignPayload(raw json.RawMessage) json.RawMessage {
+	return mapPayloadPhotos(raw, s.signMediaPath)
+}
+
+func mapPayloadPhotos(raw json.RawMessage, sign func(string) string) json.RawMessage {
+	var p guidePayload
+	if len(raw) == 0 || json.Unmarshal(raw, &p) != nil {
+		return raw
+	}
+	fix := func(pl *guidePlanPlace) {
+		if pl.PhotoURL != "" {
+			pl.PhotoURL = sign(pl.PhotoURL)
+		}
+	}
+	if p.Plan != nil {
+		for d := range p.Plan.Days {
+			for i := range p.Plan.Days[d].Stops {
+				fix(&p.Plan.Days[d].Stops[i].Place)
+			}
+		}
+	}
+	if p.Calendar != nil {
+		for i := range p.Calendar.Stops {
+			fix(&p.Calendar.Stops[i].Place)
+		}
+	}
+	out, err := json.Marshal(p)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 var errUnknownRef = errors.New("guide: unknown place ref")
