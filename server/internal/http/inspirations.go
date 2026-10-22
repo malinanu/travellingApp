@@ -146,9 +146,9 @@ func (s *Server) handleAddInspiration(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	canonical, platform, err := reelextract.Canonical(reelextract.ResolveShortLink(r.Context(), req.URL))
+	canonical, platform, err := reelextract.CanonicalLink(r.Context(), req.URL)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "Paste a link to an Instagram reel or post, a TikTok video, or a YouTube video.")
+		writeErr(w, http.StatusBadRequest, "Paste a link to an Instagram, TikTok, YouTube or Facebook video.")
 		return
 	}
 

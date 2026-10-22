@@ -17,11 +17,24 @@ import (
 var shortLinkHosts = map[string]bool{
 	"vm.tiktok.com": true,
 	"vt.tiktok.com": true,
+	"fb.watch":      true,
 }
 
 var resolveHosts = map[string]bool{
 	"tiktok.com": true, "www.tiktok.com": true, "m.tiktok.com": true,
 	"vm.tiktok.com": true, "vt.tiktok.com": true,
+	"facebook.com": true, "www.facebook.com": true, "m.facebook.com": true,
+	"web.facebook.com": true, "fb.watch": true,
+}
+
+// isShortLink reports links that only redirect to a post: short-link
+// hosts, and Facebook's share sheet links (facebook.com/share/r/…).
+func isShortLink(u *url.URL) bool {
+	host := strings.ToLower(u.Hostname())
+	if shortLinkHosts[host] {
+		return true
+	}
+	return resolveHosts[host] && strings.Contains(host, "facebook.com") && fbShareRe.MatchString(u.Path)
 }
 
 const maxRedirects = 5
@@ -33,7 +46,7 @@ var errHostNotAllowed = errors.New("redirect to a host that isn't a supported vi
 // unchanged: the caller canonicalises it either way.
 func ResolveShortLink(ctx context.Context, raw string) string {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || !shortLinkHosts[strings.ToLower(u.Hostname())] {
+	if err != nil || !isShortLink(u) {
 		return raw
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -69,4 +82,17 @@ func followRedirects(ctx context.Context, client *http.Client, link string, allo
 	}
 	res.Body.Close()
 	return res.Request.URL.String(), nil
+}
+
+// CanonicalLink resolves a share short link and canonicalises the result.
+// When the redirect lands somewhere unusable (Facebook often sends
+// logged-out visitors to its login page), the original link is
+// canonicalised instead.
+func CanonicalLink(ctx context.Context, raw string) (canonical, platform string, err error) {
+	if resolved := ResolveShortLink(ctx, raw); resolved != raw {
+		if c, p, err := Canonical(resolved); err == nil {
+			return c, p, nil
+		}
+	}
+	return Canonical(raw)
 }
