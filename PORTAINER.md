@@ -41,6 +41,9 @@ JWT_SECRET=<a long random string>
 TOTP_ENCRYPTION_KEY=<output of: openssl rand -base64 32>
 CORS_ORIGINS=https://spotto-vendor.yourdomain.com,https://spotto-admin.yourdomain.com
 NEXT_PUBLIC_API_URL=https://spotto-api.yourdomain.com
+ADMIN_EMAIL=<your admin login email>
+ADMIN_PASSWORD=<a long random password, 12+ characters>
+APP_ENV=development   # set to production on the live deployment
 
 # Optional — see .env.example for the full list (SMTP, Google OAuth, and
 # the two vars below). Blank is fine; each feature just no-ops until filled in.
@@ -48,6 +51,13 @@ GOOGLE_CALENDAR_API_KEY=<your Google Cloud API key, Calendar API enabled>
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=<same key works, with Maps JS API + Places API also enabled>
 GOOGLE_PLACES_API_KEY=<Google key with Places API (New) enabled, for the Inspiration Board; falls back to GOOGLE_CALENDAR_API_KEY>
 ```
+
+`ADMIN_EMAIL`/`ADMIN_PASSWORD` define the admin login. The api creates
+that account, or resets its role and password to match, on every start,
+so change them here and redeploy to rotate. `APP_ENV=production` locks
+every demo/import login (`*@spotto.dev`, except `ADMIN_EMAIL`) at boot
+and makes `/app/seed` and `/app/gendata` refuse to run. Only set it on
+the live deployment, because staging still relies on the demo accounts.
 
 `TOTP_ENCRYPTION_KEY` must be exactly 32 raw bytes, base64-encoded — the api
 container refuses to start without one (used to encrypt 2FA secrets at

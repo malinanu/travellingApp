@@ -65,11 +65,14 @@ type Config struct {
 	// GeminiVideoModel watches reels (defaults to GeminiChatModel).
 	// GooglePlacesAPIKey needs Places API (New); it falls back to
 	// GoogleCalendarAPIKey, the shared Maps/Places key, when unset.
+	// YoutubeAPIKey needs YouTube Data API v3 for reel metadata; it falls
+	// back to GooglePlacesAPIKey.
 	// YtdlpCookiesFile is an optional Netscape cookies file for yt-dlp when
 	// Instagram refuses anonymous downloads. InspirationDailyLimit caps links
 	// one traveller can add per 24 hours.
 	GeminiVideoModel      string
 	GooglePlacesAPIKey    string
+	YoutubeAPIKey         string
 	YtdlpCookiesFile      string
 	InspirationDailyLimit int
 	// VendorAppURL is the base URL of the vendor Next.js app, used to build
@@ -90,6 +93,18 @@ type Config struct {
 	// log. Deliberately env-var-driven rather than a DB role/invite system:
 	// there's no need yet for admin accounts to be self-service provisioned.
 	SuperAdminEmails []string
+
+	// AppEnv is "production" on the live deployment and anything else
+	// (default "development") on local and staging. In production the demo
+	// seeders refuse to run and the API locks the public demo logins at
+	// boot (see seed.LockDemoAccounts).
+	AppEnv string
+	// AdminEmail/AdminPassword define the deployment's admin account. The
+	// API creates or updates it at every boot (seed.EnsureAdmin), so the env
+	// stays the source of truth and rotating it means changing the env and
+	// redeploying. AdminEmail is also a super-admin.
+	AdminEmail    string
+	AdminPassword string
 
 	// FirebaseServiceAccount is the JSON string of a Firebase service account
 	// key, used for sending FCM push notifications to the Flutter app.
@@ -113,6 +128,13 @@ func (c Config) R2Configured() bool {
 	return c.R2AccountID != "" && c.R2AccessKeyID != "" && c.R2SecretAccessKey != "" && c.R2Bucket != ""
 }
 
+// IsProduction reports whether APP_ENV is "production".
+func (c Config) IsProduction() bool { return c.AppEnv == "production" }
+
+// minAdminPasswordLen is longer than the user-facing minimum because this
+// account can see everything, and nobody types it often.
+const minAdminPasswordLen = 12
+
 // minSecretLen guards against trivially short/guessable secrets — anyone
 // setting JWT_SECRET to "abc" defeats the point of requiring it at all.
 const minSecretLen = 16
@@ -123,6 +145,19 @@ func Load() Config {
 	jwtSecret := mustGetenv("JWT_SECRET")
 	if len(jwtSecret) < minSecretLen {
 		log.Fatalf("JWT_SECRET must be at least %d characters — refusing to start with a weak secret", minSecretLen)
+	}
+
+	adminEmail := strings.ToLower(strings.TrimSpace(getenv("ADMIN_EMAIL", "")))
+	adminPassword := getenv("ADMIN_PASSWORD", "")
+	if (adminEmail == "") != (adminPassword == "") {
+		log.Fatalf("ADMIN_EMAIL and ADMIN_PASSWORD must be set together")
+	}
+	if adminPassword != "" && len(adminPassword) < minAdminPasswordLen {
+		log.Fatalf("ADMIN_PASSWORD must be at least %d characters — refusing to start with a weak admin password", minAdminPasswordLen)
+	}
+	superAdmins := splitNonEmpty(getenv("SUPER_ADMIN_EMAILS", ""))
+	if adminEmail != "" {
+		superAdmins = append(superAdmins, adminEmail)
 	}
 
 	totpKey, err := decodeTOTPKey(mustGetenv("TOTP_ENCRYPTION_KEY"))
@@ -156,9 +191,13 @@ func Load() Config {
 		PublicAPIURL:         strings.TrimRight(getenv("PUBLIC_API_URL", ""), "/"),
 		GeminiVideoModel:      getenv("GEMINI_VIDEO_MODEL", ""),
 		GooglePlacesAPIKey:    getenv("GOOGLE_PLACES_API_KEY", getenv("GOOGLE_CALENDAR_API_KEY", "")),
+		YoutubeAPIKey:         getenv("YOUTUBE_API_KEY", getenv("GOOGLE_PLACES_API_KEY", getenv("GOOGLE_CALENDAR_API_KEY", ""))),
 		YtdlpCookiesFile:      getenv("YTDLP_COOKIES_FILE", ""),
 		InspirationDailyLimit: getenvInt("INSPIRATION_DAILY_LIMIT", 20),
-		SuperAdminEmails:     splitNonEmpty(getenv("SUPER_ADMIN_EMAILS", "")),
+		SuperAdminEmails:     superAdmins,
+		AppEnv:               getenv("APP_ENV", "development"),
+		AdminEmail:           adminEmail,
+		AdminPassword:        adminPassword,
 		FirebaseServiceAccount: getenv("FIREBASE_SERVICE_ACCOUNT_JSON", ""),
 
 		R2AccountID:       sanitizedR2AccountID(getenv("R2_ACCOUNT_ID", "")),

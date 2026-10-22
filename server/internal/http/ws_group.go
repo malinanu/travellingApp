@@ -6,14 +6,18 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/spotto/server/internal/auth"
 )
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// Allow all origins for prototype
+	// Only the mobile app uses this socket, and it sends no Origin header.
+	// Rejecting every browser origin shuts out cross-site WebSocket
+	// hijacking, on top of the bearer token the route already requires.
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		return r.Header.Get("Origin") == ""
 	},
 }
 
@@ -24,13 +28,25 @@ type LocationUpdate struct {
 	Lng    float64 `json:"lng"`
 }
 
-// handleGroupWS handles WebSocket requests from the peer.
+// handleGroupWS streams live locations between members of one group. It
+// sits behind Authenticated: the sender's identity comes from the token,
+// never from the URL, and only the group's owner or members can join.
+// Otherwise anyone holding a group code could watch members' positions.
 func (s *Server) handleGroupWS(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context()).Subject
 	groupID := r.URL.Query().Get("groupId")
-	userID := r.URL.Query().Get("userId")
-
-	if groupID == "" || userID == "" {
-		http.Error(w, "missing groupId or userId", http.StatusBadRequest)
+	if groupID == "" {
+		writeErr(w, http.StatusBadRequest, "missing groupId")
+		return
+	}
+	ok, err := s.Store.IsGroupParticipant(r.Context(), groupID, userID)
+	if err != nil {
+		log.Printf("group ws membership %s/%s: %v", groupID, userID, err)
+		writeErr(w, http.StatusInternalServerError, "couldn't check group membership")
+		return
+	}
+	if !ok {
+		writeErr(w, http.StatusForbidden, "you're not in this group")
 		return
 	}
 

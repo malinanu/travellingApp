@@ -26,6 +26,7 @@ import (
 	"github.com/spotto/server/internal/reelextract"
 	"github.com/spotto/server/internal/store/postgres"
 	"github.com/spotto/server/internal/weather"
+	"github.com/spotto/server/internal/youtube"
 )
 
 type Server struct {
@@ -178,6 +179,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		Gemini:      s.Gemini,
 		VideoModel:  cfg.GeminiVideoModel,
 		CookiesFile: cfg.YtdlpCookiesFile,
+		YouTube:     youtubeClient(cfg.YoutubeAPIKey),
 		OnAICall: func(ctx context.Context, kind, model string, usage *gemini.Usage, start time.Time, err error) {
 			s.recordAIUsage(ctx, aiFeatureInspiration, kind, model, 1, usage, start, err)
 		},
@@ -277,7 +279,6 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Get("/healthz", s.handleHealthz)
 	r.Get("/categories", s.handleAdminCategories)
 	r.Get("/readyz", s.handleReadyz)
-	r.Get("/ws/group", s.handleGroupWS)
 
 	r.Post("/auth/register", s.handleRegister)
 	r.Post("/auth/login", s.handleLogin)
@@ -298,6 +299,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	// Authenticated (any role).
 	r.Group(func(r chi.Router) {
 		r.Use(s.Authenticated)
+		r.Get("/ws/group", s.handleGroupWS)
 		r.Get("/me", s.handleMe)
 		r.Delete("/me", s.handleDeleteAccount)
 		r.Get("/me/export", s.handleExportData)
@@ -513,6 +515,14 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(s.RequireSuperAdmin)
 			r.Get("/admin/audit-log", s.handleAdminAuditLog)
+			r.Put("/admin/users/{id}/permissions", s.handleAdminSetUserPermissions)
+		})
+
+		// Handing a business account over to its real owner. Super-admins
+		// can always; other admins only once a super-admin grants it.
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermVendorLogins))
+			r.Post("/admin/vendors/{id}/members/{userId}/login", s.handleAdminVendorMemberLogin)
 		})
 	})
 
@@ -529,5 +539,12 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}
+
+// youtubeClient is nil without a key, so YouTube links skip the API.
+func youtubeClient(key string) *youtube.Client {
+	if key == "" {
+		return nil
+	}
+	return youtube.New(key)
 }
-

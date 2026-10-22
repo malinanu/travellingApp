@@ -89,7 +89,14 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 	log.Println("Wiped old places, vendors, media, and import users.")
 
 	now := time.Now()
-	hash, err := auth.HashPassword("spotto123")
+	// These owner accounts aren't meant for logging in: their emails are
+	// guessable from the public dataset, so they get a random password
+	// nobody knows. Real owners get in through vendor profile grants.
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		return fmt.Errorf("random password: %w", err)
+	}
+	hash, err := auth.HashPassword(hex.EncodeToString(secret))
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}

@@ -13,6 +13,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if cfg.IsProduction() {
+		log.Fatal("refusing to seed: APP_ENV=production, and this wipes every table and adds logins whose password is public")
+	}
 	ctx := context.Background()
 
 	store, err := postgres.Connect(ctx, cfg.DatabaseURL)

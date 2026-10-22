@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../../core/api/api_client.dart';
@@ -25,20 +26,23 @@ class GroupLiveLocationsNotifier extends Notifier<Map<String, LatLng>> {
       return {};
     }
 
-    final myId = me['id'] as String;
-    
     // Only connect once per group config
     if (_channel == null) {
-      _connect(group.code, myId);
+      _connect(group.code);
     }
     
     return state;
   }
 
-  void _connect(String groupId, String myId) {
+  void _connect(String groupId) {
+    // The server takes our identity from the bearer token and checks we're
+    // in the group, so the socket can't be opened anonymously.
+    final token = ref.read(localStoreProvider).getToken();
+    if (token == null) return;
     try {
-      final wsUrl = '${apiBaseUrl.replaceFirst('http', 'ws')}/ws/group?groupId=$groupId&userId=$myId';
-      _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      final wsUrl = Uri.parse('${apiBaseUrl.replaceFirst('http', 'ws')}/ws/group')
+          .replace(queryParameters: {'groupId': groupId});
+      _channel = IOWebSocketChannel.connect(wsUrl, headers: {'Authorization': 'Bearer $token'});
       
       _channel!.stream.listen(
         (message) {

@@ -40,6 +40,10 @@ func New(cfg Config) *Mailer {
 // callers that email as a side effect of another action (e.g. a team
 // invite that's still usable via its copy-link) shouldn't fail the whole
 // request just because email isn't set up yet.
+// Enabled reports whether SMTP is configured, i.e. whether Send really
+// delivers mail instead of only logging it.
+func (m *Mailer) Enabled() bool { return m.enabled }
+
 func (m *Mailer) Send(to, subject, bodyHTML string) error {
 	if !m.enabled {
 		log.Printf("mail: (SMTP disabled) would send to=%q subject=%q", to, subject)

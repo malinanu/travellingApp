@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/spotto/server/internal/gemini"
+	"github.com/spotto/server/internal/youtube"
 )
 
 // Interface is what the API's worker needs; satisfied by *Extractor here,
@@ -88,6 +89,9 @@ type Extractor struct {
 	Gemini      *gemini.Client
 	VideoModel  string // "" = Gemini.ChatModel
 	CookiesFile string // optional cookies.txt for yt-dlp
+	// YouTube, when set, reads YouTube details through the official API
+	// before trying yt-dlp, which YouTube blocks from server IPs.
+	YouTube *youtube.Client
 
 	// OnAICall, when set, is told about every Gemini call (for usage
 	// tracking): kind is "video" or "chat".
@@ -107,12 +111,12 @@ func (x *Extractor) Extract(ctx context.Context, link, platform string) (Result,
 	if x.Gemini == nil || x.Gemini.APIKey == "" {
 		return Result{}, &Error{Message: MsgNotConfigured}
 	}
-	if _, err := exec.LookPath("yt-dlp"); err != nil {
-		return Result{}, &Error{Message: MsgNotConfigured, Err: errors.New("yt-dlp not installed")}
-	}
-
+	// YouTube needs no yt-dlp: Gemini watches it by URL.
 	if platform == "youtube" {
 		return x.extractYouTube(ctx, link)
+	}
+	if _, err := exec.LookPath("yt-dlp"); err != nil {
+		return Result{}, &Error{Message: MsgNotConfigured, Err: errors.New("yt-dlp not installed")}
 	}
 
 	// TikTok photo carousels have no video; yt-dlp may still read their caption.

@@ -204,6 +204,82 @@ func (s *Store) UpdateUserPassword(ctx context.Context, id, passwordHash string)
 	return err
 }
 
+// SetUserRole changes a user's role and bumps token_version, so tokens
+// issued under the old role stop working.
+func (s *Store) SetUserRole(ctx context.Context, id string, role domain.Role) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE users SET role=$2, token_version=token_version+1 WHERE id=$1`, id, role)
+	return err
+}
+
+// LockUsersByEmail makes every account whose email matches the LIKE
+// pattern (except keepEmail) impossible to log into. '!locked' is not a
+// bcrypt hash, so no password matches it. It also signs those accounts out
+// everywhere. Accounts that are already locked are skipped, so it's cheap
+// to run at every boot. Returns how many were newly locked.
+func (s *Store) LockUsersByEmail(ctx context.Context, pattern, keepEmail string) (int64, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx,
+		`UPDATE users SET password_hash='!locked', token_version=token_version+1
+		WHERE email LIKE $1 AND lower(email) <> lower($2) AND password_hash <> '!locked'`,
+		pattern, keepEmail)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE user_sessions SET revoked_at=now() WHERE revoked_at IS NULL
+		AND user_id IN (SELECT id FROM users WHERE email LIKE $1 AND lower(email) <> lower($2))`,
+		pattern, keepEmail); err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), tx.Commit(ctx)
+}
+
+// UpdateUserEmail changes the login email. Callers check uniqueness first;
+// the users.email UNIQUE constraint still guards against a race.
+func (s *Store) UpdateUserEmail(ctx context.Context, id, email string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE users SET email=$2 WHERE id=$1`, id, email)
+	return err
+}
+
+// LockUserPassword makes the account impossible to log into with any
+// password ('!locked' is not a bcrypt hash) and bumps token_version, until
+// a password is set again (e.g. through a reset link).
+func (s *Store) LockUserPassword(ctx context.Context, id string) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE users SET password_hash='!locked', token_version=token_version+1 WHERE id=$1`, id)
+	return err
+}
+
+// AdminPermissions lists the extra powers granted to an admin (see
+// migration 042). Super-admins hold every permission implicitly; that's
+// checked by the caller, not stored here.
+func (s *Store) AdminPermissions(ctx context.Context, userID string) ([]string, error) {
+	var perms []string
+	err := s.Pool.QueryRow(ctx, `SELECT admin_permissions FROM users WHERE id=$1`, userID).Scan(&perms)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return perms, err
+}
+
+// SetAdminPermission grants or removes one permission, without duplicates.
+func (s *Store) SetAdminPermission(ctx context.Context, userID, perm string, on bool) error {
+	q := `UPDATE users SET admin_permissions=array_remove(admin_permissions, $2) WHERE id=$1`
+	if on {
+		q = `UPDATE users SET admin_permissions=array_append(array_remove(admin_permissions, $2), $2) WHERE id=$1`
+	}
+	tag, err := s.Pool.Exec(ctx, q, userID, perm)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
 // SetShareLocation toggles the traveller's nearby-travellers consent. When
 // turned off, any previously reported position is cleared immediately
 // rather than left stale and merely unqueried.
@@ -600,6 +676,15 @@ func (s *Store) CreatePasswordResetToken(ctx context.Context, id, userID, tokenH
 	_, err := s.Pool.Exec(ctx,
 		`INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at) VALUES ($1,$2,$3,$4)`,
 		id, userID, tokenHash, expiresAt)
+	return err
+}
+
+// InvalidatePasswordResetTokens marks every unused reset link for the user
+// as used. Called when an admin moves the account to a new email, since
+// earlier links went to the old inbox.
+func (s *Store) InvalidatePasswordResetTokens(ctx context.Context, userID string) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE password_reset_tokens SET used_at=now() WHERE user_id=$1 AND used_at IS NULL`, userID)
 	return err
 }
 
@@ -1981,6 +2066,16 @@ func (s *Store) UpsertGroup(ctx context.Context, g domain.Group) error {
 			name=EXCLUDED.name, code=EXCLUDED.code, member_ids=EXCLUDED.member_ids`,
 		g.OwnerID, g.Name, g.Code, jsonb(g.MemberIDs))
 	return err
+}
+
+// IsGroupParticipant reports whether userID owns, or is listed as a member
+// of, a group with this code.
+func (s *Store) IsGroupParticipant(ctx context.Context, code, userID string) (bool, error) {
+	var ok bool
+	err := s.Pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM groups WHERE code=$1 AND (owner_id=$2 OR member_ids ? $2))`,
+		code, userID).Scan(&ok)
+	return ok, err
 }
 
 func (s *Store) GroupByOwner(ctx context.Context, ownerID string) (domain.Group, error) {

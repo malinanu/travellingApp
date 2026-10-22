@@ -5,12 +5,12 @@
 // phone). ?user=<id> opens a user directly.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, LogOut, MonitorSmartphone, Search, Trophy } from 'lucide-react';
+import { CheckCircle2, KeyRound, LogOut, MonitorSmartphone, Search, Trophy } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
 
 import { timeAgo, type AdminUserDetail, type AdminUserSession, type AdminUserSummary } from '@spotto/shared';
-import Shell from '../../components/shell';
+import Shell, { useMe } from '../../components/shell';
 import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
 
@@ -98,6 +98,7 @@ function Users() {
 }
 
 function UserDetail({ id }: { id: string }) {
+  const { data: me } = useMe();
   const { data, isLoading, isError } = useQuery<AdminUserDetail>({
     queryKey: ['admin-user', id],
     queryFn: () => api.get<AdminUserDetail>(`/admin/users/${encodeURIComponent(id)}`),
@@ -121,6 +122,10 @@ function UserDetail({ id }: { id: string }) {
           Joined {new Date(user.createdAt).toLocaleDateString()} · <span className="font-mono">{user.id}</span>
         </p>
       </div>
+
+      {user.role === 'admin' && me?.isSuperAdmin && (
+        <AdminPermissionsPanel userId={user.id} isSuperAdmin={data.isSuperAdmin} permissions={data.adminPermissions} />
+      )}
 
       <div className="panel p-5">
         <CardTitle icon={MonitorSmartphone}>Signed-in devices · {sessions.length}</CardTitle>
@@ -186,7 +191,7 @@ function UserDetail({ id }: { id: string }) {
               const meta = (e.metadata ?? {}) as { reason?: string; sessionsEnded?: number };
               return (
                 <div key={e.id} className="text-[12.5px]">
-                  <span className="font-bold">{e.action === 'user.revoke_sessions' ? 'Signed out of all devices' : e.action}</span>
+                  <span className="font-bold">{USER_ACTION_LABEL[e.action] ?? e.action}</span>
                   <span className="text-muted font-semibold"> · {e.actorName || e.actorEmail} · {timeAgo(e.createdAt)}</span>
                   {meta.reason && <p className="text-[12px] text-muted">&ldquo;{meta.reason}&rdquo;{meta.sessionsEnded !== undefined && ` · ${meta.sessionsEnded} ended`}</p>}
                 </div>
@@ -194,6 +199,64 @@ function UserDetail({ id }: { id: string }) {
             })}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+const USER_ACTION_LABEL: Record<string, string> = {
+  'user.revoke_sessions': 'Signed out of all devices',
+  'user.permissions': 'Permissions changed',
+};
+
+// Super-admins grant individual admins extra powers. Today that's only
+// handing vendor logins over to their real owners (vendor Team tab).
+function AdminPermissionsPanel({ userId, isSuperAdmin, permissions }: { userId: string; isSuperAdmin: boolean; permissions: string[] }) {
+  const qc = useQueryClient();
+  const granted = permissions.includes('vendor_logins');
+  const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState('');
+  const toggle = useMutation({
+    mutationFn: () => api.put(`/admin/users/${encodeURIComponent(userId)}/permissions`, { vendorLogins: !granted, reason: reason.trim() }),
+    onSuccess: () => {
+      setConfirming(false);
+      setReason('');
+      qc.invalidateQueries({ queryKey: ['admin-user', userId] });
+    },
+  });
+
+  return (
+    <div className="panel p-5">
+      <CardTitle icon={KeyRound}>Admin permissions</CardTitle>
+      {isSuperAdmin ? (
+        <p className="text-[12.5px] text-muted font-semibold">Super-admin: has every permission, including changing vendor logins.</p>
+      ) : (
+        <>
+          <p className="text-[12.5px] font-semibold">
+            Change vendor logins: <span style={{ color: granted ? GREEN : undefined }} className={granted ? '' : 'text-muted'}>{granted ? 'Allowed' : 'Not allowed'}</span>
+          </p>
+          <p className="text-[11.5px] text-muted font-semibold mt-0.5">Lets this admin move a business account to its real owner&apos;s email and reset its password.</p>
+          {confirming ? (
+            <form className="space-y-2 mt-3" onSubmit={(e) => { e.preventDefault(); toggle.mutate(); }}>
+              <label className="block">
+                <span className="text-[12px] font-bold block mb-1">Reason (saved in the audit log)</span>
+                <input autoFocus required value={reason} onChange={(e) => setReason(e.target.value)} className="input w-full py-1.5"
+                  placeholder={granted ? 'e.g. Moved off the support team' : 'e.g. Handles vendor onboarding'} />
+              </label>
+              <div className="flex items-center justify-end gap-2">
+                <button type="button" className="btn py-1 px-3 text-[12px]" onClick={() => setConfirming(false)}>Cancel</button>
+                <button type="submit" className={`btn ${granted ? 'btn-danger' : 'btn-primary'} py-1 px-3 text-[12px]`} disabled={toggle.isPending || !reason.trim()}>
+                  {toggle.isPending ? 'Saving…' : granted ? 'Remove permission' : 'Allow'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button className="btn py-1.5 px-3 text-[12px] mt-3" onClick={() => { toggle.reset(); setConfirming(true); }}>
+              {granted ? 'Remove permission' : 'Allow changing vendor logins'}
+            </button>
+          )}
+          {toggle.isError && <p className="text-[11.5px] font-semibold mt-2" style={{ color: RED }}>{(toggle.error as Error).message}</p>}
+        </>
       )}
     </div>
   );
