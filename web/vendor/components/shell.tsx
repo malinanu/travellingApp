@@ -61,9 +61,11 @@ function toneStyle(tone: string) {
 
 export function SpottoMark({ size = 28, light = false }: { size?: number; light?: boolean }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
-      <path d="M16 3C10.5 3 6 7.3 6 12.7 6 19.5 16 29 16 29s10-9.5 10-16.3C26 7.3 21.5 3 16 3z" fill={light ? '#fff' : 'var(--accent)'} />
-      <circle cx="16" cy="12.5" r="4.4" fill="var(--sun)" />
+    // Small-size cut of the brand symbol (brand/logo/spotto-symbol-small.svg): sun over the horizon.
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" role="img" aria-label="Spotto">
+      <path d="M5.42 17.19A10.58 10.58 0 0 1 26.58 17.19Z" fill="var(--sun)" />
+      <path d="M3.3 19.05H28.7" stroke={light ? '#FBF6ED' : 'var(--ink)'} strokeWidth="3.22" strokeLinecap="round" />
+      <path d="M8.59 23.54H23.41" stroke={light ? '#0E8C8A' : 'var(--accent)'} strokeWidth="3.22" strokeLinecap="round" />
     </svg>
   );
 }

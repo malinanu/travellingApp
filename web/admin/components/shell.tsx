@@ -30,6 +30,18 @@ const NAV: { href: string; label: string; icon: LucideIcon; live?: boolean; supe
   { href: '/audit-log', label: 'Audit log', icon: History, superAdminOnly: true },
 ];
 
+// Reversed small-size cut of the brand symbol (brand/logo/spotto-symbol-small-reversed.svg),
+// for the always-dark sidebar and login panel.
+export function SpottoMark({ size = 26 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" role="img" aria-label="Spotto">
+      <path d="M5.42 17.19A10.58 10.58 0 0 1 26.58 17.19Z" fill="#F6B81E" />
+      <path d="M3.3 19.05H28.7" stroke="#FBF6ED" strokeWidth="3.22" strokeLinecap="round" />
+      <path d="M8.59 23.54H23.41" stroke="#0E8C8A" strokeWidth="3.22" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function useMe() {
   return useQuery<User>({
     queryKey: ['admin-me'],
@@ -158,10 +170,7 @@ function Rail({ pending }: { pending: number }) {
   return (
     <aside className="w-[232px] shrink-0 flex flex-col" style={{ background: '#103d3a', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
       <div className="flex items-center gap-2.5 px-5 h-[58px]" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
-          <path d="M16 3C10.5 3 6 7.3 6 12.7 6 19.5 16 29 16 29s10-9.5 10-16.3C26 7.3 21.5 3 16 3z" fill="var(--accent)" />
-          <circle cx="16" cy="12.5" r="4.4" fill="#f6b81e" />
-        </svg>
+        <SpottoMark size={26} />
         <div className="leading-none">
           <p className="font-bold text-[16px] tracking-tight text-white">Spotto</p>
           <p className="text-[9.5px] font-bold uppercase tracking-[0.18em] mt-0.5" style={{ color: 'var(--accent)' }}>
