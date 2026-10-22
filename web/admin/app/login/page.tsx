@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
 import { isTwoFactorRequired, type AuthResponse, type TwoFactorRequiredResponse } from '@spotto/shared';
+import { SpottoMark } from '../../components/shell';
 import { api } from '../../lib/api';
 
 export default function AdminLoginPage() {
@@ -141,10 +142,7 @@ function AdminLoginPageInner() {
     <div className="min-h-screen grid lg:grid-cols-2" style={{ background: 'var(--bg)' }}>
       <div className="hidden lg:flex flex-col justify-between p-12 text-white" style={{ background: '#103d3a' }}>
         <div className="flex items-center gap-3">
-          <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
-            <path d="M16 3C10.5 3 6 7.3 6 12.7 6 19.5 16 29 16 29s10-9.5 10-16.3C26 7.3 21.5 3 16 3z" fill="#0b6f86" />
-            <circle cx="16" cy="12.5" r="4.4" fill="#f6b81e" />
-          </svg>
+          <SpottoMark size={30} />
           <span className="font-bold text-lg">Spotto Command Center</span>
         </div>
         <div>
