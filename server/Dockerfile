@@ -48,7 +48,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/seedcategories ./cmd/seedcategorie
 # YTDLP_SHA256 (from that release's SHA2-256SUMS asset on GitHub) whenever
 # that happens.
 FROM debian:bookworm-slim
-ARG YTDLP_SHA256=58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a
+ARG YTDLP_SHA256=d8bd33fca9d5b23bd5b9952b3fca36db5c46331933fda9f598a3da14ce2c243f
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && \
     curl -fL --retry 3 --retry-delay 2 -o /usr/local/bin/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux" && \
     echo "${YTDLP_SHA256}  /usr/local/bin/yt-dlp" | sha256sum -c - && \
