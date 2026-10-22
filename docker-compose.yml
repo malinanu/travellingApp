@@ -36,6 +36,12 @@ services:
       # only injects a var into the container if it's listed here.
       ADMIN_APP_URL: ${ADMIN_APP_URL}
       SUPER_ADMIN_EMAILS: ${SUPER_ADMIN_EMAILS}
+      # development (default) or production. Production locks the public
+      # demo logins at boot and makes the seed/gendata commands refuse to run.
+      APP_ENV: ${APP_ENV:-development}
+      # The admin account, created or updated at every boot (min 12 chars).
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       TOMORROW_IO_API_KEY: ${TOMORROW_IO_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-}

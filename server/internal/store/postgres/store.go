@@ -204,6 +204,41 @@ func (s *Store) UpdateUserPassword(ctx context.Context, id, passwordHash string)
 	return err
 }
 
+// SetUserRole changes a user's role and bumps token_version, so tokens
+// issued under the old role stop working.
+func (s *Store) SetUserRole(ctx context.Context, id string, role domain.Role) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE users SET role=$2, token_version=token_version+1 WHERE id=$1`, id, role)
+	return err
+}
+
+// LockUsersByEmail makes every account whose email matches the LIKE
+// pattern (except keepEmail) impossible to log into. '!locked' is not a
+// bcrypt hash, so no password matches it. It also signs those accounts out
+// everywhere. Accounts that are already locked are skipped, so it's cheap
+// to run at every boot. Returns how many were newly locked.
+func (s *Store) LockUsersByEmail(ctx context.Context, pattern, keepEmail string) (int64, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx,
+		`UPDATE users SET password_hash='!locked', token_version=token_version+1
+		WHERE email LIKE $1 AND lower(email) <> lower($2) AND password_hash <> '!locked'`,
+		pattern, keepEmail)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE user_sessions SET revoked_at=now() WHERE revoked_at IS NULL
+		AND user_id IN (SELECT id FROM users WHERE email LIKE $1 AND lower(email) <> lower($2))`,
+		pattern, keepEmail); err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), tx.Commit(ctx)
+}
+
 // UpdateUserEmail changes the login email. Callers check uniqueness first;
 // the users.email UNIQUE constraint still guards against a race.
 func (s *Store) UpdateUserEmail(ctx context.Context, id, email string) error {
@@ -2031,6 +2066,16 @@ func (s *Store) UpsertGroup(ctx context.Context, g domain.Group) error {
 			name=EXCLUDED.name, code=EXCLUDED.code, member_ids=EXCLUDED.member_ids`,
 		g.OwnerID, g.Name, g.Code, jsonb(g.MemberIDs))
 	return err
+}
+
+// IsGroupParticipant reports whether userID owns, or is listed as a member
+// of, a group with this code.
+func (s *Store) IsGroupParticipant(ctx context.Context, code, userID string) (bool, error) {
+	var ok bool
+	err := s.Pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM groups WHERE code=$1 AND (owner_id=$2 OR member_ids ? $2))`,
+		code, userID).Scan(&ok)
+	return ok, err
 }
 
 func (s *Store) GroupByOwner(ctx context.Context, ownerID string) (domain.Group, error) {

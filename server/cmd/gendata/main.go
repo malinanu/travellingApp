@@ -14,6 +14,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if cfg.IsProduction() {
+		log.Fatal("refusing to generate data: APP_ENV=production, and this wipes every table and adds logins that share one password")
+	}
 	ctx := context.Background()
 
 	store, err := postgres.Connect(ctx, cfg.DatabaseURL)
