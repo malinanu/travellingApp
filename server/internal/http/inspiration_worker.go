@@ -30,6 +30,7 @@ import (
 	"github.com/spotto/server/internal/geo"
 	"github.com/spotto/server/internal/googleplaces"
 	"github.com/spotto/server/internal/store/postgres"
+	"github.com/spotto/server/internal/youtube"
 )
 
 const (
@@ -93,6 +94,12 @@ func (s *Server) processExtraction(parent context.Context, job domain.LinkExtrac
 		return
 	}
 	meta, err := s.linkMetadata(ctx, job)
+	if err != nil && isYouTubeShort(job) && !errors.Is(err, youtube.ErrNotFound) {
+		// Gemini can still watch a Short by URL; only the caption, author
+		// and thumbnail are lost. Shorts are short, so no duration check.
+		log.Printf("inspiration worker: metadata %s: %v (Short: analysing the video without details)", job.CanonicalURL, err)
+		meta, err = ytdlpMeta{}, nil
+	}
 	if errors.Is(err, errNoYtdlp) {
 		log.Printf("inspiration worker: yt-dlp not installed")
 		s.finishExtraction(ctx, job, domain.ExtractionFailed, msgNotConfigured, nil)

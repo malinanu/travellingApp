@@ -36,3 +36,19 @@ func TestLinkVideoYouTubeUsesURL(t *testing.T) {
 		t.Errorf("video = %+v", v)
 	}
 }
+
+func TestIsYouTubeShort(t *testing.T) {
+	cases := []struct {
+		job  domain.LinkExtraction
+		want bool
+	}{
+		{domain.LinkExtraction{CanonicalURL: "https://www.youtube.com/shorts/aBcDeFgHiJk", Platform: "youtube"}, true},
+		{domain.LinkExtraction{CanonicalURL: "https://www.youtube.com/watch?v=aBcDeFgHiJk", Platform: "youtube"}, false},
+		{domain.LinkExtraction{CanonicalURL: "https://www.instagram.com/reel/DbQSwgwMM_n/", Platform: "instagram"}, false},
+	}
+	for _, c := range cases {
+		if got := isYouTubeShort(c.job); got != c.want {
+			t.Errorf("isYouTubeShort(%s) = %v, want %v", c.job.CanonicalURL, got, c.want)
+		}
+	}
+}
