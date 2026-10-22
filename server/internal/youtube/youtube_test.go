@@ -68,3 +68,21 @@ func TestVideoHTTPError(t *testing.T) {
 		t.Errorf("err = %v, want HTTP 403", err)
 	}
 }
+
+func TestAPIErrorText(t *testing.T) {
+	body := `{
+  "error": {
+    "code": 403,
+    "message": "Requests from referer <empty> are blocked.",
+    "details": [
+      {"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "API_KEY_HTTP_REFERRER_BLOCKED"}
+    ]
+  }
+}`
+	if got, want := apiErrorText([]byte(body)), "API_KEY_HTTP_REFERRER_BLOCKED: Requests from referer <empty> are blocked."; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got := apiErrorText([]byte("Bad\n  Gateway\n")); got != "Bad Gateway" {
+		t.Errorf("non-JSON body: got %q", got)
+	}
+}

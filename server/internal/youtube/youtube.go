@@ -59,8 +59,8 @@ func (c *Client) Video(ctx context.Context, id string) (Video, error) {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
-		return Video{}, fmt.Errorf("youtube: videos: HTTP %d: %s", res.StatusCode, strings.TrimSpace(string(msg)))
+		msg, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return Video{}, fmt.Errorf("youtube: videos: HTTP %d: %s", res.StatusCode, apiErrorText(msg))
 	}
 	var raw struct {
 		Items []struct {
@@ -97,6 +97,29 @@ func (c *Client) Video(ctx context.Context, id string) (Video, error) {
 		}
 	}
 	return v, nil
+}
+
+// apiErrorText turns a Google API error body into one log line: the reason
+// code (e.g. API_KEY_HTTP_REFERRER_BLOCKED) and message, instead of the
+// whole indented JSON.
+func apiErrorText(body []byte) string {
+	var e struct {
+		Error struct {
+			Message string `json:"message"`
+			Details []struct {
+				Reason string `json:"reason"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &e) != nil || e.Error.Message == "" {
+		return strings.Join(strings.Fields(string(body)), " ")
+	}
+	for _, d := range e.Error.Details {
+		if d.Reason != "" {
+			return d.Reason + ": " + e.Error.Message
+		}
+	}
+	return e.Error.Message
 }
 
 var durationRe = regexp.MustCompile(`^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$`)

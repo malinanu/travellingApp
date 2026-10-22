@@ -72,6 +72,13 @@ func (s *Server) linkVideo(ctx context.Context, job domain.LinkExtraction) *gemi
 	return video
 }
 
+// isYouTubeShort reports whether job is a YouTube Short (canonicalLink
+// gives Shorts a /shorts/ path).
+func isYouTubeShort(job domain.LinkExtraction) bool {
+	u, err := url.Parse(job.CanonicalURL)
+	return err == nil && job.Platform == "youtube" && ytShortsRe.MatchString(u.Path)
+}
+
 // youtubeID pulls the video ID out of a canonicalLink YouTube URL.
 func youtubeID(canonical string) string {
 	u, err := url.Parse(canonical)
