@@ -1,0 +1,16 @@
+# gitleaks config for the secret-scan CI job.
+# Firebase client config is meant to ship inside the app, so its API keys
+# are allowlisted here. They are locked down by app/API restrictions in
+# Google Cloud instead. Every other key or token still fails the build.
+title = "spotto gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Firebase client config (restricted keys, shipped in every app build)"
+paths = [
+  '''app[/\\]android[/\\]app[/\\]google-services\.json''',
+  '''app[/\\]ios[/\\]Runner[/\\]GoogleService-Info\.plist''',
+  '''app[/\\]lib[/\\]firebase_options\.dart''',
+]
