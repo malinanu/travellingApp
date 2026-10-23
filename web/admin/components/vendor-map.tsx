@@ -2,28 +2,56 @@
 
 // Real Leaflet map (OpenFreeMap base, see base-map-layer.tsx) of Sri Lanka — replaces the old stylised
 // SVG silhouette. Shows region demand/supply bubbles (same gap-coloring/
-// thresholds as before, now at real coordinates) plus individual vendor
-// markers color-coded by status, red when flagged by bad reviews. The
-// map's initial view is always this fixed Sri Lanka overview — never the
-// browser's own geolocation. Clicking empty map area (not a marker) drops
-// an investigation pin so a super-admin can check an arbitrary spot.
+// thresholds as before, now at real coordinates) plus a pin per vendor in
+// its category's colour and icon, the same as the traveller app's map,
+// ringed red when flagged by bad reviews. The map's initial view is always
+// this fixed Sri Lanka overview — never the browser's own geolocation.
+// Clicking empty map area (not a marker) drops an investigation pin so a
+// super-admin can check an arbitrary spot.
 
-import { CircleMarker, MapContainer, Popup, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import * as Icons from 'lucide-react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { CircleMarker, MapContainer, Marker, Popup, useMapEvents } from 'react-leaflet';
 
 import BaseMapLayer from './base-map-layer';
 
-import type { Region, Vendor } from '@spotto/shared';
+import { PIN_TONE_COLORS, type Region, type Vendor, type VendorCategory } from '@spotto/shared';
 import { regionTone } from './region-tone';
 
 const SRI_LANKA_CENTER: [number, number] = [7.8731, 80.7718];
 const SRI_LANKA_ZOOM = 8;
+const FLAG_RED = '#e11d48';
 
-function vendorColor(v: Vendor): string {
-  if (v.flagged) return '#e11d48'; // red — bad-review flag
-  if (v.status === 'pending') return '#d97706'; // amber
-  if (v.status === 'suspended') return '#7c3aed'; // purple — admin action taken
-  if (v.status === 'rejected' || v.status === 'edits') return '#64748b'; // muted
-  return '#0b6f86'; // teal — approved & healthy
+// One DivIcon per look, shared by every pin that has it — hundreds of pins
+// use only a few dozen category/flag/selected combinations.
+const pinCache = new Map<string, L.DivIcon>();
+
+function categoryPin(category: VendorCategory | undefined, flagged: boolean, selected: boolean): L.DivIcon {
+  const color = category ? PIN_TONE_COLORS[category.segment] : PIN_TONE_COLORS.brand;
+  const iconName = category?.icon ?? 'MapPin';
+  const key = `${color}|${iconName}|${flagged}|${selected}`;
+  let pin = pinCache.get(key);
+  if (!pin) {
+    const Icon = (Icons as unknown as Record<string, Icons.LucideIcon>)[iconName] ?? Icons.MapPin;
+    const size = selected ? 34 : 26;
+    const rings = [
+      selected ? '0 0 0 3px #103d3a' : '',
+      flagged ? `0 0 0 ${selected ? 6 : 3}px ${FLAG_RED}` : '',
+      '0 1px 4px rgba(0,0,0,0.35)',
+    ].filter(Boolean).join(', ');
+    const svg = renderToStaticMarkup(<Icon size={selected ? 17 : 14} color="#fff" strokeWidth={2.4} />);
+    pin = L.divIcon({
+      className: 'vendor-pin',
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      popupAnchor: [0, -size / 2],
+      html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #fff;` +
+        `box-shadow:${rings};display:flex;align-items:center;justify-content:center;box-sizing:border-box">${svg}</div>`,
+    });
+    pinCache.set(key, pin);
+  }
+  return pin;
 }
 
 function ClickToInvestigate({ onInvestigate }: { onInvestigate: (lat: number, lng: number) => void }) {
@@ -38,6 +66,7 @@ function ClickToInvestigate({ onInvestigate }: { onInvestigate: (lat: number, ln
 export default function VendorMap({
   regions,
   vendors,
+  categories,
   selectedVendorId,
   onSelectVendor,
   investigationPin,
@@ -45,6 +74,8 @@ export default function VendorMap({
 }: {
   regions: Region[];
   vendors: Vendor[];
+  /** Category id → category, for each pin's colour and icon. */
+  categories: Map<string, VendorCategory>;
   selectedVendorId: string | null;
   onSelectVendor: (id: string) => void;
   investigationPin: { lat: number; lng: number } | null;
@@ -84,29 +115,24 @@ export default function VendorMap({
       })}
 
       {vendors.map((v) => {
-        const color = vendorColor(v);
+        const category = categories.get(v.category);
         const isSelected = v.id === selectedVendorId;
         return (
-          <CircleMarker
+          <Marker
             key={v.id}
-            center={[v.lat, v.lng]}
-            radius={isSelected ? 10 : 7}
-            pathOptions={{
-              color: '#fff',
-              weight: 2,
-              fillColor: color,
-              fillOpacity: 0.95,
-            }}
+            position={[v.lat, v.lng]}
+            icon={categoryPin(category, !!v.flagged, isSelected)}
+            zIndexOffset={isSelected ? 1000 : v.flagged ? 500 : 0}
             eventHandlers={{ click: () => onSelectVendor(v.id) }}
           >
             <Popup>
               <strong>{v.name}</strong>
               <br />
-              {v.category} · {v.town}
+              {category?.label ?? (v.category || 'Uncategorised')} · {v.town}
               <br />
               {v.flagged ? `⚠ Flagged — ${v.badReviewCount} bad reviews` : v.status}
             </Popup>
-          </CircleMarker>
+          </Marker>
         );
       })}
 

@@ -114,9 +114,8 @@ the real admin comes from `ADMIN_EMAIL`/`ADMIN_PASSWORD` instead.
    any 6 digits for 2FA) → **Approval queue** → approve a pending vendor
    (hotkey `a`, with a 6s undo toast) → that vendor's login can now reach
    the vendor portal instead of the "pending review" gate.
-5. Also live in the admin center: **Content monitor** streams a new
-   templated feed item every ~3s (server-side generator); **Geo-analytics**
-   shows the demand/supply map with pulsing gap rings; toggle light/dark
+5. Also live in the admin center: **Geo-analytics** shows the
+   demand/supply map with category pins and gap rings; toggle light/dark
    theme from the command bar.
 
 ## Notes

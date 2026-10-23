@@ -2,11 +2,9 @@
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -17,7 +15,7 @@ import (
 
 // handleAdminKPIs mixes live counts with prototype-style topline numbers.
 func (s *Server) handleAdminKPIs(w http.ResponseWriter, r *http.Request) {
-	pending, feedCount, err := s.Store.CountAdminKPIBase(r.Context())
+	pending, err := s.Store.CountPendingVendors(r.Context())
 	if err != nil {
 		storeErr(w, err)
 		return
@@ -33,7 +31,6 @@ func (s *Server) handleAdminKPIs(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"pendingVendors": pending,
-		"feedItems":      feedCount,
 		"mrr":            mrr,
 		"activeSubs":     len(subs),
 	})
@@ -399,35 +396,6 @@ func (s *Server) vendorStatusHandler(status domain.VendorStatus, action string) 
 	}
 }
 
-func (s *Server) handleAdminFeed(w http.ResponseWriter, r *http.Request) {
-	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
-	items, err := s.Store.FeedItems(r.Context(), after, r.URL.Query().Get("status"), 100)
-	if err != nil {
-		storeErr(w, err)
-		return
-	}
-	if items == nil {
-		items = []domain.FeedItem{}
-	}
-	writeJSON(w, http.StatusOK, items)
-}
-
-func (s *Server) feedResolveHandler(resolved string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid id")
-			return
-		}
-		if err := s.Store.ResolveFeedItem(r.Context(), id, resolved); err != nil {
-			storeErr(w, err)
-			return
-		}
-		s.logAdminAction(r.Context(), "feed."+resolved, "feed_item", strconv.FormatInt(id, 10), nil)
-		writeJSON(w, http.StatusOK, map[string]any{"id": id, "resolved": resolved})
-	}
-}
-
 func (s *Server) handleAdminRegions(w http.ResponseWriter, r *http.Request) {
 	regions, err := s.Store.Regions(r.Context())
 	if err != nil {
@@ -506,7 +474,7 @@ func (s *Server) handleAdminSearch(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
 		writeJSON(w, http.StatusOK, postgres.AdminSearchResults{
-			Vendors: []domain.Vendor{}, FeedItems: []domain.FeedItem{}, Subscriptions: []domain.Subscription{},
+			Vendors: []domain.Vendor{}, Subscriptions: []domain.Subscription{},
 		})
 		return
 	}
@@ -551,37 +519,6 @@ func (s *Server) handlePublishAudioGuide(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"published": req.Published})
-}
-
-// handleAdminFeedSSE streams real-time admin live feed updates using Server-Sent Events (SSE).
-func (s *Server) handleAdminFeedSSE(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "Streaming unsupported", http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-			feed, err := s.Store.FeedItems(r.Context(), 0, "", 50)
-			if err != nil {
-				continue
-			}
-			data, _ := json.Marshal(feed)
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			flusher.Flush()
-		}
-	}
 }
 
 // handleAdminVoidClaim allows admins to void or reverse an offer claim/redemption.

@@ -85,7 +85,6 @@ var (
 	neutralPhrases   = []string{"was okay", "was fine, nothing special", "did the job"}
 	closingPositive  = []string{"Would definitely come back.", "Highly recommend.", "One of our favorite stops.", "Ask for the local's menu."}
 	closingNegative  = []string{"Not sure I'd return.", "Might give it another chance.", "Expected more for the price."}
-	feedTypes        = []string{"Offer", "Event"}
 	vendorNoteFlags  = []string{"Missing business license", "Low photo quality", "Duplicate address?", ""}
 	offerTypes       = []string{"Percentage", "Amount", "Freebie", "Bundle"}
 	audioDepths      = []string{"Quick", "Standard", "In-depth"}
@@ -121,20 +120,7 @@ var (
 		"Light, refreshing, and a good way to start.",
 		"Rich and warming — a local classic.",
 	}
-	offerLeadPhrases  = []string{"Limited-time deal", "Weekend special", "New customer offer", "Flash discount", "Loyalty reward", "Off-peak special"}
-	feedTextTemplates = []string{
-		"New offer just posted — check it out before it's gone.",
-		"Live event announced for this weekend.",
-		"Menu update: new seasonal items added.",
-		"Special promotion running for a limited time.",
-		"Popular spot getting a lot of attention this week.",
-		"Fresh listing added to the map.",
-	}
-	feedFlagTextTemplates = []string{
-		"Discount percentage looks unusually high — flagged for review.",
-		"Listing details don't match submitted photos.",
-		"Repeated posting pattern detected — flagged for review.",
-	}
+	offerLeadPhrases   = []string{"Limited-time deal", "Weekend special", "New customer offer", "Flash discount", "Loyalty reward", "Off-peak special"}
 	notificationTitles = []string{
 		"New redemption", "Offer expiring soon", "New review posted", "Weekly summary ready", "Profile view spike",
 	}
@@ -160,7 +146,6 @@ type Summary struct {
 	Claims        int
 	Reviews       int
 	Groups        int
-	FeedItems     int
 	Subscriptions int
 	AudioGuides   int
 	SampleLogins  []string
@@ -229,12 +214,6 @@ func Run(ctx context.Context, store *postgres.Store) (Summary, error) {
 		return sum, err
 	}
 	sum.Groups = groups
-
-	feedItems, err := genFeedItems(ctx, store, vendors, 15, now)
-	if err != nil {
-		return sum, err
-	}
-	sum.FeedItems = feedItems
 
 	subs, err := genSubscriptions(ctx, store, vendors, now)
 	if err != nil {

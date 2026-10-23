@@ -33,8 +33,8 @@ func main() {
 		log.Fatalf("gendata: %v", err)
 	}
 
-	log.Printf("generated: %d travellers, %d vendors, %d places, %d offers, %d claims, %d reviews, %d groups, %d feed items, %d subscriptions, %d audio guides",
-		sum.Travellers, sum.Vendors, sum.Places, sum.Offers, sum.Claims, sum.Reviews, sum.Groups, sum.FeedItems, sum.Subscriptions, sum.AudioGuides)
+	log.Printf("generated: %d travellers, %d vendors, %d places, %d offers, %d claims, %d reviews, %d groups, %d subscriptions, %d audio guides",
+		sum.Travellers, sum.Vendors, sum.Places, sum.Offers, sum.Claims, sum.Reviews, sum.Groups, sum.Subscriptions, sum.AudioGuides)
 	log.Println("sample logins (all accounts share this run's password):")
 	for _, line := range sum.SampleLogins {
 		log.Println("  " + line)
