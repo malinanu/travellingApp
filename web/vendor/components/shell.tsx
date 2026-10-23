@@ -13,7 +13,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-import { ApiError, isBookableCategory, type User, type Vendor, type VendorNotification } from '@spotto/shared';
+import { ApiError, isBookableCategory, resolveMediaUrl, type User, type Vendor, type VendorNotification } from '@spotto/shared';
 import { api } from '../lib/api';
 
 // staffHidden marks nav items staff has zero access to on the backend
@@ -333,8 +333,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               className="rounded-xl bg-white px-3 py-2 flex items-center gap-2 border transition-colors"
               style={{ borderColor: pathname.startsWith('/account') ? 'var(--accent)' : 'var(--line)' }}
             >
-              <span className="w-7 h-7 rounded-lg bg-accent text-white flex items-center justify-center text-[12px] font-extrabold">
-                {initials(me?.name || me?.email || '?')}
+              <span className="w-7 h-7 rounded-lg bg-accent text-white flex items-center justify-center text-[12px] font-extrabold overflow-hidden">
+                {me?.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={resolveMediaUrl(me.avatarUrl)} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  initials(me?.name || me?.email || '?')
+                )}
               </span>
               <ChevronDown size={15} className="text-muted" />
             </Link>

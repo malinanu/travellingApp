@@ -16,10 +16,10 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { TeamResponse, TwoFactorSetupResponse, User } from '@spotto/shared';
-import { useAutoSave } from '@spotto/shared';
+import { resolveMediaUrl, uploadMedia, useAutoSave, validateFile } from '@spotto/shared';
 import Shell, { useBusiness, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
 
@@ -68,6 +68,31 @@ export default function AccountPage() {
   const [dirty, setDirty] = useState(false);
   const [contactError, setContactError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const avatarInput = useRef<HTMLInputElement>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+
+  // Profile photo: a user-owned "avatar" upload, which the server also
+  // writes to users.avatar_url (replacing any previous one).
+  const onAvatarPicked = async (file: File | undefined) => {
+    if (!file || !me) return;
+    const invalid = validateFile(file, 'image');
+    if (invalid) {
+      setAvatarError(invalid);
+      return;
+    }
+    setAvatarBusy(true);
+    setAvatarError(null);
+    try {
+      await uploadMedia(api, file, { ownerType: 'user', ownerId: me.id, role: 'avatar' });
+      await qc.invalidateQueries({ queryKey: ['me'] });
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setAvatarBusy(false);
+      if (avatarInput.current) avatarInput.current.value = '';
+    }
+  };
 
   useEffect(() => {
     if (me && !dirty) {
@@ -114,15 +139,26 @@ export default function AccountPage() {
         {contactError && (
           <p className="text-[13.5px] font-bold text-coral mb-4">{contactError}</p>
         )}
+        {avatarError && (
+          <p className="text-[13.5px] font-bold text-coral mb-4">Couldn’t update your photo: {avatarError}</p>
+        )}
 
         <div className="card p-5 flex items-center gap-4 mb-4">
           <div className="relative shrink-0">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white text-[22px] font-extrabold"
-              style={{ background: 'linear-gradient(140deg, var(--accent), var(--accent-2))' }}>
-              {initialsOf(me?.name ?? '?')}
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white text-[22px] font-extrabold overflow-hidden"
+              style={{ background: 'linear-gradient(140deg, var(--accent), var(--accent-2))', opacity: avatarBusy ? 0.6 : 1 }}>
+              {me?.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={resolveMediaUrl(me.avatarUrl)} alt="" className="w-full h-full object-cover" />
+              ) : (
+                initialsOf(me?.name ?? '?')
+              )}
             </div>
-            <button className="absolute -bottom-1 -right-1 w-7 h-7 rounded-lg bg-white border border-accent-tint text-accent flex items-center justify-center"
-              style={{ boxShadow: '0 3px 10px rgba(15,61,58,0.2)' }} title="Photo upload coming soon">
+            <input ref={avatarInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+              onChange={(e) => onAvatarPicked(e.target.files?.[0])} />
+            <button type="button" disabled={avatarBusy} onClick={() => avatarInput.current?.click()}
+              className="absolute -bottom-1 -right-1 w-7 h-7 rounded-lg bg-white border border-accent-tint text-accent flex items-center justify-center"
+              style={{ boxShadow: '0 3px 10px rgba(15,61,58,0.2)' }} title={avatarBusy ? 'Uploading…' : 'Change photo'}>
               <Camera size={13} />
             </button>
           </div>
