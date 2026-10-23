@@ -1,9 +1,9 @@
 'use client';
 
 // Draggable map-pin editor for correcting a vendor's business/map location —
-// reuses the exact same free OpenStreetMap tile source and CircleMarker
-// pattern already established in web/admin/components/vendor-map.tsx (no
-// new API key, no Leaflet default-icon-asset headaches). Must only be
+// reuses the same free CARTO Voyager tiles (OpenStreetMap data) and
+// CircleMarker pattern as web/admin/components/vendor-map.tsx (no API key,
+// no Leaflet default-icon-asset headaches). Must only be
 // loaded client-side (Leaflet touches `window` at import time) — see the
 // dynamic(..., { ssr: false }) import in app/profile/page.tsx.
 

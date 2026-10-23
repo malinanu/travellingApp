@@ -13,7 +13,7 @@
 // Deliberately uses the classic input-bindable google.maps.places.
 // Autocomplete widget rather than the newer PlaceAutocompleteElement used
 // elsewhere in this app (registration's business search, previously also
-// embedded in location-picker-google.tsx) — that element manages its own
+// embedded in the old Google map picker) — that element manages its own
 // internal shadow-DOM input with no way to pre-fill it with an existing
 // saved town, which a plain <input> handles for free.
 
@@ -104,6 +104,10 @@ export default function AddressSearchField({
           hours: hoursFromLegacyPeriods(place.opening_hours?.periods),
         });
       });
+    }).catch((err) => {
+      // Google couldn't load (blocked, offline, bad key): the field stays a
+      // plain text input and the pin is set on the map below instead.
+      console.warn('Address search unavailable, Google Maps failed to load:', err);
     });
     return () => {
       cancelled = true;
