@@ -340,6 +340,14 @@ function LoginPageInner() {
       setError('This portal is for business accounts. Use the Spotto app instead.');
       return;
     }
+    if (!res.user.vendorId) {
+      // A vendor account whose business was never created or was deleted:
+      // every vendor page would just fail, so don't sign it in.
+      api.setToken(null);
+      api.logout(res.refreshToken);
+      setError('There’s no business on this account. Register your business below, or contact partners@spotto.dev.');
+      return;
+    }
     api.setToken(res.token, rememberOverride ?? remember, res.refreshToken);
     router.replace('/dashboard');
   };

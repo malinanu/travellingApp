@@ -133,10 +133,12 @@ export default function AccountPage() {
                 {roleLabel(me?.vendorRole)}
               </span>
             </h2>
-            <p className="text-[13.5px] text-muted font-semibold flex items-center gap-3 mt-0.5">
-              <span className="flex items-center gap-1"><Store size={13} /> {business?.name}</span>
-              <span className="flex items-center gap-1"><MapPin size={13} /> {business?.town}</span>
-            </p>
+            {(business?.name || business?.town) && (
+              <p className="text-[13.5px] text-muted font-semibold flex items-center gap-3 mt-0.5">
+                {business.name && <span className="flex items-center gap-1"><Store size={13} /> {business.name}</span>}
+                {business.town && <span className="flex items-center gap-1"><MapPin size={13} /> {business.town}</span>}
+              </p>
+            )}
           </div>
           {business?.status === 'approved' && (
             <span className="rounded-lg text-[11.5px] font-extrabold px-3 py-1.5 flex items-center gap-1.5 shrink-0" style={{ background: 'rgba(22,163,74,0.1)', color: '#16a34a' }}>

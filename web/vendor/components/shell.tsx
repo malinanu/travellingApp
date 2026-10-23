@@ -5,7 +5,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  BarChart3, Bell, CalendarCheck, CalendarClock, ChevronDown, LayoutDashboard, Lock, Menu, QrCode, Rocket, Search,
+  AlertTriangle, BarChart3, Bell, CalendarCheck, CalendarClock, ChevronDown, LayoutDashboard, Lock, Menu, QrCode, Rocket, Search,
   Store, Tag, Ticket, TrendingUp, UtensilsCrossed, Star, Clock, Wallet, LogOut,
   LucideIcon,
 } from 'lucide-react';
@@ -13,7 +13,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-import { isBookableCategory, type User, type Vendor, type VendorNotification } from '@spotto/shared';
+import { ApiError, isBookableCategory, type User, type Vendor, type VendorNotification } from '@spotto/shared';
 import { api } from '../lib/api';
 
 // staffHidden marks nav items staff has zero access to on the backend
@@ -113,7 +113,9 @@ function initials(name: string) {
     .join('');
 }
 
-function NotificationBell() {
+// enabled is false until the business has loaded, so an account the
+// server won't serve vendor data to doesn't poll a 403 every 5 seconds.
+function NotificationBell({ enabled }: { enabled: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
@@ -121,6 +123,7 @@ function NotificationBell() {
     queryKey: ['notifications'],
     queryFn: () => api.get<VendorNotification[]>('/vendor/notifications'),
     refetchInterval: 5000,
+    enabled,
   });
   const unread = notifs.filter((n) => n.unread).length;
 
@@ -201,7 +204,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const [search, setSearch] = useState('');
   const { data: me, isError } = useMe();
-  const { data: business } = useBusiness();
+  const { data: business, error: businessError } = useBusiness();
 
   useEffect(() => {
     if (!api.getToken()) {
@@ -218,6 +221,15 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   if (me && (me.vendorStatus === 'rejected' || me.vendorStatus === 'suspended')) {
     return <PendingGate status={me.vendorStatus} />;
+  }
+
+  // An account the server won't serve vendor data to: not a vendor, or a
+  // vendor whose business was never created or has been deleted. Every
+  // /vendor/* call 403s for it, so say that instead of rendering empty
+  // pages.
+  const businessForbidden = businessError instanceof ApiError && businessError.status === 403;
+  if (me && (me.role !== 'vendor' || !me.vendorId || businessForbidden)) {
+    return <NoBusinessGate email={me.email} />;
   }
 
   const isApproved = !me?.vendorStatus || me.vendorStatus === 'approved';
@@ -283,13 +295,17 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             }`}
           >
             <span className="w-10 h-10 rounded-lg bg-accent text-white flex items-center justify-center text-[14px] font-extrabold shrink-0">
-              {initials(business?.name ?? 'S')}
+              {business ? initials(business.name) : <Store size={18} />}
             </span>
-            <span className="min-w-0">
-              <span className="block truncate font-extrabold text-[13px]">{business?.name ?? '…'}</span>
-              <span className="block text-[11px] text-accent font-extrabold truncate">
-                {business?.town ?? 'Weligama'} (Main Branch)
-              </span>
+            <span className="min-w-0 flex-1">
+              {business ? (
+                <span className="block truncate font-extrabold text-[13px]">{business.name}</span>
+              ) : (
+                <span className="block h-3 w-24 rounded bg-line animate-pulse" />
+              )}
+              {business?.town && (
+                <span className="block text-[11px] text-accent font-extrabold truncate">{business.town}</span>
+              )}
             </span>
           </Link>
         </div>
@@ -311,14 +327,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </form>
           <h1 className="flex-1 sm:hidden font-display font-extrabold text-[17px]">{title}</h1>
           <div className="ml-auto flex items-center gap-2 shrink-0">
-            <NotificationBell />
+            <NotificationBell enabled={!!business} />
             <Link
               href="/account"
               className="rounded-xl bg-white px-3 py-2 flex items-center gap-2 border transition-colors"
               style={{ borderColor: pathname.startsWith('/account') ? 'var(--accent)' : 'var(--line)' }}
             >
               <span className="w-7 h-7 rounded-lg bg-accent text-white flex items-center justify-center text-[12px] font-extrabold">
-                {initials(business?.owner ?? 'V')}
+                {initials(me?.name || me?.email || '?')}
               </span>
               <ChevronDown size={15} className="text-muted" />
             </Link>
@@ -328,6 +344,19 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <div className="max-w-[1180px] mx-auto">
             {(me?.vendorStatus === 'pending' || me?.vendorStatus === 'edits') && (
               <StatusBanner status={me.vendorStatus} />
+            )}
+            {businessError && !businessForbidden && (
+              <div className="rounded-2xl px-4 py-3.5 mb-5 flex items-start gap-3 border" style={{ background: 'rgba(225,29,72,0.06)', borderColor: 'rgba(225,29,72,0.3)' }}>
+                <span className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-[rgba(225,29,72,0.12)] text-[#e11d48]">
+                  <AlertTriangle size={17} />
+                </span>
+                <div>
+                  <p className="font-extrabold text-[13.5px]">Couldn’t load your business</p>
+                  <p className="text-muted font-semibold text-[12.5px] leading-relaxed mt-0.5">
+                    {businessError.message}. Refresh to try again.
+                  </p>
+                </div>
+              </div>
             )}
             {children}
           </div>
@@ -365,6 +394,40 @@ function PendingGate({ status }: { status: 'rejected' | 'suspended' }) {
         >
           <LogOut size={16} /> Sign out
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Shown when the signed-in account has no business the server will serve:
+// it's not a vendor account, or its business was never created or deleted.
+function NoBusinessGate({ email }: { email: string }) {
+  const router = useRouter();
+  const signOut = (then: string) => {
+    api.logout();
+    router.replace(then);
+  };
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <div className="card max-w-md w-full p-8 text-center">
+        <span className="mx-auto w-14 h-14 rounded-2xl bg-accent-tint text-accent flex items-center justify-center mb-4">
+          <Store size={26} />
+        </span>
+        <h1 className="text-xl font-extrabold font-display mb-2">No business linked to this account</h1>
+        <p className="text-muted font-semibold text-[14px] leading-relaxed">
+          You’re signed in as <span className="font-extrabold text-ink">{email}</span>, but there’s no business on this
+          account, so there’s nothing to manage here yet. Sign in with your business account, or register your business
+          (with a different email if this one is already taken).
+        </p>
+        <div className="mt-6 flex flex-col gap-2">
+          <button onClick={() => signOut('/login?mode=register')} className="btn-accent py-2.5 font-extrabold">
+            Register a business
+          </button>
+          <button onClick={() => signOut('/login')} className="inline-flex items-center justify-center gap-2 py-2 font-extrabold text-accent hover:underline">
+            <LogOut size={16} /> Sign out
+          </button>
+        </div>
+        <p className="text-muted font-semibold text-[12px] mt-4">Think this is a mistake? Contact partners@spotto.dev.</p>
       </div>
     </div>
   );
