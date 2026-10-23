@@ -134,7 +134,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled, &u.TokenVersion,
 		&u.ShareLocation, &u.Lat, &u.Lng, &u.LocationUpdatedAt,
 		&u.Phone, &u.VendorRole, &u.NotifyRedemptions, &u.NotifyReviews, &u.NotifyPayouts, &u.NotifyGrowthTips,
-		&u.GoogleID, &u.AvatarURL)
+		&u.GoogleID, &u.AvatarURL, &u.PhoneVerified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -146,7 +146,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url, phone_verified_at IS NOT NULL`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -382,11 +382,26 @@ func (s *Store) NearbyTravellers(ctx context.Context, callerID string, lat, lng,
 // UpdateUserContact updates the vendor account settings page's editable
 // fields. Callers must check email uniqueness themselves first (see
 // handleUpdateMyContact) — this just writes whatever it's given.
-func (s *Store) UpdateUserContact(ctx context.Context, id, name, email, phone string) error {
-	_, err := s.Pool.Exec(ctx,
-		`UPDATE users SET name=$2, email=$3, phone=$4 WHERE id=$1`,
-		id, name, email, phone)
-	return err
+// phoneChanged clears the number's verification and any code in flight.
+func (s *Store) UpdateUserContact(ctx context.Context, id, name, email, phone string, phoneChanged bool) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx,
+		`UPDATE users SET name=$2, email=$3, phone=$4,
+			phone_verified_at = CASE WHEN $5 THEN NULL ELSE phone_verified_at END
+		WHERE id=$1`,
+		id, name, email, phone, phoneChanged); err != nil {
+		return err
+	}
+	if phoneChanged {
+		if _, err := tx.Exec(ctx, `DELETE FROM phone_verifications WHERE user_id=$1`, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // UpdateNotificationPrefs saves the account page's notification toggles.

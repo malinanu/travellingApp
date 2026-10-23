@@ -26,6 +26,7 @@ import VendorPhotos from '../../components/vendor-photos';
 import VendorDocs from '../../components/vendor-docs';
 import VendorBRCertificate from '../../components/vendor-br-certificate';
 import { api } from '../../lib/api';
+import { useDebounced } from '../../lib/use-debounced';
 import { VENDOR_SEGMENTS, categoriesBySegment, categoryById, isSelectedCategory, categoryIconComponent } from '../../lib/business-categories';
 
 const VIBE_DIMENSIONS: { id: 'productive' | 'loud' | 'crowded'; label: string; icon: LucideIcon }[] = [
@@ -556,6 +557,7 @@ export default function ProfilePage() {
                   <input className="input pl-9" placeholder="+94 …" value={p.contact?.phone ?? ''}
                     onChange={(e) => setContact({ phone: e.target.value })} onBlur={profileAutoSave.flush} />
                 </div>
+                <BusinessPhoneHint phone={p.contact?.phone ?? ''} />
               </label>
               <label className="block">
                 <span className="block text-[12.5px] font-extrabold mb-1.5 text-muted">Website</span>
@@ -634,5 +636,29 @@ export default function ProfilePage() {
         )}
       </div>
     </Shell>
+  );
+}
+
+// Under the Business Profile's contact number: travellers call this one, so
+// it should be the business's own. Warns (never blocks) when it isn't any
+// verified number of this business's team but another business on Spotto
+// already lists it — see handleVendorPhoneCheck.
+function BusinessPhoneHint({ phone }: { phone: string }) {
+  const checkFor = useDebounced(phone.trim(), 500);
+  const { data } = useQuery<{ otherBusiness?: { name: string } }>({
+    queryKey: ['business-phone-check', checkFor],
+    queryFn: () => api.get(`/vendor/business/phone-check?phone=${encodeURIComponent(checkFor)}`),
+    enabled: checkFor.replace(/\D/g, '').length >= 7,
+  });
+  // checkFor lags typing by the debounce; don't show a stale answer.
+  const other = checkFor === phone.trim() ? data?.otherBusiness?.name : undefined;
+  if (!other) {
+    return <span className="block text-[12px] text-muted font-semibold mt-1.5">Use the number travelers should call.</span>;
+  }
+  return (
+    <span className="block text-[12px] font-bold text-coral mt-1.5">
+      This number is listed for “{other}” on Spotto. If your business has a different number, please use that.
+      If “{other}” is your business, contact partners@spotto.dev to claim it.
+    </span>
   );
 }

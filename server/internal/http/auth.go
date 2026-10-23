@@ -16,6 +16,7 @@ import (
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
+	"github.com/spotto/server/internal/phone"
 	"github.com/spotto/server/internal/store/postgres"
 )
 
@@ -210,7 +211,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Country:      req.Country,
 		TravelStyle:  req.TravelStyle,
 		Interests:    req.Interests,
-		Phone:        req.Phone,
+		Phone:        phone.Normalize(req.Phone),
 		CreatedAt:    time.Now(),
 	}
 
@@ -559,11 +560,16 @@ func (s *Server) handleUpdateMyContact(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := s.Store.UpdateUserContact(r.Context(), u.ID, req.Name, email, req.Phone); err != nil {
+	newPhone := phone.Normalize(req.Phone)
+	phoneChanged := phone.Key(newPhone) != phone.Key(u.Phone)
+	if err := s.Store.UpdateUserContact(r.Context(), u.ID, req.Name, email, newPhone, phoneChanged); err != nil {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
-	u.Name, u.Email, u.Phone = req.Name, email, req.Phone
+	u.Name, u.Email, u.Phone = req.Name, email, newPhone
+	if phoneChanged {
+		u.PhoneVerified = false
+	}
 	writeJSON(w, http.StatusOK, u)
 }
 

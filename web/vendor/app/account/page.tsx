@@ -11,7 +11,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BadgeCheck, Bell, Camera, Check, Clock, Copy, Crown, KeyRound, Lightbulb, Lock,
-  LogOut, Mail, MapPin, Phone, QrCode, Send, Settings2, ShieldCheck, Star, Store,
+  LogOut, Mail, MapPin, MessageCircle, MessageSquare, Phone, QrCode, Send, Settings2, ShieldCheck, Star, Store,
   Ticket, Trash2, User as UserIcon, UserPlus, Wallet, X, LucideIcon,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -22,6 +22,7 @@ import type { TeamResponse, TwoFactorSetupResponse, User } from '@spotto/shared'
 import { resolveMediaUrl, uploadMedia, useAutoSave, validateFile } from '@spotto/shared';
 import Shell, { useBusiness, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
+import { useDebounced } from '../../lib/use-debounced';
 
 function initialsOf(name: string) {
   return name.split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
@@ -206,6 +207,7 @@ export default function AccountPage() {
               <input className="input pl-9" value={phone} placeholder="+94 …"
                 onChange={(e) => { setPhone(e.target.value); setDirty(true); }} onBlur={contactAutoSave.flush} />
             </div>
+            <PhoneVerification me={me} typed={phone} saved={!dirty} />
           </div>
 
           <SignInSecurityCard me={me} />
@@ -324,6 +326,137 @@ function PasswordSection() {
           Cancel
         </button>
       </div>
+    </div>
+  );
+}
+
+interface PhoneCodeSent {
+  channel: 'whatsapp' | 'sms';
+  sentTo: string;
+  expiresIn: number;
+  resendIn: number;
+}
+
+// The signed-in person's own number (owner, manager or staff): verify it
+// with a one-time code by WhatsApp or SMS, and get a heads-up when another
+// Spotto account already has it. Numbers aren't unique — one person can
+// hold a traveller and a business account — so neither ever blocks saving.
+function PhoneVerification({ me, typed, saved }: { me?: User; typed: string; saved: boolean }) {
+  const qc = useQueryClient();
+  const checkFor = useDebounced(typed.trim(), 500);
+  const { data: check } = useQuery<{ usedByOtherAccount: boolean }>({
+    queryKey: ['phone-check', checkFor],
+    queryFn: () => api.get(`/me/phone/check?phone=${encodeURIComponent(checkFor)}`),
+    enabled: checkFor.replace(/\D/g, '').length >= 7,
+  });
+  const [sent, setSent] = useState<(PhoneCodeSent & { resendAt: number }) | null>(null);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!sent) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [sent]);
+
+  // A newly saved number starts over.
+  useEffect(() => {
+    setSent(null);
+    setCode('');
+    setError(null);
+  }, [me?.phone]);
+
+  const send = useMutation({
+    mutationFn: (channel: PhoneCodeSent['channel']) => api.post<PhoneCodeSent>('/me/phone/verify', { channel }),
+    onSuccess: (res) => {
+      setSent({ ...res, resendAt: Date.now() + res.resendIn * 1000 });
+      setNow(Date.now());
+      setCode('');
+      setError(null);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : 'Could not send the code'),
+  });
+  const confirm = useMutation({
+    mutationFn: () => api.post<User>('/me/phone/verify/confirm', { code }),
+    onSuccess: () => {
+      setSent(null);
+      setCode('');
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : 'Invalid code'),
+  });
+
+  const showVerify = !!me?.phone && saved;
+  const resendIn = sent ? Math.max(0, Math.ceil((sent.resendAt - now) / 1000)) : 0;
+  const otherChannel = sent?.channel === 'whatsapp' ? 'sms' : 'whatsapp';
+  const sendButton = 'rounded-xl border border-line bg-white px-3.5 py-2 font-extrabold text-[13px] inline-flex items-center gap-1.5 disabled:opacity-60';
+
+  return (
+    <div className="mt-2 space-y-2">
+      {/* checkFor lags typing by the debounce; don't show a stale answer. */}
+      {check?.usedByOtherAccount && checkFor === typed.trim() && (
+        <p className="text-[12px] font-bold text-coral">
+          This number is already on another Spotto account. If you have a different number, please use that.
+        </p>
+      )}
+      {showVerify && me?.phoneVerified && (
+        <p className="inline-flex items-center gap-1.5 text-[12.5px] font-extrabold text-accent">
+          <BadgeCheck size={15} /> Verified
+        </p>
+      )}
+      {showVerify && !me?.phoneVerified && (
+        <div className="rounded-xl border border-line bg-sand p-3">
+          {!sent ? (
+            <>
+              <p className="text-[12.5px] font-bold text-ink-soft mb-2">
+                Not verified yet — get a 6-digit code to confirm this number is yours.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button className={sendButton} disabled={send.isPending} onClick={() => send.mutate('whatsapp')}>
+                  <MessageCircle size={15} /> Code on WhatsApp
+                </button>
+                <button className={sendButton} disabled={send.isPending} onClick={() => send.mutate('sms')}>
+                  <MessageSquare size={15} /> Code by SMS
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-[12.5px] font-bold text-ink-soft mb-2">
+                We sent a code to {sent.sentTo} {sent.channel === 'whatsapp' ? 'on WhatsApp' : 'by SMS'}.
+              </p>
+              <div className="flex gap-2">
+                <input className="input" placeholder="6-digit code" value={code} maxLength={6}
+                  inputMode="numeric" autoComplete="one-time-code"
+                  onChange={(e) => { setCode(e.target.value.replace(/\D/g, '')); setError(null); }} />
+                <button className="btn-accent px-4 py-2 text-[13px] shrink-0"
+                  disabled={code.length !== 6 || confirm.isPending} onClick={() => confirm.mutate()}>
+                  {confirm.isPending ? 'Checking…' : 'Verify'}
+                </button>
+              </div>
+              <p className="text-[12px] text-muted font-semibold mt-2">
+                {resendIn > 0 ? (
+                  `Didn’t get it? You can ask again in ${resendIn}s.`
+                ) : (
+                  <>
+                    Didn’t get it?{' '}
+                    <button className="text-accent font-extrabold" disabled={send.isPending} onClick={() => send.mutate(otherChannel)}>
+                      Send {otherChannel === 'sms' ? 'by SMS' : 'on WhatsApp'} instead
+                    </button>
+                    {' '}or{' '}
+                    <button className="text-accent font-extrabold" disabled={send.isPending} onClick={() => send.mutate(sent.channel)}>
+                      send again
+                    </button>
+                    .
+                  </>
+                )}
+              </p>
+            </>
+          )}
+          {error && <p className="text-[12.5px] font-bold text-coral mt-2">{error}</p>}
+        </div>
+      )}
     </div>
   );
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/spotto/server/internal/placedetails"
 	"github.com/spotto/server/internal/reelextract"
 	"github.com/spotto/server/internal/store/postgres"
+	"github.com/spotto/server/internal/verifymsg"
 	"github.com/spotto/server/internal/weather"
 	"github.com/spotto/server/internal/youtube"
 )
@@ -108,6 +109,10 @@ type Server struct {
 	totpLimit     *loginLimiter // guards /auth/2fa/login-verify (key: ip+userID)
 	resetLimit    *loginLimiter // guards /auth/forgot-password (key: ip+email)
 	grantPinLimit *loginLimiter // guards /vendor/profile-grants/{id}/redeem (key: ip+userID) â€” a 6-digit PIN only has 10^6 possibilities
+	phoneVerifyLimit *loginLimiter // guards POST /me/phone/verify (key: userID) — each send costs an SMS/WhatsApp message
+	// Verify delivers phone-verification codes (WhatsApp, text.lk, Twilio)
+	// — see internal/verifymsg; tests swap in a fake.
+	Verify verifymsg.Sender
 	guideLimit    *dynamicRateLimiter // guards /guide/chat (key: userID or clientIP)
 	globalLimit   *dynamicRateLimiter
 	oauthCodes    *authCodeStore
@@ -150,6 +155,14 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		totpLimit:          newLoginLimiter(5, 15*time.Minute),
 		resetLimit:         newLoginLimiter(5, 15*time.Minute),
 		grantPinLimit:      newLoginLimiter(5, 15*time.Minute),
+		phoneVerifyLimit:   newLoginLimiter(5, time.Hour),
+		Verify: verifymsg.New(verifymsg.Config{
+			Production:     cfg.AppEnv == "production",
+			TextLKAPIToken: cfg.TextLKAPIToken, TextLKSenderID: cfg.TextLKSenderID,
+			TwilioAccountSID: cfg.TwilioAccountSID, TwilioAuthToken: cfg.TwilioAuthToken, TwilioFromNumber: cfg.TwilioFromNumber,
+			WhatsAppPhoneNumberID: cfg.WhatsAppPhoneNumberID, WhatsAppAccessToken: cfg.WhatsAppAccessToken,
+			WhatsAppTemplate: cfg.WhatsAppOTPTemplate, WhatsAppTemplateLang: cfg.WhatsAppTemplateLang, WhatsAppAPIVersion: cfg.WhatsAppAPIVersion,
+		}),
 		guideLimit:         newDynamicRateLimiter(initialGuideLimit, 1*time.Minute),
 		globalLimit:        newDynamicRateLimiter(initialLimit, 1*time.Minute),
 		oauthCodes:         newAuthCodeStore(),
@@ -310,6 +323,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Put("/me", s.handleUpdateMe)
 		r.Put("/me/privacy", s.handleUpdatePrivacy)
 		r.Put("/me/contact", s.handleUpdateMyContact)
+		r.Get("/me/phone/check", s.handleMyPhoneCheck)
+		r.Post("/me/phone/verify", s.handlePhoneVerifyStart)
+		r.Post("/me/phone/verify/confirm", s.handlePhoneVerifyConfirm)
 		r.Put("/me/notification-prefs", s.handleUpdateNotificationPrefs)
 		r.Post("/me/push-token", s.handleRegisterPushToken)
 		r.Delete("/me/push-token", s.handleUnregisterPushToken)
@@ -383,6 +399,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		// temporary grant) rather than by role-tier middleware â€” see
 		// vendor_grants.go.
 		r.Get("/vendor/business", s.handleVendorBusiness)
+		r.Get("/vendor/business/phone-check", s.handleVendorPhoneCheck)
 		r.Put("/vendor/business", s.handleUpdateVendorBusiness)
 		r.Patch("/vendor/business/category", s.handleUpdateVendorCategory)
 		r.Patch("/vendor/business/identity", s.handleUpdateVendorIdentity)

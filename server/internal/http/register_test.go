@@ -20,6 +20,7 @@ import (
 	"github.com/spotto/server/internal/domain"
 	httpapi "github.com/spotto/server/internal/http"
 	"github.com/spotto/server/internal/seed"
+	"github.com/spotto/server/internal/store/postgres"
 )
 
 func postJSON(t *testing.T, url string, body any) (int, map[string]any) {
@@ -35,11 +36,11 @@ func postJSON(t *testing.T, url string, body any) (int, map[string]any) {
 	return res.StatusCode, out
 }
 
-func TestVendorRegistration(t *testing.T) {
-	store := mustConnect(t)
+// loadCategories does what the API does at boot (cmd/api/main.go): vendor
+// registration validates the category against this in-memory taxonomy.
+func loadCategories(t *testing.T, store *postgres.Store) {
+	t.Helper()
 	ctx := context.Background()
-	// Registration validates the category against the in-memory taxonomy,
-	// which the API loads at boot (cmd/api/main.go).
 	if _, err := store.EnsureVendorCategories(ctx, seed.InitialCategories); err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +49,12 @@ func TestVendorRegistration(t *testing.T) {
 		t.Fatal(err)
 	}
 	domain.InitVendorCategories(cats)
+}
+
+func TestVendorRegistration(t *testing.T) {
+	store := mustConnect(t)
+	ctx := context.Background()
+	loadCategories(t, store)
 	cfg := config.Config{CORSOrigins: []string{"http://localhost:3000"}, TOTPEncryptionKey: make([]byte, 32)}
 	srv := httptest.NewServer(httpapi.New(store, auth.NewTokens("test-secret-test-secret-test-secret-1234"), cfg).Router(cfg))
 	defer srv.Close()
