@@ -457,6 +457,27 @@ export interface AdminUserDetail {
   isSuperAdmin: boolean;
 }
 
+/** POST /admin/users/{id}/role — super-admins move an account between
+ * traveller and vendor (server/internal/http/admin_superadmin.go). */
+export interface AdminChangeRoleRequest {
+  role: 'traveller' | 'vendor';
+  reason: string;
+  /** Becoming a vendor: join an existing business with a team role… */
+  vendorId?: string;
+  vendorRole?: VendorRole;
+  /** …or own a new pending business. */
+  newBusiness?: { name: string; category: string; town: string };
+  /** Required when they own a business that still has other members. */
+  newOwnerId?: string;
+}
+
+export interface AdminChangeRoleResponse {
+  user: User;
+  /** Google/Apple-only sign-up: they need "Forgot password" before they
+   * can sign in to the vendor site. */
+  noPassword: boolean;
+}
+
 /** One scheduled day (GET /admin/quests/schedules). */
 export interface QuestSchedule {
   date: string;
