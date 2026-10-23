@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/spotto/server/internal/domain"
@@ -111,11 +112,18 @@ func (s *Store) CreateUser(ctx context.Context, u domain.User) error {
 		vendorRole = domain.VendorRoleOwner
 	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, vendor_role)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		INSERT INTO users (id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, vendor_role, phone)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
 		u.ID, u.Email, u.PasswordHash, u.Role, u.Name, u.Country, jsonb(u.TravelStyle),
-		jsonb(u.Interests), u.VendorID, u.Extra, u.CreatedAt, vendorRole)
+		jsonb(u.Interests), u.VendorID, u.Extra, u.CreatedAt, vendorRole, u.Phone)
 	return err
+}
+
+// IsUniqueViolation reports whether err is Postgres refusing a write that
+// would break a UNIQUE constraint or index (SQLSTATE 23505).
+func IsUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 func scanUser(row pgx.Row) (domain.User, error) {
@@ -898,6 +906,19 @@ func orEmptyObj(m json.RawMessage) json.RawMessage {
 
 func (s *Store) VendorByID(ctx context.Context, id string) (domain.Vendor, error) {
 	return scanVendor(s.Pool.QueryRow(ctx, `SELECT `+vendorCols+` FROM vendors WHERE id=$1`, id))
+}
+
+// VendorByGooglePlaceID finds the vendor already holding a Google Place ID
+// (at most one can — see migration 026's unique index).
+func (s *Store) VendorByGooglePlaceID(ctx context.Context, placeID string) (domain.Vendor, error) {
+	return scanVendor(s.Pool.QueryRow(ctx, `SELECT `+vendorCols+` FROM vendors WHERE google_place_id=$1`, placeID))
+}
+
+// DeleteVendor removes a vendor row. Only used to roll back a registration
+// whose user insert failed, before anything else can reference the vendor.
+func (s *Store) DeleteVendor(ctx context.Context, id string) error {
+	_, err := s.Pool.Exec(ctx, `DELETE FROM vendors WHERE id=$1`, id)
+	return err
 }
 
 func (s *Store) Vendors(ctx context.Context, status string) ([]domain.Vendor, error) {

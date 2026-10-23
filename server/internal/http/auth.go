@@ -133,6 +133,9 @@ func (s *Server) registerCredentialsProblem(ctx context.Context, email, password
 	if email == "" || len(password) < 10 {
 		return http.StatusBadRequest, "email and a password of at least 10 characters are required"
 	}
+	if !looksLikeEmail(email) {
+		return http.StatusBadRequest, "enter a valid email address, like you@yourbusiness.lk"
+	}
 	if isWeakPassword(password, email) {
 		return http.StatusBadRequest, "password is too weak: avoid all-digit, all-repeated, or email-derived passwords"
 	}
@@ -140,6 +143,14 @@ func (s *Server) registerCredentialsProblem(ctx context.Context, email, password
 		return http.StatusConflict, "email already registered"
 	}
 	return 0, ""
+}
+
+// looksLikeEmail is a shape check only (one @, a dotted domain, no spaces),
+// enough to catch typos like a missing @ before an account is created.
+func looksLikeEmail(email string) bool {
+	local, host, ok := strings.Cut(email, "@")
+	return ok && local != "" && !strings.Contains(host, "@") &&
+		strings.Contains(strings.Trim(host, "."), ".") && !strings.ContainsAny(email, " \t\r\n")
 }
 
 // handleRegisterCheck answers whether an email and password would pass
@@ -227,8 +238,18 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		}
 		// Vendor registration creates a pending vendor gated until admin approval.
 		var googlePlaceID *string
+		flags := []string{}
 		if req.GooglePlaceID != "" {
 			googlePlaceID = &req.GooglePlaceID
+			// A Google listing can belong to only one vendor (migration 026),
+			// and importsrilanka already gave ~1,000 places theirs. An owner
+			// signing up for one of those is likely its real owner, so let
+			// the registration through without the place ID and flag it for
+			// the admin to merge or hand over during approval.
+			if existing, err := s.Store.VendorByGooglePlaceID(r.Context(), req.GooglePlaceID); err == nil {
+				googlePlaceID = nil
+				flags = append(flags, fmt.Sprintf("Possible duplicate of %s (%s): same Google listing", existing.Name, existing.ID))
+			}
 		}
 		v := domain.Vendor{
 			ID:            newID("ven"),
@@ -238,7 +259,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			Owner:         req.Name,
 			Status:        domain.VendorPending,
 			Priority:      "normal",
-			Flags:         []string{},
+			Flags:         flags,
 			Tier:          "Free",
 			SubmittedAt:   time.Now(),
 			Lat:           req.Lat,
@@ -265,6 +286,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err := s.Store.UpsertVendor(r.Context(), v); err != nil {
+			log.Printf("register: create vendor: %v", err)
 			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 			return
 		}
@@ -273,6 +295,19 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.Store.CreateUser(r.Context(), u); err != nil {
+		// Don't leave the just-created pending vendor behind in the admin
+		// queue for an account that doesn't exist.
+		if invite == nil && u.VendorID != nil {
+			if delErr := s.Store.DeleteVendor(r.Context(), *u.VendorID); delErr != nil {
+				log.Printf("register: roll back vendor %s: %v", *u.VendorID, delErr)
+			}
+		}
+		// Two sign-ups racing on the same email both pass the check above.
+		if postgres.IsUniqueViolation(err) {
+			writeErr(w, http.StatusConflict, "email already registered")
+			return
+		}
+		log.Printf("register: create user: %v", err)
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}

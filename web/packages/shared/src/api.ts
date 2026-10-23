@@ -154,11 +154,19 @@ export function createApi(tokenKey: string, client: 'admin' | 'vendor' = 'vendor
     const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const res = await fetch(`${API_URL}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${API_URL}${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch {
+      // fetch() rejects with a bare "TypeError: Failed to fetch" when no
+      // response arrives at all (offline, server down, or a CORS refusal);
+      // say that in words instead of showing the browser's string.
+      throw new ApiError(0, 'Can’t reach Spotto right now. Check your connection and try again.');
+    }
     if (res.status === 401 && !retried && !path.startsWith('/auth/')) {
       const result = await refreshSession(token);
       if (result === 'refreshed') return request<T>(method, path, body, true);

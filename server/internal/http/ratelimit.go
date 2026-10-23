@@ -116,7 +116,7 @@ func clientIP(r *http.Request) string {
 }
 
 func writeTooManyRequests(w http.ResponseWriter) {
-	writeErr(w, http.StatusTooManyRequests, "too many attempts â€” try again later")
+	writeErr(w, http.StatusTooManyRequests, "too many attempts — try again later")
 }
 
 type rateLimiter struct {

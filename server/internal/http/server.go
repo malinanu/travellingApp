@@ -235,10 +235,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(realIP)
-	r.Use(s.GlobalRateLimitMiddleware)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(maxBytesMiddleware(10 * 1024 * 1024))
+	// CORS runs before the rate limiter so a 429 still carries CORS headers
+	// (otherwise the browser hides it as a bare "Failed to fetch") and
+	// preflight OPTIONS requests don't use up the per-IP budget.
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -246,6 +245,10 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
+	r.Use(s.GlobalRateLimitMiddleware)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(maxBytesMiddleware(10 * 1024 * 1024))
 
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
