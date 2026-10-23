@@ -108,6 +108,13 @@ function hoursFromLegacyPeriods(
   return Object.keys(hours).length > 0 ? hours : null;
 }
 
+// One email is one Spotto account with one role, so an email already used
+// in the traveller app can't also open (or register in) this portal. Say
+// that, and how to get a second address, instead of bouncing the owner
+// between "sign in instead" and "this portal is for business accounts".
+const EMAIL_TAKEN_MESSAGE = 'This email already has a Spotto account. If it’s your business account, sign in. If you use it in the Spotto traveller app, list your business with a different email — with Gmail, you+business@gmail.com still reaches your inbox.';
+const NOT_A_VENDOR_MESSAGE = 'This email belongs to a Spotto account that isn’t a business account, like the one you use in the Spotto app. To list a business, choose “List your business” below and use a different email — with Gmail, you+business@gmail.com still reaches your inbox.';
+
 // The +94 is shown as a fixed prefix, but owners often type their number
 // the local way (076…) or paste it with the country code — keep only the
 // subscriber digits so the stored number has exactly one +94.
@@ -266,7 +273,7 @@ function LoginPageInner() {
       return;
     }
     if (oauthError === 'not_a_vendor_account') {
-      setError('This portal is for business accounts. Use the Spotto app instead.');
+      setError(NOT_A_VENDOR_MESSAGE);
       router.replace('/login');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -366,7 +373,7 @@ function LoginPageInner() {
     if (res.user.role !== 'vendor') {
       api.setToken(null);
       api.logout(res.refreshToken);
-      setError('This portal is for business accounts. Use the Spotto app instead.');
+      setError(NOT_A_VENDOR_MESSAGE);
       return;
     }
     if (!res.user.vendorId) {
@@ -424,7 +431,7 @@ function LoginPageInner() {
       }
       setEmailTaken(err instanceof ApiError && err.status === 409);
       setError(err instanceof ApiError && err.status === 409
-        ? 'This email already has a Spotto account. Sign in instead, or use a different email.'
+        ? EMAIL_TAKEN_MESSAGE
         : err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setBusy(false);
@@ -460,7 +467,7 @@ function LoginPageInner() {
         // the owner back to the step where the email can be changed.
         setRegisterStep(1);
         setEmailTaken(true);
-        setError('This email already has a Spotto account. Sign in instead, or use a different email.');
+        setError(EMAIL_TAKEN_MESSAGE);
       } else {
         setError(err instanceof Error ? err.message : 'Something went wrong');
       }
