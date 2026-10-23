@@ -1,15 +1,18 @@
 'use client';
 
 // Draggable map-pin editor for correcting a vendor's business/map location —
-// reuses the same free CARTO Voyager tiles (OpenStreetMap data) and
-// CircleMarker pattern as web/admin/components/vendor-map.tsx (no API key,
-// no Leaflet default-icon-asset headaches). Must only be
+// uses the free OpenFreeMap base map (base-map-layer.tsx: OpenStreetMap
+// data, no API key) and the same CircleMarker pattern as
+// web/admin/components/vendor-map.tsx (no Leaflet default-icon-asset
+// headaches). Must only be
 // loaded client-side (Leaflet touches `window` at import time) — see the
 // dynamic(..., { ssr: false }) import in app/profile/page.tsx.
 
 import { useEffect, useRef } from 'react';
 import type { Map as LeafletMap } from 'leaflet';
-import { CircleMarker, MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, useMapEvents } from 'react-leaflet';
+
+import BaseMapLayer from './base-map-layer';
 
 function ClickToMove({ onMove }: { onMove: (lat: number, lng: number) => void }) {
   useMapEvents({
@@ -60,12 +63,7 @@ export default function LocationPicker({
   // vendor-map.tsx already uses for its investigation pin.
   return (
     <MapContainer ref={mapRef} center={[lat, lng]} zoom={15} style={{ width: '100%', height: '100%' }} scrollWheelZoom>
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-        subdomains="abcd"
-        maxZoom={20}
-      />
+      <BaseMapLayer />
       <ClickToMove onMove={onChange} />
       <CircleMarker
         center={[lat, lng]}
