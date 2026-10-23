@@ -18,7 +18,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
 import AddressSearchField from '../../components/address-search-field';
-import LocationPickerAuto from '../../components/location-picker-auto';
+import LocationPickerAuto, { preloadLocationPicker } from '../../components/location-picker-auto';
 import { SpottoMark } from '../../components/shell';
 import { api } from '../../lib/api';
 import { VENDOR_SEGMENTS, categoriesBySegment, categoryById, categoryIconComponent } from '../../lib/business-categories';
@@ -278,6 +278,12 @@ function LoginPageInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The map only renders on the last step; fetch its code as soon as the
+  // wizard opens so a deploy part-way through doesn't strand the owner.
+  useEffect(() => {
+    if (mode === 'register') preloadLocationPicker();
+  }, [mode]);
 
   // Loads Google Places Autocomplete for the "Find your business" step
   // (registerStep 0) — only while that step is actually visible, so coming
