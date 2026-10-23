@@ -49,7 +49,7 @@ function StatusBadge({ status }: { status: VendorStatus }) {
 export default function VendorsPage() {
   const qc = useQueryClient();
   // No status param — this is the only admin surface that lists them all.
-  const { data: vendors = [], isError } = useQuery<Vendor[]>({
+  const { data: vendors = [], isError, isSuccess } = useQuery<Vendor[]>({
     queryKey: ['admin-vendors', 'all'],
     queryFn: () => api.get<Vendor[]>('/admin/vendors'),
   });
@@ -88,10 +88,11 @@ export default function VendorsPage() {
     });
   }, [vendors, query, status, category]);
 
-  // Keep the selection valid as filters narrow the list.
+  // Keep the selection valid as filters narrow the list — once it has
+  // loaded, so a ?id= link (global search) isn't dropped before then.
   useEffect(() => {
-    if (selectedId && !visible.some((v) => v.id === selectedId)) setSelectedId(null);
-  }, [visible, selectedId]);
+    if (isSuccess && selectedId && !visible.some((v) => v.id === selectedId)) setSelectedId(null);
+  }, [isSuccess, visible, selectedId]);
 
   const selected = visible.find((v) => v.id === selectedId) ?? null;
 
@@ -251,12 +252,15 @@ function VendorMonitor({
   const [tab, setTab] = useState<DetailTab>('overview');
   const [editing, setEditing] = useState(false);
   const [takedownOpen, setTakedownOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const { data: me } = useMe();
 
   // Reset transient view state when the selected vendor changes.
   useEffect(() => {
     setTab('overview');
     setEditing(false);
     setTakedownOpen(false);
+    setDeleteOpen(false);
   }, [vendor.id]);
 
   const { data: stats } = useQuery<AdminVendorStats>({
@@ -399,12 +403,36 @@ function VendorMonitor({
         </p>
       )}
 
+      {me?.isSuperAdmin && (
+        <div className="flex items-center gap-3 mt-6 rounded-xl p-4"
+          style={{ border: '1px solid color-mix(in srgb, #e11d48 35%, transparent)', background: 'color-mix(in srgb, #e11d48 5%, transparent)' }}>
+          <div className="min-w-0 mr-auto">
+            <p className="text-[13px] font-bold" style={{ color: '#e11d48' }}>Delete business permanently</p>
+            <p className="text-[11.5px] text-muted font-semibold">
+              Super-admin only, for when it&apos;s absolutely necessary. Removes it from the map and can&apos;t be undone.
+            </p>
+          </div>
+          <button className="btn !py-1.5 flex items-center gap-1.5 text-[12.5px] shrink-0" style={{ color: '#e11d48' }}
+            onClick={() => setDeleteOpen(true)}>
+            <Trash2 size={13} /> Delete…
+          </button>
+        </div>
+      )}
+
       {takedownOpen && (
         <TakedownModal
           busy={takedown.isPending}
           error={takedown.isError ? 'Takedown failed — try again.' : null}
           onCancel={() => setTakedownOpen(false)}
           onConfirm={(reason) => takedown.mutate(reason)}
+        />
+      )}
+      {deleteOpen && (
+        <DeleteVendorModal
+          vendor={vendor}
+          canTakedown={canTakedown}
+          onCancel={() => setDeleteOpen(false)}
+          onTakedown={() => { setDeleteOpen(false); setTakedownOpen(true); }}
         />
       )}
     </div>
@@ -1011,6 +1039,94 @@ function TakedownModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// The last resort: deletes the business, its offers, menu, photos and
+// bookings, and its place on the map. Team accounts stay but are unlinked
+// and signed out. Taking it offline is the reversible alternative.
+function DeleteVendorModal({ vendor, canTakedown, onCancel, onTakedown }: {
+  vendor: Vendor; canTakedown: boolean; onCancel: () => void; onTakedown: () => void;
+}) {
+  const qc = useQueryClient();
+  const [reason, setReason] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const del = useMutation({
+    mutationFn: () => api.post<{ deleted: boolean; detachedMembers: number }>(
+      `/admin/vendors/${encodeURIComponent(vendor.id)}/delete`, { reason: reason.trim(), confirm: confirm.trim() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-vendor-summary'] });
+      qc.invalidateQueries({ queryKey: ['admin-kpis'] });
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+  });
+  // Refreshing the directory drops this vendor and closes its pane, so wait
+  // until the success message has been read.
+  const done = () => {
+    qc.invalidateQueries({ queryKey: ['admin-vendors'] });
+    onCancel();
+  };
+  const ready = reason.trim() !== '' && confirm.trim().toLowerCase() === vendor.name.trim().toLowerCase();
+
+  if (del.isSuccess) {
+    const n = del.data.detachedMembers;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
+        <div className="panel p-6 w-full max-w-md">
+          <p className="text-lg font-bold flex items-center gap-2"><CheckCircle2 size={18} style={{ color: '#059669' }} /> {vendor.name} was deleted</p>
+          <p className="text-[13px] text-muted font-medium mt-1">
+            It&apos;s gone from the map and the directory.
+            {n > 0 && ` ${n} team ${n === 1 ? 'account was' : 'accounts were'} unlinked and signed out — find them on the Users page if they should be deleted too.`}
+          </p>
+          <div className="flex justify-end mt-4">
+            <button className="btn btn-primary !py-2" onClick={done}>Done</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
+      <form className="panel p-6 w-full max-w-md" onSubmit={(e) => { e.preventDefault(); if (ready) del.mutate(); }}>
+        <p className="text-lg font-bold flex items-center gap-2" style={{ color: '#e11d48' }}>
+          <Trash2 size={18} /> Delete {vendor.name}?
+        </p>
+        <ul className="text-[13px] text-muted font-medium mt-2 space-y-1 list-disc pl-5">
+          <li>Deletes its offers, menu, photos, bookings and its spot on the map.</li>
+          <li>Team accounts stay, but are unlinked from it and signed out everywhere.</li>
+          <li>Travellers&apos; reviews, claims and check-ins stay in their history.</li>
+          <li>This can&apos;t be undone.</li>
+        </ul>
+        {canTakedown && (
+          <p className="text-[12.5px] font-semibold mt-3">
+            Might this need undoing?{' '}
+            <button type="button" className="underline font-bold" style={{ color: 'var(--accent)' }} onClick={onTakedown}>Take it offline instead</button>.
+          </p>
+        )}
+        <label className="block mt-3">
+          <span className="text-[11px] font-bold text-muted uppercase block mb-1">Reason (saved in the audit log)</span>
+          <input autoFocus required value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500}
+            className="rounded-lg px-3 py-2 text-[13px] font-medium outline-none w-full"
+            style={{ background: 'var(--bg)', border: '1px solid var(--line)' }}
+            placeholder="e.g. Duplicate of another listing; owner confirmed it closed" />
+        </label>
+        <label className="block mt-3">
+          <span className="text-[11px] font-bold text-muted uppercase block mb-1">Type the business name to confirm: {vendor.name}</span>
+          <input value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="off" spellCheck={false}
+            className="rounded-lg px-3 py-2 text-[13px] font-medium outline-none w-full"
+            style={{ background: 'var(--bg)', border: '1px solid var(--line)' }} />
+        </label>
+        {del.isError && <p className="text-[13px] font-bold mt-2" style={{ color: '#e11d48' }}>{(del.error as Error).message}</p>}
+        <div className="flex justify-end gap-2 mt-4">
+          <button type="button" className="btn !py-2" onClick={onCancel}>Cancel</button>
+          <button type="submit" className="btn btn-danger !py-2 flex items-center gap-2" disabled={del.isPending || !ready}
+            style={!ready ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}>
+            <Trash2 size={15} /> {del.isPending ? 'Deleting…' : 'Delete permanently'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

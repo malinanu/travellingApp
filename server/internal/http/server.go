@@ -537,6 +537,11 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			r.Use(s.RequireSuperAdmin)
 			r.Get("/admin/audit-log", s.handleAdminAuditLog)
 			r.Put("/admin/users/{id}/permissions", s.handleAdminSetUserPermissions)
+			// Account surgery: change traveller <-> vendor, or delete a user or
+			// a business outright (see admin_superadmin.go).
+			r.Post("/admin/users/{id}/role", s.handleAdminChangeUserRole)
+			r.Post("/admin/users/{id}/delete", s.handleAdminDeleteUser)
+			r.Post("/admin/vendors/{id}/delete", s.handleAdminDeleteVendor)
 		})
 
 		// Handing a business account over to its real owner. Super-admins

@@ -791,7 +791,17 @@ func scanVendor(row pgx.Row) (domain.Vendor, error) {
 	return v, nil
 }
 
+// execer is what both the pool and a transaction offer, so a write can run
+// standalone or as one step of a larger transaction.
+type execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
 func (s *Store) UpsertVendor(ctx context.Context, v domain.Vendor) error {
+	return upsertVendor(ctx, s.Pool, v)
+}
+
+func upsertVendor(ctx context.Context, q execer, v domain.Vendor) error {
 	if v.Country == "" {
 		// Matches migration 009's column default — callers that don't know
 		// or haven't been updated to set this (seed/gendata scripts, older
@@ -799,7 +809,7 @@ func (s *Store) UpsertVendor(ctx context.Context, v domain.Vendor) error {
 		// the correct default.
 		v.Country = "LK"
 	}
-	_, err := s.Pool.Exec(ctx, `
+	_, err := q.Exec(ctx, `
 		INSERT INTO vendors (id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng,
 			br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at, google_place_id)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
