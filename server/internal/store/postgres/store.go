@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -989,12 +988,6 @@ type AdminVendorStats struct {
 	Offers      int     `json:"offers"`
 	OffersLive  int     `json:"offersLive"`
 	OffersDraft int     `json:"offersDraft"`
-	// NOTE: feed_items are deliberately not counted here. That table has no
-	// vendor_id — only a free-text `vendor` display label that does not
-	// reliably equal vendors.name (the seed set pairs "Driftwood Coffee"
-	// with a vendor actually named "Driftwood Coffee & Co-Work"), so a
-	// per-vendor count would read 0 for almost everyone and look broken
-	// rather than empty. Doing this properly needs a feed_items.vendor_id.
 	TeamTotal      int `json:"teamTotal"`
 	TeamManagers   int `json:"teamManagers"`
 	TeamStaff      int `json:"teamStaff"`
@@ -2148,60 +2141,6 @@ func (s *Store) GroupByOwner(ctx context.Context, ownerID string) (domain.Group,
 	return g, nil
 }
 
-// ---- feed ----
-
-func (s *Store) InsertFeedItem(ctx context.Context, f domain.FeedItem) (int64, error) {
-	var id int64
-	err := s.Pool.QueryRow(ctx, `
-		INSERT INTO feed_items (vendor, town, type, text, status, reason, resolved, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-		f.Vendor, f.Town, f.Type, f.Text, f.Status, f.Reason, f.Resolved, f.CreatedAt).Scan(&id)
-	return id, err
-}
-
-func (s *Store) FeedItems(ctx context.Context, afterID int64, status string, limit int) ([]domain.FeedItem, error) {
-	q := `SELECT id, vendor, town, type, text, status, reason, resolved, created_at FROM feed_items WHERE id > $1`
-	args := []any{afterID}
-	if status != "" {
-		q += ` AND status=$2`
-		args = append(args, status)
-	}
-	q += fmt.Sprintf(` ORDER BY id DESC LIMIT %d`, limit)
-	rows, err := s.Pool.Query(ctx, q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []domain.FeedItem
-	for rows.Next() {
-		var f domain.FeedItem
-		if err := rows.Scan(&f.ID, &f.Vendor, &f.Town, &f.Type, &f.Text, &f.Status,
-			&f.Reason, &f.Resolved, &f.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, f)
-	}
-	return out, rows.Err()
-}
-
-func (s *Store) ResolveFeedItem(ctx context.Context, id int64, resolved string) error {
-	tag, err := s.Pool.Exec(ctx,
-		`UPDATE feed_items SET resolved=$2, status='ok' WHERE id=$1`, id, resolved)
-	if err == nil && tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return err
-}
-
-// PruneFeed keeps the newest max rows, preferring to drop resolved items first.
-func (s *Store) PruneFeed(ctx context.Context, max int) error {
-	_, err := s.Pool.Exec(ctx, `
-		DELETE FROM feed_items WHERE id NOT IN (
-			SELECT id FROM feed_items ORDER BY (resolved = '') DESC, id DESC LIMIT $1
-		)`, max)
-	return err
-}
-
 // ---- regions / subscriptions / audio guides ----
 
 func (s *Store) UpsertRegion(ctx context.Context, r domain.Region) error {
@@ -2909,8 +2848,8 @@ func (s *Store) InsertAdminAuditLog(ctx context.Context, e domain.AdminAuditLog)
 }
 
 // AdminAuditLogs lists entries most-recent-first, optionally filtered by
-// targetType and/or actorID, cursor-paginated the same way FeedItems is
-// (beforeID=0 starts from the newest row).
+// targetType and/or actorID, cursor-paginated by id (beforeID=0 starts
+// from the newest row).
 func (s *Store) AdminAuditLogs(ctx context.Context, beforeID int64, targetType, actorID string, limit int) ([]domain.AdminAuditLog, error) {
 	q := `SELECT id, actor_id, actor_email, actor_name, action, target_type, target_id, metadata, created_at
 		FROM admin_audit_log WHERE ($1 = 0 OR id < $1)`
@@ -2972,15 +2911,13 @@ func (s *Store) AuditLogsByTarget(ctx context.Context, targetType, targetID stri
 // so it lives here rather than in package domain.
 type AdminSearchResults struct {
 	Vendors       []domain.Vendor       `json:"vendors"`
-	FeedItems     []domain.FeedItem     `json:"feedItems"`
 	Subscriptions []domain.Subscription `json:"subscriptions"`
 }
 
-// AdminSearch runs three independent ILIKE lookups (vendor/feed-item/
-// subscription name) plus an exact feed-item-ID match so pasting a numeric
-// ID still works — data volumes here don't warrant full-text-search infra.
+// AdminSearch runs two independent ILIKE lookups (vendor and subscription
+// name) — data volumes here don't warrant full-text-search infra.
 func (s *Store) AdminSearch(ctx context.Context, q string, limit int) (AdminSearchResults, error) {
-	out := AdminSearchResults{Vendors: []domain.Vendor{}, FeedItems: []domain.FeedItem{}, Subscriptions: []domain.Subscription{}}
+	out := AdminSearchResults{Vendors: []domain.Vendor{}, Subscriptions: []domain.Subscription{}}
 	pattern := "%" + q + "%"
 
 	vendorRows, err := s.Pool.Query(ctx,
@@ -2998,27 +2935,6 @@ func (s *Store) AdminSearch(ctx context.Context, q string, limit int) (AdminSear
 	}
 	vendorRows.Close()
 	if err := vendorRows.Err(); err != nil {
-		return out, err
-	}
-
-	feedIDMatch, _ := strconv.ParseInt(q, 10, 64)
-	feedRows, err := s.Pool.Query(ctx, `
-		SELECT id, vendor, town, type, text, status, reason, resolved, created_at FROM feed_items
-		WHERE vendor ILIKE $1 OR id = $2 ORDER BY id DESC LIMIT $3`, pattern, feedIDMatch, limit)
-	if err != nil {
-		return out, err
-	}
-	for feedRows.Next() {
-		var f domain.FeedItem
-		if err := feedRows.Scan(&f.ID, &f.Vendor, &f.Town, &f.Type, &f.Text, &f.Status,
-			&f.Reason, &f.Resolved, &f.CreatedAt); err != nil {
-			feedRows.Close()
-			return out, err
-		}
-		out.FeedItems = append(out.FeedItems, f)
-	}
-	feedRows.Close()
-	if err := feedRows.Err(); err != nil {
 		return out, err
 	}
 
@@ -3058,11 +2974,10 @@ func pluralSuffix(n int) string {
 	return "s"
 }
 
-// AdminNotifications derives up to 3 buckets — pending-approval vendors,
-// flagged content, bad-review-flagged vendors — live from current data
-// rather than from stored discrete rows, so they can never drift out of
-// sync with the underlying state (matches how CountAdminKPIBase already
-// works). Each bucket is marked unread if its latest-activity timestamp is
+// AdminNotifications derives up to 2 buckets — pending-approval vendors and
+// bad-review-flagged vendors — live from current data rather than from
+// stored discrete rows, so they can never drift out of sync with the
+// underlying state (matches how CountPendingVendors already works). Each bucket is marked unread if its latest-activity timestamp is
 // after adminID's last read (see MarkAdminNotificationsRead).
 func (s *Store) AdminNotifications(ctx context.Context, adminID string) ([]domain.AdminNotification, error) {
 	var lastRead time.Time
@@ -3088,23 +3003,6 @@ func (s *Store) AdminNotifications(ctx context.Context, adminID string) ([]domai
 			Sub:    "Review new listings in the approval queue.",
 			Time:   pendingLatest.Format("Jan 2, 3:04 PM"),
 			Unread: pendingLatest.After(lastRead),
-		})
-	}
-
-	var flagCount int
-	var flagLatest time.Time
-	if err := s.Pool.QueryRow(ctx,
-		`SELECT count(*), COALESCE(max(created_at), '1970-01-01') FROM feed_items WHERE status='flag'`,
-	).Scan(&flagCount, &flagLatest); err != nil {
-		return nil, err
-	}
-	if flagCount > 0 {
-		out = append(out, domain.AdminNotification{
-			ID: "flagged-content", Icon: "Flag", Tone: "accent",
-			Title:  fmt.Sprintf("%d flagged content item%s", flagCount, pluralSuffix(flagCount)),
-			Sub:    "Moderate flagged posts in the content monitor.",
-			Time:   flagLatest.Format("Jan 2, 3:04 PM"),
-			Unread: flagLatest.After(lastRead),
 		})
 	}
 
@@ -3139,19 +3037,17 @@ func (s *Store) AdminNotifications(ctx context.Context, adminID string) ([]domai
 // Wipe truncates all data tables (used by cmd/seed for idempotent reloads).
 func (s *Store) Wipe(ctx context.Context) error {
 	_, err := s.Pool.Exec(ctx, `
-		TRUNCATE users, offers, claims, trips, groups, feed_items,
+		TRUNCATE users, offers, claims, trips, groups,
 			regions, subscriptions, audio_guides, vibe_checkins, checkins,
 			vendor_notifications, vendor_blobs, reviews, vendor_invites, admin_audit_log,
 			admin_notification_reads`)
 	return err
 }
 
-func (s *Store) CountAdminKPIBase(ctx context.Context) (pendingVendors int, liveFeed int, err error) {
-	if err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM vendors WHERE status='pending'`).Scan(&pendingVendors); err != nil {
-		return
-	}
-	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM feed_items`).Scan(&liveFeed)
-	return
+func (s *Store) CountPendingVendors(ctx context.Context) (int, error) {
+	var n int
+	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM vendors WHERE status='pending'`).Scan(&n)
+	return n, err
 }
 
 // ---- push notification tokens ----

@@ -1,15 +1,19 @@
 'use client';
 
 // Geo-analytics — real Leaflet/OSM map with region demand/supply bubbles,
-// individual vendor pins (red-flagged from bad reviews), an investigation
-// pin for checking an arbitrary area, and the region opportunity leaderboard.
+// vendor pins in their category's colour and icon (ringed red when flagged
+// from bad reviews), an investigation pin for checking an arbitrary area,
+// and the region opportunity leaderboard.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, MapPin, ShieldAlert, Undo2, X } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
-import { timeAgo, type Region, type Review, type Vendor } from '@spotto/shared';
+import {
+  PIN_TONE_COLORS, VENDOR_CATEGORIES, VENDOR_SEGMENTS, timeAgo,
+  type Region, type Review, type Vendor, type VendorCategory,
+} from '@spotto/shared';
 import Shell from '../../components/shell';
 import { regionTone } from '../../components/region-tone';
 import { InlineErrorBanner } from '../../components/route-status';
@@ -33,6 +37,16 @@ export default function GeoPage() {
     queryFn: () => api.get<Vendor[]>('/admin/vendors/map'),
     refetchInterval: 15000,
   });
+  // The live taxonomy (admins can add categories), over the built-in one.
+  const { data: liveCategories = [] } = useQuery<VendorCategory[]>({
+    queryKey: ['admin_categories'],
+    queryFn: () => api.get<VendorCategory[]>('/admin/categories'),
+  });
+  const categories = useMemo(
+    () => new Map([...VENDOR_CATEGORIES, ...liveCategories].map((c) => [c.id, c])),
+    [liveCategories],
+  );
+  const categoryLabel = (v: Vendor) => categories.get(v.category)?.label ?? (v.category || 'Uncategorised');
 
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [investigationPin, setInvestigationPin] = useState<{ lat: number; lng: number } | null>(null);
@@ -76,21 +90,24 @@ export default function GeoPage() {
     <Shell>
       {(regionsError || vendorsError) && <InlineErrorBanner message="Couldn't load geo-analytics data — try refreshing." />}
       <div className="grid grid-cols-[1fr_360px] gap-5 items-start">
-        <div className="panel p-1 overflow-hidden" style={{ height: 640 }}>
+        <div className="panel p-1 overflow-hidden relative" style={{ height: 640 }}>
           <VendorMap
             regions={regions}
             vendors={vendors}
+            categories={categories}
             selectedVendorId={selectedVendorId}
             onSelectVendor={selectVendor}
             investigationPin={investigationPin}
             onInvestigate={investigate}
           />
+          <MapLegend />
         </div>
 
         <div className="space-y-4">
           {selectedVendor && (
             <VendorDetail
               vendor={selectedVendor}
+              categoryLabel={categoryLabel(selectedVendor)}
               reviews={vendorReviews}
               onClose={() => setSelectedVendorId(null)}
               onSuspend={() => suspend.mutate(selectedVendor.id)}
@@ -123,7 +140,7 @@ export default function GeoPage() {
                       className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] flex items-center justify-between">
                       <span>
                         <span className="block font-bold text-[13.5px]">{v.name}</span>
-                        <span className="block text-[11.5px] text-muted font-semibold">{v.category} · {v.town}</span>
+                        <span className="block text-[11.5px] text-muted font-semibold">{categoryLabel(v)} · {v.town}</span>
                       </span>
                       {v.flagged && <ShieldAlert size={15} className="text-[#e11d48]" />}
                     </button>
@@ -178,8 +195,26 @@ export default function GeoPage() {
   );
 }
 
+// Pin colours follow the category's group, like the traveller app's map.
+function MapLegend() {
+  return (
+    <div className="absolute right-3 top-3 z-[1000] rounded-lg px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 max-w-[calc(100%-80px)]"
+      style={{ background: 'var(--surface)', border: '1px solid var(--line)', boxShadow: '0 4px 14px rgba(0,0,0,0.15)' }}>
+      {VENDOR_SEGMENTS.map((s) => (
+        <span key={s.id} className="flex items-center gap-1.5 text-[11.5px] font-semibold">
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: PIN_TONE_COLORS[s.id] }} /> {s.label}
+        </span>
+      ))}
+      <span className="flex items-center gap-1.5 text-[11.5px] font-semibold">
+        <span className="w-2.5 h-2.5 rounded-full" style={{ boxShadow: '0 0 0 2px #e11d48' }} /> Flagged
+      </span>
+    </div>
+  );
+}
+
 function VendorDetail({
   vendor,
+  categoryLabel,
   reviews,
   onClose,
   onSuspend,
@@ -187,6 +222,7 @@ function VendorDetail({
   busy,
 }: {
   vendor: Vendor;
+  categoryLabel: string;
   reviews: Review[];
   onClose: () => void;
   onSuspend: () => void;
@@ -198,7 +234,7 @@ function VendorDetail({
       <div className="flex items-start justify-between mb-1">
         <div>
           <h2 className="font-bold text-[16px]">{vendor.name}</h2>
-          <p className="text-[12.5px] text-muted font-semibold">{vendor.category} · {vendor.town}</p>
+          <p className="text-[12.5px] text-muted font-semibold">{categoryLabel} · {vendor.town}</p>
         </div>
         <button className="btn !p-1.5" onClick={onClose}><X size={14} /></button>
       </div>

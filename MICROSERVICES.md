@@ -163,7 +163,7 @@ default "keep everything together" hedge — it's backed by direct evidence from
   of a dozen-plus network calls per dashboard load, or forces a shared reporting store — exactly
   the "distributed monolith" failure mode the research above warns is the #1 premature-extraction
   mistake.
-- **`AdminSearch`** similarly spans vendors/feed_items/subscriptions in one function.
+- **`AdminSearch`** similarly spans vendors/subscriptions in one function.
 - **Schema note that actually helps here**: only 5 of 27 tables have a real SQL `REFERENCES`
   constraint; most cross-domain relationships (`places.vendor_id`, `reviews.{place_id,vendor_id}`,
   `claims.{place_id,vendor_id,traveller_id}`, `media.owner_id`, etc.) are bare TEXT columns tied

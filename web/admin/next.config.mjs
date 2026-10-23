@@ -9,8 +9,8 @@ const nextConfig = {
   // of Next 16 — it lived under `experimental` in 14.2.)
   outputFileTracingRoot: path.join(process.cwd(), '..'),
   transpilePackages: ['@spotto/shared'],
-  // This is the privileged admin surface (vendor suspend/reinstate, feed
-  // moderation) — deny framing outright rather than just setting a CSP
+  // This is the privileged admin surface (vendor suspend/reinstate, account
+  // deletes) — deny framing outright rather than just setting a CSP
   // frame-ancestors, since older browsers only honor X-Frame-Options.
   async headers() {
     return [

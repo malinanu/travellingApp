@@ -4,7 +4,6 @@ export type Role = 'traveller' | 'vendor' | 'admin';
 export type VendorStatus = 'pending' | 'approved' | 'rejected' | 'edits' | 'suspended';
 export type OfferStatus = 'draft' | 'live' | 'ending' | 'ended';
 export type ClaimStatus = 'claimed' | 'redeemed';
-export type FeedStatus = 'ok' | 'review' | 'flag';
 
 export type VendorRole = 'owner' | 'staff' | 'manager';
 
@@ -505,18 +504,6 @@ export interface GrowthBlob {
   };
 }
 
-export interface FeedItem {
-  id: number;
-  vendor: string;
-  town: string;
-  type: string;
-  text: string;
-  status: FeedStatus;
-  reason?: string;
-  resolved?: string;
-  createdAt: string;
-}
-
 export interface Region {
   id: string;
   name: string;
@@ -554,15 +541,13 @@ export interface AudioGuide {
 }
 
 /** GET /admin/search?q=... — grouped results across the entities the
- * command bar's search box can match by name (vendors, subscriptions) or
- * by name/exact ID (feed items). */
+ * command bar's search box can match by name (vendors, subscriptions). */
 export interface AdminSearchResults {
   vendors: Vendor[];
-  feedItems: FeedItem[];
   subscriptions: Subscription[];
 }
 
-/** GET /admin/notifications — derived live from current pending/flagged/
+/** GET /admin/notifications — derived live from current pending-vendor and
  * bad-review data, same shape as VendorNotification (see server's
  * domain.AdminNotification doc comment). */
 export interface AdminNotification {
@@ -592,13 +577,12 @@ export interface AdminAuditLogEntry {
 
 export interface AdminKPIs {
   pendingVendors: number;
-  feedItems: number;
   mrr: number;
   activeSubs: number;
 }
 
 /** One vendor's live activity roll-up, for the admin Vendors monitor pane.
- * Derived on read from claims/checkins/reviews/offers/feed_items — not a
+ * Derived on read from claims/checkins/reviews/offers — not a
  * stored snapshot, so it never goes stale. */
 export interface AdminVendorStats {
   claimed: number;
@@ -613,8 +597,6 @@ export interface AdminVendorStats {
   offers: number;
   offersLive: number;
   offersDraft: number;
-  // No feed-item counts: feed_items has no vendor_id, only a free-text
-  // vendor label that doesn't reliably match vendors.name.
   teamTotal: number;
   teamManagers: number;
   teamStaff: number;
