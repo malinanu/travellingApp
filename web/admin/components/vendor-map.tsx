@@ -1,6 +1,6 @@
 'use client';
 
-// Real Leaflet + OpenStreetMap map of Sri Lanka — replaces the old stylised
+// Real Leaflet map (OpenFreeMap base, see base-map-layer.tsx) of Sri Lanka — replaces the old stylised
 // SVG silhouette. Shows region demand/supply bubbles (same gap-coloring/
 // thresholds as before, now at real coordinates) plus individual vendor
 // markers color-coded by status, red when flagged by bad reviews. The
@@ -8,7 +8,9 @@
 // browser's own geolocation. Clicking empty map area (not a marker) drops
 // an investigation pin so a super-admin can check an arbitrary spot.
 
-import { CircleMarker, MapContainer, Popup, TileLayer, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, Popup, useMapEvents } from 'react-leaflet';
+
+import BaseMapLayer from './base-map-layer';
 
 import type { Region, Vendor } from '@spotto/shared';
 import { regionTone } from './region-tone';
@@ -55,12 +57,7 @@ export default function VendorMap({
       style={{ width: '100%', height: '100%' }}
       scrollWheelZoom
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-        subdomains="abcd"
-        maxZoom={20}
-      />
+      <BaseMapLayer />
       <ClickToInvestigate onInvestigate={onInvestigate} />
 
       {regions.map((r) => {

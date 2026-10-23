@@ -8,9 +8,9 @@
 // VendorAuth mockup — Apple sign-in is intentionally not included, see
 // SKIPPED.md.
 
-import { API_URL, isTwoFactorRequired, type AuthResponse, type TwoFactorRequiredResponse } from '@spotto/shared';
+import { API_URL, ApiError, isTwoFactorRequired, type AuthResponse, type TwoFactorRequiredResponse } from '@spotto/shared';
 import {
-  ArrowLeft, ArrowRight, Check, Clock, Eye, EyeOff, Lock, Mail, MapPin,
+  ArrowLeft, ArrowRight, Check, ChevronDown, Clock, Eye, EyeOff, Lock, Mail, MapPin,
   MailCheck, PartyPopper, Phone, QrCode, Search, Send, Store, Tag,
   TrendingUp, User as UserIcon, Users, LucideIcon,
 } from 'lucide-react';
@@ -21,7 +21,7 @@ import AddressSearchField from '../../components/address-search-field';
 import LocationPickerAuto from '../../components/location-picker-auto';
 import { SpottoMark } from '../../components/shell';
 import { api } from '../../lib/api';
-import { VENDOR_SEGMENTS, categoriesBySegment, categoryIconComponent } from '../../lib/business-categories';
+import { VENDOR_SEGMENTS, categoriesBySegment, categoryById, categoryIconComponent } from '../../lib/business-categories';
 import { loadGoogleMaps } from '../../lib/google-maps';
 
 const REGISTER_STEPS = ['Find your business', 'Your account', 'Your business', 'A few details'];
@@ -183,6 +183,11 @@ function LoginPageInner() {
   const [name, setName] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [category, setCategory] = useState('coffee');
+  // Which category segment is expanded on the "Your business" step. null
+  // follows the chosen category (including one auto-filled from the
+  // Google business search); '' means the owner collapsed them all.
+  const [openSegment, setOpenSegment] = useState<string | null>(null);
+  const shownSegment = openSegment ?? categoryById(category)?.segment ?? VENDOR_SEGMENTS[0].id;
   const [phone, setPhone] = useState('');
   const [town, setTown] = useState('Weligama');
   const [description, setDescription] = useState('');
@@ -372,6 +377,36 @@ function LoginPageInner() {
     }
   };
 
+  // Set when the account step's email turns out to be taken, so the error
+  // can offer "Sign in instead" rather than a dead end.
+  const [emailTaken, setEmailTaken] = useState(false);
+
+  // Account step: check the email and password with the server before
+  // moving on, so "email already registered" or a weak password shows up
+  // here instead of after the owner has filled in the whole wizard.
+  const continueFromAccount = async () => {
+    setBusy(true);
+    setError(null);
+    setEmailTaken(false);
+    try {
+      await api.post('/auth/register/check', { email, password });
+      setRegisterStep(2);
+    } catch (err) {
+      // A server older than this check: carry on, and sign-up itself will
+      // still catch a taken email.
+      if (err instanceof ApiError && err.status === 404) {
+        setRegisterStep(2);
+        return;
+      }
+      setEmailTaken(err instanceof ApiError && err.status === 409);
+      setError(err instanceof ApiError && err.status === 409
+        ? 'This email already has a Spotto account. Sign in instead, or use a different email.'
+        : err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submitRegister = async () => {
     setBusy(true);
     setError(null);
@@ -396,7 +431,15 @@ function LoginPageInner() {
       api.setToken(res.token, remember, res.refreshToken);
       setRegisterStep(4);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      if (err instanceof ApiError && err.status === 409) {
+        // Taken since the account step (or that check was skipped): send
+        // the owner back to the step where the email can be changed.
+        setRegisterStep(1);
+        setEmailTaken(true);
+        setError('This email already has a Spotto account. Sign in instead, or use a different email.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Something went wrong');
+      }
       api.setToken(null);
     } finally {
       setBusy(false);
@@ -613,29 +656,46 @@ function LoginPageInner() {
             <Field label="Business name" value={businessName} onChange={setBusinessName} icon={Store} placeholder="e.g. Driftwood Coffee & Co-Work" autoFocus />
             <div>
               <span className="block text-[12.5px] font-extrabold mb-2 text-ink-soft">Category</span>
-              <div className="space-y-3.5">
-                {VENDOR_SEGMENTS.map((segment) => (
-                  <div key={segment.id}>
-                    <span className="block text-[11px] font-extrabold uppercase tracking-wide mb-1.5 text-ink-soft/70">
-                      {segment.label}
-                    </span>
-                    <div className="grid grid-cols-2 gap-2.5">
-                      {categoriesBySegment(segment.id).map((t) => {
-                        const Icon = categoryIconComponent(t);
-                        const on = category === t.id;
-                        return (
-                          <button key={t.id} type="button" onClick={() => setCategory(t.id)}
-                            className={`flex items-center gap-2.5 rounded-2xl px-3 py-3 text-left transition-all active:scale-[0.98] border-[1.5px] ${
-                              on ? 'bg-accent border-accent text-white' : 'bg-white border-line text-ink'
-                            }`}>
-                            <Icon size={18} />
-                            <span className="font-extrabold text-[12.5px] leading-tight">{t.label}</span>
-                          </button>
-                        );
-                      })}
+              <div className="space-y-2.5">
+                {VENDOR_SEGMENTS.map((segment) => {
+                  const items = categoriesBySegment(segment.id);
+                  const open = shownSegment === segment.id;
+                  const picked = items.find((t) => t.id === category);
+                  return (
+                    <div key={segment.id} className="rounded-2xl bg-white border-[1.5px] border-line overflow-hidden">
+                      <button type="button" aria-expanded={open}
+                        onClick={() => setOpenSegment(open ? '' : segment.id)}
+                        className="w-full flex items-center gap-2 px-3.5 py-3 text-left">
+                        <span className="font-extrabold text-[13px] text-ink">{segment.label}</span>
+                        <span className="text-[11.5px] font-bold text-muted">{items.length}</span>
+                        {picked && !open && (
+                          <span className="ml-1 rounded-full px-2 py-0.5 text-[11px] font-extrabold bg-accent-tint text-accent truncate">
+                            {picked.label}
+                          </span>
+                        )}
+                        <ChevronDown size={17}
+                          className={`ml-auto text-muted shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+                      </button>
+                      {open && (
+                        <div className="grid grid-cols-2 gap-2.5 px-3 pb-3">
+                          {items.map((t) => {
+                            const Icon = categoryIconComponent(t);
+                            const on = category === t.id;
+                            return (
+                              <button key={t.id} type="button" onClick={() => setCategory(t.id)}
+                                className={`flex items-center gap-2.5 rounded-2xl px-3 py-3 text-left transition-all active:scale-[0.98] border-[1.5px] ${
+                                  on ? 'bg-accent border-accent text-white' : 'bg-white border-line text-ink'
+                                }`}>
+                                <Icon size={18} />
+                                <span className="font-extrabold text-[12.5px] leading-tight">{t.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -699,11 +759,24 @@ function LoginPageInner() {
           </div>
         )}
 
-        {error && <p className="text-[13.5px] font-bold text-coral mt-4">{error}</p>}
+        {error && (
+          <p className="text-[13.5px] font-bold text-coral mt-4">
+            {error}
+            {emailTaken && (
+              <>
+                {' '}
+                <button type="button" className="text-accent underline font-extrabold"
+                  onClick={() => { setMode('login'); setError(null); setEmailTaken(false); }}>
+                  Sign in
+                </button>
+              </>
+            )}
+          </p>
+        )}
 
         <div className="flex gap-3 mt-6">
           {registerStep > 0 && (
-            <button type="button" onClick={() => setRegisterStep((s) => s - 1)}
+            <button type="button" onClick={() => { setError(null); setEmailTaken(false); setRegisterStep((s) => s - 1); }}
               className="rounded-2xl px-5 py-3.5 font-extrabold text-[15px] bg-white border-[1.5px] border-line active:scale-[0.98]">
               <ArrowLeft size={18} />
             </button>
@@ -712,9 +785,14 @@ function LoginPageInner() {
             <Primary
               disabled={busy || (registerStep === 1 && (!name || !email || password.length < 10)) || (registerStep === 2 && !businessName) || (registerStep === 3 && !agreeTos)}
               icon={busy ? null : registerStep === 3 ? Check : ArrowRight}
-              onClick={() => (registerStep === 3 ? submitRegister() : setRegisterStep((s) => s + 1))}
+              onClick={() => {
+                if (registerStep === 3) return submitRegister();
+                if (registerStep === 1) return continueFromAccount();
+                setError(null);
+                setRegisterStep((s) => s + 1);
+              }}
             >
-              {busy ? 'Submitting…' : registerStep === 3 ? 'Submit application' : 'Continue'}
+              {busy ? (registerStep === 1 ? 'Checking…' : 'Submitting…') : registerStep === 3 ? 'Submit application' : 'Continue'}
             </Primary>
           </div>
         </div>

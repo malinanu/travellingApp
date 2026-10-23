@@ -124,6 +124,47 @@ type authResp struct {
 	User         domain.User `json:"user"`
 }
 
+// registerCredentialsProblem runs the sign-up checks that only need the
+// email and password: required fields, password strength, and whether the
+// email is already taken. It returns 0, "" when they pass. Shared by
+// handleRegister and handleRegisterCheck, so the vendor wizard can catch
+// these on its first step instead of after the whole form is filled in.
+func (s *Server) registerCredentialsProblem(ctx context.Context, email, password string) (int, string) {
+	if email == "" || len(password) < 10 {
+		return http.StatusBadRequest, "email and a password of at least 10 characters are required"
+	}
+	if isWeakPassword(password, email) {
+		return http.StatusBadRequest, "password is too weak: avoid all-digit, all-repeated, or email-derived passwords"
+	}
+	if _, err := s.Store.UserByEmail(ctx, email); err == nil {
+		return http.StatusConflict, "email already registered"
+	}
+	return 0, ""
+}
+
+// handleRegisterCheck answers whether an email and password would pass
+// sign-up, without creating anything. Registration itself already says
+// "email already registered", so this reveals nothing new; it sits behind
+// the same global rate limit as /auth/register.
+func (s *Server) handleRegisterCheck(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	if !validateTextLength(w, "Email", email, 254) || !validateTextLength(w, "Password", req.Password, 128) {
+		return
+	}
+	if status, msg := s.registerCredentialsProblem(r.Context(), email, req.Password); status != 0 {
+		writeErr(w, status, msg)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req registerReq
 	if !readJSON(w, r, &req) {
@@ -131,19 +172,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 	req.Name = sanitizeText(req.Name, 100)
-	if req.Email == "" || len(req.Password) < 10 {
-		writeErr(w, http.StatusBadRequest, "email and a password of at least 10 characters are required")
-		return
-	}
 	if !validateTextLength(w, "Email", req.Email, 254) || !validateTextLength(w, "Password", req.Password, 128) || !validateTextLength(w, "Name", req.Name, 100) {
 		return
 	}
-	if isWeakPassword(req.Password, req.Email) {
-		writeErr(w, http.StatusBadRequest, "password is too weak â€” avoid all-digit, all-repeated, or email-derived passwords")
-		return
-	}
-	if _, err := s.Store.UserByEmail(r.Context(), req.Email); err == nil {
-		writeErr(w, http.StatusConflict, "email already registered")
+	if status, msg := s.registerCredentialsProblem(r.Context(), req.Email, req.Password); status != 0 {
+		writeErr(w, status, msg)
 		return
 	}
 
@@ -415,7 +448,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if isWeakPassword(req.NewPassword, u.Email) {
-		writeErr(w, http.StatusBadRequest, "password is too weak â€” avoid all-digit, all-repeated, or email-derived passwords")
+		writeErr(w, http.StatusBadRequest, "password is too weak: avoid all-digit, all-repeated, or email-derived passwords")
 		return
 	}
 	hash, err := auth.HashPassword(req.NewPassword)

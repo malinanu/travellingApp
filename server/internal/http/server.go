@@ -281,6 +281,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Get("/readyz", s.handleReadyz)
 
 	r.Post("/auth/register", s.handleRegister)
+	r.Post("/auth/register/check", s.handleRegisterCheck)
 	r.Post("/auth/login", s.handleLogin)
 	r.Post("/auth/2fa/login-verify", s.handleTwoFactorLoginVerify)
 	r.Post("/auth/forgot-password", s.handleForgotPassword)
