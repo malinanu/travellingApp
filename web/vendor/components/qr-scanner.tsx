@@ -7,7 +7,7 @@
 // for a code someone is holding still at a counter). Self-contained: owns
 // its own permission/status UI, only reports decoded text upward. Must
 // only run client-side (touches navigator/getUserMedia), same reason
-// location-picker-google.tsx and vendor-map.tsx are client components.
+// location-picker.tsx and vendor-map.tsx are client components.
 
 import jsQR from 'jsqr';
 import { AlertTriangle, CameraOff, RotateCw } from 'lucide-react';

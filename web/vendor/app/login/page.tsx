@@ -317,6 +317,10 @@ function LoginPageInner() {
           new g.maps.Marker({ position: loc, map });
         }
       });
+    }).catch((err) => {
+      // Google couldn't load (blocked, offline, bad key): the owner can
+      // still skip search and fill the details in by hand.
+      console.warn('Business search unavailable, Google Maps failed to load:', err);
     });
     return () => {
       if (autocomplete) google.maps.event.clearInstanceListeners(autocomplete);
