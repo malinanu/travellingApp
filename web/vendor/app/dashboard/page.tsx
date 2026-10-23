@@ -47,18 +47,26 @@ export default function DashboardPage() {
   const { data: me } = useMe();
   const isStaff = me?.vendorRole === 'staff';
   const { data: business } = useBusiness();
+  // These hooks run even when <Shell> shows a gate instead of this page, so
+  // wait for the business to load (like the shell's NotificationBell):
+  // otherwise an account the server won't serve vendor data to polls a 403
+  // every 3 seconds.
+  const vendorReady = !!business;
   const { data: dash } = useQuery<DashboardBlob>({
     queryKey: ['dashboard'],
     queryFn: () => api.get<DashboardBlob>('/vendor/dashboard'),
+    enabled: vendorReady,
   });
   const { data: redemptions = [] } = useQuery<Claim[]>({
     queryKey: ['redemptions'],
     queryFn: () => api.get<Claim[]>('/vendor/redemptions'),
     refetchInterval: 3000,
+    enabled: vendorReady,
   });
   const { data: offers = [] } = useQuery<Offer[]>({
     queryKey: ['offers'],
     queryFn: () => api.get<Offer[]>('/vendor/offers'),
+    enabled: vendorReady,
   });
   const [detailOfferId, setDetailOfferId] = useState<string | null>(null);
   const detailOffer = offers.find((o) => o.id === detailOfferId) ?? null;

@@ -26,6 +26,8 @@ export interface User {
   canManageVendorLogins?: boolean;
   totpEnabled: boolean;
   phone: string;
+  /** Confirmed with a one-time code (WhatsApp or SMS); a new number resets it. */
+  phoneVerified: boolean;
   shareLocation: boolean;
   notifyRedemptions: boolean;
   notifyReviews: boolean;

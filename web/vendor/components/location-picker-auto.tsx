@@ -10,7 +10,12 @@
 
 import dynamic from 'next/dynamic';
 
-const LocationPicker = dynamic(() => import('./location-picker'), {
+// One loader shared by the component and preloadLocationPicker, so both
+// fetch the same chunk files (two separate import() calls get bundled with
+// different chunk lists).
+const loadLocationPicker = () => import('./location-picker');
+
+const LocationPicker = dynamic(loadLocationPicker, {
   ssr: false,
   loading: () => (
     <div className="w-full h-full flex items-center justify-center bg-sand text-muted font-semibold text-[13px]">
@@ -18,6 +23,13 @@ const LocationPicker = dynamic(() => import('./location-picker'), {
     </div>
   ),
 });
+
+// Fetches the map code ahead of time, so a page opened before a deploy still
+// has it when the map finally renders (the deploy removes the old file —
+// see app/error.tsx). Failures are left for the real render to surface.
+export function preloadLocationPicker() {
+  loadLocationPicker().catch(() => {});
+}
 
 export default function LocationPickerAuto(props: {
   lat: number;

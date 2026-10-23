@@ -120,6 +120,22 @@ type Config struct {
 	R2AccessKeyID     string
 	R2SecretAccessKey string
 	R2Bucket          string
+
+	// Phone verification codes for vendor-portal team members (see
+	// internal/verifymsg): WhatsApp via the Meta Cloud API, SMS via text.lk
+	// for Sri Lankan numbers and Twilio for the rest. Each channel is
+	// optional; an unset one logs codes outside production and is refused
+	// in production.
+	TextLKAPIToken        string
+	TextLKSenderID        string
+	TwilioAccountSID      string
+	TwilioAuthToken       string
+	TwilioFromNumber      string
+	WhatsAppPhoneNumberID string
+	WhatsAppAccessToken   string
+	WhatsAppOTPTemplate   string
+	WhatsAppTemplateLang  string
+	WhatsAppAPIVersion    string
 }
 
 // R2Configured reports whether all R2 settings needed to sign uploads and
@@ -204,6 +220,17 @@ func Load() Config {
 		R2AccessKeyID:     getenv("R2_ACCESS_KEY_ID", ""),
 		R2SecretAccessKey: getenv("R2_SECRET_ACCESS_KEY", ""),
 		R2Bucket:          getenv("R2_BUCKET", ""),
+
+		TextLKAPIToken:        getenv("TEXTLK_API_TOKEN", ""),
+		TextLKSenderID:        getenv("TEXTLK_SENDER_ID", ""),
+		TwilioAccountSID:      getenv("TWILIO_ACCOUNT_SID", ""),
+		TwilioAuthToken:       getenv("TWILIO_AUTH_TOKEN", ""),
+		TwilioFromNumber:      getenv("TWILIO_FROM_NUMBER", ""),
+		WhatsAppPhoneNumberID: getenv("WHATSAPP_PHONE_NUMBER_ID", ""),
+		WhatsAppAccessToken:   getenv("WHATSAPP_ACCESS_TOKEN", ""),
+		WhatsAppOTPTemplate:   getenv("WHATSAPP_OTP_TEMPLATE", ""),
+		WhatsAppTemplateLang:  getenv("WHATSAPP_OTP_TEMPLATE_LANG", ""),
+		WhatsAppAPIVersion:    getenv("WHATSAPP_API_VERSION", ""),
 	}
 }
 

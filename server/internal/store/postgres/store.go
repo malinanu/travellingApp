@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/spotto/server/internal/domain"
@@ -111,11 +112,18 @@ func (s *Store) CreateUser(ctx context.Context, u domain.User) error {
 		vendorRole = domain.VendorRoleOwner
 	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, vendor_role)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		INSERT INTO users (id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, vendor_role, phone)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
 		u.ID, u.Email, u.PasswordHash, u.Role, u.Name, u.Country, jsonb(u.TravelStyle),
-		jsonb(u.Interests), u.VendorID, u.Extra, u.CreatedAt, vendorRole)
+		jsonb(u.Interests), u.VendorID, u.Extra, u.CreatedAt, vendorRole, u.Phone)
 	return err
+}
+
+// IsUniqueViolation reports whether err is Postgres refusing a write that
+// would break a UNIQUE constraint or index (SQLSTATE 23505).
+func IsUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 func scanUser(row pgx.Row) (domain.User, error) {
@@ -126,7 +134,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled, &u.TokenVersion,
 		&u.ShareLocation, &u.Lat, &u.Lng, &u.LocationUpdatedAt,
 		&u.Phone, &u.VendorRole, &u.NotifyRedemptions, &u.NotifyReviews, &u.NotifyPayouts, &u.NotifyGrowthTips,
-		&u.GoogleID, &u.AvatarURL)
+		&u.GoogleID, &u.AvatarURL, &u.PhoneVerified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -138,7 +146,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url, phone_verified_at IS NOT NULL`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -374,11 +382,26 @@ func (s *Store) NearbyTravellers(ctx context.Context, callerID string, lat, lng,
 // UpdateUserContact updates the vendor account settings page's editable
 // fields. Callers must check email uniqueness themselves first (see
 // handleUpdateMyContact) — this just writes whatever it's given.
-func (s *Store) UpdateUserContact(ctx context.Context, id, name, email, phone string) error {
-	_, err := s.Pool.Exec(ctx,
-		`UPDATE users SET name=$2, email=$3, phone=$4 WHERE id=$1`,
-		id, name, email, phone)
-	return err
+// phoneChanged clears the number's verification and any code in flight.
+func (s *Store) UpdateUserContact(ctx context.Context, id, name, email, phone string, phoneChanged bool) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx,
+		`UPDATE users SET name=$2, email=$3, phone=$4,
+			phone_verified_at = CASE WHEN $5 THEN NULL ELSE phone_verified_at END
+		WHERE id=$1`,
+		id, name, email, phone, phoneChanged); err != nil {
+		return err
+	}
+	if phoneChanged {
+		if _, err := tx.Exec(ctx, `DELETE FROM phone_verifications WHERE user_id=$1`, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // UpdateNotificationPrefs saves the account page's notification toggles.
@@ -898,6 +921,19 @@ func orEmptyObj(m json.RawMessage) json.RawMessage {
 
 func (s *Store) VendorByID(ctx context.Context, id string) (domain.Vendor, error) {
 	return scanVendor(s.Pool.QueryRow(ctx, `SELECT `+vendorCols+` FROM vendors WHERE id=$1`, id))
+}
+
+// VendorByGooglePlaceID finds the vendor already holding a Google Place ID
+// (at most one can — see migration 026's unique index).
+func (s *Store) VendorByGooglePlaceID(ctx context.Context, placeID string) (domain.Vendor, error) {
+	return scanVendor(s.Pool.QueryRow(ctx, `SELECT `+vendorCols+` FROM vendors WHERE google_place_id=$1`, placeID))
+}
+
+// DeleteVendor removes a vendor row. Only used to roll back a registration
+// whose user insert failed, before anything else can reference the vendor.
+func (s *Store) DeleteVendor(ctx context.Context, id string) error {
+	_, err := s.Pool.Exec(ctx, `DELETE FROM vendors WHERE id=$1`, id)
+	return err
 }
 
 func (s *Store) Vendors(ctx context.Context, status string) ([]domain.Vendor, error) {

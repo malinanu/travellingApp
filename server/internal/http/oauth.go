@@ -71,8 +71,15 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		u, err = s.Store.UserByEmail(ctx, strings.ToLower(info.Email))
 	}
-	if err != nil || u.Role != domain.RoleVendor {
-		// No matching vendor account â€” send them to registration with
+	if err == nil && u.Role != domain.RoleVendor {
+		// The Google account already has a Spotto account that isn't a
+		// vendor (usually a traveller-app one). Registration would only 409
+		// on its email, so say why instead of sending them there.
+		http.Redirect(w, r, s.VendorAppURL+"/login?error=not_a_vendor_account", http.StatusFound)
+		return
+	}
+	if err != nil {
+		// No Spotto account for this Google identity yet — send them to registration with
 		// their Google details prefilled rather than guessing.
 		q := url.Values{"email": {info.Email}, "name": {info.Name}}
 		http.Redirect(w, r, s.VendorAppURL+"/login?mode=register&"+q.Encode(), http.StatusFound)

@@ -92,7 +92,7 @@ func (s *Server) handleTwoFactorEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if u.TOTPPendingSecret == "" {
-		writeErr(w, http.StatusBadRequest, "no pending 2FA setup â€” call /auth/2fa/setup first")
+		writeErr(w, http.StatusBadRequest, "no pending 2FA setup — call /auth/2fa/setup first")
 		return
 	}
 	pendingSecret, err := auth.DecryptSecret(s.TOTPKey, u.TOTPPendingSecret)

@@ -42,6 +42,9 @@ type User struct {
 	Lng               *float64   `json:"-"`
 	LocationUpdatedAt *time.Time `json:"-"`
 	Phone             string     `json:"phone"`
+	// PhoneVerified is true once the account confirmed Phone with a one-time
+	// code (WhatsApp or SMS); changing the number clears it.
+	PhoneVerified bool `json:"phoneVerified"`
 	// VendorRole distinguishes a vendor account's own owner from invited
 	// staff — staff can use the vendor's existing tools (offers, scan/
 	// redeem) but not team management. Meaningless for non-vendor roles.

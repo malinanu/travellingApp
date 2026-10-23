@@ -18,7 +18,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
 import AddressSearchField from '../../components/address-search-field';
-import LocationPickerAuto from '../../components/location-picker-auto';
+import LocationPickerAuto, { preloadLocationPicker } from '../../components/location-picker-auto';
 import { SpottoMark } from '../../components/shell';
 import { api } from '../../lib/api';
 import { VENDOR_SEGMENTS, categoriesBySegment, categoryById, categoryIconComponent } from '../../lib/business-categories';
@@ -106,6 +106,23 @@ function hoursFromLegacyPeriods(
     hours[GOOGLE_WEEKDAYS[p.open.day]] = { open, close };
   }
   return Object.keys(hours).length > 0 ? hours : null;
+}
+
+// One email is one Spotto account with one role, so an email already used
+// in the traveller app can't also open (or register in) this portal. Say
+// that, and how to get a second address, instead of bouncing the owner
+// between "sign in instead" and "this portal is for business accounts".
+const EMAIL_TAKEN_MESSAGE = 'This email already has a Spotto account. If it’s your business account, sign in. If you use it in the Spotto traveller app, list your business with a different email — with Gmail, you+business@gmail.com still reaches your inbox.';
+const NOT_A_VENDOR_MESSAGE = 'This email belongs to a Spotto account that isn’t a business account, like the one you use in the Spotto app. To list a business, choose “List your business” below and use a different email — with Gmail, you+business@gmail.com still reaches your inbox.';
+
+// The +94 is shown as a fixed prefix, but owners often type their number
+// the local way (076…) or paste it with the country code — keep only the
+// subscriber digits so the stored number has exactly one +94.
+function sriLankanPhone(input: string): string {
+  let digits = input.replace(/\D/g, '');
+  if (digits.startsWith('94') && digits.length > 9) digits = digits.slice(2);
+  if (digits.startsWith('0')) digits = digits.slice(1);
+  return digits ? `+94 ${digits}` : '';
 }
 
 function GoogleG({ size = 18 }: { size?: number }) {
@@ -204,7 +221,6 @@ function LoginPageInner() {
   const [businessHours, setBusinessHours] = useState<Record<string, { open: string; close: string }> | null>(null);
   const [businessCountry, setBusinessCountry] = useState('');
   const [googlePlaceId, setGooglePlaceId] = useState('');
-  const [skippedSearch, setSkippedSearch] = useState(false);
   const businessSearchInputRef = useRef<HTMLInputElement>(null);
   const mapDivRef = useRef<HTMLDivElement>(null);
 
@@ -257,17 +273,23 @@ function LoginPageInner() {
       return;
     }
     if (oauthError === 'not_a_vendor_account') {
-      setError('This portal is for business accounts. Use the Spotto app instead.');
+      setError(NOT_A_VENDOR_MESSAGE);
       router.replace('/login');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Loads Google Places Autocomplete for the "Find your business" step
-  // (registerStep 0) — only while that step is actually visible, and not
-  // at all if the owner chose to skip search entirely.
+  // The map only renders on the last step; fetch its code as soon as the
+  // wizard opens so a deploy part-way through doesn't strand the owner.
   useEffect(() => {
-    if (mode !== 'register' || registerStep !== 0 || skippedSearch) return;
+    if (mode === 'register') preloadLocationPicker();
+  }, [mode]);
+
+  // Loads Google Places Autocomplete for the "Find your business" step
+  // (registerStep 0) — only while that step is actually visible, so coming
+  // Back to it re-attaches the search.
+  useEffect(() => {
+    if (mode !== 'register' || registerStep !== 0) return;
     let cancelled = false;
     let autocomplete: google.maps.places.Autocomplete | null = null;
     loadGoogleMaps().then(async (g) => {
@@ -336,13 +358,28 @@ function LoginPageInner() {
     // this setup (re-attaching a fresh Autocomplete instance) immediately
     // after every place selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, registerStep, skippedSearch]);
+  }, [mode, registerStep]);
+
+  // "Enter your business details manually instead" after picking a place:
+  // drop what that place filled in behind the scenes (its Google listing,
+  // pin, phone/website, hours), so the registration doesn't quietly carry
+  // a listing the owner backed out of. Visible fields (name, town,
+  // category) stay, since the owner can see and edit those.
+  const clearFoundPlace = () => {
+    setFoundPlace(null);
+    setPlaceLat(null);
+    setPlaceLng(null);
+    setBusinessContact(null);
+    setBusinessHours(null);
+    setBusinessCountry('');
+    setGooglePlaceId('');
+  };
 
   const finishSession = (res: AuthResponse, rememberOverride?: boolean) => {
     if (res.user.role !== 'vendor') {
       api.setToken(null);
       api.logout(res.refreshToken);
-      setError('This portal is for business accounts. Use the Spotto app instead.');
+      setError(NOT_A_VENDOR_MESSAGE);
       return;
     }
     if (!res.user.vendorId) {
@@ -400,7 +437,7 @@ function LoginPageInner() {
       }
       setEmailTaken(err instanceof ApiError && err.status === 409);
       setError(err instanceof ApiError && err.status === 409
-        ? 'This email already has a Spotto account. Sign in instead, or use a different email.'
+        ? EMAIL_TAKEN_MESSAGE
         : err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setBusy(false);
@@ -413,7 +450,7 @@ function LoginPageInner() {
     try {
       const res = await api.post<AuthResponse | TwoFactorRequiredResponse>('/auth/register', {
         email, password, name, role: 'vendor', businessName, category,
-        phone: phone ? `+94 ${phone}` : '', town, description,
+        phone: sriLankanPhone(phone), town, description,
         ...(placeLat != null && placeLng != null ? { lat: placeLat, lng: placeLng } : {}),
         ...(businessContact ? { contact: businessContact } : {}),
         ...(businessHours ? { hours: businessHours } : {}),
@@ -436,7 +473,7 @@ function LoginPageInner() {
         // the owner back to the step where the email can be changed.
         setRegisterStep(1);
         setEmailTaken(true);
-        setError('This email already has a Spotto account. Sign in instead, or use a different email.');
+        setError(EMAIL_TAKEN_MESSAGE);
       } else {
         setError(err instanceof Error ? err.message : 'Something went wrong');
       }
@@ -635,7 +672,7 @@ function LoginPageInner() {
               We&rsquo;ll use this to pre-fill your business name, category, town and hours — you can adjust anything next.
             </p>
 
-            <button type="button" onClick={() => { setSkippedSearch(true); setRegisterStep(1); }}
+            <button type="button" onClick={() => { clearFoundPlace(); setRegisterStep(1); }}
               className="w-full text-center text-[13px] font-extrabold text-muted">
               Enter your business details manually instead
             </button>
@@ -743,6 +780,14 @@ function LoginPageInner() {
                   onChange={(lat, lng) => { setPlaceLat(lat); setPlaceLng(lng); }}
                 />
               </div>
+              {/* The map shows a placeholder pin before one is set; saving
+                  that would put the business somewhere it isn't, so ask
+                  for a real location first. */}
+              {placeLat == null && (
+                <p className="text-[12px] font-bold text-coral mt-1.5">
+                  Set your location to continue: search your address above, or click the map.
+                </p>
+              )}
             </div>
             <label className="block">
               <span className="block text-[12.5px] font-extrabold mb-1.5 text-ink-soft">Tell travelers about your place</span>
@@ -783,7 +828,7 @@ function LoginPageInner() {
           )}
           <div className="flex-1">
             <Primary
-              disabled={busy || (registerStep === 1 && (!name || !email || password.length < 10)) || (registerStep === 2 && !businessName) || (registerStep === 3 && !agreeTos)}
+              disabled={busy || (registerStep === 1 && (!name || !email || password.length < 10)) || (registerStep === 2 && !businessName) || (registerStep === 3 && (!agreeTos || placeLat == null))}
               icon={busy ? null : registerStep === 3 ? Check : ArrowRight}
               onClick={() => {
                 if (registerStep === 3) return submitRegister();
