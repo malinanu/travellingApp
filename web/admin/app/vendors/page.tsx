@@ -458,7 +458,7 @@ function OverviewTab({ vendor, stats }: { vendor: Vendor; stats?: AdminVendorSta
         <InfoCard title="Amenities & vibe">
           <InfoRow icon={Wifi} label="Wi-Fi"
             value={p.wifi?.enabled ? `score ${p.wifi.score}` : 'not offered'} />
-          <InfoRow icon={Star} label="Sea view" value={p.seaView ? 'yes' : 'no'} />
+          <InfoRow icon={Star} label="Scenic view" value={p.seaView ? 'yes' : 'no'} />
           <InfoRow icon={Clock} label="Best times" value={(p.bestTimes ?? []).join(', ')} />
           <InfoRow icon={Tag} label="Amenities" value={(p.amenities ?? []).join(', ')} />
         </InfoCard>
@@ -957,7 +957,7 @@ function EditForm({ vendor, onDone, onSaved }: { vendor: Vendor; onDone: () => v
           <input type="checkbox" checked={f.wifiEnabled} onChange={(e) => set('wifiEnabled', e.target.checked)} /> Wi-Fi offered
         </label>
         <label className="flex items-center gap-2 text-[13px] font-semibold">
-          <input type="checkbox" checked={f.seaView} onChange={(e) => set('seaView', e.target.checked)} /> Sea view
+          <input type="checkbox" checked={f.seaView} onChange={(e) => set('seaView', e.target.checked)} /> Scenic view
         </label>
       </div>
       <Field label="Blurb" className="mt-3">

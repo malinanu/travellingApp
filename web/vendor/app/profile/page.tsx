@@ -13,7 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check, Clock, Facebook, FileText, Globe, Instagram,
   KeyRound, Laptop, Lock, MapPin, Monitor, Phone, Plus, Save, ShieldCheck, Store, Sun,
-  Sunrise, Sunset, UtensilsCrossed, Users, Volume2, Waves, Wifi, X, LucideIcon,
+  Mountain, Sunrise, Sunset, UtensilsCrossed, Users, Volume2, Wifi, X, LucideIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -444,9 +444,9 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between py-2.5 border-t border-line">
               <div>
                 <div className="font-bold text-[14px] text-ink flex items-center gap-1.5">
-                  <Waves size={15} className="text-accent" /> Sea view
+                  <Mountain size={15} className="text-accent" /> Scenic view
                 </div>
-                <div className="text-[12.5px] text-muted font-semibold">Tag your spot as ocean-facing</div>
+                <div className="text-[12.5px] text-muted font-semibold">Water, mountain or city views from your spot</div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer shrink-0">
                 <input type="checkbox" className="sr-only peer" checked={p.seaView ?? false}
