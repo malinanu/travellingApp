@@ -59,6 +59,13 @@ func main() {
 		log.Fatalf("failed to load vendor categories: %v", err)
 	}
 	domain.InitVendorCategories(cats)
+	// Businesses still under the catch-all "uncategorized" category get
+	// their real one from their map place (a no-op once they're fixed).
+	if n, err := store.RecategorizeUncategorizedVendors(ctx); err != nil {
+		log.Printf("recategorize uncategorized vendors: %v", err)
+	} else if n > 0 {
+		log.Printf("moved %d businesses out of \"uncategorized\" into their real category", n)
+	}
 
 	srv := httpapi.New(store, auth.NewTokens(cfg.JWTSecret), cfg)
 	go srv.StartHolidayScheduler(ctx)

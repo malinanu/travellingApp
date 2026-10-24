@@ -1,6 +1,7 @@
 'use client';
 
-// Geo-analytics — real Leaflet/OSM map with region demand/supply bubbles,
+// Geo-analytics — real Leaflet/OSM map with town circles (live traveller
+// activity vs live businesses, see GET /admin/regions),
 // vendor pins in their category's colour and icon (ringed red when flagged
 // from bad reviews), an investigation pin for checking an arbitrary area,
 // and the region opportunity leaderboard.
@@ -15,7 +16,7 @@ import {
   type Region, type Review, type Vendor, type VendorCategory,
 } from '@spotto/shared';
 import Shell from '../../components/shell';
-import { regionTone } from '../../components/region-tone';
+import { regionScore, regionTone } from '../../components/region-tone';
 import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
 
@@ -69,9 +70,13 @@ export default function GeoPage() {
   });
 
   const flaggedVendors = vendors.filter((v) => v.flagged);
-  const leaderboard = [...regions]
-    .map((r) => ({ ...r, gap: r.travelers - r.vendors }))
-    .sort((a, b) => b.gap - a.gap);
+  // Most traveller activity per live business first.
+  const leaderboard = [...regions].sort((a, b) =>
+    regionScore(b.travelers, b.vendors) - regionScore(a.travelers, a.vendors) || b.travelers - a.travelers);
+  const hasOtherPins = vendors.some((v) => {
+    const segment = categories.get(v.category)?.segment;
+    return !segment || !(segment in PIN_TONE_COLORS);
+  });
 
   const selectVendor = (id: string) => {
     setInvestigationPin(null);
@@ -100,7 +105,7 @@ export default function GeoPage() {
             investigationPin={investigationPin}
             onInvestigate={investigate}
           />
-          <MapLegend />
+          <MapLegend showOther={hasOtherPins} />
         </div>
 
         <div className="space-y-4">
@@ -172,18 +177,26 @@ export default function GeoPage() {
           )}
 
           <div className="panel overflow-hidden">
-            <p className="px-4 py-3 border-b border-line font-bold text-[13.5px]">Opportunity leaderboard</p>
+            <div className="px-4 py-3 border-b border-line">
+              <p className="font-bold text-[13.5px]">Opportunity leaderboard</p>
+              <p className="text-[11.5px] text-muted font-semibold mt-0.5">
+                Traveller check-ins, reviews and saves in the last 30 days, per live business. Towns at the top need more businesses.
+              </p>
+            </div>
             <div className="max-h-[300px] overflow-y-auto">
               {leaderboard.map((r) => {
-                const tone = regionTone(r.gap);
+                const tone = regionTone(r.travelers, r.vendors);
                 return (
                   <div key={r.id}
-                    className="w-full text-left px-4 py-3 border-b border-line last:border-0 flex items-center justify-between">
-                    <span>
+                    className="w-full text-left px-4 py-3 border-b border-line last:border-0 flex items-center justify-between gap-3">
+                    <span className="min-w-0">
                       <span className="block font-bold text-[13.5px]">{r.name}</span>
                       <span className="block text-[11.5px] font-semibold" style={{ color: tone.ring }}>{tone.label}</span>
                     </span>
-                    <span className="font-bold text-[14px]" style={{ color: tone.ring }}>{r.gap > 0 ? '+' : ''}{r.gap}</span>
+                    <span className="text-right shrink-0">
+                      <span className="block font-bold text-[13px]">{r.travelers} {r.travelers === 1 ? 'action' : 'actions'}</span>
+                      <span className="block text-[11.5px] text-muted font-semibold">{r.vendors} {r.vendors === 1 ? 'business' : 'businesses'}</span>
+                    </span>
                   </div>
                 );
               })}
@@ -196,7 +209,7 @@ export default function GeoPage() {
 }
 
 // Pin colours follow the category's group, like the traveller app's map.
-function MapLegend() {
+function MapLegend({ showOther }: { showOther: boolean }) {
   return (
     <div className="absolute right-3 top-3 z-[1000] rounded-lg px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 max-w-[calc(100%-80px)]"
       style={{ background: 'var(--surface)', border: '1px solid var(--line)', boxShadow: '0 4px 14px rgba(0,0,0,0.15)' }}>
@@ -205,6 +218,11 @@ function MapLegend() {
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: PIN_TONE_COLORS[s.id] }} /> {s.label}
         </span>
       ))}
+      {showOther && (
+        <span className="flex items-center gap-1.5 text-[11.5px] font-semibold">
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#64748b' }} /> Other
+        </span>
+      )}
       <span className="flex items-center gap-1.5 text-[11.5px] font-semibold">
         <span className="w-2.5 h-2.5 rounded-full" style={{ boxShadow: '0 0 0 2px #e11d48' }} /> Flagged
       </span>

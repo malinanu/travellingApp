@@ -511,7 +511,10 @@ export interface Region {
   y: number;
   lat: number;
   lng: number;
+  /** On GET /admin/regions: traveller check-ins, reviews and saves on
+   * places in this town in the last 30 days. */
   travelers: number;
+  /** On GET /admin/regions: live (approved) businesses in this town. */
   vendors: number;
 }
 

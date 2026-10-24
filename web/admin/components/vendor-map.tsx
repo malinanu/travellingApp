@@ -1,8 +1,8 @@
 'use client';
 
 // Real Leaflet map (OpenFreeMap base, see base-map-layer.tsx) of Sri Lanka — replaces the old stylised
-// SVG silhouette. Shows region demand/supply bubbles (same gap-coloring/
-// thresholds as before, now at real coordinates) plus a pin per vendor in
+// SVG silhouette. Shows a circle per town sized by recent traveller
+// activity and coloured by activity per live business, plus a pin per vendor in
 // its category's colour and icon, the same as the traveller app's map,
 // ringed red when flagged by bad reviews. The map's initial view is always
 // this fixed Sri Lanka overview — never the browser's own geolocation.
@@ -22,18 +22,26 @@ import { regionTone } from './region-tone';
 const SRI_LANKA_CENTER: [number, number] = [7.8731, 80.7718];
 const SRI_LANKA_ZOOM = 8;
 const FLAG_RED = '#e11d48';
+// Pins whose category group or icon the map doesn't know.
+const OTHER_PIN_COLOR = '#64748b';
+const LucideIcons = Icons as unknown as Record<string, Icons.LucideIcon>;
+
+/** Whether a category draws with its own group colour (else the grey "Other"). */
+function knownPinGroup(category: VendorCategory | undefined): boolean {
+  return !!category && category.segment in PIN_TONE_COLORS;
+}
 
 // One DivIcon per look, shared by every pin that has it — hundreds of pins
 // use only a few dozen category/flag/selected combinations.
 const pinCache = new Map<string, L.DivIcon>();
 
 function categoryPin(category: VendorCategory | undefined, flagged: boolean, selected: boolean): L.DivIcon {
-  const color = category ? PIN_TONE_COLORS[category.segment] : PIN_TONE_COLORS.brand;
-  const iconName = category?.icon ?? 'MapPin';
+  const color = category && knownPinGroup(category) ? PIN_TONE_COLORS[category.segment] : OTHER_PIN_COLOR;
+  const iconName = category?.icon && category.icon in LucideIcons ? category.icon : 'Store';
   const key = `${color}|${iconName}|${flagged}|${selected}`;
   let pin = pinCache.get(key);
   if (!pin) {
-    const Icon = (Icons as unknown as Record<string, Icons.LucideIcon>)[iconName] ?? Icons.MapPin;
+    const Icon = LucideIcons[iconName] ?? Icons.Store;
     const size = selected ? 34 : 26;
     const rings = [
       selected ? '0 0 0 3px #103d3a' : '',
@@ -81,6 +89,7 @@ export default function VendorMap({
   investigationPin: { lat: number; lng: number } | null;
   onInvestigate: (lat: number, lng: number) => void;
 }) {
+  const maxActivity = Math.max(1, ...regions.map((r) => r.travelers));
   return (
     <MapContainer
       center={SRI_LANKA_CENTER}
@@ -91,24 +100,21 @@ export default function VendorMap({
       <BaseMapLayer />
       <ClickToInvestigate onInvestigate={onInvestigate} />
 
-      {regions.map((r) => {
-        const gap = r.travelers - r.vendors;
-        const tone = regionTone(gap);
-        const demandR = 8 + (r.travelers / 100) * 20;
+      {regions.filter((r) => r.travelers > 0 || r.vendors > 0).map((r) => {
+        const tone = regionTone(r.travelers, r.vendors);
         return (
           <CircleMarker
             key={r.id}
             center={[r.lat, r.lng]}
-            radius={demandR}
+            radius={8 + (20 * r.travelers) / maxActivity}
             pathOptions={{ color: tone.ring, fillColor: tone.ring, fillOpacity: 0.15, weight: 1.5, opacity: 0.7 }}
           >
             <Popup>
-              <strong>{r.name}</strong>
+              <strong>{r.name}</strong> · {tone.label}
               <br />
-              {tone.label} ({gap > 0 ? '+' : ''}
-              {gap})
+              {r.travelers} traveller {r.travelers === 1 ? 'action' : 'actions'} · {r.vendors} live {r.vendors === 1 ? 'business' : 'businesses'}
               <br />
-              {r.travelers} travelers · {r.vendors} vendors
+              <span style={{ opacity: 0.7 }}>Check-ins, reviews and saves in the last 30 days</span>
             </Popup>
           </CircleMarker>
         );
