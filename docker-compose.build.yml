@@ -1,0 +1,30 @@
+# Builds the images on this machine instead of pulling the ones GitHub
+# publishes — for local testing, or a host without access to the registry:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# NEXT_PUBLIC_* values are inlined into the web apps' browser bundles, so
+# they're build arguments here (GitHub Actions passes the same ones).
+services:
+  api:
+    build:
+      context: ./server
+    pull_policy: build
+
+  vendor:
+    build:
+      context: ./web
+      dockerfile: vendor/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+    pull_policy: build
+
+  admin:
+    build:
+      context: ./web
+      dockerfile: admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_VENDOR_URL: ${NEXT_PUBLIC_VENDOR_URL}
+    pull_policy: build

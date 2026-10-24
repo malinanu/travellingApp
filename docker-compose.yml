@@ -1,7 +1,12 @@
+# The images are built by GitHub Actions (.github/workflows/docker-images.yml)
+# on every push to main and pulled from GitHub Container Registry, so the
+# server never builds them itself. SPOTTO_IMAGE_TAG pins a version (e.g.
+# sha-1a2b3c4) for a rollback; it defaults to latest. To build locally
+# instead, add docker-compose.build.yml (see the top of that file).
 services:
   api:
-    build:
-      context: ./server
+    image: ghcr.io/malinanu/travellingapp-api:${SPOTTO_IMAGE_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "8881:8881"
@@ -77,12 +82,8 @@ services:
     networks: [spotto]
 
   vendor:
-    build:
-      context: ./web
-      dockerfile: vendor/Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+    image: ghcr.io/malinanu/travellingapp-vendor:${SPOTTO_IMAGE_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -90,12 +91,8 @@ services:
     networks: [spotto]
 
   admin:
-    build:
-      context: ./web
-      dockerfile: admin/Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-        NEXT_PUBLIC_VENDOR_URL: ${NEXT_PUBLIC_VENDOR_URL}
+    image: ghcr.io/malinanu/travellingapp-admin:${SPOTTO_IMAGE_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
     environment:
       PORT: 3001
