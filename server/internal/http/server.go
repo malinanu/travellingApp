@@ -109,7 +109,10 @@ type Server struct {
 	totpLimit     *loginLimiter // guards /auth/2fa/login-verify (key: ip+userID)
 	resetLimit    *loginLimiter // guards /auth/forgot-password (key: ip+email)
 	grantPinLimit *loginLimiter // guards /vendor/profile-grants/{id}/redeem (key: ip+userID) â€” a 6-digit PIN only has 10^6 possibilities
-	phoneVerifyLimit *loginLimiter // guards POST /me/phone/verify (key: userID) — each send costs an SMS/WhatsApp message
+	phoneCheckLimit *loginLimiter // guards GET /me/phone/check (key: userID) — stops it being used to look up which numbers have accounts
+	// PhoneCodesDailyLimit caps phone verification codes sent platform-wide
+	// per 24 hours (PHONE_CODES_DAILY_LIMIT); 0 means the default.
+	PhoneCodesDailyLimit int
 	// Verify delivers phone-verification codes (WhatsApp, text.lk, Twilio)
 	// — see internal/verifymsg; tests swap in a fake.
 	Verify verifymsg.Sender
@@ -155,7 +158,8 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		totpLimit:          newLoginLimiter(5, 15*time.Minute),
 		resetLimit:         newLoginLimiter(5, 15*time.Minute),
 		grantPinLimit:      newLoginLimiter(5, 15*time.Minute),
-		phoneVerifyLimit:   newLoginLimiter(5, time.Hour),
+		phoneCheckLimit:    newLoginLimiter(30, time.Hour),
+		PhoneCodesDailyLimit: cfg.PhoneCodesDailyLimit,
 		Verify: verifymsg.New(verifymsg.Config{
 			Production:     cfg.AppEnv == "production",
 			TextLKAPIToken: cfg.TextLKAPIToken, TextLKSenderID: cfg.TextLKSenderID,
@@ -323,9 +327,11 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Put("/me", s.handleUpdateMe)
 		r.Put("/me/privacy", s.handleUpdatePrivacy)
 		r.Put("/me/contact", s.handleUpdateMyContact)
-		r.Get("/me/phone/check", s.handleMyPhoneCheck)
-		r.Post("/me/phone/verify", s.handlePhoneVerifyStart)
-		r.Post("/me/phone/verify/confirm", s.handlePhoneVerifyConfirm)
+		// Only the vendor portal verifies numbers; keeping travellers (open
+		// sign-up) out also keeps them off a paid SMS endpoint.
+		r.With(auth.RequireRole(domain.RoleVendor)).Get("/me/phone/check", s.handleMyPhoneCheck)
+		r.With(auth.RequireRole(domain.RoleVendor)).Post("/me/phone/verify", s.handlePhoneVerifyStart)
+		r.With(auth.RequireRole(domain.RoleVendor)).Post("/me/phone/verify/confirm", s.handlePhoneVerifyConfirm)
 		r.Put("/me/notification-prefs", s.handleUpdateNotificationPrefs)
 		r.Post("/me/push-token", s.handleRegisterPushToken)
 		r.Delete("/me/push-token", s.handleUnregisterPushToken)

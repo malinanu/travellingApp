@@ -105,3 +105,68 @@ func (s *Store) OtherVendorWithContactPhone(ctx context.Context, key, exceptVend
 	}
 	return name, true, nil
 }
+
+// PhoneSendLimits caps how many verification codes go out. Zero means no
+// cap for that field.
+type PhoneSendLimits struct {
+	PerUserHour  int
+	PerUserDay   int
+	PerNumberDay int
+	TotalDay     int
+}
+
+var (
+	ErrPhoneSendUserLimit   = errors.New("too many codes for this account")
+	ErrPhoneSendNumberLimit = errors.New("too many codes to this number today")
+	ErrPhoneSendDailyLimit  = errors.New("daily code limit reached")
+)
+
+// ReservePhoneCodeSend records a code about to be sent to phoneKey for
+// userID if every limit still allows it, and returns the row's id so a send
+// that fails can be released. Reservations are serialised, so concurrent
+// requests can't all slip under a limit.
+func (s *Store) ReservePhoneCodeSend(ctx context.Context, userID, phoneKey, channel string, lim PhoneSendLimits) (int64, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('phone_code_sends'))`); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM phone_code_sends WHERE sent_at < now() - interval '2 days'`); err != nil {
+		return 0, err
+	}
+	var userHour, userDay, numberDay, totalDay int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE user_id=$1 AND sent_at > now() - interval '1 hour'),
+		       count(*) FILTER (WHERE user_id=$1),
+		       count(*) FILTER (WHERE phone_key=$2),
+		       count(*)
+		FROM phone_code_sends WHERE sent_at > now() - interval '1 day'`, userID, phoneKey).
+		Scan(&userHour, &userDay, &numberDay, &totalDay); err != nil {
+		return 0, err
+	}
+	over := func(n, limit int) bool { return limit > 0 && n >= limit }
+	switch {
+	case over(userHour, lim.PerUserHour), over(userDay, lim.PerUserDay):
+		return 0, ErrPhoneSendUserLimit
+	case over(numberDay, lim.PerNumberDay):
+		return 0, ErrPhoneSendNumberLimit
+	case over(totalDay, lim.TotalDay):
+		return 0, ErrPhoneSendDailyLimit
+	}
+	var id int64
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO phone_code_sends (user_id, phone_key, channel) VALUES ($1,$2,$3) RETURNING id`,
+		userID, phoneKey, channel).Scan(&id); err != nil {
+		return 0, err
+	}
+	return id, tx.Commit(ctx)
+}
+
+// ReleasePhoneCodeSend forgets a reservation whose message couldn't be sent.
+func (s *Store) ReleasePhoneCodeSend(ctx context.Context, id int64) error {
+	_, err := s.Pool.Exec(ctx, `DELETE FROM phone_code_sends WHERE id=$1`, id)
+	return err
+}

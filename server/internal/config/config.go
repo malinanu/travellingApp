@@ -136,6 +136,10 @@ type Config struct {
 	WhatsAppOTPTemplate   string
 	WhatsAppTemplateLang  string
 	WhatsAppAPIVersion    string
+	// PhoneCodesDailyLimit caps verification codes sent across the whole
+	// platform in any 24 hours, so a flood of sign-ups can't run up the
+	// WhatsApp/SMS bill.
+	PhoneCodesDailyLimit int
 }
 
 // R2Configured reports whether all R2 settings needed to sign uploads and
@@ -231,6 +235,7 @@ func Load() Config {
 		WhatsAppOTPTemplate:   getenv("WHATSAPP_OTP_TEMPLATE", ""),
 		WhatsAppTemplateLang:  getenv("WHATSAPP_OTP_TEMPLATE_LANG", ""),
 		WhatsAppAPIVersion:    getenv("WHATSAPP_API_VERSION", ""),
+		PhoneCodesDailyLimit:  getenvInt("PHONE_CODES_DAILY_LIMIT", 200),
 	}
 }
 

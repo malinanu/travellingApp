@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"math/big"
 	"net/http"
@@ -31,6 +32,15 @@ const (
 	phoneResendAfter   = 60 * time.Second
 	phoneMaxAttempts   = 5
 	maxPhoneQueryChars = 40
+
+	// Each code costs a WhatsApp/SMS message. Besides the platform-wide
+	// daily cap (PHONE_CODES_DAILY_LIMIT), one account gets a handful an
+	// hour and a day, and one number a handful a day however many
+	// accounts ask.
+	phoneCodesPerUserHour  = 5
+	phoneCodesPerUserDay   = 10
+	phoneCodesPerNumberDay = 5
+	defaultPhoneCodesDaily = 200
 )
 
 func hashPhoneCode(userID, code string) string {
@@ -50,6 +60,11 @@ func newPhoneCode() (string, error) {
 // already uses the number being typed, so it can suggest a different one.
 func (s *Server) handleMyPhoneCheck(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
+	if !s.phoneCheckLimit.allow(c.Subject) {
+		writeErr(w, http.StatusTooManyRequests, "Too many number checks — try again later.")
+		return
+	}
+	s.phoneCheckLimit.recordFailure(c.Subject) // counts every check; never reset
 	raw := r.URL.Query().Get("phone")
 	if !validateTextLength(w, "Phone", raw, maxPhoneQueryChars) {
 		return
@@ -152,18 +167,39 @@ func (s *Server) handlePhoneVerifyStart(w http.ResponseWriter, r *http.Request) 
 		storeErr(w, err)
 		return
 	}
-	if !s.phoneVerifyLimit.allow(u.ID) {
-		writeErr(w, http.StatusTooManyRequests, "Too many codes requested — try again in an hour.")
-		return
-	}
-	s.phoneVerifyLimit.recordFailure(u.ID) // counts every send; never reset
 
 	code, err := newPhoneCode()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
+	daily := s.PhoneCodesDailyLimit
+	if daily <= 0 {
+		daily = defaultPhoneCodesDaily
+	}
+	sendID, err := s.Store.ReservePhoneCodeSend(r.Context(), u.ID, phone.Key(u.Phone), req.Channel, postgres.PhoneSendLimits{
+		PerUserHour: phoneCodesPerUserHour, PerUserDay: phoneCodesPerUserDay,
+		PerNumberDay: phoneCodesPerNumberDay, TotalDay: daily,
+	})
+	switch {
+	case errors.Is(err, postgres.ErrPhoneSendUserLimit):
+		writeErr(w, http.StatusTooManyRequests, "Too many codes requested — try again later.")
+		return
+	case errors.Is(err, postgres.ErrPhoneSendNumberLimit):
+		writeErr(w, http.StatusTooManyRequests, "Too many codes have gone to this number today — try again tomorrow.")
+		return
+	case errors.Is(err, postgres.ErrPhoneSendDailyLimit):
+		log.Printf("phone codes: platform-wide limit of %d per day reached; sends paused (PHONE_CODES_DAILY_LIMIT)", daily)
+		writeErr(w, http.StatusTooManyRequests, "We can't send more codes right now — please try again later.")
+		return
+	case err != nil:
+		storeErr(w, err)
+		return
+	}
 	if err := s.Verify.Send(r.Context(), req.Channel, u.Phone, code); err != nil {
+		if relErr := s.Store.ReleasePhoneCodeSend(r.Context(), sendID); relErr != nil {
+			log.Printf("phone codes: release send %d: %v", sendID, relErr)
+		}
 		other := "SMS"
 		if req.Channel == verifymsg.ChannelSMS {
 			other = "WhatsApp"

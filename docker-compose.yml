@@ -66,6 +66,7 @@ services:
       WHATSAPP_OTP_TEMPLATE: ${WHATSAPP_OTP_TEMPLATE:-}
       WHATSAPP_OTP_TEMPLATE_LANG: ${WHATSAPP_OTP_TEMPLATE_LANG:-}
       WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-}
+      PHONE_CODES_DAILY_LIMIT: ${PHONE_CODES_DAILY_LIMIT:-}
     # Instagram rate-limits anonymous yt-dlp requests from server IPs almost
     # immediately, so reel extraction needs a logged-in session. Drop a
     # Netscape cookies.txt (from a throwaway Instagram account) into
