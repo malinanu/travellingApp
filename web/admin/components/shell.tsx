@@ -6,7 +6,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Bell, CreditCard, Headphones, History, KeyRound, Map, MapPin, Moon, Search, ShieldAlert, Shapes, Sparkles, Store, Sun, UserCheck, Users, LucideIcon,
+  Activity, Bell, CreditCard, Headphones, History, KeyRound, Map, MapPin, Moon, Search, Smartphone, ShieldAlert, Shapes, Sparkles, Store, Sun, UserCheck, Users, LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -57,12 +57,13 @@ function useKpis() {
   });
 }
 
-const NOTIF_ICONS: Record<string, LucideIcon> = { UserCheck, ShieldAlert };
+const NOTIF_ICONS: Record<string, LucideIcon> = { UserCheck, ShieldAlert, Smartphone };
 // Each bucket id from Store.AdminNotifications routes to the page where an
 // admin actually resolves it.
 const NOTIF_TARGET: Record<string, string> = {
   'pending-vendors': '/queue',
   'bad-review-vendors': '/geo',
+  'phone-codes': '/',
 };
 
 function toneStyle(tone: string) {

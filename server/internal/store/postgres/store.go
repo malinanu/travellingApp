@@ -2974,10 +2974,11 @@ func pluralSuffix(n int) string {
 	return "s"
 }
 
-// AdminNotifications derives up to 2 buckets — pending-approval vendors and
-// bad-review-flagged vendors — live from current data rather than from
-// stored discrete rows, so they can never drift out of sync with the
-// underlying state (matches how CountPendingVendors already works). Each bucket is marked unread if its latest-activity timestamp is
+// AdminNotifications derives up to 3 buckets — pending-approval vendors,
+// phone-code limits nearly used up, and bad-review-flagged vendors — live
+// from current data rather than from stored discrete rows, so they can
+// never drift out of sync with the underlying state (matches how
+// CountPendingVendors already works). Each bucket is marked unread if its latest-activity timestamp is
 // after adminID's last read (see MarkAdminNotificationsRead).
 func (s *Store) AdminNotifications(ctx context.Context, adminID string) ([]domain.AdminNotification, error) {
 	var lastRead time.Time
@@ -3006,6 +3007,12 @@ func (s *Store) AdminNotifications(ctx context.Context, adminID string) ([]domai
 		})
 	}
 
+	if n, err := s.phoneCodeNotification(ctx, lastRead); err != nil {
+		return nil, err
+	} else if n != nil {
+		out = append(out, *n)
+	}
+
 	var badVendorCount int
 	var badLatest time.Time
 	if err := s.Pool.QueryRow(ctx, `
@@ -3030,6 +3037,44 @@ func (s *Store) AdminNotifications(ctx context.Context, adminID string) ([]domai
 	}
 
 	return out, nil
+}
+
+// phoneCodeNotification warns once 80% of a daily phone-code limit has
+// gone out in the last 24 hours, so admins can raise it before real
+// sign-ups are refused. Nil when both groups are under 80%.
+func (s *Store) phoneCodeNotification(ctx context.Context, lastRead time.Time) (*domain.AdminNotification, error) {
+	lim, err := s.PhoneCodeLimits(ctx)
+	if err != nil {
+		return nil, err
+	}
+	used, err := s.PhoneCodesSentLast24h(ctx)
+	if err != nil {
+		return nil, err
+	}
+	group, sent, limit := "", 0, 0
+	// Report whichever group is closest to its limit.
+	for _, g := range []struct {
+		name        string
+		sent, limit int
+	}{{"Sri Lanka", used.SriLanka, lim.SriLanka}, {"foreign numbers", used.Other, lim.Other}} {
+		if g.limit > 0 && g.sent*5 >= g.limit*4 && (group == "" || g.sent*limit > sent*g.limit) {
+			group, sent, limit = g.name, g.sent, g.limit
+		}
+	}
+	if group == "" {
+		return nil, nil
+	}
+	title := fmt.Sprintf("Phone codes: %d of %d used in 24h (%s)", sent, limit, group)
+	if sent >= limit {
+		title = fmt.Sprintf("Daily phone-code limit reached (%s)", group)
+	}
+	return &domain.AdminNotification{
+		ID: "phone-codes", Icon: "Smartphone", Tone: "sun",
+		Title:  title,
+		Sub:    "Raise the limit on the dashboard if these are real sign-ups.",
+		Time:   used.LastSent.Format("Jan 2, 3:04 PM"),
+		Unread: used.LastSent.After(lastRead),
+	}, nil
 }
 
 // ---- misc ----

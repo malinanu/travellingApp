@@ -110,9 +110,6 @@ type Server struct {
 	resetLimit    *loginLimiter // guards /auth/forgot-password (key: ip+email)
 	grantPinLimit *loginLimiter // guards /vendor/profile-grants/{id}/redeem (key: ip+userID) â€” a 6-digit PIN only has 10^6 possibilities
 	phoneCheckLimit *loginLimiter // guards GET /me/phone/check (key: userID) — stops it being used to look up which numbers have accounts
-	// PhoneCodesDailyLimit caps phone verification codes sent platform-wide
-	// per 24 hours (PHONE_CODES_DAILY_LIMIT); 0 means the default.
-	PhoneCodesDailyLimit int
 	// Verify delivers phone-verification codes (WhatsApp, text.lk, Twilio)
 	// — see internal/verifymsg; tests swap in a fake.
 	Verify verifymsg.Sender
@@ -159,7 +156,6 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		resetLimit:         newLoginLimiter(5, 15*time.Minute),
 		grantPinLimit:      newLoginLimiter(5, 15*time.Minute),
 		phoneCheckLimit:    newLoginLimiter(30, time.Hour),
-		PhoneCodesDailyLimit: cfg.PhoneCodesDailyLimit,
 		Verify: verifymsg.New(verifymsg.Config{
 			Production:     cfg.AppEnv == "production",
 			TextLKAPIToken: cfg.TextLKAPIToken, TextLKSenderID: cfg.TextLKSenderID,
@@ -471,6 +467,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/kpis", s.handleAdminKPIs)
 		r.Get("/admin/analytics", s.handleAdminAnalytics)
 		r.Get("/admin/settings", s.handleAdminGetSettings)
+		r.Get("/admin/settings/phone-codes", s.handleAdminPhoneCodeSettings)
 		r.Put("/admin/settings", s.handleAdminPutSettings)
 		r.Get("/admin/search", s.handleAdminSearch)
 		r.Get("/admin/vendors", s.handleAdminVendors)
@@ -543,6 +540,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			r.Post("/admin/users/{id}/role", s.handleAdminChangeUserRole)
 			r.Post("/admin/users/{id}/delete", s.handleAdminDeleteUser)
 			r.Post("/admin/vendors/{id}/delete", s.handleAdminDeleteVendor)
+			// Daily limits on paid phone-verification codes.
+			r.Put("/admin/settings/phone-codes", s.handleAdminPutPhoneCodeLimits)
 		})
 
 		// Handing a business account over to its real owner. Super-admins

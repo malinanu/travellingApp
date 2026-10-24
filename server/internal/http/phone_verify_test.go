@@ -12,12 +12,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/config"
+	"github.com/spotto/server/internal/domain"
 	httpapi "github.com/spotto/server/internal/http"
 	"github.com/spotto/server/internal/phone"
 	"github.com/spotto/server/internal/store/postgres"
@@ -81,17 +83,12 @@ type phoneTestEnv struct {
 	store  *postgres.Store
 }
 
-// newPhoneTestEnv's platform-wide daily code cap is dailyLimit, or high
-// enough never to matter when it's 0.
-func newPhoneTestEnv(t *testing.T, dailyLimit ...int) phoneTestEnv {
+func newPhoneTestEnv(t *testing.T) phoneTestEnv {
 	t.Helper()
 	store := mustConnect(t)
 	loadCategories(t, store)
 	cfg := config.Config{CORSOrigins: []string{"http://localhost:3000"}, TOTPEncryptionKey: make([]byte, 32),
-		PhoneCodesDailyLimit: 1_000_000}
-	if len(dailyLimit) > 0 {
-		cfg.PhoneCodesDailyLimit = dailyLimit[0]
-	}
+		SuperAdminEmails: []string{"super@phonetest.dev"}}
 	api := httpapi.New(store, auth.NewTokens("test-secret-test-secret-test-secret-1234"), cfg)
 	sender := &fakeSender{}
 	api.Verify = sender
@@ -132,7 +129,8 @@ func (e phoneTestEnv) recordSends(t *testing.T, userID, number string, n int) {
 	t.Helper()
 	for i := 0; i < n; i++ {
 		if _, err := e.store.Pool.Exec(context.Background(),
-			`INSERT INTO phone_code_sends (user_id, phone_key, channel) VALUES ($1,$2,'sms')`, userID, phone.Key(number)); err != nil {
+			`INSERT INTO phone_code_sends (user_id, phone_key, channel, sri_lankan) VALUES ($1,$2,'sms',$3)`,
+			userID, phone.Key(number), phone.IsSriLankan(number)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -249,6 +247,32 @@ func TestPhoneInUseHints(t *testing.T) {
 	}
 }
 
+// foreignMobile returns a UK mobile no earlier test run has used.
+func foreignMobile(offset int64) string {
+	return fmt.Sprintf("+44 7700 %06d", (time.Now().UnixNano()/1000+offset)%1_000_000)
+}
+
+// limitsFromNow sets the daily limits to what's been sent in the last 24
+// hours plus extra, putting the old limits back afterwards.
+func (e phoneTestEnv) limitsFromNow(t *testing.T, extraSriLanka, extraOther int) postgres.PhoneCodeLimits {
+	t.Helper()
+	ctx := context.Background()
+	old, err := e.store.PhoneCodeLimits(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	used, err := e.store.PhoneCodesSentLast24h(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lim := postgres.PhoneCodeLimits{SriLanka: used.SriLanka + extraSriLanka, Other: used.Other + extraOther}
+	if err := e.store.SetPhoneCodeLimits(ctx, lim); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { e.store.SetPhoneCodeLimits(ctx, old) })
+	return lim
+}
+
 func TestPhoneCodeLimits(t *testing.T) {
 	e := newPhoneTestEnv(t)
 	send := func(token string) (int, map[string]any) {
@@ -304,21 +328,25 @@ func TestPhoneCodeLimits(t *testing.T) {
 		}
 	})
 
-	t.Run("platform-wide daily cap", func(t *testing.T) {
-		var sentToday int
-		if err := e.store.Pool.QueryRow(context.Background(),
-			`SELECT count(*) FROM phone_code_sends WHERE sent_at > now() - interval '1 day'`).Scan(&sentToday); err != nil {
-			t.Fatal(err)
+	t.Run("daily limits, Sri Lankan and foreign apart", func(t *testing.T) {
+		// One code left in each group.
+		e.limitsFromNow(t, 1, 1)
+		lkA := e.registerVendor(t, "cap-day-a", "0"+uniqueMobile(15))
+		lkB := e.registerVendor(t, "cap-day-b", "0"+uniqueMobile(16))
+		ukA := e.registerVendor(t, "cap-day-c", foreignMobile(1))
+		ukB := e.registerVendor(t, "cap-day-d", foreignMobile(2))
+		full := "We can't send more codes right now — please try again later."
+		if status, body := send(lkA); status != http.StatusOK {
+			t.Fatalf("last Sri Lankan code under the limit: %d %v", status, body)
 		}
-		capped := newPhoneTestEnv(t, sentToday+1)
-		first := capped.registerVendor(t, "cap-day-a", "0"+uniqueMobile(15))
-		second := capped.registerVendor(t, "cap-day-b", "0"+uniqueMobile(16))
-		if status, body := call(t, capped.srv, http.MethodPost, "/me/phone/verify", first, map[string]string{"channel": "sms"}); status != http.StatusOK {
-			t.Fatalf("last code under the cap: %d %v", status, body)
+		if status, body := send(lkB); status != http.StatusTooManyRequests || body["error"] != full {
+			t.Fatalf("Sri Lankan code over the limit: %d %v", status, body)
 		}
-		status, body := call(t, capped.srv, http.MethodPost, "/me/phone/verify", second, map[string]string{"channel": "sms"})
-		if status != http.StatusTooManyRequests || body["error"] != "We can't send more codes right now — please try again later." {
-			t.Fatalf("code over the daily cap: %d %v", status, body)
+		if status, body := send(ukA); status != http.StatusOK {
+			t.Fatalf("foreign code while only the Sri Lankan limit is used up: %d %v", status, body)
+		}
+		if status, body := send(ukB); status != http.StatusTooManyRequests || body["error"] != full {
+			t.Fatalf("foreign code over the limit: %d %v", status, body)
 		}
 	})
 
@@ -333,4 +361,64 @@ func TestPhoneCodeLimits(t *testing.T) {
 			t.Fatalf("31st check this hour: %d, want 429", status)
 		}
 	})
+}
+
+func TestPhoneCodeLimitSettings(t *testing.T) {
+	e := newPhoneTestEnv(t)
+	ctx := context.Background()
+	purge := func() { e.store.Pool.Exec(ctx, `DELETE FROM users WHERE id LIKE 'usr_phset_%'`) }
+	purge()
+	t.Cleanup(purge)
+	pw, _ := auth.HashPassword("testpass123")
+	for _, u := range []domain.User{
+		{ID: "usr_phset_super", Email: "super@phonetest.dev", Role: domain.RoleAdmin},
+		{ID: "usr_phset_admin", Email: "admin@phonetest.dev", Role: domain.RoleAdmin},
+	} {
+		u.PasswordHash, u.CreatedAt = pw, time.Now()
+		if err := e.store.CreateUser(ctx, u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	superTok := loginAs(t, e.srv, "super@phonetest.dev", "testpass123")
+	adminTok := loginAs(t, e.srv, "admin@phonetest.dev", "testpass123")
+	old, _ := e.store.PhoneCodeLimits(ctx)
+	t.Cleanup(func() { e.store.SetPhoneCodeLimits(ctx, old) })
+
+	status, body := call(t, e.srv, http.MethodGet, "/admin/settings/phone-codes", adminTok, nil)
+	if status != http.StatusOK || body["limitSriLanka"] == nil || body["sentOther"] == nil {
+		t.Fatalf("admin reading limits: %d %v", status, body)
+	}
+	if status, _ := call(t, e.srv, http.MethodPut, "/admin/settings/phone-codes", adminTok, map[string]int{"limitSriLanka": 300, "limitOther": 20}); status != http.StatusForbidden {
+		t.Fatalf("plain admin changing limits: %d, want 403", status)
+	}
+	if status, _ := call(t, e.srv, http.MethodPut, "/admin/settings/phone-codes", superTok, map[string]int{"limitSriLanka": 0, "limitOther": 20}); status != http.StatusBadRequest {
+		t.Fatalf("zero limit: %d, want 400", status)
+	}
+	status, body = call(t, e.srv, http.MethodPut, "/admin/settings/phone-codes", superTok, map[string]int{"limitSriLanka": 300, "limitOther": 20})
+	if status != http.StatusOK || body["limitSriLanka"] != float64(300) || body["limitOther"] != float64(20) {
+		t.Fatalf("super-admin changing limits: %d %v", status, body)
+	}
+	if got, _ := e.store.PhoneCodeLimits(ctx); got != (postgres.PhoneCodeLimits{SriLanka: 300, Other: 20}) {
+		t.Fatalf("limits not saved: %+v", got)
+	}
+	var audits int
+	e.store.Pool.QueryRow(ctx, `SELECT count(*) FROM admin_audit_log WHERE action='settings.phone_codes' AND actor_id='usr_phset_super'`).Scan(&audits)
+	if audits == 0 {
+		t.Fatal("limit change not in the audit log")
+	}
+
+	// Past 80% of a limit, admins get a bell alert.
+	e.recordSends(t, "usr_phset_sender", "0"+uniqueMobile(21), 4)
+	e.limitsFromNow(t, 1, 1000)
+	notifs, err := e.store.AdminNotifications(ctx, "usr_phset_admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, n := range notifs {
+		found = found || (n.ID == "phone-codes" && strings.Contains(n.Title, "Sri Lanka"))
+	}
+	if !found {
+		t.Fatalf("no phone-code alert at over 80%%: %+v", notifs)
+	}
 }

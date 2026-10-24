@@ -575,6 +575,17 @@ export interface AdminAuditLogEntry {
   createdAt: string;
 }
 
+/** GET/PUT /admin/settings/phone-codes — the daily limits on phone
+ * verification codes (each a paid SMS/WhatsApp message), kept apart for
+ * Sri Lankan and foreign numbers, and how many went out in the last 24
+ * hours. Only super-admins may change the limits. */
+export interface AdminPhoneCodeSettings {
+  limitSriLanka: number;
+  limitOther: number;
+  sentSriLanka: number;
+  sentOther: number;
+}
+
 export interface AdminKPIs {
   pendingVendors: number;
   mrr: number;

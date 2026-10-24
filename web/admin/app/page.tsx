@@ -1,8 +1,10 @@
 'use client';
 
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Users, Store, Ticket, Star, Loader2, ArrowRight } from 'lucide-react';
-import Shell from '../components/shell';
+import { useEffect, useState } from 'react';
+import type { AdminPhoneCodeSettings } from '@spotto/shared';
+import Shell, { useMe } from '../components/shell';
 import { api } from '../lib/api';
 import Link from 'next/link';
 
@@ -103,6 +105,8 @@ export default function DashboardPage() {
 
             {/* Platform Security */}
             <SecuritySettingsPanel />
+
+            <PhoneCodeLimitsPanel />
         </div>
 
       </div>
@@ -158,6 +162,114 @@ function SecuritySettingsPanel() {
           <span>Permissive (1000)</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Daily limits on phone-verification codes: each one is a paid SMS or
+// WhatsApp message, so a flood of fake sign-ups can't run up the bill.
+// Sri Lankan numbers (text.lk) and foreign ones (Twilio — dearer, and where
+// SMS fraud aims) have separate limits. Super-admins change them; other
+// admins see the usage.
+function PhoneCodeLimitsPanel() {
+  const qc = useQueryClient();
+  const { data: me } = useMe();
+  const { data } = useQuery<AdminPhoneCodeSettings>({
+    queryKey: ['admin-phone-codes'],
+    queryFn: () => api.get<AdminPhoneCodeSettings>('/admin/settings/phone-codes'),
+    refetchInterval: 60000,
+  });
+  const [lk, setLk] = useState('');
+  const [other, setOther] = useState('');
+  useEffect(() => {
+    if (data) {
+      setLk(String(data.limitSriLanka));
+      setOther(String(data.limitOther));
+    }
+  }, [data?.limitSriLanka, data?.limitOther]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.put<AdminPhoneCodeSettings>('/admin/settings/phone-codes', { limitSriLanka: Number(lk), limitOther: Number(other) }),
+    onSuccess: (saved) => {
+      qc.setQueryData(['admin-phone-codes'], saved);
+      qc.invalidateQueries({ queryKey: ['admin-notifications'] });
+    },
+  });
+
+  if (!data) return (
+    <div className="md:col-span-2 rounded-2xl bg-[#141517] border border-white/5 p-6 flex items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-[var(--muted)]" />
+    </div>
+  );
+
+  const valid = (v: string) => /^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 100000;
+  const changed = lk !== String(data.limitSriLanka) || other !== String(data.limitOther);
+  const canEdit = !!me?.isSuperAdmin;
+
+  return (
+    <div className="md:col-span-2 rounded-2xl bg-[#141517] border border-white/5 p-6">
+      <h2 className="text-lg font-semibold text-white mb-2">Phone verification codes</h2>
+      <p className="text-sm text-[var(--muted)] mb-6">
+        Each code is a paid SMS or WhatsApp message. When a daily limit is reached, new codes pause until the
+        24-hour window clears; people can still use the app. You&apos;ll get a bell alert at 80%.
+      </p>
+      <form className="grid grid-cols-1 md:grid-cols-2 gap-6"
+        onSubmit={(e) => { e.preventDefault(); if (canEdit && changed && valid(lk) && valid(other)) save.mutate(); }}>
+        <UsageRow label="Sri Lankan numbers" via="SMS by text.lk, or WhatsApp" sent={data.sentSriLanka} limit={data.limitSriLanka}
+          value={lk} onChange={setLk} canEdit={canEdit} invalid={!valid(lk)} />
+        <UsageRow label="Foreign numbers" via="SMS by Twilio, or WhatsApp" sent={data.sentOther} limit={data.limitOther}
+          value={other} onChange={setOther} canEdit={canEdit} invalid={!valid(other)} />
+        <div className="md:col-span-2 flex items-center justify-end gap-3">
+          {save.isError && <span className="text-sm font-medium text-rose-400 mr-auto">{(save.error as Error).message}</span>}
+          {save.isSuccess && !changed && <span className="text-sm font-medium text-emerald-400 mr-auto">Saved.</span>}
+          {canEdit ? (
+            <button type="submit" disabled={!changed || !valid(lk) || !valid(other) || save.isPending}
+              className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed">
+              {save.isPending ? 'Saving…' : 'Save limits'}
+            </button>
+          ) : (
+            <span className="text-xs text-[var(--muted)] font-medium">Only super-admins can change these limits.</span>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function UsageRow({ label, via, sent, limit, value, onChange, canEdit, invalid }: {
+  label: string;
+  via: string;
+  sent: number;
+  limit: number;
+  value: string;
+  onChange: (v: string) => void;
+  canEdit: boolean;
+  invalid: boolean;
+}) {
+  const pct = limit > 0 ? sent / limit : 0;
+  const color = pct >= 1 ? '#e11d48' : pct >= 0.8 ? '#d97706' : '#10b981';
+  return (
+    <div>
+      <div className="flex items-end justify-between mb-2">
+        <span className="text-sm font-medium text-[var(--accent)]">
+          {label} <span className="text-[var(--muted)] font-normal">· {via}</span>
+        </span>
+        <span className="text-sm text-white font-semibold">
+          {sent.toLocaleString()} <span className="text-[var(--muted)] font-normal">of {limit.toLocaleString()} in 24h</span>
+        </span>
+      </div>
+      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct * 100)}%`, background: color }} />
+      </div>
+      {canEdit && (
+        <label className="flex items-center gap-2 mt-3 text-xs text-[var(--muted)] font-medium">
+          Daily limit
+          <input type="number" min={1} max={100000} value={value} onChange={(e) => onChange(e.target.value)}
+            className="w-28 rounded-lg bg-white/5 border px-2.5 py-1.5 text-sm text-white outline-none"
+            style={{ borderColor: invalid ? '#e11d48' : 'rgba(255,255,255,0.1)' }} />
+        </label>
+      )}
     </div>
   );
 }
