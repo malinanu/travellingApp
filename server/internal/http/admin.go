@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
+	"github.com/spotto/server/internal/geo"
 	"github.com/spotto/server/internal/store/postgres"
 )
 
@@ -396,8 +398,25 @@ func (s *Server) vendorStatusHandler(status domain.VendorStatus, action string) 
 	}
 }
 
+const (
+	// regionActivityWindow is how far back traveller activity counts as
+	// demand.
+	regionActivityWindow = 30 * 24 * time.Hour
+	// regionMaxKm: points further than this from every region centre
+	// (abroad, or test data) belong to no region. Every spot in Sri Lanka
+	// is well within it of one of the seeded towns.
+	regionMaxKm = 100
+)
+
+// handleAdminRegions powers the geo page's town circles and Opportunity
+// leaderboard with live numbers. Each region's Vendors is the approved
+// businesses nearest to it, and Travelers is the traveller actions
+// (check-ins, vibe check-ins, reviews, saved places) on places nearest to
+// it in the last 30 days — the stored regions rows only supply names and
+// centres. Anything over regionMaxKm from every centre isn't counted.
 func (s *Server) handleAdminRegions(w http.ResponseWriter, r *http.Request) {
-	regions, err := s.Store.Regions(r.Context())
+	ctx := r.Context()
+	regions, err := s.Store.Regions(ctx)
 	if err != nil {
 		storeErr(w, err)
 		return
@@ -405,7 +424,42 @@ func (s *Server) handleAdminRegions(w http.ResponseWriter, r *http.Request) {
 	if regions == nil {
 		regions = []domain.Region{}
 	}
+	vendors, err := s.Store.LiveVendorPoints(ctx)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	activity, err := s.Store.PlaceActivitySince(ctx, time.Now().Add(-regionActivityWindow))
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	for i := range regions {
+		regions[i].Travelers, regions[i].Vendors = 0, 0
+	}
+	for _, p := range vendors {
+		if i := nearestRegion(regions, p.Lat, p.Lng); i >= 0 {
+			regions[i].Vendors += p.Weight
+		}
+	}
+	for _, p := range activity {
+		if i := nearestRegion(regions, p.Lat, p.Lng); i >= 0 {
+			regions[i].Travelers += p.Weight
+		}
+	}
 	writeJSON(w, http.StatusOK, regions)
+}
+
+// nearestRegion is the index of the region whose centre is closest to
+// lat/lng, or -1 when none is within regionMaxKm.
+func nearestRegion(regions []domain.Region, lat, lng float64) int {
+	best, bestKm := -1, float64(regionMaxKm)
+	for i, rg := range regions {
+		if km := geo.HaversineKm(lat, lng, rg.Lat, rg.Lng); km <= bestKm {
+			best, bestKm = i, km
+		}
+	}
+	return best
 }
 
 func (s *Server) handleAdminSubscriptions(w http.ResponseWriter, r *http.Request) {
