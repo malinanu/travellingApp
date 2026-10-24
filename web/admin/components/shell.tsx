@@ -6,7 +6,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Bell, CreditCard, Flag, Headphones, History, KeyRound, Map, MapPin, Moon, Radio, Search, ShieldAlert, Shapes, Sparkles, Store, Sun, UserCheck, Users, LucideIcon,
+  Activity, Bell, CreditCard, Headphones, History, KeyRound, Map, MapPin, Moon, Search, Smartphone, ShieldAlert, Shapes, Sparkles, Store, Sun, UserCheck, Users, LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -15,12 +15,11 @@ import { useEffect, useRef, useState } from 'react';
 import type { AdminKPIs, AdminNotification, AdminSearchResults, User } from '@spotto/shared';
 import { api } from '../lib/api';
 
-const NAV: { href: string; label: string; icon: LucideIcon; live?: boolean; superAdminOnly?: boolean }[] = [
+const NAV: { href: string; label: string; icon: LucideIcon; superAdminOnly?: boolean }[] = [
   { href: '/queue', label: 'Approval queue', icon: UserCheck },
   { href: '/vendors', label: 'Vendors', icon: Store },
   { href: '/users', label: 'Users', icon: Users },
   { href: '/quests', label: 'Quests', icon: Activity },
-  { href: '/content', label: 'Content monitor', icon: Radio, live: true },
   { href: '/geo', label: 'Geo-analytics', icon: Map },
   { href: '/subscriptions', label: 'Subscriptions', icon: CreditCard },
   { href: '/audio', label: 'Audio guides', icon: Headphones },
@@ -58,13 +57,13 @@ function useKpis() {
   });
 }
 
-const NOTIF_ICONS: Record<string, LucideIcon> = { UserCheck, Flag, ShieldAlert };
+const NOTIF_ICONS: Record<string, LucideIcon> = { UserCheck, ShieldAlert, Smartphone };
 // Each bucket id from Store.AdminNotifications routes to the page where an
 // admin actually resolves it.
 const NOTIF_TARGET: Record<string, string> = {
   'pending-vendors': '/queue',
-  'flagged-content': '/content',
   'bad-review-vendors': '/geo',
+  'phone-codes': '/',
 };
 
 function toneStyle(tone: string) {
@@ -204,9 +203,6 @@ function Rail({ pending }: { pending: number }) {
                   {pending}
                 </span>
               )}
-              {n.live && (
-                <span className="ml-auto w-2 h-2 rounded-full" style={{ background: '#16a34a', boxShadow: '0 0 0 3px rgba(22,163,74,0.25)' }} />
-              )}
             </Link>
           );
         })}
@@ -226,13 +222,11 @@ function Rail({ pending }: { pending: number }) {
   );
 }
 
-function resultRoute(kind: 'vendor' | 'feedItem' | 'subscription', status?: string, id?: string): string {
+function resultRoute(kind: 'vendor' | 'subscription', status?: string, id?: string): string {
   // Non-pending vendors used to route to /geo, which silently drops any
   // vendor without coordinates — /vendors always has a row for them.
   let route = '/subscriptions';
   if (kind === 'vendor') route = status === 'pending' ? '/queue' : '/vendors';
-  else if (kind === 'feedItem') route = '/content';
-  
   return id ? `${route}?id=${id}` : route;
 }
 
@@ -281,7 +275,7 @@ function CommandSearch() {
   };
 
   const showDropdown = open && enabled;
-  const hasResults = !!results && (results.vendors.length + results.feedItems.length + results.subscriptions.length) > 0;
+  const hasResults = !!results && (results.vendors.length + results.subscriptions.length) > 0;
 
   return (
     <div className="relative" ref={ref}>
@@ -292,7 +286,7 @@ function CommandSearch() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onFocus={() => setOpen(true)}
-          placeholder="Search vendors, content, IDs…"
+          placeholder="Search vendors, subscriptions…"
           className="bg-transparent outline-none text-[13px] font-medium w-full"
         />
         <kbd className="text-[10px] font-mono rounded px-1 py-0.5" style={{ background: 'var(--surface)', border: '1px solid var(--line)', color: 'var(--muted)' }}>
@@ -311,13 +305,6 @@ function CommandSearch() {
             <ResultGroup label="Vendors">
               {results.vendors.map((v) => (
                 <ResultRow key={v.id} title={v.name} sub={`${v.category} · ${v.town}`} onClick={() => go(resultRoute('vendor', v.status, v.id))} />
-              ))}
-            </ResultGroup>
-          )}
-          {results && results.feedItems.length > 0 && (
-            <ResultGroup label="Feed items">
-              {results.feedItems.map((f) => (
-                <ResultRow key={f.id} title={f.vendor || `#${f.id}`} sub={f.text} onClick={() => go(resultRoute('feedItem', undefined, String(f.id)))} />
               ))}
             </ResultGroup>
           )}
@@ -360,7 +347,6 @@ function CommandBar({ title }: { title: string }) {
 
   const strip = [
     { label: 'Pending approvals', value: kpis?.pendingVendors ?? '—' },
-    { label: 'Feed items', value: kpis?.feedItems ?? '—' },
     { label: 'Active subs', value: kpis?.activeSubs ?? '—' },
     { label: 'Platform MRR', value: kpis ? `$${kpis.mrr.toLocaleString()}` : '—' },
   ];

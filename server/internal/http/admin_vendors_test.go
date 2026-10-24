@@ -260,7 +260,6 @@ func purgeVendorStatsTestData(t *testing.T, store *postgres.Store, ctx context.C
 		`DELETE FROM vendor_invites WHERE vendor_id LIKE 'ven_stats_%'`,
 		`DELETE FROM vendor_blobs WHERE vendor_id LIKE 'ven_stats_%'`,
 		`DELETE FROM vendor_notifications WHERE vendor_id LIKE 'ven_stats_%'`,
-		`DELETE FROM feed_items WHERE vendor IN ('Stats Subject Cafe', 'Stats Suspended Inn', 'Stats No Coords Stall')`,
 		`DELETE FROM places WHERE id LIKE 'plc_stats_%'`,
 		`DELETE FROM users WHERE id LIKE 'usr_stats_%'`,
 		`DELETE FROM vendors WHERE id LIKE 'ven_stats_%'`,

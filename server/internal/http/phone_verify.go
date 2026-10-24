@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"math/big"
 	"net/http"
@@ -31,6 +32,14 @@ const (
 	phoneResendAfter   = 60 * time.Second
 	phoneMaxAttempts   = 5
 	maxPhoneQueryChars = 40
+
+	// Each code costs a WhatsApp/SMS message. Besides the platform-wide
+	// daily limits super-admins set on the dashboard, one account gets a
+	// handful an hour and a day, and one number a handful a day however
+	// many accounts ask.
+	phoneCodesPerUserHour  = 5
+	phoneCodesPerUserDay   = 10
+	phoneCodesPerNumberDay = 5
 )
 
 func hashPhoneCode(userID, code string) string {
@@ -50,6 +59,11 @@ func newPhoneCode() (string, error) {
 // already uses the number being typed, so it can suggest a different one.
 func (s *Server) handleMyPhoneCheck(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
+	if !s.phoneCheckLimit.allow(c.Subject) {
+		writeErr(w, http.StatusTooManyRequests, "Too many number checks — try again later.")
+		return
+	}
+	s.phoneCheckLimit.recordFailure(c.Subject) // counts every check; never reset
 	raw := r.URL.Query().Get("phone")
 	if !validateTextLength(w, "Phone", raw, maxPhoneQueryChars) {
 		return
@@ -152,18 +166,39 @@ func (s *Server) handlePhoneVerifyStart(w http.ResponseWriter, r *http.Request) 
 		storeErr(w, err)
 		return
 	}
-	if !s.phoneVerifyLimit.allow(u.ID) {
-		writeErr(w, http.StatusTooManyRequests, "Too many codes requested — try again in an hour.")
-		return
-	}
-	s.phoneVerifyLimit.recordFailure(u.ID) // counts every send; never reset
 
 	code, err := newPhoneCode()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
+	sriLankan := phone.IsSriLankan(u.Phone)
+	sendID, err := s.Store.ReservePhoneCodeSend(r.Context(), u.ID, phone.Key(u.Phone), req.Channel, sriLankan, postgres.PhoneSendLimits{
+		PerUserHour: phoneCodesPerUserHour, PerUserDay: phoneCodesPerUserDay, PerNumberDay: phoneCodesPerNumberDay,
+	})
+	switch {
+	case errors.Is(err, postgres.ErrPhoneSendUserLimit):
+		writeErr(w, http.StatusTooManyRequests, "Too many codes requested — try again later.")
+		return
+	case errors.Is(err, postgres.ErrPhoneSendNumberLimit):
+		writeErr(w, http.StatusTooManyRequests, "Too many codes have gone to this number today — try again tomorrow.")
+		return
+	case errors.Is(err, postgres.ErrPhoneSendDailyLimit):
+		group := "foreign numbers"
+		if sriLankan {
+			group = "Sri Lankan numbers"
+		}
+		log.Printf("phone codes: daily limit for %s reached; new codes paused until the 24-hour window clears", group)
+		writeErr(w, http.StatusTooManyRequests, "We can't send more codes right now — please try again later.")
+		return
+	case err != nil:
+		storeErr(w, err)
+		return
+	}
 	if err := s.Verify.Send(r.Context(), req.Channel, u.Phone, code); err != nil {
+		if relErr := s.Store.ReleasePhoneCodeSend(r.Context(), sendID); relErr != nil {
+			log.Printf("phone codes: release send %d: %v", sendID, relErr)
+		}
 		other := "SMS"
 		if req.Channel == verifymsg.ChannelSMS {
 			other = "WhatsApp"
@@ -253,4 +288,47 @@ func (s *Server) handlePhoneVerifyConfirm(w http.ResponseWriter, r *http.Request
 	}
 	u.AvatarURL = s.signMediaPath(u.AvatarURL)
 	writeJSON(w, http.StatusOK, u)
+}
+
+// handleAdminPhoneCodeSettings shows the daily limits on verification codes
+// and how many went out in the last 24 hours.
+func (s *Server) handleAdminPhoneCodeSettings(w http.ResponseWriter, r *http.Request) {
+	lim, err := s.Store.PhoneCodeLimits(r.Context())
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	used, err := s.Store.PhoneCodesSentLast24h(r.Context())
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		postgres.PhoneCodeLimits
+		postgres.PhoneCodeUsage
+	}{lim, used})
+}
+
+// handleAdminPutPhoneCodeLimits changes the daily limits (super-admins
+// only — they decide what the platform spends on messages).
+func (s *Server) handleAdminPutPhoneCodeLimits(w http.ResponseWriter, r *http.Request) {
+	var req postgres.PhoneCodeLimits
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.SriLanka < 1 || req.SriLanka > 100_000 || req.Other < 1 || req.Other > 100_000 {
+		writeErr(w, http.StatusBadRequest, "Each daily limit must be between 1 and 100000.")
+		return
+	}
+	before, err := s.Store.PhoneCodeLimits(r.Context())
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if err := s.Store.SetPhoneCodeLimits(r.Context(), req); err != nil {
+		storeErr(w, err)
+		return
+	}
+	s.logAdminAction(r.Context(), "settings.phone_codes", "settings", "phone_codes", map[string]any{"from": before, "to": req})
+	s.handleAdminPhoneCodeSettings(w, r)
 }

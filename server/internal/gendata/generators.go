@@ -466,38 +466,6 @@ func genGroups(ctx context.Context, store *postgres.Store, travellers []domain.U
 	return created, nil
 }
 
-func genFeedItems(ctx context.Context, store *postgres.Store, vendors []domain.Vendor, n int, now time.Time) (int, error) {
-	if len(vendors) == 0 {
-		return 0, nil
-	}
-	statusPool := []domain.FeedStatus{domain.FeedOK, domain.FeedOK, domain.FeedOK, domain.FeedReview, domain.FeedFlag}
-	created := 0
-	for i := 0; i < n; i++ {
-		v := vendors[gofakeit.Number(0, len(vendors)-1)]
-		status := statusPool[gofakeit.Number(0, len(statusPool)-1)]
-		text := gofakeit.RandomString(feedTextTemplates)
-		if status == domain.FeedFlag {
-			text = gofakeit.RandomString(feedFlagTextTemplates)
-		}
-		item := domain.FeedItem{
-			Vendor:    v.Name,
-			Town:      v.Town,
-			Type:      gofakeit.RandomString(feedTypes),
-			Text:      text,
-			Status:    status,
-			CreatedAt: now.Add(-time.Duration(gofakeit.Number(0, 60*24)) * time.Minute),
-		}
-		if status != domain.FeedOK {
-			item.Reason = gofakeit.RandomString([]string{"Unverified claim", "Spammy formatting", "Needs review"})
-		}
-		if _, err := store.InsertFeedItem(ctx, item); err != nil {
-			return created, fmt.Errorf("feed item: %w", err)
-		}
-		created++
-	}
-	return created, nil
-}
-
 func genSubscriptions(ctx context.Context, store *postgres.Store, vendors []domain.Vendor, now time.Time) (int, error) {
 	created := 0
 	for _, v := range vendors {

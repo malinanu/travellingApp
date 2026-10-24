@@ -79,20 +79,6 @@ body {
   border-color: var(--accent);
 }
 
-@keyframes feed-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.feed-in {
-  animation: feed-in 300ms ease-out;
-}
-
 @keyframes toast-in {
   from {
     opacity: 0;

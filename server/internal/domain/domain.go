@@ -382,26 +382,6 @@ type Group struct {
 	MemberIDs []string `json:"memberIds"`
 }
 
-type FeedStatus string
-
-const (
-	FeedOK     FeedStatus = "ok"
-	FeedReview FeedStatus = "review"
-	FeedFlag   FeedStatus = "flag"
-)
-
-type FeedItem struct {
-	ID        int64      `json:"id"`
-	Vendor    string     `json:"vendor"`
-	Town      string     `json:"town"`
-	Type      string     `json:"type"` // Offer/Event
-	Text      string     `json:"text"`
-	Status    FeedStatus `json:"status"`
-	Reason    string     `json:"reason,omitempty"`
-	Resolved  string     `json:"resolved,omitempty"` // approved/removed/warned
-	CreatedAt time.Time  `json:"createdAt"`
-}
-
 type Region struct {
 	ID        string  `json:"id"`
 	Name      string  `json:"name"`
