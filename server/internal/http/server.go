@@ -480,6 +480,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/vendors/map", s.handleAdminVendorsMap)
 		r.Get("/admin/vendors/near", s.handleAdminVendorsNear)
 		r.Get("/admin/vendors/{id}/reviews", s.handleAdminVendorReviews)
+		r.Get("/admin/vendors/{id}/place", s.handleAdminVendorPlace)
 		r.Delete("/admin/reviews/{id}", s.handleAdminDeleteReview)
 		r.Get("/admin/vendors/{id}/stats", s.handleAdminVendorStats)
 		r.Get("/admin/vendors/{id}/offers", s.handleAdminVendorOffers)
@@ -565,8 +566,10 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
-}
-
+}
+
+
+
 // youtubeClient is nil without a key, so YouTube links skip the API.
 func youtubeClient(key string) *youtube.Client {
 	if key == "" {

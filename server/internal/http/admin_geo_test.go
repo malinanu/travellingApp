@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,5 +129,80 @@ func TestAdminRegionsAreLive(t *testing.T) {
 	}
 	if b := got["geo_test_b"]; b.Vendors != 1 || b.Travelers != 1 {
 		t.Errorf("region B: %d businesses, %d traveller actions; want 1 and 1", b.Vendors, b.Travelers)
+	}
+}
+
+func TestAdminVendorPlaceAndImportedNames(t *testing.T) {
+	store := mustConnect(t)
+	ctx := context.Background()
+	purge := func() {
+		store.Pool.Exec(ctx, `DELETE FROM places WHERE id LIKE 'plc_gplace_%'`)
+		store.Pool.Exec(ctx, `DELETE FROM vendors WHERE id LIKE 'ven_gplace_%'`)
+		store.Pool.Exec(ctx, `DELETE FROM users WHERE id LIKE 'usr_gplace_%'`)
+	}
+	purge()
+	t.Cleanup(purge)
+
+	// An imported business ("<place> Vendor"), a business genuinely named
+	// "... Vendor" whose place has another name, and one with no place.
+	for _, v := range [][2]string{
+		{"ven_gplace_imp", "Cafe Kumbuk Vendor"},
+		{"ven_gplace_real", "Lanka Fruit Vendor"},
+		{"ven_gplace_none", "No Place Vendor"},
+	} {
+		execSQL(t, store, `INSERT INTO vendors (id, name, category, status) VALUES ($1, $2, 'coffee', 'approved')`, v[0], v[1])
+	}
+	execSQL(t, store, `INSERT INTO places (id, name, vendor_id, data) VALUES
+		('plc_gplace_imp', 'Cafe Kumbuk', 'ven_gplace_imp', '{"blurb":"Garden café","cover":"/media/raw/vendor/ven_gplace_imp/c.jpg","hours":{"monday":{"open":"08:00","close":"18:00"}}}'),
+		('plc_gplace_real', 'Fruit stall', 'ven_gplace_real', '{}')`)
+
+	n, err := store.DropImportedVendorNameSuffix(ctx)
+	if err != nil || n < 1 {
+		t.Fatalf("rename: %d, %v", n, err)
+	}
+	for id, want := range map[string]string{
+		"ven_gplace_imp":  "Cafe Kumbuk",
+		"ven_gplace_real": "Lanka Fruit Vendor",
+		"ven_gplace_none": "No Place Vendor",
+	} {
+		var got string
+		store.Pool.QueryRow(ctx, `SELECT name FROM vendors WHERE id=$1`, id).Scan(&got)
+		if got != want {
+			t.Errorf("%s: name %q, want %q", id, got, want)
+		}
+	}
+	if n, err := store.DropImportedVendorNameSuffix(ctx); err != nil || n != 0 {
+		t.Fatalf("second run: %d, %v", n, err)
+	}
+
+	pw, _ := auth.HashPassword("testpass123")
+	for _, u := range []domain.User{
+		{ID: "usr_gplace_admin", Email: "admin@gplacetest.dev", Role: domain.RoleAdmin},
+		{ID: "usr_gplace_trav", Email: "trav@gplacetest.dev", Role: domain.RoleTraveller},
+	} {
+		u.PasswordHash, u.CreatedAt = pw, time.Now()
+		must(t, store.CreateUser(ctx, u))
+	}
+	cfg := config.Config{CORSOrigins: []string{"http://localhost:3000"}, TOTPEncryptionKey: make([]byte, 32)}
+	srv := httptest.NewServer(httpapi.New(store, auth.NewTokens("test-secret-test-secret-test-secret-1234"), cfg).Router(cfg))
+	t.Cleanup(srv.Close)
+	admin := loginAs(t, srv, "admin@gplacetest.dev", "testpass123")
+
+	var place map[string]any
+	if code := doReqJSON(t, srv, http.MethodGet, "/admin/vendors/ven_gplace_imp/place", admin, nil, &place); code != http.StatusOK {
+		t.Fatalf("place: %d", code)
+	}
+	if place["id"] != "plc_gplace_imp" || place["blurb"] != "Garden café" {
+		t.Errorf("place: %v", place)
+	}
+	if cover, _ := place["cover"].(string); !strings.Contains(cover, "?token=") {
+		t.Errorf("cover not signed: %q", cover)
+	}
+	if code := doReqJSON(t, srv, http.MethodGet, "/admin/vendors/ven_gplace_none/place", admin, nil, nil); code != http.StatusNotFound {
+		t.Errorf("no place: want 404, got %d", code)
+	}
+	trav := loginAs(t, srv, "trav@gplacetest.dev", "testpass123")
+	if code := doReqJSON(t, srv, http.MethodGet, "/admin/vendors/ven_gplace_imp/place", trav, nil, nil); code != http.StatusForbidden {
+		t.Errorf("traveller: want 403, got %d", code)
 	}
 }

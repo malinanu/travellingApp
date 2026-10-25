@@ -127,6 +127,19 @@ func (s *Server) handleAdminVendorsNear(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, vendors)
 }
 
+// handleAdminVendorPlace returns a business's traveller-facing place (photos,
+// blurb, hours, contact, tags) for the geo page's details panel, or 404 when
+// it has none. Unlike GET /places/{id} it never calls Google Places, which
+// is billed per lookup.
+func (s *Server) handleAdminVendorPlace(w http.ResponseWriter, r *http.Request) {
+	p, err := s.Store.PlaceByVendorID(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.placeJSON(r.Context(), p))
+}
+
 // handleAdminVendorReviews lists a vendor's reviews. Default is the bad
 // (<=2 star) reviews behind the geo map's flag; ?all=1 returns every review
 // for the vendor-detail Reviews tab.

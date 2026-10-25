@@ -115,6 +115,21 @@ func (s *Store) DeleteVendorCategory(ctx context.Context, id string) error {
 	return nil
 }
 
+// DropImportedVendorNameSuffix renames businesses the Sri Lanka importer
+// called "<place name> Vendor" back to their place's name. Only an exact
+// match is touched, so a business genuinely named "... Vendor" stays. Safe
+// to run on every start: once renamed nothing matches.
+func (s *Store) DropImportedVendorNameSuffix(ctx context.Context) (int, error) {
+	tag, err := s.Pool.Exec(ctx, `
+		UPDATE vendors v SET name = p.name
+		FROM places p
+		WHERE p.vendor_id = v.id AND p.name <> '' AND v.name = p.name || ' Vendor'`)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 // RecategorizeUncategorizedVendors gives every business still filed under
 // the catch-all "uncategorized" category (migration 032 put every empty
 // category there — mostly places from an early import) its real category,
