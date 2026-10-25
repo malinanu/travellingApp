@@ -81,6 +81,7 @@ func main() {
 	go srv.StartBRCertScheduler(ctx)
 	go srv.StartBookingReminderScheduler(ctx)
 	go srv.StartVendorReportScheduler(ctx)
+	go srv.StartPresencePruner(ctx)
 	go srv.StartThumbnailWorker(ctx)
 	go srv.StartEmbeddingWorker(ctx)
 	go srv.StartInspirationWorker(ctx)

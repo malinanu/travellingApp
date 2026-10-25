@@ -1,6 +1,6 @@
 // A business's map-pin look — its category group's colour and the
-// category's icon — shared by the geo map's pins (vendor-map.tsx) and the
-// geo page's lists and details, so the two can't drift apart. No Leaflet
+// category's icon — shared by the geo map's pins (geo-map.tsx) and the
+// geo page's legend, so the two can't drift apart. No Leaflet
 // here, for the same reason as region-tone.ts: the page imports this
 // statically, while the map is lazy-loaded.
 

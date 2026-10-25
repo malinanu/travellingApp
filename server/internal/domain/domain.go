@@ -38,6 +38,10 @@ type User struct {
 	// travellers feature; Lat/Lng/LocationUpdatedAt are only ever written
 	// when it's true, and cleared when it's turned off.
 	ShareLocation     bool       `json:"shareLocation"`
+	// UsageAnalytics is the app's "Usage analytics" switch (on unless the
+	// traveller turns it off): while on, the rough ~1 km area they use the
+	// map from is recorded for the admin geo page (traveller_presence).
+	UsageAnalytics bool `json:"usageAnalytics"`
 	Lat               *float64   `json:"-"`
 	Lng               *float64   `json:"-"`
 	LocationUpdatedAt *time.Time `json:"-"`

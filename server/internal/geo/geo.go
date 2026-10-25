@@ -26,7 +26,7 @@ func NearestRegion(lat, lng float64) domain.Region {
 }
 
 // HaversineKm is the great-circle distance in km between two lat/lng
-// points — same formula as the SQL version used by VendorsNear/
+// points — same formula as the SQL version used by
 // NearbyTravellers, just applied in Go for callers whose lat/lng live
 // inside a JSONB data blob rather than dedicated columns.
 func HaversineKm(lat1, lng1, lat2, lng2 float64) float64 {
