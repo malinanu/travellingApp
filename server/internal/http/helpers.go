@@ -75,6 +75,17 @@ func newBookingCode() string {
 	return "BOOK-" + string(out)
 }
 
+// newGroupCode returns GRP-XXXXXX for a travel group (see handlePutGroup).
+func newGroupCode() string {
+	b := make([]byte, 6)
+	rand.Read(b)
+	out := make([]byte, 6)
+	for i, v := range b {
+		out[i] = codeAlphabet[int(v)%len(codeAlphabet)]
+	}
+	return "GRP-" + string(out)
+}
+
 // sanitizeText trims whitespace and caps string length to maxLen if maxLen > 0.
 func sanitizeText(s string, maxLen int) string {
 	s = strings.TrimSpace(s)

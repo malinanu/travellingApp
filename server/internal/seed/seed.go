@@ -75,7 +75,7 @@ func Run(ctx context.Context, s *postgres.Store) error {
 	// Members must be real user IDs (not the old mock traveler names) so
 	// GET /me/group can resolve them to actual profiles.
 	if err := s.UpsertGroup(ctx, domain.Group{
-		OwnerID: "usr_lena", Name: "Weligama Crew", Code: "WLG-4K2",
+		OwnerID: "usr_lena", Name: "Spotto Crew", Code: "GRP-LENA01",
 		MemberIDs: []string{"usr_tom", "usr_sara", "usr_marco"},
 	}); err != nil {
 		return fmt.Errorf("group: %w", err)

@@ -9,8 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
-import '../../../data/mock/places.dart' as data;
-import '../../../data/mock/trip_catalog.dart';
+import '../../../data/catalog/travellers.dart' as data;
+import '../../../data/catalog/trip_catalog.dart';
 import '../../../data/repositories/inspiration_repository.dart';
 import '../../../data/repositories/repositories.dart';
 import '../place_detail/business_drawer.dart';

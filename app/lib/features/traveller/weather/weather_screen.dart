@@ -17,7 +17,7 @@ import '../../../core/theme/palette.dart';
 import '../../../core/widgets/spotto_card.dart';
 import '../../../core/widgets/spotto_icons.dart';
 import '../../../core/widgets/stagger_in.dart';
-import '../../../data/mock/sri_lanka_locations.dart';
+import '../../../data/catalog/sri_lanka_locations.dart';
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import 'activity_rules.dart';

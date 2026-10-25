@@ -1,4 +1,4 @@
-# Spotto — Weligama travel companion
+# Spotto — Sri Lanka travel companion
 
 Three platforms sharing one Go API:
 
@@ -51,7 +51,7 @@ flutter run               # API defaults to http://10.0.2.2:8080; override with 
 
 ### Google Maps setup (Discover tab)
 
-The Discover tab shows a real Google Map of Weligama Bay. It needs a Maps SDK
+The Discover tab shows a real Google Map around the traveller (the whole island until their location is known). It needs a Maps SDK
 key — Android and iOS each need their platform's SDK enabled on the same (or
 separate) Cloud project; enabling only one won't make the other platform's
 map render.

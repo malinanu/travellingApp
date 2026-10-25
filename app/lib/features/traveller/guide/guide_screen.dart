@@ -14,7 +14,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
-import '../../../data/mock/places.dart' as data;
+import '../../../data/catalog/app_options.dart' as data;
 import '../../../data/repositories/repositories.dart';
 import 'guide_cards.dart';
 import 'guide_payload.dart';
@@ -163,7 +163,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     // already caps every branch with its own timeout, so this can't hang.
     final (pos, locationResult) = await ref.read(devicePositionProvider.future);
     // Only a real fix counts: when permission is off the provider falls back
-    // to Weligama Bay, and the guide must not recommend around that.
+    // to the centre of Sri Lanka, and the guide must not recommend around that.
     final locationKnown = locationResult == DeviceLocationResult.granted;
     try {
       final res = await ref.read(apiProvider).dio.post(

@@ -26,12 +26,12 @@ const guideMaxPlaceCards = 4
 type guideLocation struct {
 	Known    bool
 	Lat, Lng float64
-	Area     string // nearest region name, e.g. "Weligama"
+	Area     string // nearest region name, e.g. "Galle"
 }
 
 // newGuideLocation interprets a chat request's location. locationKnown is
 // nil from app builds older than the flag; they only ever sent a real fix
-// or the Weligama fallback, so a non-zero point is trusted as before.
+// or the app's old fallback point, so a non-zero point is trusted as before.
 func newGuideLocation(lat, lng float64, locationKnown *bool) guideLocation {
 	if (lat == 0 && lng == 0) || (locationKnown != nil && !*locationKnown) {
 		return guideLocation{}

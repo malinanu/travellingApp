@@ -8,7 +8,7 @@ import '../../../../core/theme/palette.dart';
 import '../../../../core/widgets/press_scale.dart';
 import '../../../../core/widgets/sheet_scaffold.dart';
 import '../../../../core/widgets/spotto_icons.dart';
-import '../../../../data/mock/trip_catalog.dart';
+import '../../../../data/catalog/trip_catalog.dart';
 import '../../../../data/repositories/repositories.dart';
 
 Future<void> showAddStopSheet(BuildContext context, WidgetRef ref, int dayIx) {
