@@ -133,7 +133,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled, &u.TokenVersion,
 		&u.ShareLocation, &u.Lat, &u.Lng, &u.LocationUpdatedAt,
 		&u.Phone, &u.VendorRole, &u.NotifyRedemptions, &u.NotifyReviews, &u.NotifyPayouts, &u.NotifyGrowthTips,
-		&u.GoogleID, &u.AvatarURL, &u.PhoneVerified)
+		&u.GoogleID, &u.AvatarURL, &u.PhoneVerified, &u.UsageAnalytics)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -145,7 +145,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url, phone_verified_at IS NOT NULL`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url, phone_verified_at IS NOT NULL, usage_analytics`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -306,6 +306,47 @@ func (s *Store) SetShareLocation(ctx context.Context, id string, share bool) err
 		WHERE id=$1`,
 		id, share)
 	return err
+}
+
+// SetUsageAnalytics saves the traveller's "Usage analytics" switch. Turning
+// it off also deletes the rough areas recorded for them so far.
+func (s *Store) SetUsageAnalytics(ctx context.Context, id string, on bool) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `UPDATE users SET usage_analytics=$2 WHERE id=$1`, id, on); err != nil {
+		return err
+	}
+	if !on {
+		if _, err := tx.Exec(ctx, `DELETE FROM traveller_presence WHERE user_id=$1`, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// RecordTravellerPresence notes the rough area (a cell of degrees x 100,
+// about 1.1 km) a traveller is using the app from, once per cell per UTC
+// day — only for travellers, and only while their usage analytics is on.
+// The exact position is never stored.
+func (s *Store) RecordTravellerPresence(ctx context.Context, userID string, lat, lng float64) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO traveller_presence (user_id, day, cell_lat, cell_lng)
+		SELECT id, (now() AT TIME ZONE 'UTC')::date, round($2::float8 * 100)::int, round($3::float8 * 100)::int
+		FROM users WHERE id=$1 AND role='traveller' AND usage_analytics
+		ON CONFLICT DO NOTHING`, userID, lat, lng)
+	return err
+}
+
+// PruneTravellerPresence deletes recorded areas from before the given day.
+func (s *Store) PruneTravellerPresence(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := s.Pool.Exec(ctx, `DELETE FROM traveller_presence WHERE day < $1::date`, before.UTC().Format("2006-01-02"))
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // UpdateUserLocation records the traveller's current position. Callers
@@ -846,44 +887,6 @@ func (s *Store) VendorsForMap(ctx context.Context) ([]domain.Vendor, error) {
 		) r ON r.vendor_id = v.id
 		WHERE v.lat != 0 OR v.lng != 0
 		ORDER BY v.name`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []domain.Vendor
-	for rows.Next() {
-		v, badCount, err := scanVendorWithBadCount(rows)
-		if err != nil {
-			return nil, err
-		}
-		v.BadReviewCount = badCount
-		v.Flagged = badCount >= BadReviewFlagThreshold
-		out = append(out, v)
-	}
-	return out, rows.Err()
-}
-
-// VendorsNear returns vendors within radiusKm of (lat,lng) using the
-// haversine formula — the only proximity query in the app, so a full GIS
-// extension isn't warranted.
-func (s *Store) VendorsNear(ctx context.Context, lat, lng, radiusKm float64) ([]domain.Vendor, error) {
-	rows, err := s.Pool.Query(ctx, `
-		SELECT v.`+vendorColsPrefixed()+`,
-			COALESCE(r.bad_count, 0) AS bad_count
-		FROM vendors v
-		LEFT JOIN (
-			SELECT vendor_id, count(*) AS bad_count
-			FROM reviews
-			WHERE vendor_id IS NOT NULL AND rating <= 2
-			GROUP BY vendor_id
-		) r ON r.vendor_id = v.id
-		WHERE (v.lat != 0 OR v.lng != 0) AND (
-			6371 * acos(least(1.0, greatest(-1.0,
-				cos(radians($1)) * cos(radians(v.lat)) * cos(radians(v.lng) - radians($2))
-				+ sin(radians($1)) * sin(radians(v.lat))
-			)))
-		) <= $3
-		ORDER BY v.name`, lat, lng, radiusKm)
 	if err != nil {
 		return nil, err
 	}

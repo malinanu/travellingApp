@@ -144,6 +144,7 @@ func (s *Server) handlePlaces(w http.ResponseWriter, r *http.Request) {
 	maxDist, maxDistErr := strconv.ParseFloat(maxDistStr, 64)
 
 	if latErr == nil && lngErr == nil {
+		s.recordPresence(r, lat, lng)
 		type withDist struct {
 			m    map[string]any
 			dist float64

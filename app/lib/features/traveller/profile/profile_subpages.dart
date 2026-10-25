@@ -391,20 +391,20 @@ class PrivacyPage extends ConsumerStatefulWidget {
 }
 
 class _PrivacyPageState extends ConsumerState<PrivacyPage> {
-  // 'location' is backed by the real /me/privacy endpoint (see meProvider
-  // below); the rest have no backend field yet and stay local-only.
+  // 'Share live location' and 'Usage analytics' are backed by the real
+  // /me/privacy endpoint (see meProvider below); the rest have no backend
+  // field yet and stay local-only.
   final Map<String, bool> _toggles = {
     'group': true,
     'vibe': true,
-    'analytics': false,
     'marketing': false,
   };
-  bool _locationBusy = false;
+  String? _busyField;
 
-  Future<void> _setShareLocation(bool value) async {
-    setState(() => _locationBusy = true);
+  Future<void> _setPrivacy(String field, bool value) async {
+    setState(() => _busyField = field);
     try {
-      await ref.read(apiProvider).dio.put('/me/privacy', data: {'shareLocation': value});
+      await ref.read(apiProvider).dio.put('/me/privacy', data: {field: value});
       await ref.read(meProvider.notifier).refresh();
     } catch (e) {
       if (mounted) {
@@ -412,7 +412,7 @@ class _PrivacyPageState extends ConsumerState<PrivacyPage> {
             .showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
       }
     } finally {
-      if (mounted) setState(() => _locationBusy = false);
+      if (mounted) setState(() => _busyField = null);
     }
   }
 
@@ -461,8 +461,8 @@ class _PrivacyPageState extends ConsumerState<PrivacyPage> {
             'Other opted-in travellers nearby can see you on the map',
             Icons.place_outlined,
             value: ref.watch(meProvider)?['shareLocation'] as bool? ?? false,
-            onChanged: _setShareLocation,
-            busy: _locationBusy,
+            onChanged: (v) => _setPrivacy('shareLocation', v),
+            busy: _busyField == 'shareLocation',
           ),
           const Divider(height: 1),
           toggleRow(
@@ -487,10 +487,14 @@ class _PrivacyPageState extends ConsumerState<PrivacyPage> {
         ]),
         const SizedBox(height: 22),
         sectionCard(context, 'Data', [
-          toggleRow('Usage analytics', 'Help improve Spotto with anonymous stats',
-              Icons.insights_outlined,
-              value: _toggles['analytics']!,
-              onChanged: (v) => setState(() => _toggles['analytics'] = v)),
+          toggleRow(
+            'Usage analytics',
+            'Anonymous stats, including your rough area (about 1 km) when you use the map',
+            Icons.insights_outlined,
+            value: ref.watch(meProvider)?['usageAnalytics'] as bool? ?? true,
+            onChanged: (v) => _setPrivacy('usageAnalytics', v),
+            busy: _busyField == 'usageAnalytics',
+          ),
           const Divider(height: 1),
           toggleRow('Personalised offers', 'Deals matched to your travel style',
               Icons.campaign_outlined,

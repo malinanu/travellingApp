@@ -1,5 +1,5 @@
 // Pure helper for the geo page's town circles and Opportunity leaderboard,
-// split out from vendor-map.tsx so pages that only need this (e.g.
+// split out from geo-map.tsx so pages that only need this (e.g.
 // geo/page.tsx's leaderboard) don't statically import a module that touches
 // `window` at load time via react-leaflet — Next 16's Turbopack evaluates
 // static imports eagerly during prerendering, unlike the previous webpack

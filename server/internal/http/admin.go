@@ -3,7 +3,6 @@
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -101,43 +100,6 @@ func (s *Server) handleAdminVendorsMap(w http.ResponseWriter, r *http.Request) {
 		vendors = []domain.Vendor{}
 	}
 	writeJSON(w, http.StatusOK, vendors)
-}
-
-// handleAdminVendorsNear powers the investigation-pin feature: vendors
-// within radiusKm (default 5) of an arbitrary point a super-admin clicks.
-func (s *Server) handleAdminVendorsNear(w http.ResponseWriter, r *http.Request) {
-	lat, err1 := strconv.ParseFloat(r.URL.Query().Get("lat"), 64)
-	lng, err2 := strconv.ParseFloat(r.URL.Query().Get("lng"), 64)
-	if err1 != nil || err2 != nil {
-		writeErr(w, http.StatusBadRequest, "lat and lng are required")
-		return
-	}
-	radiusKm := 5.0
-	if v, err := strconv.ParseFloat(r.URL.Query().Get("radiusKm"), 64); err == nil && v > 0 {
-		radiusKm = v
-	}
-	vendors, err := s.Store.VendorsNear(r.Context(), lat, lng, radiusKm)
-	if err != nil {
-		storeErr(w, err)
-		return
-	}
-	if vendors == nil {
-		vendors = []domain.Vendor{}
-	}
-	writeJSON(w, http.StatusOK, vendors)
-}
-
-// handleAdminVendorPlace returns a business's traveller-facing place (photos,
-// blurb, hours, contact, tags) for the geo page's details panel, or 404 when
-// it has none. Unlike GET /places/{id} it never calls Google Places, which
-// is billed per lookup.
-func (s *Server) handleAdminVendorPlace(w http.ResponseWriter, r *http.Request) {
-	p, err := s.Store.PlaceByVendorID(r.Context(), chi.URLParam(r, "id"))
-	if err != nil {
-		storeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, s.placeJSON(r.Context(), p))
 }
 
 // handleAdminVendorReviews lists a vendor's reviews. Default is the bad

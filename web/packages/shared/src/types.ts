@@ -622,6 +622,69 @@ export interface AdminVendorStats {
   subRenewsAt?: string;
 }
 
+/** One heat-map layer on the admin geo page — GET /admin/geo/heat. `previous*`
+ * is the period before the chosen one (absent meaning for `trips`, which
+ * looks ahead). */
+export interface AdminGeoHeat {
+  layer: 'travellers' | 'activity' | 'opportunity' | 'businesses' | 'wanted' | 'trips';
+  days: number;
+  points: { lat: number; lng: number; w: number }[];
+  total: number;
+  previousTotal: number;
+  regions: AdminGeoTown[];
+  /** Activity layers only: actions per type in the period. */
+  breakdown?: Record<string, number>;
+  /** Wanted layer only: most-saved places that aren't on Spotto. */
+  wanted?: AdminWantedPlace[];
+}
+
+export interface AdminGeoTown {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  value: number;
+  previous: number;
+  /** Live (approved) businesses near the town, in the chosen category. */
+  businesses: number;
+  /** A traveller count too small to show (under 3). */
+  hidden?: boolean;
+}
+
+export interface AdminWantedPlace {
+  id: string;
+  name: string;
+  city: string;
+  kind: string;
+  lat: number;
+  lng: number;
+  mapsUrl: string;
+  savers: number;
+  previous: number;
+  lastSaved: string;
+}
+
+export interface AdminGeoFilters {
+  countries: { value: string; count: number }[];
+  styles: { value: string; count: number }[];
+  activityTypes: string[];
+}
+
+/** Everything within radiusKm of a clicked point — GET /admin/geo/area. */
+export interface AdminGeoArea {
+  lat: number;
+  lng: number;
+  radiusKm: number;
+  days: number;
+  travellers: number;
+  travellersHidden?: boolean;
+  activity: Record<string, number>;
+  liveBusinesses: number;
+  newBusinesses: number;
+  wantedPlaces: number;
+  upcomingStops: number;
+}
+
 /** Network-wide vendor roll-up behind the Vendors page's aggregate band —
  * the same activity metrics as AdminVendorStats summed across every vendor,
  * plus a status breakdown. `flagged` counts vendors, not reviews. */

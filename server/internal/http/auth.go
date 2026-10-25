@@ -511,24 +511,37 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"token": token})
 }
 
-// handleUpdatePrivacy toggles the traveller's nearby-travellers consent.
-// Turning it off clears any previously reported position (see
-// Store.SetShareLocation) rather than leaving it stale and merely unused.
+// handleUpdatePrivacy saves the traveller's privacy switches: the
+// nearby-travellers consent (turning it off clears any previously reported
+// position, see Store.SetShareLocation) and usage analytics (turning it off
+// deletes their recorded rough areas). Only the switches sent change.
 func (s *Server) handleUpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	var req struct {
-		ShareLocation bool `json:"shareLocation"`
-		PublicProfile bool `json:"publicProfile"`
-		ShowActivity  bool `json:"showActivity"`
+		ShareLocation  *bool `json:"shareLocation"`
+		UsageAnalytics *bool `json:"usageAnalytics"`
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if err := s.Store.SetShareLocation(r.Context(), c.Subject, req.ShareLocation); err != nil {
-		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
+	if req.ShareLocation != nil {
+		if err := s.Store.SetShareLocation(r.Context(), c.Subject, *req.ShareLocation); err != nil {
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
+			return
+		}
+	}
+	if req.UsageAnalytics != nil {
+		if err := s.Store.SetUsageAnalytics(r.Context(), c.Subject, *req.UsageAnalytics); err != nil {
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
+			return
+		}
+	}
+	u, err := s.Store.UserByID(r.Context(), c.Subject)
+	if err != nil {
+		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, req)
+	writeJSON(w, http.StatusOK, map[string]bool{"shareLocation": u.ShareLocation, "usageAnalytics": u.UsageAnalytics})
 }
 
 // handleUpdateMyContact updates the account page's editable identity
