@@ -287,7 +287,7 @@ class Place {
   final VibeAggregate vibe; // place's current vibe reading, from the server
   final VibeCheckin? myVibe; // caller's own latest check-in — handlePlace only
   // Trip-planner fields — only meaningful for stops surfaced in the trip
-  // catalog (see TripCatalogItem.fromPlace in data/mock/trip_catalog.dart).
+  // catalog (see TripCatalogItem.fromPlace in data/catalog/trip_catalog.dart).
   final int cost; // suggested visit cost, Rs
   final List<String> styles; // travel styles this stop suits
   final String hint; // suggested time "HH:mm"

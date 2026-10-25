@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 
-import '../../../../data/mock/places.dart' as data;
+import '../../../../data/catalog/travellers.dart' as data;
 import '../../../../data/models/models.dart';
 
 /// Resolve a traveller id → Traveler; 'me'/null → [data.me].

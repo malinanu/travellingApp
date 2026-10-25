@@ -9,7 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
-import '../../../data/mock/trip_catalog.dart';
+import '../../../data/catalog/trip_catalog.dart';
 import '../../../data/models/inspiration.dart' show kindLabel;
 import '../../../data/repositories/repositories.dart';
 import '../inspiration/board_widgets.dart';

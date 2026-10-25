@@ -6,7 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/palette.dart';
 import '../../../../core/widgets/press_scale.dart';
 import '../../../../core/widgets/spotto_icons.dart';
-import '../../../../data/mock/trip_catalog.dart';
+import '../../../../data/catalog/trip_catalog.dart';
 import '../../../../data/models/models.dart';
 
 const tripCoral = Color(0xFFC2666F); // remove-action tone from the prototype

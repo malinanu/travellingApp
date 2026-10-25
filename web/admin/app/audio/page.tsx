@@ -120,11 +120,11 @@ function NewGuideDrawer({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
             <label className="block text-[13px] font-bold mb-1.5">Latitude</label>
-            <input className="input" type="number" step="any" placeholder="5.9724" value={lat} onChange={(e) => setLat(e.target.value)} />
+            <input className="input" type="number" step="any" placeholder="7.8731" value={lat} onChange={(e) => setLat(e.target.value)} />
           </div>
           <div>
             <label className="block text-[13px] font-bold mb-1.5">Longitude</label>
-            <input className="input" type="number" step="any" placeholder="80.4292" value={lng} onChange={(e) => setLng(e.target.value)} />
+            <input className="input" type="number" step="any" placeholder="80.7718" value={lng} onChange={(e) => setLng(e.target.value)} />
           </div>
         </div>
 

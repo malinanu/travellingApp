@@ -1,8 +1,6 @@
-// Trip planner catalog + seed trip + distance helpers.
-// 1:1 port of Prototype/design/trip-data.jsx. `tripCatalog` below starts as
-// this hardcoded offline fallback, then PlacesNotifier overwrites it with
-// real /places data (mapped via TripCatalogItem.fromPlace) once fetched —
-// same offline-first pattern as seed.places/tripSeed/groupSeed elsewhere.
+// Trip planner models, catalog and distance helpers. Ported from
+// Prototype/design/trip-data.jsx. `tripCatalog` is filled from real /places
+// data by PlacesNotifier (mapped via TripCatalogItem.fromPlace).
 
 import 'dart:math' as math;
 
@@ -268,46 +266,33 @@ class Leg {
   });
 }
 
-var tripCatalog = [
-  // Spotto curated (linked to PLACES so tapping opens the business drawer)
-  TripCatalogItem(id: 'driftwood', spottoId: 'driftwood', name: 'Driftwood Coffee & Co-Work', type: 'Coworking Café', icon: 'Coffee', lat: 5.9762, lng: 80.4221, cost: 1200, styles: ['nomad'], hint: '8:00'),
-  TripCatalogItem(id: 'baysurf', spottoId: 'baysurf', name: 'Weligama Bay Surf School', type: 'Surf School', icon: 'Waves', lat: 5.9716, lng: 80.4308, cost: 3500, styles: ['surf', 'backpacker'], hint: '6:30'),
-  TripCatalogItem(id: 'hangtime', spottoId: 'hangtime', name: 'Hangtime Rooftop & Sunset Bar', type: 'Sunset Bar', icon: 'Martini', lat: 5.9789, lng: 80.4275, cost: 2800, styles: ['nomad', 'luxury'], hint: '17:30'),
-  TripCatalogItem(id: 'claystudio', spottoId: 'claystudio', name: 'Clay & Co Pottery Studio', type: 'Pottery Workshop', icon: 'Palette', lat: 5.9773, lng: 80.4189, cost: 1500, styles: ['backpacker'], hint: '10:00'),
-  TripCatalogItem(id: 'batik', spottoId: 'batik', name: 'Sea Salt Batik Atelier', type: 'Batik Atelier', icon: 'Brush', lat: 5.9747, lng: 80.4368, cost: 1000, styles: ['luxury'], hint: '11:00'),
-  // wider Weligama area
-  TripCatalogItem(id: 'bayvilla', name: 'Bay Villa Boutique Stay', type: 'Hotel', icon: 'BedDouble', lat: 5.9731, lng: 80.4254, cost: 9500, styles: ['luxury', 'nomad'], hint: '14:00'),
-  TripCatalogItem(id: 'palmhostel', name: 'Palm & Board Hostel', type: 'Hostel', icon: 'Backpack', lat: 5.9758, lng: 80.4332, cost: 2200, styles: ['backpacker', 'surf'], hint: '13:00'),
-  TripCatalogItem(id: 'welibeach', name: 'Weligama Beach Point', type: 'Beach', icon: 'Palmtree', lat: 5.9722, lng: 80.4286, cost: 0, styles: ['surf', 'backpacker', 'nomad', 'luxury'], hint: '7:00'),
-  TripCatalogItem(id: 'mirissa', name: 'Mirissa Beach', type: 'Beach', icon: 'Palmtree', lat: 5.9445, lng: 80.4595, cost: 0, styles: ['surf', 'backpacker', 'luxury'], hint: '15:00'),
-  TripCatalogItem(id: 'coconuthill', name: 'Coconut Tree Hill', type: 'Viewpoint', icon: 'Mountain', lat: 5.9417, lng: 80.4632, cost: 0, styles: ['backpacker', 'luxury', 'nomad'], hint: '17:00'),
-  TripCatalogItem(id: 'kottu', name: 'Smoky Kottu Shack', type: 'Street Food', icon: 'UtensilsCrossed', lat: 5.9755, lng: 80.4312, cost: 800, styles: ['backpacker', 'surf'], hint: '19:30'),
-  TripCatalogItem(id: 'reefdine', name: 'Reef & Vine Dining', type: 'Restaurant', icon: 'Wine', lat: 5.9740, lng: 80.4260, cost: 5200, styles: ['luxury'], hint: '19:00'),
-  TripCatalogItem(id: 'secretroot', name: 'Secret Root Spa', type: 'Spa & Wellness', icon: 'Flower2', lat: 5.9768, lng: 80.4338, cost: 4200, styles: ['luxury', 'nomad'], hint: '16:00'),
-  TripCatalogItem(id: 'taprobane', name: 'Taprobane Island Viewpoint', type: 'Viewpoint', icon: 'Mountain', lat: 5.9735, lng: 80.4203, cost: 0, styles: ['nomad', 'luxury', 'backpacker'], hint: '8:30'),
-  TripCatalogItem(id: 'oldlight', name: 'Old Light Gallery Bar', type: 'Bar & Gallery', icon: 'Martini', lat: 5.9701, lng: 80.4179, cost: 2400, styles: ['nomad', 'backpacker'], hint: '21:00'),
-  TripCatalogItem(id: 'morningmkt', name: 'Weligama Morning Market', type: 'Local Market', icon: 'ShoppingBasket', lat: 5.9769, lng: 80.4297, cost: 500, styles: ['backpacker', 'nomad'], hint: '6:30'),
-];
+/// Places the trip planner can add as stops. Starts empty and is filled
+/// from real /places data by PlacesNotifier (via TripCatalogItem.fromPlace).
+var tripCatalog = <TripCatalogItem>[];
 
-const tripSeed = Trip(
-  name: 'Weligama Weekend',
-  code: 'WLG-7QF',
-  startDate: '2026-06-20',
-  collaborators: ['theo', 'mia'],
-  days: [
-    TripDay(id: 'd1', stops: [
-      TripStop(id: 's1', placeId: 'bayvilla', time: 14 * 60), // 2:00 PM check-in
-      TripStop(id: 's2', placeId: 'driftwood', time: 16 * 60, by: 'theo'),
-      TripStop(id: 's3', placeId: 'hangtime', time: 17 * 60 + 30),
-      TripStop(id: 's4', placeId: 'kottu', time: 19 * 60 + 30),
-    ]),
-    TripDay(id: 'd2', stops: [
-      TripStop(id: 's5', placeId: 'welibeach', time: 7 * 60),
-      TripStop(id: 's6', placeId: 'baysurf', time: 8 * 60, by: 'mia'),
-      TripStop(id: 's7', placeId: 'coconuthill', time: 17 * 60),
-    ]),
-  ],
-);
+/// The sample trip older app builds gave every new user (code WLG-7QF).
+/// Its stops pointed at made-up places, so [cleanLegacySampleTrip] strips
+/// them from any copy that's still saved on a phone.
+const _legacySampleTripCode = 'WLG-7QF';
+const _legacySampleStopIds = {'s1', 's2', 's3', 's4', 's5', 's6', 's7'};
+const _legacySampleCollaborators = {'theo', 'mia'};
+
+/// Removes the old sample trip's made-up content (its name, fake
+/// collaborators and sample stops) and keeps anything the user added.
+/// Other trips come back unchanged.
+Trip cleanLegacySampleTrip(Trip t) {
+  if (t.code != _legacySampleTripCode) return t;
+  return t.copyWith(
+    name: t.name == 'Weligama Weekend' ? 'Spotto Trip' : t.name,
+    collaborators: t.collaborators.where((c) => !_legacySampleCollaborators.contains(c)).toList(),
+    days: [
+      for (final d in t.days)
+        d.copyWith(
+          stops: d.stops.where((s) => s.custom != null || !_legacySampleStopIds.contains(s.id)).toList(),
+        ),
+    ],
+  );
+}
 
 double tripHaversineKm(TripCatalogItem a, TripCatalogItem b) {
   const r = 6371.0;
@@ -395,6 +380,15 @@ String newTripCode() {
   const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   final r = math.Random();
   return 'TRP-${List.generate(3, (_) => chars[r.nextInt(chars.length)]).join()}';
+}
+
+/// `GRP-` + 6 random base36 chars for a new travel group. The live-location
+/// socket is keyed by this code, so it must not repeat across groups (the
+/// server also swaps out a code that's already taken).
+String newGroupCode() {
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  final r = math.Random.secure();
+  return 'GRP-${List.generate(6, (_) => chars[r.nextInt(chars.length)]).join()}';
 }
 
 int _tripUid = 100;

@@ -8,7 +8,7 @@ import '../../../core/theme/palette.dart';
 import '../../../core/widgets/pill.dart';
 import '../../../core/widgets/spotto_card.dart';
 import '../../../core/widgets/spotto_icons.dart';
-import '../../../data/mock/places.dart' as data;
+import '../../../data/catalog/app_options.dart' as data;
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 

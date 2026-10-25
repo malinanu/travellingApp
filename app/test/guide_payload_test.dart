@@ -3,7 +3,7 @@
 // stops to a trip (new or current) on the right days.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:spotto/data/mock/trip_catalog.dart';
+import 'package:spotto/data/catalog/trip_catalog.dart';
 import 'package:spotto/features/traveller/guide/guide_payload.dart';
 
 Map<String, dynamic> _place(String ref, String name, {String? placeId}) => {

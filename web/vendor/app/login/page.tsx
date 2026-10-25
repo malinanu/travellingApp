@@ -206,7 +206,7 @@ function LoginPageInner() {
   const [openSegment, setOpenSegment] = useState<string | null>(null);
   const shownSegment = openSegment ?? categoryById(category)?.segment ?? VENDOR_SEGMENTS[0].id;
   const [phone, setPhone] = useState('');
-  const [town, setTown] = useState('Weligama');
+  const [town, setTown] = useState('');
   const [description, setDescription] = useState('');
 
   // Populated by the "Find your business" step's Google Places search —

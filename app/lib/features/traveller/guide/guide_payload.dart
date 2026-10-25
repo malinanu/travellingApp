@@ -3,7 +3,7 @@
 // places to add to the Trip calendar. Also the pure logic behind them:
 // composing the answers message and merging stops into a trip.
 
-import '../../../data/mock/trip_catalog.dart';
+import '../../../data/catalog/trip_catalog.dart';
 import '../../../data/models/inspiration.dart';
 
 double? _d(Object? v) => (v as num?)?.toDouble();

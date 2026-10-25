@@ -13,7 +13,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:native_geofence/native_geofence.dart';
 
 import '../../core/location/nearby_alerts.dart';
-import '../mock/trip_catalog.dart';
+import '../catalog/trip_catalog.dart';
 import '../models/inspiration.dart';
 import 'inspiration_repository.dart';
 import 'repositories.dart';

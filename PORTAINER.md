@@ -1,8 +1,12 @@
 # Deploying Spotto on Portainer
 
 Three services — `api` (Go, container port `8881`, published on the host as
-`8881` too), `vendor` (Next.js, :3000), `admin` (Next.js, :3001) — built from
-`docker-compose.yml` at the repo root. This stack does **not** run its own
+`8881` too), `vendor` (Next.js, :3000), `admin` (Next.js, :3001) — defined in
+`docker-compose.yml` at the repo root. GitHub Actions builds their images on
+every push to `main` (`.github/workflows/docker-images.yml`) and publishes
+them to GitHub Container Registry as `ghcr.io/malinanu/travellingapp-api`,
+`-vendor` and `-admin`; the server only pulls them (see "Images are built by
+GitHub" below). This stack does **not** run its own
 Postgres; it connects to one you already have reachable from the Docker
 host.
 
@@ -64,14 +68,12 @@ container refuses to start without one (used to encrypt 2FA secrets at
 rest).
 
 Two different kinds of "optional" here, by how they take effect:
-- **Build-time** (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`):
-  baked into the vendor/admin webapps' JS bundle when the image is built
-  (Next.js public env vars aren't runtime-configurable) — if either value
-  is added or changes, the stack needs a **rebuild** of that image, not just
-  a restart (see the "Updating" section below). Forgetting this is exactly
-  why adding a Maps key to Portainer's environment editor alone doesn't
-  make the map picker work — the vendor image needs an actual rebuild to
-  pick it up.
+- **Build-time** (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_VENDOR_URL`,
+  `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`): baked into the vendor/admin webapps'
+  JS bundle when the image is built (Next.js public env vars aren't
+  runtime-configurable). Since GitHub builds the images, these are set as
+  **GitHub repository variables**, not in Portainer — see "Images are built
+  by GitHub" below.
 - **Runtime** (everything else — `GOOGLE_CALENDAR_API_KEY`, the SMTP vars,
   the Google OAuth vars, `VENDOR_APP_URL`, `PUBLIC_API_URL`): read by the `api` container each
   time it starts — a plain restart after changing these is enough.
@@ -96,7 +98,36 @@ right side alone, that's the container's internal port).
   (one `KEY=value` per line, using Portainer's environment editor)
 - **Deploy the stack**
 
-This builds all three images on the Docker host and starts them.
+This pulls the three images GitHub published and starts them.
+
+## Images are built by GitHub
+
+Building on the server (two Next.js builds and a Go build on a small arm64
+host) kept failing on disk, memory or time, so `.github/workflows/docker-images.yml`
+builds the images on GitHub instead — natively for amd64 and arm64 — on
+every push to `main` that touches `server/`, `web/` or the compose files,
+and tags each `latest` and `sha-<short commit>`.
+
+One-time setup:
+1. **GitHub → repo Settings → Secrets and variables → Actions → Variables**:
+   add `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. `NEXT_PUBLIC_API_URL` and
+   `NEXT_PUBLIC_VENDOR_URL` default to `https://spottoapi.threelogiq.com` and
+   `https://spotto-vendor.threelogiq.com`; add them only to change those.
+2. After the first run of the **Docker images** workflow, make the three
+   `travellingapp-*` packages public (GitHub → your profile → Packages →
+   package → Package settings → Change visibility) so Portainer can pull
+   without a login. They contain nothing secret — the `NEXT_PUBLIC_*`
+   values are public in the browser anyway, and every secret stays a
+   runtime env var in Portainer.
+3. Free the space the old on-server builds used:
+   `docker builder prune -af && docker image prune -af`.
+
+To deploy: wait for the workflow run on `main` to go green, then **Pull and
+redeploy** the stack in Portainer. To roll back, set `SPOTTO_IMAGE_TAG` in
+the stack's environment to an earlier `sha-…` tag and redeploy.
+
+To build on a machine instead of pulling, add the override file:
+`docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`.
 
 ## 4a. Domain mapping via CloudPanel (reverse proxy)
 
@@ -127,7 +158,8 @@ settings work as-is.
 
 Once all three subdomains resolve over HTTPS, go back to step 3 and make
 sure `NEXT_PUBLIC_API_URL`/`CORS_ORIGINS` use those `https://` domains
-(rebuild if you change them after the first deploy).
+(change the matching GitHub repository variable if it differs from the
+default, then redeploy once the workflow has published new images).
 
 ## 5. Load demo or test data (first run only)
 
@@ -162,14 +194,14 @@ container or in the reverse proxy.)
 
 ## Updating after a config change
 
-- **Code change**: re-deploy the stack from Portainer (pulls latest `main`,
-  rebuilds).
-- **`NEXT_PUBLIC_API_URL` or `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` changed**:
-  rebuild the affected service images, not just restart —
-  `docker compose build vendor admin && docker compose up -d`.
+- **Code change**: merge to `main`, wait for the **Docker images** workflow
+  to finish, then **Pull and redeploy** the stack in Portainer.
+- **`NEXT_PUBLIC_*` changed**: change the GitHub repository variable, re-run
+  the **Docker images** workflow (Actions tab → Run workflow), then pull and
+  redeploy.
 - **`DATABASE_URL`/`JWT_SECRET`/`CORS_ORIGINS`/`GOOGLE_CALENDAR_API_KEY`/
   SMTP/Google-OAuth vars changed**: these are runtime env vars for `api`
-  only — a restart is enough, e.g. `docker compose up -d` (no `build`).
+  only — a restart is enough, e.g. `docker compose up -d`.
 
 ## Notes / limitations
 

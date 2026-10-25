@@ -231,7 +231,7 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 				tier=EXCLUDED.tier, profile=EXCLUDED.profile, menu=EXCLUDED.menu,
 				submitted_at=EXCLUDED.submitted_at, lat=EXCLUDED.lat, lng=EXCLUDED.lng,
 				google_place_id=EXCLUDED.google_place_id`,
-			vendorID, p.Name+" Vendor", category, region.Name, "LK", ptr(region.ID), "Admin",
+			vendorID, p.Name, category, region.Name, "LK", ptr(region.ID), "Admin",
 			domain.VendorApproved, "normal", true, photosCount, nil, []byte(`[]`), "", "Premium",
 			profileBytes, []byte(`{}`), now.AddDate(0, -1, 0), lat, lng, googlePlaceID,
 		); err != nil {

@@ -5,43 +5,40 @@
 // activity and coloured by activity per live business, plus a pin per vendor in
 // its category's colour and icon, the same as the traveller app's map,
 // ringed red when flagged by bad reviews. The map's initial view is always
-// this fixed Sri Lanka overview — never the browser's own geolocation.
+// this fixed Sri Lanka overview — never the browser's own geolocation; it
+// flies to a business when the page picks one (`focus`).
 // Clicking empty map area (not a marker) drops an investigation pin so a
 // super-admin can check an arbitrary spot.
 
 import L from 'leaflet';
-import * as Icons from 'lucide-react';
+import { useEffect } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { CircleMarker, MapContainer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 
 import BaseMapLayer from './base-map-layer';
 
-import { PIN_TONE_COLORS, type Region, type Vendor, type VendorCategory } from '@spotto/shared';
+import type { Region, Vendor, VendorCategory } from '@spotto/shared';
+import { pinColor, pinIcon, pinIconName } from './category-pin';
 import { regionTone } from './region-tone';
 
 const SRI_LANKA_CENTER: [number, number] = [7.8731, 80.7718];
 const SRI_LANKA_ZOOM = 8;
+const FOCUS_ZOOM = 16;
 const FLAG_RED = '#e11d48';
-// Pins whose category group or icon the map doesn't know.
-const OTHER_PIN_COLOR = '#64748b';
-const LucideIcons = Icons as unknown as Record<string, Icons.LucideIcon>;
 
-/** Whether a category draws with its own group colour (else the grey "Other"). */
-function knownPinGroup(category: VendorCategory | undefined): boolean {
-  return !!category && category.segment in PIN_TONE_COLORS;
-}
+/** Where the map should fly to; a new object flies again, even to the same spot. */
+export type MapFocus = { lat: number; lng: number };
 
 // One DivIcon per look, shared by every pin that has it — hundreds of pins
 // use only a few dozen category/flag/selected combinations.
 const pinCache = new Map<string, L.DivIcon>();
 
 function categoryPin(category: VendorCategory | undefined, flagged: boolean, selected: boolean): L.DivIcon {
-  const color = category && knownPinGroup(category) ? PIN_TONE_COLORS[category.segment] : OTHER_PIN_COLOR;
-  const iconName = category?.icon && category.icon in LucideIcons ? category.icon : 'Store';
-  const key = `${color}|${iconName}|${flagged}|${selected}`;
+  const color = pinColor(category);
+  const key = `${color}|${pinIconName(category)}|${flagged}|${selected}`;
   let pin = pinCache.get(key);
   if (!pin) {
-    const Icon = LucideIcons[iconName] ?? Icons.Store;
+    const Icon = pinIcon(category);
     const size = selected ? 34 : 26;
     const rings = [
       selected ? '0 0 0 3px #103d3a' : '',
@@ -62,6 +59,14 @@ function categoryPin(category: VendorCategory | undefined, flagged: boolean, sel
   return pin;
 }
 
+function FlyTo({ focus }: { focus: MapFocus | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (focus) map.flyTo([focus.lat, focus.lng], Math.max(map.getZoom(), FOCUS_ZOOM), { duration: 0.8 });
+  }, [focus, map]);
+  return null;
+}
+
 function ClickToInvestigate({ onInvestigate }: { onInvestigate: (lat: number, lng: number) => void }) {
   useMapEvents({
     click(e) {
@@ -79,6 +84,7 @@ export default function VendorMap({
   onSelectVendor,
   investigationPin,
   onInvestigate,
+  focus,
 }: {
   regions: Region[];
   vendors: Vendor[];
@@ -88,6 +94,7 @@ export default function VendorMap({
   onSelectVendor: (id: string) => void;
   investigationPin: { lat: number; lng: number } | null;
   onInvestigate: (lat: number, lng: number) => void;
+  focus: MapFocus | null;
 }) {
   const maxActivity = Math.max(1, ...regions.map((r) => r.travelers));
   return (
@@ -99,6 +106,7 @@ export default function VendorMap({
     >
       <BaseMapLayer />
       <ClickToInvestigate onInvestigate={onInvestigate} />
+      <FlyTo focus={focus} />
 
       {regions.filter((r) => r.travelers > 0 || r.vendors > 0).map((r) => {
         const tone = regionTone(r.travelers, r.vendors);

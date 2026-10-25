@@ -116,7 +116,7 @@ class PlacesSearchService {
   ///
   /// [lat] / [lng]: optional device position — used to bias results toward
   /// the user's current area. Only applied when both values are non-zero and
-  /// the position is valid (not the 0,0 ocean or the Weligama fallback at
+  /// the position is valid (not the 0,0 ocean or the app's fallback point at
   /// known fallback coordinates).
   Future<List<GooglePlacesSearchResult>> search(
     String query, {

@@ -1,5 +1,5 @@
 // Traveller profile — port of Profile.jsx: details, travel style, interests,
-// notifications, account rows + mock sub-pages, logout.
+// notifications, account rows + sub-pages, logout.
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -13,9 +13,10 @@ import '../../../core/theme/palette.dart';
 import '../../../core/utils/debounced_saver.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/spotto_icons.dart';
-import '../../../data/mock/places.dart' as data;
+import '../../../data/catalog/app_options.dart' as data;
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
+import 'payment_methods_screen.dart';
 import 'profile_subpages.dart';
 
 const _danger = Color(0xFFE11D48);
@@ -29,7 +30,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  String? _sub; // security | payment | privacy | help
+  String? _sub; // security | privacy | help
   bool _uploadingAvatar = false;
   final _name = TextEditingController();
   final _email = TextEditingController();
@@ -120,8 +121,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     switch (_sub) {
       case 'security':
         return SecurityPage(onBack: () => setState(() => _sub = null));
-      case 'payment':
-        return PaymentPage(onBack: () => setState(() => _sub = null));
       case 'privacy':
         return PrivacyPage(onBack: () => setState(() => _sub = null));
       case 'help':
@@ -530,8 +529,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       context,
                       Icons.credit_card,
                       'Saved payment',
-                      sub: 'Visa ·· 4291',
-                      onTap: () => setState(() => _sub = 'payment'),
+                      sub: _savedCardLabel(ref.watch(paymentMethodsProvider).value),
+                      onTap: () => Navigator.push(
+                          context, MaterialPageRoute(builder: (_) => const PaymentMethodsScreen())),
                     ),
                     const Divider(height: 1),
                     profRow(
@@ -565,6 +565,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  /// The default saved card (or the first one), or a prompt to add one —
+  /// nothing while the cards are still loading.
+  static String? _savedCardLabel(List<PaymentCard>? cards) {
+    if (cards == null) return null;
+    if (cards.isEmpty) return 'Add a card';
+    final card = cards.firstWhere((c) => c.isDefault, orElse: () => cards.first);
+    return '${card.brand} ·· ${card.last4}';
   }
 }
 

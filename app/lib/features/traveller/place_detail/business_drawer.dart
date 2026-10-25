@@ -22,7 +22,7 @@ import '../../../core/widgets/progressive_image.dart';
 import '../../../core/widgets/sheet_scaffold.dart';
 import '../../../core/widgets/spotto_icons.dart';
 import '../../../core/widgets/stat_chip.dart';
-import '../../../data/mock/places.dart' as data;
+import '../../../data/catalog/app_options.dart' as data;
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import '../../../data/vendor_categories.dart';
@@ -34,8 +34,8 @@ import '../../../data/vendor_categories.dart';
 const kMaxPhotosPerUpload = 5;
 
 /// Google Maps search query for a place — lat/lng is unambiguous and needs
-/// no town/region data, unlike the old hardcoded "place name + Weligama"
-/// string that broke for every place outside that one town.
+/// no town/region data, unlike a "place name + town" string, which needs
+/// the right town for every place.
 String _mapsQuery(Place place) {
   if (place.lat != 0 || place.lng != 0) {
     return '${place.lat},${place.lng}';
@@ -716,14 +716,14 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
     final locationResult = resolved?.$2;
     _lastDevicePos = devicePos;
     // devicePositionProvider always eventually resolves to a real position
-    // or the Weligama Bay fallback — it never stays null forever — so
+    // or the fallback point — it never stays null forever — so
     // "still loading" and "resolved but too far away" are two genuinely
     // different states that deserve different copy, not the same disabled
     // segments + "Rate this once you're here." for both.
     final resolvingLocation = devicePosAsync.isLoading && resolved == null;
     // Gate on an actual granted position, not just "resolved" — resolved
     // is also true when permission was denied/location services are off,
-    // in which case devicePos is the Weligama Bay fallback, not the
+    // in which case devicePos is the fallback point, not the
     // traveller's real position, and must never count toward the geofence
     // or be sent as the check-in's lat/lng.
     final granted = locationResult == DeviceLocationResult.granted;

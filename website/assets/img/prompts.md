@@ -50,7 +50,7 @@ rail and a Features split, keep the subject centered so it crops well)
 > View from an open train doorway in Sri Lanka's hill country, hand gripping the frame, green tea hills and mist rushing past, warm morning light, golden hour amber cinematic film grade, premium travel editorial photography, 35mm film look, no text, no watermark
 
 **contact-bay.jpg** — 3:4
-> Weligama bay at dusk, fishing boats silhouetted on calm water, warm lights beginning to glow along the shoreline, distant surfers paddling in, golden hour warm amber cinematic film grade, premium travel editorial photography, 35mm film look, no text, no watermark
+> A Sri Lankan south-coast bay at dusk, fishing boats silhouetted on calm water, warm lights beginning to glow along the shoreline, distant surfers paddling in, golden hour warm amber cinematic film grade, premium travel editorial photography, 35mm film look, no text, no watermark
 
 ## App screen mockups (portrait 9:16, premium iPhone-style frame)
 

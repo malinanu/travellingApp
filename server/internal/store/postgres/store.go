@@ -2115,6 +2115,16 @@ func (s *Store) UpsertGroup(ctx context.Context, g domain.Group) error {
 	return err
 }
 
+// GroupCodeTaken reports whether a group other than ownerID's already uses
+// this code.
+func (s *Store) GroupCodeTaken(ctx context.Context, code, ownerID string) (bool, error) {
+	var taken bool
+	err := s.Pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM groups WHERE code=$1 AND owner_id<>$2)`,
+		code, ownerID).Scan(&taken)
+	return taken, err
+}
+
 // IsGroupParticipant reports whether userID owns, or is listed as a member
 // of, a group with this code.
 func (s *Store) IsGroupParticipant(ctx context.Context, code, userID string) (bool, error) {

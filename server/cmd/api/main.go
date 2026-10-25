@@ -67,6 +67,14 @@ func main() {
 		log.Printf("moved %d businesses out of \"uncategorized\" into their real category", n)
 	}
 
+	// Imported businesses were named "<place> Vendor"; they get the plain
+	// place name (a no-op once renamed).
+	if n, err := store.DropImportedVendorNameSuffix(ctx); err != nil {
+		log.Printf("drop imported vendor name suffix: %v", err)
+	} else if n > 0 {
+		log.Printf("renamed %d imported businesses to their place name", n)
+	}
+
 	srv := httpapi.New(store, auth.NewTokens(cfg.JWTSecret), cfg)
 	go srv.StartHolidayScheduler(ctx)
 	go srv.StartWeatherScheduler(ctx)

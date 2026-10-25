@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:spotto/core/storage/local_store.dart';
-import 'package:spotto/data/mock/trip_catalog.dart';
+import 'package:spotto/data/catalog/trip_catalog.dart';
 import 'package:spotto/data/repositories/repositories.dart';
 
 // ── Helpers ────────────────────────────────────────────────────────────────

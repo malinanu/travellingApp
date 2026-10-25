@@ -18,7 +18,7 @@ import '../../../core/widgets/map_marker.dart';
 import '../../../core/widgets/marker_bitmap.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/spotto_icons.dart';
-import '../../../data/mock/places.dart' as data;
+import '../../../data/catalog/app_options.dart' as data;
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import '../../../data/vendor_categories.dart';
@@ -31,8 +31,10 @@ import '../weather/activity_rules.dart';
 
 enum _LocationMode { idle, following, heading }
 
-/// Default initial fallback map center (Weligama Bay) used before device GPS resolves.
+/// Default initial fallback map center (the centre of Sri Lanka) used before device GPS resolves.
+/// Shown at island zoom ([_kDefaultMapZoom]) so the whole country fits.
 const _kDefaultMapCenter = LatLng(kFallbackLat, kFallbackLng);
+const _kDefaultMapZoom = 7.5;
 
 const _kPinSlotSize = Size(58, 58);
 const _kBannerSlotSize = Size(175, 62);
@@ -470,7 +472,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
     ref.watch(nearbyTravellersProvider);
     ref.listen<AsyncValue<(LatLngAt, DeviceLocationResult)>>(devicePositionProvider, (_, next) {
-      _resolvedPosition = next.value?.$1;
+      // Without permission this resolves to the fallback point, which isn't
+      // where the user is — don't zoom in on it or share it with the group.
+      final resolved = next.value;
+      _resolvedPosition = resolved != null && resolved.$2 == DeviceLocationResult.granted ? resolved.$1 : null;
       if (_resolvedPosition != null && _lastKnownLatLng == null) {
         _lastKnownLatLng = LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng);
       }
@@ -500,7 +505,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       children: [
         // Interactive Google Maps engine
         GoogleMap(
-          initialCameraPosition: const CameraPosition(target: _kDefaultMapCenter, zoom: 15),
+          initialCameraPosition: const CameraPosition(target: _kDefaultMapCenter, zoom: _kDefaultMapZoom),
           minMaxZoomPreference: const MinMaxZoomPreference(3, 19),
           style: _mapStyle,
           markers: markers,

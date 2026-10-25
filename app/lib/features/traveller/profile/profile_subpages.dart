@@ -1,6 +1,5 @@
-// Profile sub-pages. Security and Privacy are wired to the real API;
-// Payment is a deferred "coming soon" stub (needs a payment processor
-// decision); Help is legitimate static content.
+// Profile sub-pages. Security and Privacy are wired to the real API; Help
+// is static content. Saved cards live on PaymentMethodsScreen.
 
 import '../../../data/repositories/nearby_alerts_repository.dart';
 import '../inspiration/nearby_alerts_ui.dart';
@@ -11,7 +10,6 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
 import '../../../data/repositories/repositories.dart';
-import 'payment_methods_screen.dart';
 import 'profile_screen.dart';
 
 class _SubPage extends StatelessWidget {
@@ -384,107 +382,6 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
   }
 }
 
-class PaymentPage extends StatelessWidget {
-  final VoidCallback onBack;
-  const PaymentPage({super.key, required this.onBack});
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return _SubPage(
-      title: 'Saved payment',
-      onBack: onBack,
-      children: [
-        // featured card
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [SpottoColors.deepTeal, SpottoColors.accent],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: const [
-              BoxShadow(color: Color(0x660B4A54), blurRadius: 30, offset: Offset(0, 14), spreadRadius: -12)
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  Text('VISA',
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1,
-                          color: Colors.white)),
-                  Spacer(),
-                  Icon(Icons.contactless_outlined, size: 20, color: Colors.white70),
-                ],
-              ),
-              const SizedBox(height: 26),
-              const Text('····  ····  ····  4291',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 2,
-                      color: Colors.white)),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Text('LENA MÜLLER',
-                      style: text.labelSmall
-                          ?.copyWith(color: Colors.white70, letterSpacing: 1)),
-                  const Spacer(),
-                  Text('09/28', style: text.labelSmall?.copyWith(color: Colors.white70)),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 22),
-        sectionCard(context, 'Recent activity', [
-          for (final (i, r) in const [
-            (title: 'Clay & Co taster session', sub: 'Yesterday', amount: 'Rs 1,500'),
-            (title: 'Driftwood day pass', sub: 'Tuesday', amount: 'Rs 1,200'),
-            (title: 'Bay Surf group lesson', sub: 'Last week', amount: 'Rs 3,500'),
-          ].indexed) ...[
-            if (i > 0) const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                children: [
-                  iconTile(Icons.receipt_long_outlined),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(r.title, style: text.titleSmall),
-                        Text(r.sub,
-                            style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
-                      ],
-                    ),
-                  ),
-                  Text(r.amount, style: text.labelLarge),
-                ],
-              ),
-            ),
-          ],
-        ]),
-        const SizedBox(height: 22),
-        sectionCard(context, null, [
-          profRow(context, Icons.credit_card, 'Manage payment cards', onTap: () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const PaymentMethodsScreen()));
-          }),
-        ]),
-      ],
-    );
-  }
-}
-
 class PrivacyPage extends ConsumerStatefulWidget {
   final VoidCallback onBack;
   const PrivacyPage({super.key, required this.onBack});
@@ -625,7 +522,7 @@ class HelpPage extends StatelessWidget {
         sectionCard(context, 'FAQ', [
           for (final (i, f) in const [
             (q: 'How do deal codes work?', a: 'Claim a deal in the app, then show the SPOTTO code at the counter. The vendor validates it on their side — no printouts needed.'),
-            (q: 'What is the Daily Quest?', a: 'Check in at two local artisan spots (like Clay & Co or the Batik atelier) in one day to unlock a free Ceylon tea.'),
+            (q: 'What is the Daily Quest?', a: "Check in at the day's number of spots to unlock its reward, then show the quest screen at the sponsor to claim it."),
             (q: 'Can friends edit my trip?', a: 'Yes — invite them from the trip planner. Collaborators can add and reorder stops; only you can confirm deletions.'),
             (q: 'Does Spotto work offline?', a: 'The map and your claimed codes are cached on your phone. Live features like group location need a connection.'),
           ].indexed) ...[

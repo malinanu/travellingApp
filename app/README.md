@@ -1,6 +1,6 @@
 # Spotto Traveller Mobile App (Flutter)
 
-The Spotto iOS & Android traveller app for exploring places, deals, events, vibe check-ins, local guide AI Q&A, and booking services in Weligama & Sri Lanka.
+The Spotto iOS & Android traveller app for exploring places, deals, events, vibe check-ins, local guide AI Q&A, and booking services in Sri Lanka.
 
 ## Architecture
 

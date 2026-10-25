@@ -5,7 +5,7 @@
 // onLocationSelect, for the map below to jump to) while the field itself
 // keeps showing/storing just the short town/locality name, not the full
 // street address. That keeps this in sync with every other place that
-// already assumes a short "Weligama"-style town (admin vendor list/
+// already assumes a short "Galle"-style town (admin vendor list/
 // search/queue/geo-map chips, the vendor dashboard greeting, account and
 // reports pages) — the map pin (lat/lng), not this text, is what actually
 // drives precise traveler directions.

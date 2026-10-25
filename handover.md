@@ -168,13 +168,13 @@ only you can do.
 4. **Fixed: two real bugs found behind the "GPS is just slow" framing for Current Vibe.** The
    "Finding your location…" timing itself was always fine (bounded, never hangs) — but (a)
    permission-denied and location-services-disabled were silently mapped to a fake fallback
-   position (Weligama Bay) and shown the same "too far away" message forever, with no way to
+   position (the app's fallback point) and shown the same "too far away" message forever, with no way to
    fix it — now shows an actionable "enable location" prompt (tap → Settings or retry),
    matching the pattern `discover_screen.dart`/`spots_screen.dart` already used elsewhere in the
    app; and (b) the resolved position was cached for the whole app session with no re-check —
    now re-checks once each time a place's drawer opens, so walking into range unlocks the cards
    without an app restart. Also closed a related latent bug this surfaced: the geofence/check-in
-   lat-lng could previously be computed against the Weligama Bay fallback for a denied/disabled
+   lat-lng could previously be computed against the fallback point for a denied/disabled
    user, not just a real position.
 5. Carried forward from the 2026-07-19 handover:
    - **Corrected, not a bug:** `web/vendor/app/account/page.tsx`'s "Verified" badge check

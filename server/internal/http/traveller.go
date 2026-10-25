@@ -794,6 +794,10 @@ func (s *Server) handleGetGroup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, groupResp{Group: g, Members: members})
 }
 
+// handlePutGroup saves the caller's group. The code keys the live-location
+// socket, so a code another group already uses (older app builds gave
+// everyone the same sample code) or an empty one is swapped for a fresh
+// one, which the response carries back to the app.
 func (s *Server) handlePutGroup(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	var g domain.Group
@@ -801,11 +805,52 @@ func (s *Server) handlePutGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g.OwnerID = c.Subject
-	if err := s.Store.UpsertGroup(r.Context(), g); err != nil {
-		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
-		return
+	scrubSampleGroup(&g)
+	for attempt := 0; ; attempt++ {
+		taken := g.Code == ""
+		if !taken {
+			var err error
+			if taken, err = s.Store.GroupCodeTaken(r.Context(), g.Code, g.OwnerID); err != nil {
+				writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
+				return
+			}
+		}
+		if taken {
+			g.Code = newGroupCode()
+		}
+		err := s.Store.UpsertGroup(r.Context(), g)
+		if err == nil {
+			break
+		}
+		// Another group took the same code between the check and the
+		// write — try once more with a new one.
+		if !postgres.IsUniqueViolation(err) || attempt > 0 {
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
+			return
+		}
+		g.Code = ""
 	}
 	writeJSON(w, http.StatusOK, g)
+}
+
+// Older app builds still send their made-up sample group (see migration
+// 047): its name, its shared code and its pretend members.
+var sampleGroupMembers = map[string]bool{"mia": true, "theo": true, "ines": true, "kai": true, "sofia": true, "noah": true}
+
+func scrubSampleGroup(g *domain.Group) {
+	if g.Code == "WLG-4K2" {
+		g.Code = ""
+	}
+	if g.Name == "Weligama Crew" {
+		g.Name = "Spotto Crew"
+	}
+	members := make([]string, 0, len(g.MemberIDs))
+	for _, id := range g.MemberIDs {
+		if !sampleGroupMembers[id] {
+			members = append(members, id)
+		}
+	}
+	g.MemberIDs = members
 }
 
 // handleUpdateMyLocation records the caller's current position for the

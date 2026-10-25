@@ -16,8 +16,8 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/storage/local_store.dart';
-import '../mock/places.dart' as seed;
-import '../mock/trip_catalog.dart';
+import '../catalog/travellers.dart' as seed;
+import '../catalog/trip_catalog.dart';
 import '../models/models.dart';
 import '../vendor_categories.dart';
 import 'inspiration_repository.dart';
@@ -38,12 +38,11 @@ List<String> parseStringList(dynamic v) {
 
 // ── device location (shared best-effort helper) ────────────────────
 
-/// Weligama Bay — the app's home base, used as a fallback location when
-/// device position is denied/unavailable (never a forced default — just
-/// what the map/weather show when we truly can't get the user's own
-/// position).
-const kFallbackLat = 5.9724;
-const kFallbackLng = 80.4292;
+/// The centre of Sri Lanka, used as a fallback location when device
+/// position is denied/unavailable (never a forced default — just what the
+/// map/weather show when we truly can't get the user's own position).
+const kFallbackLat = 7.8731;
+const kFallbackLng = 80.7718;
 
 typedef LatLngAt = ({double lat, double lng});
 
@@ -104,13 +103,13 @@ Future<(Position?, DeviceLocationResult)> _resolvePosition() async {
   }
 }
 
-/// Guaranteed lat/lng — the user's real position, or Weligama Bay when
+/// Guaranteed lat/lng — the user's real position, or the fallback point when
 /// denied/unavailable — paired with the real [DeviceLocationResult] so a
 /// caller that actually needs to tell "still resolving" apart from
 /// "resolved to a fallback because permission was denied" apart from "a
 /// genuine granted position" doesn't have to re-derive it (see
 /// _VibeCheck in business_drawer.dart, which gates check-ins on `granted`
-/// specifically rather than treating the Weligama Bay fallback as a real
+/// specifically rather than treating the fallback point as a real
 /// position for geofence math). Callers that just want map-centering/
 /// weather lat-lng and don't care why can ignore the second element.
 final devicePositionProvider = FutureProvider<(LatLngAt, DeviceLocationResult)>((ref) async {
@@ -444,12 +443,10 @@ class PlacesNotifier extends Notifier<List<Place>> {
         return places;
       }
     }
-    return seed.places;
+    return const [];
   }
 
-  /// Replaces the trip planner's catalog with real places, once available —
-  /// the hardcoded tripCatalog list otherwise stays as the pre-fetch
-  /// fallback (see trip_catalog.dart's top-of-file comment).
+  /// Fills the trip planner's catalog with the real places just loaded.
   void _syncTripCatalog(List<Place> places) {
     tripCatalog = [for (final p in places) TripCatalogItem.fromPlace(p)];
   }
@@ -621,9 +618,18 @@ class GroupNotifier extends Notifier<Group> {
   @override
   Group build() {
     Future.microtask(_pull);
-    final json = ref.read(localStoreProvider).getJson(StoreKeys.group);
-    return json == null ? seed.groupSeed : Group.fromJson(json);
+    final store = ref.read(localStoreProvider);
+    final json = store.getJson(StoreKeys.group);
+    // Older builds started everyone on the same sample group (code
+    // WLG-4K2), so a saved copy of it isn't really this user's. The server
+    // gives a saved one a new code, which the pull above picks up.
+    if (json != null && json['code'] != _legacySampleGroupCode) return Group.fromJson(json);
+    final blank = Group(name: 'Spotto Crew', code: newGroupCode(), memberIds: const []);
+    store.setJson(StoreKeys.group, blank.toJson());
+    return blank;
   }
+
+  static const _legacySampleGroupCode = 'WLG-4K2';
 
   Future<void> _pull() async {
     if (!ref.read(authProvider)) return;
@@ -640,7 +646,7 @@ class GroupNotifier extends Notifier<Group> {
 
   /// Keeps tripWho()'s lookup pool (trip_common.dart) current — trip
   /// collaborators are drawn from the same real group members shown
-  /// elsewhere, not the old hardcoded mock list.
+  /// elsewhere.
   void _syncKnownTravelers() {
     seed.travelers = state.members.map(Traveler.fromGroupMember).toList();
   }
@@ -649,8 +655,22 @@ class GroupNotifier extends Notifier<Group> {
     state = g;
     ref.read(localStoreProvider).setJson(StoreKeys.group, g.toJson());
     if (ref.read(authProvider)) {
-      ref.read(apiProvider).dio.put('/me/group', data: g.toJson()).ignore();
+      _push(g);
     }
+  }
+
+  /// The server swaps out a code another group already uses, so adopt
+  /// whatever code it saved — the live-location socket only lets us in
+  /// under that one.
+  Future<void> _push(Group g) async {
+    try {
+      final res = await ref.read(apiProvider).dio.put('/me/group', data: g.toJson());
+      final code = res.data is Map ? res.data['code'] : null;
+      if (code is String && code.isNotEmpty && code != state.code) {
+        state = state.copyWith(code: code);
+        await ref.read(localStoreProvider).setJson(StoreKeys.group, state.toJson());
+      }
+    } catch (_) {}
   }
 
   void addMember(String id) {
@@ -726,8 +746,17 @@ class TripNotifier extends Notifier<Trip> {
     final json = ref.read(localStoreProvider).getJson(StoreKeys.trip);
     final hasLocal = json != null;
     Future.microtask(() => _pull(adopt: !hasLocal));
-    return hasLocal ? Trip.fromJson(json) : tripSeed;
+    return hasLocal ? cleanLegacySampleTrip(Trip.fromJson(json)) : _blankTrip();
   }
+
+  /// A new user's first trip: three empty days from today.
+  static Trip _blankTrip() => Trip(
+        name: 'Spotto Trip',
+        code: newTripCode(),
+        startDate: todayIso(),
+        collaborators: const [],
+        days: [for (var i = 0; i < 3; i++) TripDay(id: tripNewId('d'), stops: const [])],
+      );
 
   Future<void> _pull({required bool adopt}) async {
     if (!ref.read(authProvider)) return;
@@ -736,7 +765,7 @@ class TripNotifier extends Notifier<Trip> {
       final data = res.data;
       if (data is Map<String, dynamic> && data['days'] != null) {
         if (adopt) {
-          state = Trip.fromJson(data);
+          state = cleanLegacySampleTrip(Trip.fromJson(data));
           await ref.read(localStoreProvider).setJson(StoreKeys.trip, state.toJson());
         }
       } else if (!adopt) {
@@ -989,7 +1018,7 @@ class SavedTripsNotifier extends Notifier<List<Trip>> {
     final store = ref.read(localStoreProvider);
     final jsonList = store.getJsonList(StoreKeys.allTrips);
     if (jsonList != null && jsonList.isNotEmpty) {
-      return [for (final j in jsonList) Trip.fromJson(j as Map<String, dynamic>)];
+      return [for (final j in jsonList) cleanLegacySampleTrip(Trip.fromJson(j as Map<String, dynamic>))];
     }
     final seed = ref.read(tripProvider);
     return [seed];
@@ -1171,7 +1200,7 @@ final bookingsProvider = NotifierProvider<BookingsNotifier, List<Booking>>(Booki
 /// Best-effort device position for weather, rounded to 2dp (~1.1km) so
 /// small GPS jitter doesn't spawn a fresh /weather fetch every refresh —
 /// delegates to the shared bestEffortPosition() helper, falling back to
-/// Weligama Bay on denied/disabled location.
+/// the centre of Sri Lanka on denied/disabled location.
 final weatherLocationProvider = FutureProvider<LatLngAt>((ref) async {
   final (pos, _) = await bestEffortPosition();
   if (pos == null) return (lat: kFallbackLat, lng: kFallbackLng);
