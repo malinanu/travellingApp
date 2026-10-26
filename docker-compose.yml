@@ -107,8 +107,10 @@ services:
   # Writes transcripts of audio guides (transcriber/README.md). It idles at
   # a few tens of MB and asks the api for work every minute; the Whisper
   # model is only loaded, in a short-lived child process, while a recording
-  # is being transcribed. The limits keep a long audiobook from starving
-  # the api. Without TRANSCRIBER_TOKEN it just waits.
+  # is being transcribed. A low CPU priority (cpu_shares, so the api wins
+  # whenever it's busy; a hard cpus cap would fail on a smaller host), two
+  # threads and a memory cap keep a long audiobook from starving the api.
+  # Without TRANSCRIBER_TOKEN it just waits.
   transcriber:
     image: ghcr.io/malinanu/travellingapp-transcriber:${SPOTTO_IMAGE_TAG:-latest}
     pull_policy: always
@@ -118,7 +120,7 @@ services:
       TRANSCRIBER_TOKEN: ${TRANSCRIBER_TOKEN:-}
       CPU_THREADS: 2
     mem_limit: 1536m
-    cpus: "2"
+    cpu_shares: 256
     depends_on: [api]
     networks: [spotto]
 

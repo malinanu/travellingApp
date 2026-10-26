@@ -72,6 +72,17 @@ const BODY_LABEL: Record<ContentType, { label: string; hint: string }> = {
   tip: { label: 'Tip', hint: 'Keep it short: a few sentences.' },
 };
 
+/** "galle-fort_walk v2.mp3" → "Galle fort walk v2": a starting title for an
+ * audio post uploaded before it has one, like a video site does. */
+function titleFromFileName(name: string): string {
+  const t = name.replace(/\.[^.]+$/, '').replace(/[-_.]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+// A new post is saved as a draft before its first upload, and a draft needs
+// a title.
+const TITLE_FIRST = 'Add a title first: the post is saved as a draft before the file uploads.';
+
 function readAudioDuration(file: File): Promise<number | null> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
@@ -121,6 +132,8 @@ function Editor() {
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Which action the error came from: an upload's shows in its own panel.
+  const [errorAt, setErrorAt] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState('');
@@ -175,10 +188,13 @@ function Editor() {
       if (msg) setNotice(msg);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+      setErrorAt(label);
     } finally {
       setBusy(null);
     }
   };
+  const errorIn = (label: string) =>
+    error && errorAt === label ? <p className="text-[12px] font-semibold mt-2" style={{ color: RED }}>{error}</p> : null;
 
   const transition = (label: string, path: string, body?: unknown, done?: string) =>
     run(label, async () => {
@@ -191,6 +207,7 @@ function Editor() {
     run('cover', async () => {
       const bad = validateFile(file, 'image');
       if (bad) throw new Error(bad);
+      if (!idRef.current && !form.title.trim()) throw new Error(TITLE_FIRST);
       const pid = await ensureId();
       await uploadMedia(api, file, { ownerType: 'content', ownerId: pid, role: 'cover' });
       await qc.invalidateQueries({ queryKey: ['studio-item', pid] });
@@ -200,10 +217,14 @@ function Editor() {
     run('audio', async () => {
       const bad = validateFile(file, 'audio');
       if (bad) throw new Error(bad);
+      // No title yet: start from the file's name (editable above), so the
+      // draft can be saved and the audio attached to it.
+      const base = form.title.trim() ? form : { ...form, title: titleFromFileName(file.name) };
+      if (!base.title) throw new Error(TITLE_FIRST);
       const seconds = await readAudioDuration(file);
-      const pid = await ensureId();
+      const pid = idRef.current ?? (await save(base)).id;
       await uploadMedia(api, file, { ownerType: 'content', ownerId: pid, role: 'audio' });
-      const next = { ...form, audioSeconds: seconds ? Math.round(seconds) : form.audioSeconds };
+      const next = { ...base, audioSeconds: seconds ? Math.round(seconds) : base.audioSeconds };
       await save(next);
       await qc.invalidateQueries({ queryKey: ['studio-item', pid] });
       return 'Audio uploaded.';
@@ -212,6 +233,7 @@ function Editor() {
   const uploadInline = async (file: File) => {
     const bad = validateFile(file, 'image');
     if (bad) throw new Error(bad);
+    if (!idRef.current && !form.title.trim()) throw new Error(TITLE_FIRST);
     const pid = await ensureId();
     const m = await uploadMedia(api, file, { ownerType: 'content', ownerId: pid, role: 'inline' });
     return m.url;
@@ -308,6 +330,7 @@ function Editor() {
                   {form.audioSeconds > 0 && <span className="text-[12px] text-muted font-semibold">Length {formatDuration(form.audioSeconds)}</span>}
                   {busy === 'audio' && <span className="text-[12px] text-muted font-semibold">Uploading — large files take a few minutes.</span>}
                 </div>
+                {errorIn('audio')}
                 {item?.audioUrl && busy !== 'audio' && (
                   <TranscriptState transcript={transcript} busy={redoing} error={redoError} onRedo={editable ? redoTranscript : undefined} />
                 )}
@@ -398,7 +421,7 @@ function Editor() {
               <p className="text-[12px] text-muted font-semibold flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Working…</p>
             )}
             {notice && <p className="text-[12px] font-semibold flex items-start gap-1.5" style={{ color: GREEN }}><CheckCircle2 size={13} className="mt-[1px] shrink-0" /> {notice}</p>}
-            {error && <p className="text-[12px] font-semibold" style={{ color: RED }}>{error}</p>}
+            {error && errorAt !== 'audio' && errorAt !== 'cover' && <p className="text-[12px] font-semibold" style={{ color: RED }}>{error}</p>}
             {!isAdmin && (
               <p className="text-[11.5px] text-muted font-semibold pt-1">An admin checks every post before travellers see it.</p>
             )}
@@ -442,6 +465,7 @@ function Editor() {
               <FilePick accept="image/jpeg,image/png,image/webp" onPick={uploadCover} busy={busy === 'cover'}
                 label={item?.coverUrl ? 'Replace photo' : 'Add a photo'} icon={<ImagePlus size={13} />} />
             )}
+            {errorIn('cover')}
             <p className="text-[11.5px] text-muted font-semibold mt-2">A wide photo works best. JPEG, PNG or WebP, up to 8 MB.</p>
           </div>
 
