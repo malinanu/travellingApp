@@ -23,6 +23,8 @@ export interface User {
   isSuperAdmin?: boolean;
   /** Admin may hand vendor logins over to their owners (super-admins always). */
   canManageVendorLogins?: boolean;
+  /** May write travel content in the Command Center (admins always can). */
+  publisher?: boolean;
   totpEnabled: boolean;
   phone: string;
   /** Confirmed with a one-time code (WhatsApp or SMS); a new number resets it. */
@@ -42,7 +44,7 @@ export interface Media {
   id: string;
   ownerType: string;
   ownerId: string;
-  kind: 'image' | 'video' | 'doc';
+  kind: 'image' | 'video' | 'doc' | 'audio';
   role: string;
   objectKey: string;
   url: string;
@@ -429,6 +431,7 @@ export interface AdminUserSummary {
   email: string;
   role: Role;
   vendorName?: string;
+  publisher: boolean;
   createdAt: string;
   activeSessions: number;
   lastActiveAt?: string;
@@ -530,17 +533,91 @@ export interface Subscription {
   since: string;
 }
 
-export interface AudioGuide {
+/** Travel content written in the Command Center (/studio/content) and read
+ * by travellers (/content). */
+export type ContentType = 'audio' | 'blog' | 'guide' | 'itinerary' | 'tip';
+export type ContentStatus = 'draft' | 'in_review' | 'published' | 'rejected' | 'archived';
+
+export interface ContentChapter {
+  title: string;
+  startSec: number;
+}
+
+/** A Spotto place (placeId) or a named point, optionally at a time of day. */
+export interface ItineraryStop {
+  placeId?: string;
+  name: string;
+  lat?: number;
+  lng?: number;
+  /** "09:30" */
+  time?: string;
+  note?: string;
+}
+
+export interface ItineraryDay {
+  title: string;
+  stops: ItineraryStop[];
+}
+
+export interface ContentPlace {
   id: string;
-  site: string;
-  region: string;
+  name: string;
+  category: string;
   lat: number;
   lng: number;
-  lang: string;
-  published: boolean;
+  cover?: string;
+}
+
+export interface ContentItem {
+  id: string;
+  type: ContentType;
+  slug: string;
+  title: string;
+  summary: string;
+  /** Markdown; left out of list responses. */
+  body?: string;
+  /** Signed /media/raw paths (resolveMediaUrl), or "". */
+  coverUrl: string;
+  audioUrl: string;
+  audioSeconds: number;
+  chapters: ContentChapter[];
+  placeIds: string[];
+  days: ItineraryDay[];
+  tags: string[];
+  regionId: string | null;
+  regionName: string;
+  regionLat?: number;
+  regionLng?: number;
+  language: string;
+  authorId: string | null;
+  authorName: string;
+  status: ContentStatus;
+  /** Why an admin sent it back (status rejected). */
+  reviewNote: string;
+  reviewedBy: string | null;
+  submittedAt: string | null;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  views: number;
   plays: number;
-  depths: string[];
-  duration: Record<string, string>;
+  /** A live post's linked places (GET /content/{key} only). */
+  places?: ContentPlace[];
+}
+
+/** GET /studio/content */
+export interface StudioContentList {
+  items: ContentItem[];
+  /** Posts per status (the caller's own for publishers). */
+  counts: Partial<Record<ContentStatus, number>>;
+}
+
+/** GET /studio/regions — the towns a post can be about. */
+export interface StudioTown {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
 }
 
 /** GET /admin/search?q=... — grouped results across the entities the

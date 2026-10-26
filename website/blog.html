@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stories · Spotto</title>
-<meta name="description" content="Stories from the Spotto map: surf mornings, kottu benchmarks, leopard etiquette and the people behind the island's best spots.">
+<meta name="description" content="Stories from the Spotto map: guides, food, surf, wildlife and the people behind Sri Lanka's best spots.">
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="site.css?v=3">
+<link rel="stylesheet" href="site.css?v=4">
 </head>
 <body>
 
@@ -37,77 +37,37 @@
 
 <main>
 
-<section class="page-hero">
+<section class="page-hero" id="storiesHero">
   <div class="container">
     <h1>Notes from the map.</h1>
     <p class="lead">Dispatches from reviewers, partners and travellers who take the island seriously and themselves less so.</p>
   </div>
 </section>
 
-<section style="padding-top:40px">
+<section id="stories" style="padding-top:40px" data-api="https://spottoapi.threelogiq.com">
   <div class="container">
-    <div class="featured rv">
-      <figure class="photo im-sigiriya" data-img="assets/img/w-sigiriya.jpg" data-alt="Sigiriya rock at dawn">
-        <span class="ph-cap">Sigiriya before sunrise</span>
-      </figure>
-      <div class="featured-body">
-        <span class="cat">Guides</span>
-        <h3><a href="contact.html">Beat the queue: climbing Sigiriya before the buses arrive</a></h3>
-        <p class="muted" style="font-weight:500">The rock opens at 7am. The buses arrive at 8:15. That gap is one of the calmest hours in Sri Lanka, and here's exactly how to use it.</p>
-        <span class="meta">Malin Jayaweera · July 12, 2026</span>
-      </div>
-    </div>
+    <div id="storiesFeatured"></div>
+    <div class="posts" id="storiesGrid"></div>
+    <p class="stories-status muted" id="storiesStatus" role="status">Loading stories…</p>
+    <noscript><p class="stories-status muted">Turn on JavaScript to read our stories.</p></noscript>
+    <div class="stories-more"><button class="btn btn--ink" id="storiesMore" type="button" hidden>More stories</button></div>
   </div>
 </section>
 
-<section style="padding-top:0">
+<article id="story" class="story" hidden>
   <div class="container">
-    <div class="posts">
-      <div class="post rv">
-        <figure class="photo im-arugam" data-img="assets/img/hero-arugam.jpg" data-alt="Surf on the south coast"></figure>
-        <span class="cat">Surf</span>
-        <h3><a href="contact.html">A beginner's map of Sri Lanka's sandbars</a></h3>
-        <p>Every surf school promises "the best spot". The sand decides. How to read the bay in five minutes from the beach road.</p>
-        <span class="meta">Dan Whitmore · July 8, 2026</span>
-      </div>
-      <div class="post rv d1">
-        <figure class="photo im-ember" data-img="assets/img/blog-food.jpg" data-alt="Kottu on the griddle"></figure>
-        <span class="cat">Food</span>
-        <h3><a href="contact.html">The great kottu benchmark: 14 shacks, one verdict</a></h3>
-        <p>Our reviewers ate kottu for a week so you don't have to guess. The winner is not where the tuk-tuk drivers say it is.</p>
-        <span class="meta">Malin Jayaweera · July 3, 2026</span>
-      </div>
-      <div class="post rv d2">
-        <figure class="photo im-galle" data-img="assets/img/w-galle.jpg" data-alt="Galle Fort at dusk"></figure>
-        <span class="cat">Hidden spots</span>
-        <h3><a href="contact.html">Galle Fort after the day-trippers leave</a></h3>
-        <p>At 5pm the cruise crowds roll out and the ramparts exhale. A dusk walking loop from the lighthouse, with snack stops.</p>
-        <span class="meta">Malin Jayaweera · June 27, 2026</span>
-      </div>
-      <div class="post rv">
-        <figure class="photo im-yala" data-img="assets/img/w-yala.jpg" data-alt="A leopard in Yala"></figure>
-        <span class="cat">Wildlife</span>
-        <h3><a href="contact.html">Leopard etiquette: doing Yala without being that jeep</a></h3>
-        <p>You can see a leopard and let it have a nice day too. A safari checklist written with three Yala trackers.</p>
-        <span class="meta">Malin Jayaweera · June 20, 2026</span>
-      </div>
-      <div class="post rv d1">
-        <figure class="photo im-peak" data-img="assets/img/w-adamspeak.jpg" data-alt="Dawn on Adam's Peak"></figure>
-        <span class="cat">Culture</span>
-        <h3><a href="contact.html">5,500 steps: an honest guide to Adam's Peak season</a></h3>
-        <p>What the pilgrimage actually feels like, what to carry, and why the tea stall halfway up deserves a statue.</p>
-        <span class="meta">Malin Jayaweera · June 12, 2026</span>
-      </div>
-      <div class="post rv d2">
-        <figure class="photo im-ella" data-img="assets/img/blog-train.jpg" data-alt="View from the Ella train"></figure>
-        <span class="cat">Guides</span>
-        <h3><a href="contact.html">The Ella train: seats, snacks and which side to sit on</a></h3>
-        <p>Left side going up, right side coming down, and the honest answer about whether the doorway photo is worth it.</p>
-        <span class="meta">Malin Jayaweera · June 5, 2026</span>
-      </div>
+    <div class="story-inner">
+      <a class="story-back" href="blog.html">← All stories</a>
+      <span class="cat" id="storyCat"></span>
+      <h1 id="storyTitle"></h1>
+      <p class="lead" id="storySummary"></p>
+      <span class="meta" id="storyMeta"></span>
+      <figure class="photo story-cover im-sigiriya" id="storyCover" hidden></figure>
+      <div class="prose" id="storyBody"></div>
+      <div class="story-tags" id="storyTags"></div>
     </div>
   </div>
-</section>
+</article>
 
 <section class="band band--center">
   <figure class="photo im-ember" data-img="assets/img/blog-food.jpg" data-alt="Kottu flames"></figure>
@@ -158,6 +118,6 @@
   </div>
 </footer>
 
-<script src="site.js?v=3"></script>
+<script src="site.js?v=4"></script>
 </body>
 </html>

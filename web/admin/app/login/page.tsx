@@ -53,15 +53,18 @@ function AdminLoginPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Admins, and publishers (any account an admin lets write travel
+  // content, who only get the Content section).
   const finishSession = (res: AuthResponse) => {
-    if (res.user.role !== 'admin') {
+    const isAdmin = res.user.role === 'admin';
+    if (!isAdmin && !res.user.publisher) {
       api.setToken(null);
       api.logout(res.refreshToken);
-      setError('This account is not an admin.');
+      setError("This account doesn't have access to the Command Center.");
       return;
     }
     api.setToken(res.token, true, res.refreshToken);
-    router.replace('/queue');
+    router.replace(isAdmin ? '/queue' : '/content');
   };
 
   const submitCreds = async (e: React.FormEvent) => {

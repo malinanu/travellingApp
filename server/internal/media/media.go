@@ -1,4 +1,4 @@
-// Package media handles image/video/document uploads to Cloudflare R2 via
+// Package media handles image/video/audio/document uploads to Cloudflare R2 via
 // its S3-compatible API. Clients never stream bytes through our server: we
 // hand out a short-lived presigned PUT URL, the client uploads straight to
 // R2, then calls back to confirm — see internal/http/media.go.
@@ -6,26 +6,31 @@ package media
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // Kinds and per-kind limits. Video is generous because R2 stores originals
-// (there is no transcoding step) and short promo clips can be large.
+// (there is no transcoding step) and short promo clips can be large; audio
+// more so, since a full audiobook is one file.
 const (
 	KindImage = "image"
 	KindVideo = "video"
 	KindDoc   = "doc"
+	KindAudio = "audio"
 
 	maxImage = 8 << 20   // 8 MB
 	maxVideo = 100 << 20 // 100 MB
 	maxDoc   = 15 << 20  // 15 MB
+	maxAudio = 200 << 20 // 200 MB
 )
 
 // contentTypes maps an allowed MIME type to (file extension, kind).
@@ -40,6 +45,11 @@ var contentTypes = map[string]struct {
 	"video/webm":      {".webm", KindVideo},
 	"video/quicktime": {".mov", KindVideo},
 	"application/pdf": {".pdf", KindDoc},
+	"audio/mpeg":      {".mp3", KindAudio},
+	"audio/mp3":       {".mp3", KindAudio},
+	"audio/mp4":       {".m4a", KindAudio},
+	"audio/x-m4a":     {".m4a", KindAudio},
+	"audio/aac":       {".aac", KindAudio},
 }
 
 // Resolve validates a content type and returns its extension, kind, and the
@@ -54,6 +64,8 @@ func Resolve(contentType string) (ext, kind string, maxSize int64, ok bool) {
 		maxSize = maxVideo
 	case KindDoc:
 		maxSize = maxDoc
+	case KindAudio:
+		maxSize = maxAudio
 	default:
 		maxSize = maxImage
 	}
@@ -65,6 +77,11 @@ type Uploader interface {
 	PresignPut(ctx context.Context, key, contentType string, ttl time.Duration) (string, error)
 	Head(ctx context.Context, key string) (size int64, contentType string, err error)
 	Get(ctx context.Context, key string) (body io.ReadCloser, contentType string, err error)
+	// GetRange reads one byte range of an object ("bytes=0-1023", as in an
+	// HTTP Range header), or all of it when byteRange is empty — so audio
+	// and video players can seek. It returns ErrInvalidRange when the range
+	// lies outside the object.
+	GetRange(ctx context.Context, key, byteRange string) (Object, error)
 	// Put is a server-initiated write, unlike PresignPut (which only ever
 	// hands a client a URL to upload to directly) — used for generated
 	// derivatives the server creates itself, like a resized thumbnail,
@@ -73,6 +90,20 @@ type Uploader interface {
 	Delete(ctx context.Context, key string) error
 	PublicURL(key string) string
 }
+
+// Object is a read of a stored object (or one range of it). The caller must
+// Close Body.
+type Object struct {
+	Body        io.ReadCloser
+	ContentType string
+	// Length is the byte count of Body, or -1 when unknown.
+	Length int64
+	// ContentRange is set ("bytes 0-1023/4096") when only a range was read.
+	ContentRange string
+}
+
+// ErrInvalidRange means a requested byte range starts past the object's end.
+var ErrInvalidRange = errors.New("requested range not satisfiable")
 
 // R2 is the Cloudflare R2 implementation of Uploader.
 type R2 struct {
@@ -146,6 +177,32 @@ func (r *R2) Get(ctx context.Context, key string) (io.ReadCloser, string, error)
 		ct = *out.ContentType
 	}
 	return out.Body, ct, nil
+}
+
+func (r *R2) GetRange(ctx context.Context, key, byteRange string) (Object, error) {
+	in := &s3.GetObjectInput{Bucket: aws.String(r.bucket), Key: aws.String(key)}
+	if byteRange != "" {
+		in.Range = aws.String(byteRange)
+	}
+	out, err := r.client.GetObject(ctx, in)
+	if err != nil {
+		var re *awshttp.ResponseError
+		if errors.As(err, &re) && re.HTTPStatusCode() == 416 {
+			return Object{}, ErrInvalidRange
+		}
+		return Object{}, err
+	}
+	obj := Object{Body: out.Body, Length: -1}
+	if out.ContentType != nil {
+		obj.ContentType = *out.ContentType
+	}
+	if out.ContentLength != nil {
+		obj.Length = *out.ContentLength
+	}
+	if out.ContentRange != nil {
+		obj.ContentRange = *out.ContentRange
+	}
+	return obj, nil
 }
 
 // Put uploads body directly (server-side) — see Uploader.Put's doc comment

@@ -2,9 +2,12 @@
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,16 +21,19 @@ import (
 // singleValueRoles hold at most one object per owner â€” a new upload replaces
 // (and deletes from R2) the previous one. br_cert is single-value (unlike
 // the generic multi-value "doc") because a re-upload should replace the
-// vendor's one Business Registration certificate, not add another.
-var singleValueRoles = map[string]bool{"cover": true, "promo": true, "avatar": true, "br_cert": true}
+// vendor's one Business Registration certificate, not add another. A post's
+// audio file is single-value too; its inline images ("inline") are not.
+var singleValueRoles = map[string]bool{"cover": true, "promo": true, "avatar": true, "br_cert": true, "audio": true}
 
 // roleAllowsKind gates which file kind a role accepts: promo is video-only,
-// docs (and the dedicated br_cert role) may be a PDF or a scanned image,
-// everything else is an image.
+// audio is audio-only, docs (and the dedicated br_cert role) may be a PDF or
+// a scanned image, everything else is an image.
 func roleAllowsKind(role, kind string) bool {
 	switch role {
 	case "promo":
 		return kind == media.KindVideo
+	case "audio":
+		return kind == media.KindAudio
 	case "doc", "br_cert":
 		return kind == media.KindDoc || kind == media.KindImage
 	default:
@@ -38,7 +44,8 @@ func roleAllowsKind(role, kind string) bool {
 // canUploadFor authorises a caller to attach media to an owner. Admins may
 // touch anything; otherwise a vendor may only upload to its own vendor, a
 // user to its own avatar, any authenticated user may contribute a place
-// photo, and a review's photos only by its author.
+// photo, a review's photos only by its author, and a post's files only by
+// its author while they're still a publisher and the post is editable.
 func (s *Server) canUploadFor(ctx context.Context, c *auth.Claims, ownerType, ownerID string) bool {
 	if ownerType == "" || ownerID == "" {
 		return false
@@ -56,6 +63,13 @@ func (s *Server) canUploadFor(ctx context.Context, c *auth.Claims, ownerType, ow
 	case "review":
 		rv, err := s.Store.ReviewByID(ctx, ownerID)
 		return err == nil && rv.TravellerID == c.Subject
+	case "content":
+		item, err := s.Store.ContentByID(ctx, ownerID)
+		if err != nil || item.AuthorID == nil || *item.AuthorID != c.Subject || !authorCanEdit(item.Status) {
+			return false
+		}
+		u, err := s.Store.UserByID(ctx, c.Subject)
+		return err == nil && u.Publisher
 	}
 	return false
 }
@@ -174,6 +188,9 @@ func (s *Server) handleMediaConfirm(w http.ResponseWriter, r *http.Request) {
 	if req.Role == "avatar" {
 		_ = s.Store.SetUserAvatar(r.Context(), req.OwnerID, m.URL)
 	}
+	if req.OwnerType == "content" && (req.Role == "cover" || req.Role == "audio") {
+		_ = s.Store.SetContentMedia(r.Context(), req.OwnerID, req.Role, m.URL)
+	}
 	if req.OwnerType == "vendor" && req.Role == "doc" {
 		_ = s.Store.SetVendorDocs(r.Context(), req.OwnerID, true)
 	}
@@ -197,7 +214,9 @@ func (s *Server) handleMediaConfirm(w http.ResponseWriter, r *http.Request) {
 // string (see auth.Tokens.IssueMediaView) rather than the usual bearer
 // session header: plain <img>/<video>/<a> tags in the vendor/admin web apps
 // can't attach an Authorization header, so this route intentionally sits
-// outside the Authenticated middleware group (see server.go).
+// outside the Authenticated middleware group (see server.go). A single
+// "Range: bytes=…" request is passed through to R2 and answered with 206,
+// which audio players (iOS especially) need in order to seek.
 func (s *Server) handleMediaRaw(w http.ResponseWriter, r *http.Request) {
 	if s.Media == nil {
 		writeErr(w, http.StatusNotImplemented, "uploads are not configured")
@@ -209,18 +228,38 @@ func (s *Server) handleMediaRaw(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "invalid or expired token")
 		return
 	}
-	body, contentType, err := s.Media.Get(r.Context(), key)
+	byteRange := r.Header.Get("Range")
+	if !singleByteRange.MatchString(byteRange) {
+		byteRange = "" // none, or one we don't serve (several ranges): send it all
+	}
+	obj, err := s.Media.GetRange(r.Context(), key, byteRange)
+	if errors.Is(err, media.ErrInvalidRange) {
+		writeErr(w, http.StatusRequestedRangeNotSatisfiable, "requested range not satisfiable")
+		return
+	}
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "The requested item could not be found.")
 		return
 	}
-	defer body.Close()
-	if contentType != "" {
-		w.Header().Set("Content-Type", contentType)
+	defer obj.Body.Close()
+	if obj.ContentType != "" {
+		w.Header().Set("Content-Type", obj.ContentType)
 	}
 	w.Header().Set("Cache-Control", "private, max-age=3600")
-	io.Copy(w, body)
+	w.Header().Set("Accept-Ranges", "bytes")
+	if obj.Length >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(obj.Length, 10))
+	}
+	if obj.ContentRange != "" {
+		w.Header().Set("Content-Range", obj.ContentRange)
+		w.WriteHeader(http.StatusPartialContent)
+	}
+	io.Copy(w, obj.Body)
 }
+
+// singleByteRange matches one HTTP byte range: "bytes=0-", "bytes=100-199"
+// or a suffix like "bytes=-500".
+var singleByteRange = regexp.MustCompile(`^bytes=(\d+-\d*|-\d+)$`)
 
 // signMediaPath appends a fresh, short-lived view token to a stored
 // "/media/raw/<key>" path â€” called at HTTP-response time, never when a
@@ -284,6 +323,9 @@ func (s *Server) handleMediaDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	if m.Role == "avatar" {
 		_ = s.Store.SetUserAvatar(r.Context(), m.OwnerID, "")
+	}
+	if m.OwnerType == "content" && (m.Role == "cover" || m.Role == "audio") {
+		_ = s.Store.SetContentMedia(r.Context(), m.OwnerID, m.Role, "")
 	}
 	if m.OwnerType == "vendor" && (m.Role == "doc" || m.Role == "br_cert") {
 		// Recompute the docs flag from whatever remains.

@@ -4,6 +4,7 @@ export * from './upload';
 export * from './use-auto-save';
 export * from './vendor-categories';
 export * from './supported-icons';
+export * from './markdown';
 
 export function formatCurrency(amount: number, currency = 'LKR'): string {
   if (currency === 'LKR' || currency === 'Rs' || currency === 'Rs.') {

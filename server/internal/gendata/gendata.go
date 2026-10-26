@@ -87,8 +87,6 @@ var (
 	closingNegative  = []string{"Not sure I'd return.", "Might give it another chance.", "Expected more for the price."}
 	vendorNoteFlags  = []string{"Missing business license", "Low photo quality", "Duplicate address?", ""}
 	offerTypes       = []string{"Percentage", "Amount", "Freebie", "Bundle"}
-	audioDepths      = []string{"Quick", "Standard", "In-depth"}
-	audioDurationsBy = map[string]string{"Quick": "4m", "Standard": "12m", "In-depth": "28m"}
 
 	// Curated content-template pools. gofakeit.Comment() was tried for all
 	// of these initially and produces nonsensical, grammatically-broken
@@ -147,7 +145,6 @@ type Summary struct {
 	Reviews       int
 	Groups        int
 	Subscriptions int
-	AudioGuides   int
 	SampleLogins  []string
 }
 
@@ -220,12 +217,6 @@ func Run(ctx context.Context, store *postgres.Store) (Summary, error) {
 		return sum, err
 	}
 	sum.Subscriptions = subs
-
-	guides, err := genAudioGuides(ctx, store, regions, 8)
-	if err != nil {
-		return sum, err
-	}
-	sum.AudioGuides = guides
 
 	if err := genVendorBlobs(ctx, store, vendors, now); err != nil {
 		return sum, err

@@ -292,6 +292,12 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	// widgets. Ids are random and responses are cached (inspirations.go).
 	r.Get("/geo-places/{id}/photo", s.handleGeoPlacePhoto)
 
+	// Live travel content, readable without signing in (the website's blog
+	// uses it) — see content.go.
+	r.With(publicCORS).Get("/content", s.handleContentList)
+	r.With(publicCORS).Get("/content/{key}", s.handleContentDetail)
+	r.Post("/content/{id}/play", s.handleContentPlay)
+
 	r.Get("/healthz", s.handleHealthz)
 	r.Get("/categories", s.handleAdminCategories)
 	r.Get("/readyz", s.handleReadyz)
@@ -461,6 +467,20 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		})
 	})
 
+	// Writing travel content in the Command Center: admins, and any account
+	// an admin made a publisher. Publishers only reach their own posts.
+	r.Group(func(r chi.Router) {
+		r.Use(s.Authenticated, s.RequirePublisher)
+		r.Get("/studio/content", s.handleStudioContentList)
+		r.Post("/studio/content", s.handleStudioContentCreate)
+		r.Get("/studio/content/{id}", s.handleStudioContentGet)
+		r.Put("/studio/content/{id}", s.handleStudioContentUpdate)
+		r.Delete("/studio/content/{id}", s.handleStudioContentDelete)
+		r.Post("/studio/content/{id}/submit", s.handleStudioContentSubmit)
+		r.Get("/studio/regions", s.handleStudioRegions)
+		r.Get("/studio/places", s.handleStudioPlaces)
+	})
+
 	// Admin.
 	r.Group(func(r chi.Router) {
 		r.Use(s.Authenticated, auth.RequireRole(domain.RoleAdmin))
@@ -496,9 +516,10 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/geo/area", s.handleAdminGeoArea)
 		r.Get("/admin/subscriptions", s.handleAdminSubscriptions)
 		r.Post("/admin/subscriptions/{id}/upgrade", s.handleUpgradeSubscription)
-		r.Get("/admin/audio-guides", s.handleAudioGuides)
-		r.Post("/admin/audio-guides", s.handleCreateAudioGuide)
-		r.Patch("/admin/audio-guides/{id}/publish", s.handlePublishAudioGuide)
+		r.Get("/admin/content/review-count", s.handleAdminContentReviewCount)
+		r.Post("/admin/content/{id}/publish", s.handleAdminContentPublish)
+		r.Post("/admin/content/{id}/reject", s.handleAdminContentReject)
+		r.Post("/admin/content/{id}/unpublish", s.handleAdminContentUnpublish)
 		r.Get("/admin/notifications", s.handleAdminNotifications)
 		r.Post("/admin/notifications/read", s.handleAdminNotificationsRead)
 		r.Get("/admin/vendor-grants", s.handleAdminVendorGrants)
@@ -524,6 +545,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/users", s.handleAdminUsers)
 		r.Get("/admin/users/{id}", s.handleAdminUserDetail)
 		r.Post("/admin/users/{id}/revoke-sessions", s.handleAdminRevokeUserSessions)
+		r.Put("/admin/users/{id}/publisher", s.handleAdminSetUserPublisher)
 
 		// Categories
 		r.Get("/admin/categories", s.handleAdminCategories)

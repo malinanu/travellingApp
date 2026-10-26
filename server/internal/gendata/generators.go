@@ -493,39 +493,6 @@ func genSubscriptions(ctx context.Context, store *postgres.Store, vendors []doma
 	return created, nil
 }
 
-func genAudioGuides(ctx context.Context, store *postgres.Store, regions []domain.Region, n int) (int, error) {
-	created := 0
-	for i := 0; i < n && i < len(regions); i++ {
-		region := regions[i]
-		depthPool := append([]string{}, audioDepths...)
-		gofakeit.ShuffleStrings(depthPool)
-		depths := depthPool[:gofakeit.Number(1, len(depthPool))]
-		duration := map[string]string{}
-		for _, d := range depths {
-			duration[d] = audioDurationsBy[d]
-		}
-		depthsJSON, _ := json.Marshal(depths)
-		durationJSON, _ := json.Marshal(duration)
-		g := domain.AudioGuide{
-			ID:        newID("aud"),
-			Site:      fmt.Sprintf("%s Heritage Walk", region.Name),
-			Region:    region.Name,
-			Lat:       region.Lat,
-			Lng:       region.Lng,
-			Lang:      "EN",
-			Published: gofakeit.Number(1, 100) <= 75,
-			Plays:     gofakeit.Number(0, 3000),
-			Depths:    depthsJSON,
-			Duration:  durationJSON,
-		}
-		if err := store.UpsertAudioGuide(ctx, g); err != nil {
-			return created, fmt.Errorf("audio guide %s: %w", g.ID, err)
-		}
-		created++
-	}
-	return created, nil
-}
-
 func genVendorBlobs(ctx context.Context, store *postgres.Store, vendors []domain.Vendor, now time.Time) error {
 	days := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 	for _, v := range vendors {

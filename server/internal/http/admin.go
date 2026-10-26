@@ -468,35 +468,6 @@ func (s *Server) handleUpgradeSubscription(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "upgraded"})
 }
 
-func (s *Server) handleAudioGuides(w http.ResponseWriter, r *http.Request) {
-	guides, err := s.Store.AudioGuides(r.Context())
-	if err != nil {
-		storeErr(w, err)
-		return
-	}
-	if guides == nil {
-		guides = []domain.AudioGuide{}
-	}
-	writeJSON(w, http.StatusOK, guides)
-}
-
-func (s *Server) handleCreateAudioGuide(w http.ResponseWriter, r *http.Request) {
-	var g domain.AudioGuide
-	if !readJSON(w, r, &g) {
-		return
-	}
-	if g.Site == "" {
-		writeErr(w, http.StatusBadRequest, "site required")
-		return
-	}
-	g.ID = newID("aud")
-	if err := s.Store.UpsertAudioGuide(r.Context(), g); err != nil {
-		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
-		return
-	}
-	writeJSON(w, http.StatusCreated, g)
-}
-
 // handleAdminSearch powers the command bar's âŒ˜K search â€” see
 // Store.AdminSearch for the query shape.
 func (s *Server) handleAdminSearch(w http.ResponseWriter, r *http.Request) {
@@ -534,20 +505,6 @@ func (s *Server) handleAdminNotificationsRead(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func (s *Server) handlePublishAudioGuide(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Published bool `json:"published"`
-	}
-	if !readJSON(w, r, &req) {
-		return
-	}
-	if err := s.Store.SetAudioGuidePublished(r.Context(), chi.URLParam(r, "id"), req.Published); err != nil {
-		storeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]bool{"published": req.Published})
 }
 
 // handleAdminVoidClaim allows admins to void or reverse an offer claim/redemption.
