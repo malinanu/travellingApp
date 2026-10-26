@@ -42,6 +42,9 @@ type User struct {
 	// traveller turns it off): while on, the rough ~1 km area they use the
 	// map from is recorded for the admin geo page (traveller_presence).
 	UsageAnalytics bool `json:"usageAnalytics"`
+	// Publisher lets the account write travel content in the Command
+	// Center (set by an admin); admins can always write.
+	Publisher bool `json:"publisher"`
 	Lat               *float64   `json:"-"`
 	Lng               *float64   `json:"-"`
 	LocationUpdatedAt *time.Time `json:"-"`
@@ -626,19 +629,6 @@ type Subscription struct {
 	Since    string     `json:"since"`
 }
 
-type AudioGuide struct {
-	ID        string          `json:"id"`
-	Site      string          `json:"site"`
-	Region    string          `json:"region"`
-	Lat       float64         `json:"lat"`
-	Lng       float64         `json:"lng"`
-	Lang      string          `json:"lang"`
-	Published bool            `json:"published"`
-	Plays     int             `json:"plays"`
-	Depths    json.RawMessage `json:"depths"`   // ["Quick","Standard"]
-	Duration  json.RawMessage `json:"duration"` // {"Quick":"4m",…}
-}
-
 type VendorNotification struct {
 	ID     string `json:"id"`
 	Icon   string `json:"icon"`
@@ -749,6 +739,7 @@ type AdminUserSummary struct {
 	Email          string     `json:"email"`
 	Role           Role       `json:"role"`
 	VendorName     string     `json:"vendorName,omitempty"`
+	Publisher      bool       `json:"publisher"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	ActiveSessions int        `json:"activeSessions"`
 	LastActiveAt   *time.Time `json:"lastActiveAt,omitempty"`

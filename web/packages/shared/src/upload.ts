@@ -2,10 +2,10 @@ import type { Api } from './api';
 import type { Media } from './types';
 
 /** What role a piece of media plays for its owner. */
-export type MediaRole = 'cover' | 'gallery' | 'promo' | 'doc' | 'br_cert' | 'avatar' | 'review' | 'contrib' | 'menu_item';
+export type MediaRole = 'cover' | 'gallery' | 'promo' | 'doc' | 'br_cert' | 'avatar' | 'review' | 'contrib' | 'menu_item' | 'audio' | 'inline';
 
 export interface UploadTarget {
-  ownerType: 'vendor' | 'user' | 'place' | 'review';
+  ownerType: 'vendor' | 'user' | 'place' | 'review' | 'content';
   ownerId: string;
   role: MediaRole;
 }
@@ -24,6 +24,7 @@ export const MEDIA_LIMITS = {
   image: { types: ['image/jpeg', 'image/png', 'image/webp'], max: 8 << 20 },
   video: { types: ['video/mp4', 'video/webm', 'video/quicktime'], max: 100 << 20 },
   doc: { types: ['application/pdf', 'image/jpeg', 'image/png'], max: 15 << 20 },
+  audio: { types: ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/aac'], max: 200 << 20 },
 } as const;
 
 /**

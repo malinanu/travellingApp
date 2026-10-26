@@ -7,9 +7,11 @@
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/spotto/server/internal/config"
 	"github.com/spotto/server/internal/domain"
 	httpapi "github.com/spotto/server/internal/http"
+	"github.com/spotto/server/internal/media"
 	"github.com/spotto/server/internal/store/postgres"
 )
 
@@ -36,11 +39,37 @@ func (u *stubUploader) Head(_ context.Context, key string) (int64, string, error
 		ct = "video/mp4"
 	case strings.HasSuffix(key, ".pdf"):
 		ct = "application/pdf"
+	case strings.HasSuffix(key, ".mp3"):
+		ct = "audio/mpeg"
 	}
 	return 2048, ct, nil
 }
 func (u *stubUploader) Get(_ context.Context, key string) (io.ReadCloser, string, error) {
 	return io.NopCloser(strings.NewReader("stub-bytes-" + key)), "image/jpeg", nil
+}
+
+// GetRange serves the same fake body as Get, honouring "bytes=a-b" and
+// "bytes=a-" the way R2 does.
+func (u *stubUploader) GetRange(_ context.Context, key, byteRange string) (media.Object, error) {
+	body := "stub-bytes-" + key
+	if byteRange == "" {
+		return media.Object{Body: io.NopCloser(strings.NewReader(body)), ContentType: "image/jpeg", Length: int64(len(body))}, nil
+	}
+	from, to, _ := strings.Cut(strings.TrimPrefix(byteRange, "bytes="), "-")
+	start, _ := strconv.Atoi(from)
+	end := len(body) - 1
+	if to != "" {
+		end, _ = strconv.Atoi(to)
+		end = min(end, len(body)-1)
+	}
+	if start >= len(body) {
+		return media.Object{}, media.ErrInvalidRange
+	}
+	part := body[start : end+1]
+	return media.Object{
+		Body: io.NopCloser(strings.NewReader(part)), ContentType: "image/jpeg", Length: int64(len(part)),
+		ContentRange: fmt.Sprintf("bytes %d-%d/%d", start, end, len(body)),
+	}, nil
 }
 
 // Put is a no-op stub â€” real thumbnail bytes never need to actually land

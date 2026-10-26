@@ -2,11 +2,13 @@
 
 // Admin command-center shell — 232px dark rail + command bar with KPI
 // strip, theme toggle (light/dark CSS vars), real ⌘K search, and a real
-// notification bell. Port of AdminApp.jsx.
+// notification bell. Port of AdminApp.jsx. Publishers (accounts an admin
+// lets write travel content) get a slimmer shell: only Content and their
+// profile, and none of the admin-only data.
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Bell, CreditCard, Headphones, History, KeyRound, Map, MapPin, Moon, Search, Smartphone, ShieldAlert, Shapes, Sparkles, Store, Sun, UserCheck, Users, LucideIcon,
+  Activity, Bell, CreditCard, History, KeyRound, Map, Moon, Newspaper, Search, Smartphone, ShieldAlert, Shapes, Sparkles, Store, Sun, UserCheck, Users, LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -15,14 +17,15 @@ import { useEffect, useRef, useState } from 'react';
 import type { AdminKPIs, AdminNotification, AdminSearchResults, User } from '@spotto/shared';
 import { api } from '../lib/api';
 
-const NAV: { href: string; label: string; icon: LucideIcon; superAdminOnly?: boolean }[] = [
+// forPublishers: also shown to publishers, who see nothing else.
+const NAV: { href: string; label: string; icon: LucideIcon; superAdminOnly?: boolean; forPublishers?: boolean }[] = [
   { href: '/queue', label: 'Approval queue', icon: UserCheck },
   { href: '/vendors', label: 'Vendors', icon: Store },
   { href: '/users', label: 'Users', icon: Users },
   { href: '/quests', label: 'Quests', icon: Activity },
   { href: '/geo', label: 'Geo-analytics', icon: Map },
   { href: '/subscriptions', label: 'Subscriptions', icon: CreditCard },
-  { href: '/audio', label: 'Audio guides', icon: Headphones },
+  { href: '/content', label: 'Content', icon: Newspaper, forPublishers: true },
   { href: '/local-guide', label: 'Local Guide', icon: Sparkles },
   { href: '/categories', label: 'Categories', icon: Shapes },
   { href: '/access-grants', label: 'Access grants', icon: KeyRound },
@@ -49,11 +52,25 @@ export function useMe() {
   });
 }
 
-function useKpis() {
+/** Pages publishers may open; anything else sends them to Content. */
+const PUBLISHER_PATHS = ['/content', '/profile'];
+
+function useKpis(enabled: boolean) {
   return useQuery<AdminKPIs>({
     queryKey: ['admin-kpis'],
     queryFn: () => api.get<AdminKPIs>('/admin/kpis'),
     refetchInterval: 10000,
+    enabled,
+  });
+}
+
+/** Posts waiting for an admin to review them (the Content badge). */
+export function useReviewCount(enabled: boolean) {
+  return useQuery<{ count: number }>({
+    queryKey: ['admin-content-review-count'],
+    queryFn: () => api.get<{ count: number }>('/admin/content/review-count'),
+    refetchInterval: 30000,
+    enabled,
   });
 }
 
@@ -162,10 +179,12 @@ function useTheme() {
   return { theme, toggle };
 }
 
-function Rail({ pending }: { pending: number }) {
+function Rail({ pending, isAdmin }: { pending: number; isAdmin: boolean }) {
   const pathname = usePathname();
   const { data: me } = useMe();
-  const visibleNav = NAV.filter((n) => !n.superAdminOnly || me?.isSuperAdmin);
+  const { data: review } = useReviewCount(isAdmin);
+  const visibleNav = NAV.filter((n) => (isAdmin ? !n.superAdminOnly || me?.isSuperAdmin : n.forPublishers));
+  const badge: Record<string, number> = { '/queue': pending, '/content': review?.count ?? 0 };
   return (
     <aside className="w-[232px] shrink-0 flex flex-col" style={{ background: '#103d3a', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
       <div className="flex items-center gap-2.5 px-5 h-[58px]" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
@@ -180,7 +199,7 @@ function Rail({ pending }: { pending: number }) {
 
       <nav className="flex-1 px-3 py-4 space-y-1">
         <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.15em]" style={{ color: 'rgba(255,255,255,0.3)' }}>
-          Operations
+          {isAdmin ? 'Operations' : 'Publishing'}
         </p>
         {visibleNav.map((n) => {
           const on = pathname.startsWith(n.href);
@@ -198,9 +217,9 @@ function Rail({ pending }: { pending: number }) {
             >
               <Icon size={18} strokeWidth={on ? 2.4 : 2} style={{ color: on ? 'var(--accent)' : 'inherit' }} />
               <span className="font-semibold text-[13.5px]">{n.label}</span>
-              {n.href === '/queue' && pending > 0 && (
+              {(badge[n.href] ?? 0) > 0 && (
                 <span className="ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ background: 'var(--accent)' }}>
-                  {pending}
+                  {badge[n.href]}
                 </span>
               )}
             </Link>
@@ -339,9 +358,9 @@ function ResultRow({ title, sub, onClick }: { title: string; sub?: string; onCli
   );
 }
 
-function CommandBar({ title }: { title: string }) {
+function CommandBar({ title, isAdmin }: { title: string; isAdmin: boolean }) {
   const router = useRouter();
-  const { data: kpis } = useKpis();
+  const { data: kpis } = useKpis(isAdmin);
   const { data: me } = useMe();
   const { theme, toggle } = useTheme();
 
@@ -354,10 +373,10 @@ function CommandBar({ title }: { title: string }) {
   return (
     <header className="flex items-center gap-4 px-5 h-[58px] shrink-0" style={{ background: 'var(--surface)', borderBottom: '1px solid var(--line)' }}>
       <h1 className="font-bold text-[15px] w-[180px] shrink-0">{title}</h1>
-      <CommandSearch />
+      {isAdmin && <CommandSearch />}
 
       <div className="flex-1 flex items-center justify-end gap-6">
-        {strip.map((k) => (
+        {isAdmin && strip.map((k) => (
           <div key={k.label} className="text-right">
             <p className="font-bold text-[14px]">{k.value}</p>
             <p className="text-[10px] font-semibold text-muted mt-0.5">{k.label}</p>
@@ -367,15 +386,17 @@ function CommandBar({ title }: { title: string }) {
           className="w-9 h-9 rounded-lg flex items-center justify-center border border-line bg-bg text-ink-soft">
           {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
         </button>
-        <AdminNotificationBell />
+        {isAdmin && <AdminNotificationBell />}
         <button
           onClick={() => router.push('/profile')}
           className="flex items-center gap-2 rounded-lg px-2 py-1.5 border border-line bg-bg"
         >
-          <span className="w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center text-[11px] font-bold">A</span>
+          <span className="w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center text-[11px] font-bold">
+            {isAdmin ? 'A' : (me?.name || me?.email || 'P').charAt(0).toUpperCase()}
+          </span>
           <span className="text-left leading-tight">
-            <span className="block font-bold text-[12px]">Admin</span>
-            <span className="block text-[10px] font-semibold text-muted">{me?.isSuperAdmin ? 'Super-admin' : 'Admin'}</span>
+            <span className="block font-bold text-[12px] max-w-[140px] truncate">{isAdmin ? 'Admin' : me?.name || me?.email}</span>
+            <span className="block text-[10px] font-semibold text-muted">{isAdmin ? (me?.isSuperAdmin ? 'Super-admin' : 'Admin') : 'Publisher'}</span>
           </span>
         </button>
       </div>
@@ -388,7 +409,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
   const { data: me, isError } = useMe();
-  const { data: kpis } = useKpis();
+  const isAdmin = me?.role === 'admin';
+  const publisherOnly = !!me && !isAdmin && !!me.publisher;
+  const allowedForPublisher = PUBLISHER_PATHS.some((p) => pathname.startsWith(p));
+  const { data: kpis } = useKpis(isAdmin);
 
   useEffect(() => {
     if (!api.getToken()) {
@@ -404,20 +428,24 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     document.documentElement.dataset.theme = saved;
   }, []);
 
-  if (!ready || (!me && !isError)) {
+  useEffect(() => {
+    if (publisherOnly && !allowedForPublisher) router.replace('/content');
+  }, [publisherOnly, allowedForPublisher, router]);
+
+  if (!ready || (!me && !isError) || (publisherOnly && !allowedForPublisher)) {
     return <div className="min-h-screen flex items-center justify-center text-muted font-bold" style={{ background: 'var(--bg)' }}>Loading…</div>;
   }
-  if (me && me.role !== 'admin') {
-    return <div className="min-h-screen flex items-center justify-center font-bold">This account is not an admin.</div>;
+  if (me && !isAdmin && !publisherOnly) {
+    return <div className="min-h-screen flex items-center justify-center font-bold">This account doesn&apos;t have access to the Command Center.</div>;
   }
 
   const title = NAV.find((n) => pathname.startsWith(n.href))?.label ?? (pathname.startsWith('/profile') ? 'Profile' : '');
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--bg)' }}>
-      <Rail pending={kpis?.pendingVendors ?? 0} />
+      <Rail pending={kpis?.pendingVendors ?? 0} isAdmin={isAdmin} />
       <div className="flex-1 min-w-0 flex flex-col">
-        <CommandBar title={title} />
+        <CommandBar title={title} isAdmin={isAdmin} />
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>

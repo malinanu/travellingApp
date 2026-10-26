@@ -2,11 +2,14 @@
 
 // Users — find any account, see the devices it's signed in on and its quest
 // history, and sign it out of every device (e.g. when someone reports a lost
-// phone). ?user=<id> opens a user directly. Super-admins can also change an
-// account between traveller and vendor, or delete it.
+// phone). ?user=<id> opens a user directly. Any admin can make an account a
+// publisher (it can then write travel content in the Content section).
+// Super-admins can also change an account between traveller and vendor, or
+// delete it.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRightLeft, CheckCircle2, KeyRound, LogOut, MonitorSmartphone, Search, ShieldAlert, Trash2, Trophy } from 'lucide-react';
+import { ArrowRightLeft, CheckCircle2, KeyRound, LogOut, MonitorSmartphone, PenLine, Search, ShieldAlert, Trash2, Trophy } from 'lucide-react';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
 
@@ -84,7 +87,10 @@ function Users() {
                 style={{ background: selectedId === u.id ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent' }}>
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-bold text-[13.5px] truncate">{u.name || u.email}</p>
-                  <RolePill role={u.role} />
+                  <span className="flex items-center gap-1 shrink-0">
+                    {u.publisher && <PublisherPill />}
+                    <RolePill role={u.role} />
+                  </span>
                 </div>
                 <p className="text-[12px] text-muted font-semibold truncate mt-0.5">{u.email}{u.vendorName && ` · ${u.vendorName}`}</p>
                 <p className="text-[11px] text-muted font-semibold mt-1">
@@ -139,6 +145,8 @@ function UserDetail({ id }: { id: string }) {
       {user.role === 'admin' && me?.isSuperAdmin && (
         <AdminPermissionsPanel userId={user.id} isSuperAdmin={data.isSuperAdmin} permissions={data.adminPermissions} />
       )}
+
+      {user.role !== 'admin' && <PublisherPanel user={user} />}
 
       <div className="panel p-5">
         <CardTitle icon={MonitorSmartphone}>Signed-in devices · {sessions.length}</CardTitle>
@@ -223,7 +231,75 @@ const USER_ACTION_LABEL: Record<string, string> = {
   'user.revoke_sessions': 'Signed out of all devices',
   'user.permissions': 'Permissions changed',
   'user.role_change': 'Account type changed',
+  'user.publisher': 'Publisher access changed',
 };
+
+function PublisherPill() {
+  return (
+    <span className="text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5"
+      style={{ background: 'color-mix(in srgb, var(--accent) 14%, transparent)', color: 'var(--accent)' }}>
+      Publisher
+    </span>
+  );
+}
+
+// Any admin can let an account write travel content (blogs, audio guides,
+// travel guides, itineraries, tips). Publishers sign in here and only see
+// the Content section with their own posts, which an admin reviews before
+// they go live. Admins can always write, so this is for everyone else.
+function PublisherPanel({ user }: { user: User }) {
+  const qc = useQueryClient();
+  const on = !!user.publisher;
+  const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState('');
+  const toggle = useMutation({
+    mutationFn: () => api.put(`/admin/users/${encodeURIComponent(user.id)}/publisher`, { publisher: !on, reason: reason.trim() }),
+    onSuccess: () => {
+      setConfirming(false);
+      setReason('');
+      qc.invalidateQueries({ queryKey: ['admin-user', user.id] });
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+  });
+
+  return (
+    <div className="panel p-5">
+      <CardTitle icon={PenLine}>Publisher</CardTitle>
+      <p className="text-[12.5px] font-semibold">
+        Writes travel content: <span style={{ color: on ? GREEN : undefined }} className={on ? '' : 'text-muted'}>{on ? 'Yes' : 'No'}</span>
+        {on && (
+          <Link href={`/content?author=${encodeURIComponent(user.id)}`} className="ml-2 font-bold" style={{ color: 'var(--accent)' }}>
+            See their posts →
+          </Link>
+        )}
+      </p>
+      <p className="text-[11.5px] text-muted font-semibold mt-0.5">
+        Publishers sign in to the Command Center with this account and see only Content: they write blog posts, audio guides,
+        travel guides, itineraries and tips, and an admin approves each one before travellers see it.
+      </p>
+      {confirming ? (
+        <form className="space-y-2 mt-3" onSubmit={(e) => { e.preventDefault(); toggle.mutate(); }}>
+          <label className="block">
+            <span className="text-[12px] font-bold block mb-1">Reason (saved in the audit log)</span>
+            <input autoFocus required value={reason} onChange={(e) => setReason(e.target.value)} className="input w-full py-1.5"
+              placeholder={on ? 'e.g. Contract ended' : 'e.g. Writes our Galle guides'} />
+          </label>
+          <div className="flex items-center justify-end gap-2">
+            <button type="button" className="btn py-1 px-3 text-[12px]" onClick={() => setConfirming(false)}>Cancel</button>
+            <button type="submit" className={`btn ${on ? 'btn-danger' : 'btn-primary'} py-1 px-3 text-[12px]`} disabled={toggle.isPending || !reason.trim()}>
+              {toggle.isPending ? 'Saving…' : on ? 'Stop publishing' : 'Make publisher'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button className="btn py-1.5 px-3 text-[12px] mt-3" onClick={() => { toggle.reset(); setConfirming(true); }}>
+          {on ? 'Stop this account publishing' : 'Make publisher'}
+        </button>
+      )}
+      {toggle.isError && <p className="text-[11.5px] font-semibold mt-2" style={{ color: RED }}>{(toggle.error as Error).message}</p>}
+    </div>
+  );
+}
 
 // Super-admins grant individual admins extra powers. Today that's only
 // handing vendor logins over to their real owners (vendor Team tab).

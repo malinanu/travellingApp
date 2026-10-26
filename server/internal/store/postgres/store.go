@@ -133,7 +133,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled, &u.TokenVersion,
 		&u.ShareLocation, &u.Lat, &u.Lng, &u.LocationUpdatedAt,
 		&u.Phone, &u.VendorRole, &u.NotifyRedemptions, &u.NotifyReviews, &u.NotifyPayouts, &u.NotifyGrowthTips,
-		&u.GoogleID, &u.AvatarURL, &u.PhoneVerified, &u.UsageAnalytics)
+		&u.GoogleID, &u.AvatarURL, &u.PhoneVerified, &u.UsageAnalytics, &u.Publisher)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -145,7 +145,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url, phone_verified_at IS NOT NULL, usage_analytics`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url, phone_verified_at IS NOT NULL, usage_analytics, publisher`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -289,6 +289,16 @@ func (s *Store) SetAdminPermission(ctx context.Context, userID, perm string, on 
 		q = `UPDATE users SET admin_permissions=array_append(array_remove(admin_permissions, $2), $2) WHERE id=$1`
 	}
 	tag, err := s.Pool.Exec(ctx, q, userID, perm)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// SetUserPublisher lets the account write travel content in the Command
+// Center, or stops it. Their posts stay either way.
+func (s *Store) SetUserPublisher(ctx context.Context, userID string, on bool) error {
+	tag, err := s.Pool.Exec(ctx, `UPDATE users SET publisher=$2 WHERE id=$1`, userID, on)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
@@ -2154,7 +2164,7 @@ func (s *Store) GroupByOwner(ctx context.Context, ownerID string) (domain.Group,
 	return g, nil
 }
 
-// ---- regions / subscriptions / audio guides ----
+// ---- regions / subscriptions ----
 
 func (s *Store) UpsertRegion(ctx context.Context, r domain.Region) error {
 	_, err := s.Pool.Exec(ctx, `
@@ -2218,46 +2228,6 @@ func (s *Store) UpgradeSubscription(ctx context.Context, id string, mrr int) err
 		UPDATE subscriptions SET tier='Premium', state='active', mrr=$2,
 			renews_at=now() + interval '30 days'
 		WHERE id=$1`, id, mrr)
-	if err == nil && tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return err
-}
-
-func (s *Store) UpsertAudioGuide(ctx context.Context, g domain.AudioGuide) error {
-	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO audio_guides (id, site, region, lat, lng, lang, published, plays, depths, duration)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-		ON CONFLICT (id) DO UPDATE SET site=EXCLUDED.site, region=EXCLUDED.region,
-			lat=EXCLUDED.lat, lng=EXCLUDED.lng, lang=EXCLUDED.lang,
-			published=EXCLUDED.published, plays=EXCLUDED.plays,
-			depths=EXCLUDED.depths, duration=EXCLUDED.duration`,
-		g.ID, g.Site, g.Region, g.Lat, g.Lng, g.Lang, g.Published, g.Plays,
-		orEmptyArr(g.Depths), orEmptyObj(g.Duration))
-	return err
-}
-
-func (s *Store) AudioGuides(ctx context.Context) ([]domain.AudioGuide, error) {
-	rows, err := s.Pool.Query(ctx,
-		`SELECT id, site, region, lat, lng, lang, published, plays, depths, duration FROM audio_guides ORDER BY id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []domain.AudioGuide
-	for rows.Next() {
-		var g domain.AudioGuide
-		if err := rows.Scan(&g.ID, &g.Site, &g.Region, &g.Lat, &g.Lng, &g.Lang,
-			&g.Published, &g.Plays, &g.Depths, &g.Duration); err != nil {
-			return nil, err
-		}
-		out = append(out, g)
-	}
-	return out, rows.Err()
-}
-
-func (s *Store) SetAudioGuidePublished(ctx context.Context, id string, published bool) error {
-	tag, err := s.Pool.Exec(ctx, `UPDATE audio_guides SET published=$2 WHERE id=$1`, id, published)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
@@ -3096,7 +3066,7 @@ func (s *Store) phoneCodeNotification(ctx context.Context, lastRead time.Time) (
 func (s *Store) Wipe(ctx context.Context) error {
 	_, err := s.Pool.Exec(ctx, `
 		TRUNCATE users, offers, claims, trips, groups,
-			regions, subscriptions, audio_guides, vibe_checkins, checkins,
+			regions, subscriptions, content_items, vibe_checkins, checkins,
 			vendor_notifications, vendor_blobs, reviews, vendor_invites, admin_audit_log,
 			admin_notification_reads`)
 	return err
