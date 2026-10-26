@@ -27,10 +27,16 @@ const (
 	ContentArchived  = "archived"
 )
 
-// ContentChapter is a point in an audio file listeners can jump to.
+// ContentChapter is a point in an audio file listeners can jump to. It runs
+// until the next chapter starts; its photo shows the spot being described
+// while that part plays, so a listener walking faster or slower than the
+// narration can see where in the guide they are.
 type ContentChapter struct {
 	Title    string `json:"title"`
 	StartSec int    `json:"startSec"`
+	// ImageURL is one of the post's own uploads (role "chapter"), stored
+	// as its /media/raw path and signed when served; "" for none.
+	ImageURL string `json:"imageUrl,omitempty"`
 }
 
 // ItineraryStop is one stop of an itinerary day: a Spotto place (PlaceID

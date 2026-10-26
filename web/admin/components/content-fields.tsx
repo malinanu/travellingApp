@@ -5,7 +5,7 @@
 // day builder.
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, Bold, Heading2, ImagePlus, Italic, Link2, List, Loader2, MapPin, Plus, Quote, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bold, Clock, Heading2, ImagePlus, Italic, Link2, List, Loader2, MapPin, Play, Plus, Quote, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 
 import {
@@ -266,42 +266,138 @@ function IconBtn({ label, onClick, disabled, children }: { label: string; onClic
 
 // ---- Audio chapters ----
 
-export function ChaptersEditor({ chapters, onChange, disabled, lengthSec }: {
+/** Chapters in the order listeners hear them. */
+const byStart = (cs: ContentChapter[]) => [...cs].sort((a, b) => a.startSec - b.startSec);
+
+/** An audio guide's chapters. Each runs until the next one starts and can
+ * have a photo of the spot it describes, which listeners see while it plays.
+ * With the editor's player, "Add chapter here" and "Set to now" take the
+ * time from where it's paused. */
+export function ChaptersEditor({ chapters, onChange, disabled, lengthSec, audio, onUploadPhoto }: {
   chapters: ContentChapter[];
   onChange: (c: ContentChapter[]) => void;
   disabled?: boolean;
   lengthSec: number;
+  /** The editor's player, once the audio is uploaded. */
+  audio?: RefObject<HTMLAudioElement | null>;
+  /** Uploads a chapter photo and returns its link. */
+  onUploadPhoto?: (file: File) => Promise<string>;
 }) {
   const [draft, setDraft] = useState<Record<number, string>>({});
+  const [uploading, setUploading] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const pickFor = useRef<number | null>(null);
+  // An upload finishes after the user may have edited other chapters.
+  const latest = useRef(chapters);
+  latest.current = chapters;
+
   const set = (i: number, patch: Partial<ContentChapter>) => onChange(chapters.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  const now = () => Math.floor(audio?.current?.currentTime ?? 0);
+  const focusTitle = (startSec: number) =>
+    requestAnimationFrame(() => list.current?.querySelector<HTMLInputElement>(`[data-start="${startSec}"]`)?.focus());
+  const addAt = (startSec: number) => {
+    if (!chapters.some((c) => c.startSec === startSec)) onChange(byStart([...chapters, { title: '', startSec }]));
+    focusTitle(startSec);
+  };
+  const playFrom = (sec: number) => {
+    const el = audio?.current;
+    if (!el) return;
+    el.currentTime = sec;
+    el.play().catch(() => {});
+  };
+  const pickPhoto = (i: number) => {
+    pickFor.current = i;
+    setError(null);
+    fileInput.current?.click();
+  };
+  const upload = async (file: File) => {
+    const i = pickFor.current;
+    const target = i === null ? undefined : latest.current[i];
+    if (!target || !onUploadPhoto) return;
+    setUploading(i);
+    setError(null);
+    try {
+      const url = await onUploadPhoto(file);
+      onChange(latest.current.map((c) => (c.startSec === target.startSec ? { ...c, imageUrl: url } : c)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setUploading(null);
+    }
+  };
+
   return (
-    <div className="space-y-2">
-      {chapters.length === 0 && <p className="text-[12.5px] text-muted font-semibold">No chapters. Add them so listeners can jump to a part.</p>}
-      {chapters.map((c, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <input className="input py-1.5 !w-[92px] font-mono text-center" disabled={disabled} aria-label="Starts at"
-            value={draft[i] ?? formatDuration(c.startSec)}
-            onChange={(e) => setDraft((d) => ({ ...d, [i]: e.target.value }))}
-            onBlur={() => {
-              const sec = parseDuration(draft[i] ?? '');
-              if (draft[i] !== undefined && sec !== null) set(i, { startSec: sec });
-              setDraft((d) => { const n = { ...d }; delete n[i]; return n; });
-            }} />
-          <input className="input py-1.5" disabled={disabled} placeholder="Chapter title" value={c.title}
-            onChange={(e) => set(i, { title: e.target.value })} />
-          {!disabled && <IconBtn label="Remove chapter" onClick={() => onChange(chapters.filter((_, j) => j !== i))}><Trash2 size={13} /></IconBtn>}
-        </div>
-      ))}
-      {!disabled && (
-        <button type="button" className="btn py-1.5 px-3 text-[12px] flex items-center gap-1.5"
-          onClick={() => {
-            const last = chapters[chapters.length - 1]?.startSec ?? -60;
-            onChange([...chapters, { title: '', startSec: Math.min(last + 60, Math.max(lengthSec, 0) || last + 60) }]);
-          }}>
-          <Plus size={12} /> Add chapter
-        </button>
+    <div className="space-y-2" ref={list}>
+      {chapters.length === 0 && (
+        <p className="text-[12.5px] text-muted font-semibold">No chapters yet. Add one where each new spot starts, so listeners can see where they are.</p>
       )}
-      <p className="text-[11.5px] text-muted font-semibold">Start times are minutes:seconds into the recording, e.g. 4:30.</p>
+      {chapters.map((c, i) => {
+        const end = chapters[i + 1]?.startSec ?? (lengthSec > 0 ? lengthSec : null);
+        return (
+          <div key={i} className="flex items-center gap-2">
+            <button type="button" title={c.imageUrl ? 'Change photo' : 'Add a photo of this spot'} aria-label={c.imageUrl ? 'Change photo' : 'Add a photo'}
+              disabled={disabled || !onUploadPhoto || uploading !== null} onClick={() => pickPhoto(i)}
+              className="w-[72px] h-[48px] rounded-lg shrink-0 overflow-hidden flex items-center justify-center"
+              style={{ background: 'var(--bg)', border: `1px ${c.imageUrl ? 'solid' : 'dashed'} var(--line)` }}>
+              {uploading === i ? (
+                <Loader2 size={15} className="animate-spin text-muted" />
+              ) : c.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={resolveMediaUrl(c.imageUrl)} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <ImagePlus size={15} className="text-muted" />
+              )}
+            </button>
+            {audio && <IconBtn label="Play from here" onClick={() => playFrom(c.startSec)}><Play size={13} /></IconBtn>}
+            <input className="input py-1.5 !w-[84px] font-mono text-center" disabled={disabled} aria-label="Starts at"
+              value={draft[i] ?? formatDuration(c.startSec)}
+              onChange={(e) => setDraft((d) => ({ ...d, [i]: e.target.value }))}
+              onBlur={() => {
+                const sec = parseDuration(draft[i] ?? '');
+                if (draft[i] !== undefined && sec !== null) onChange(byStart(chapters.map((x, j) => (j === i ? { ...x, startSec: sec } : x))));
+                setDraft((d) => { const n = { ...d }; delete n[i]; return n; });
+              }} />
+            <span className="text-[11.5px] text-muted font-semibold font-mono shrink-0 w-[52px]" title="Runs until">
+              → {end !== null ? formatDuration(end) : 'end'}
+            </span>
+            <input className="input py-1.5" disabled={disabled} placeholder="What's here, e.g. The Lion's Paw" value={c.title}
+              data-start={c.startSec} onChange={(e) => set(i, { title: e.target.value })} />
+            {!disabled && audio && (
+              <IconBtn label="Set the start to where the player is"
+                onClick={() => onChange(byStart(chapters.map((x, j) => (j === i ? { ...x, startSec: now() } : x))))}>
+                <Clock size={13} />
+              </IconBtn>
+            )}
+            {!disabled && <IconBtn label="Remove chapter" onClick={() => onChange(chapters.filter((_, j) => j !== i))}><Trash2 size={13} /></IconBtn>}
+          </div>
+        );
+      })}
+      {!disabled && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {audio && (
+            <button type="button" className="btn btn-primary py-1.5 px-3 text-[12px] flex items-center gap-1.5" onClick={() => addAt(now())}>
+              <Plus size={12} /> Add chapter here
+            </button>
+          )}
+          <button type="button" className="btn py-1.5 px-3 text-[12px] flex items-center gap-1.5"
+            onClick={() => {
+              const last = chapters[chapters.length - 1]?.startSec ?? -60;
+              addAt(Math.min(last + 60, Math.max(lengthSec, 0) || last + 60));
+            }}>
+            <Plus size={12} /> Add chapter
+          </button>
+        </div>
+      )}
+      {error && <p className="text-[12px] font-semibold" style={{ color: '#e11d48' }}>{error}</p>}
+      <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) upload(f); }} />
+      <p className="text-[11.5px] text-muted font-semibold">
+        {audio
+          ? 'Play the audio, pause where a new spot starts and click Add chapter here, then add its photo. Listeners see the photo while that part plays. Times are minutes:seconds, e.g. 4:30.'
+          : 'Start times are minutes:seconds into the recording, e.g. 4:30. Upload the audio to add chapters from the player.'}
+      </p>
     </div>
   );
 }

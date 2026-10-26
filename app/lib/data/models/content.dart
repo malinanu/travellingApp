@@ -31,14 +31,22 @@ enum ContentKind {
       ContentKind.values.firstWhere((k) => k.id == id, orElse: () => ContentKind.blog);
 }
 
+/// A point in an audio guide listeners can jump to. It runs until the next
+/// chapter starts.
 class ContentChapter {
   final String title;
   final int startSec;
-  const ContentChapter({required this.title, required this.startSec});
+
+  /// Photo of the spot this part describes (a signed "/media/raw/…" path),
+  /// or ''. Shown while it plays, so a listener walking faster or slower
+  /// than the narration can see where in the guide they are.
+  final String imageUrl;
+  const ContentChapter({required this.title, required this.startSec, this.imageUrl = ''});
 
   factory ContentChapter.fromJson(Map<String, dynamic> json) => ContentChapter(
         title: json['title'] as String? ?? '',
         startSec: (json['startSec'] as num?)?.toInt() ?? 0,
+        imageUrl: json['imageUrl'] as String? ?? '',
       );
 }
 
@@ -245,6 +253,27 @@ class ContentItem {
   }
 
   int get stopCount => days.fold(0, (n, d) => n + d.stops.length);
+
+  /// Whether any chapter has a photo (the player then shows them).
+  bool get hasChapterPhotos => chapters.any((c) => c.imageUrl.isNotEmpty);
+
+  /// Where chapter [i] ends, in seconds: the next one's start, or the end of
+  /// the recording (0 when its length isn't known).
+  int chapterEndSec(int i) => i + 1 < chapters.length ? chapters[i + 1].startSec : audioSeconds;
+
+  /// Chapter [i]'s photo, else the post's cover ('' when neither).
+  String chapterImage(int i) =>
+      i >= 0 && i < chapters.length && chapters[i].imageUrl.isNotEmpty ? chapters[i].imageUrl : coverUrl;
+
+  /// The chapter playing at [sec] seconds: the last one started by then, or
+  /// -1 before the first.
+  int chapterAt(double sec) {
+    var at = -1;
+    for (var i = 0; i < chapters.length; i++) {
+      if (chapters[i].startSec <= sec + 0.05) at = i;
+    }
+    return at;
+  }
 
   /// The linked place [id], when the post carries it.
   ContentPlace? place(String id) {

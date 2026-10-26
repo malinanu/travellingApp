@@ -2,7 +2,7 @@ import type { Api } from './api';
 import type { Media } from './types';
 
 /** What role a piece of media plays for its owner. */
-export type MediaRole = 'cover' | 'gallery' | 'promo' | 'doc' | 'br_cert' | 'avatar' | 'review' | 'contrib' | 'menu_item' | 'audio' | 'inline';
+export type MediaRole = 'cover' | 'gallery' | 'promo' | 'doc' | 'br_cert' | 'avatar' | 'review' | 'contrib' | 'menu_item' | 'audio' | 'inline' | 'chapter';
 
 export interface UploadTarget {
   ownerType: 'vendor' | 'user' | 'place' | 'review' | 'content';
@@ -56,8 +56,12 @@ export async function uploadMedia(api: Api, file: File, target: UploadTarget): P
     // policy doesn't allow this origin (a Cloudflare dashboard setting,
     // not something wrong with the file or a transient blip most of the
     // time). Rethrow something a vendor/admin can actually act on instead
-    // of that cryptic browser string.
-    throw new Error("Couldn't reach file storage — this is usually a temporary network issue or a storage configuration problem, not your file. Try again in a moment.");
+    // of that cryptic browser string, naming the site that has to be in the
+    // bucket's AllowedOrigins (each web app uploads from its own origin).
+    const origin = typeof window === 'undefined' ? 'this site' : window.location.origin;
+    throw new Error(
+      `Couldn't reach file storage. Try again in a moment; if it keeps failing, the storage isn't allowing uploads from ${origin} yet (Cloudflare R2 → bucket → Settings → CORS policy). It's not your file.`,
+    );
   }
   if (!put.ok) {
     // R2 presigned PUT URLs expire 10 minutes after they're issued (see
@@ -77,6 +81,43 @@ export async function uploadMedia(api: Api, file: File, target: UploadTarget): P
     ownerId: target.ownerId,
     role: target.role,
   });
+}
+
+/**
+ * Shrinks a photo in the browser before upload: at most maxPx on its long
+ * side, re-encoded as JPEG. A phone's 8 MB photo comes out around 300 KB,
+ * which matters for travellers loading it on mobile data. Returns the file
+ * as it is when it's already small, isn't a decodable image, or wouldn't
+ * get smaller (the server checks every upload either way).
+ */
+export async function shrinkImage(file: File, maxPx = 1600, quality = 0.82): Promise<File> {
+  if (typeof document === 'undefined' || !file.type.startsWith('image/')) return file;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    return file;
+  }
+  const scale = Math.min(1, maxPx / Math.max(bitmap.width, bitmap.height));
+  if (scale === 1 && file.size <= 600 << 10) {
+    bitmap.close();
+    return file;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    bitmap.close();
+    return file;
+  }
+  ctx.fillStyle = '#fff'; // JPEG has no transparency
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+  if (!blob || blob.size >= file.size) return file;
+  return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
 }
 
 /** Validate a file against the limits for a kind before uploading. Returns

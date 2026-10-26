@@ -1,6 +1,7 @@
-// The audio player on an audio story with its transcript, and the
-// mini-player that stays above the tabs while something is loaded (see
-// TravellerShell).
+// The audio player on an audio story, with its chapters (each with a photo
+// of the spot it describes, so a listener can see where in the guide they
+// are) and transcript, and the mini-player that stays above the tabs while
+// something is loaded (see TravellerShell).
 
 import 'dart:math' as math;
 
@@ -9,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/api/api_client.dart';
 import '../../../core/audio/story_audio.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/progressive_image.dart';
@@ -85,8 +87,24 @@ class _StoryPlayerCardState extends ConsumerState<StoryPlayerCard> {
           final maxSec = total.inMilliseconds / 1000;
           final value = (_dragging ?? pos.inMilliseconds / 1000).clamp(0.0, maxSec > 0 ? maxSec : 0.0);
           final chapterIx = loaded ? currentChapter(item.chapters, pos) : -1;
+          final photos = item.hasChapterPhotos;
+
+          void jumpTo(int i) {
+            final to = Duration(seconds: item.chapters[i].startSec);
+            if (loaded) {
+              handler.seek(to);
+              if (!playing) playStoryAudio(context, ref, item);
+            } else {
+              playStoryAudio(context, ref, item, start: to);
+            }
+          }
 
           return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (photos) ...[
+              // Before playback: the first chapter, where the guide starts.
+              StoryChapterHero(item: item, index: chapterIx >= 0 ? chapterIx : 0),
+              const SizedBox(height: 10),
+            ],
             SliderTheme(
               data: SliderTheme.of(context).copyWith(trackHeight: 4, overlayShape: SliderComponentShape.noOverlay),
               child: Slider(
@@ -149,22 +167,21 @@ class _StoryPlayerCardState extends ConsumerState<StoryPlayerCard> {
               const Spacer(),
               const SizedBox(width: 48),
             ]),
-            if (item.chapters.isNotEmpty) ...[
+            if (item.chapters.isNotEmpty && photos) ...[
+              const Divider(height: 24),
+              Text('Chapters', style: text.titleSmall),
+              const SizedBox(height: 8),
+              StoryChapterStrip(item: item, current: chapterIx, onTap: jumpTo),
+              const SizedBox(height: 4),
+            ],
+            if (item.chapters.isNotEmpty && !photos) ...[
               const Divider(height: 24),
               Text('Chapters', style: text.titleSmall),
               const SizedBox(height: 4),
               for (var i = 0; i < item.chapters.length; i++)
                 InkWell(
                   borderRadius: BorderRadius.circular(10),
-                  onTap: () {
-                    final to = Duration(seconds: item.chapters[i].startSec);
-                    if (loaded) {
-                      handler.seek(to);
-                      if (!playing) playStoryAudio(context, ref, item);
-                    } else {
-                      playStoryAudio(context, ref, item, start: to);
-                    }
-                  },
+                  onTap: () => jumpTo(i),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
                     child: Row(children: [
@@ -268,6 +285,7 @@ class _StoryTranscriptState extends ConsumerState<StoryTranscript> {
       initialData: -1,
       builder: (context, snap) => StoryTranscriptView(
         transcript: widget.transcript,
+        chapters: item.chapters,
         current: loaded ? (snap.data ?? -1) : -1,
         open: _open,
         onToggle: () => setState(() => _open = !_open),
@@ -283,12 +301,16 @@ class StoryTranscriptView extends StatelessWidget {
   const StoryTranscriptView({
     super.key,
     required this.transcript,
+    this.chapters = const [],
     required this.current,
     required this.open,
     required this.onToggle,
     required this.onTapLine,
   });
   final ContentTranscript transcript;
+
+  /// The guide's chapters: lines are grouped under the one they're in.
+  final List<ContentChapter> chapters;
   final int current;
   final bool open;
   final VoidCallback onToggle;
@@ -300,6 +322,13 @@ class StoryTranscriptView extends StatelessWidget {
     final lines = transcript.lines;
     final folds = lines.length > kTranscriptPeek;
     final (from, to) = open || !folds ? (0, lines.length) : transcriptWindow(lines.length, current);
+    int chapterOf(int line) {
+      var at = -1;
+      for (var c = 0; c < chapters.length; c++) {
+        if (chapters[c].startSec <= lines[line].start + 0.05) at = c;
+      }
+      return at;
+    }
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
@@ -318,7 +347,9 @@ class StoryTranscriptView extends StatelessWidget {
             padding: const EdgeInsets.only(left: 4, bottom: 2),
             child: Text('…', style: text.bodyMedium?.copyWith(color: SpottoColors.muted)),
           ),
-        for (var i = from; i < to; i++)
+        for (var i = from; i < to; i++) ...[
+          if (chapterOf(i) >= 0 && (i == from || chapterOf(i - 1) != chapterOf(i)))
+            _TranscriptChapterHeading(chapter: chapters[chapterOf(i)], number: chapterOf(i) + 1),
           InkWell(
             borderRadius: BorderRadius.circular(10),
             onTap: () => onTapLine(i),
@@ -346,6 +377,7 @@ class StoryTranscriptView extends StatelessWidget {
               ]),
             ),
           ),
+        ],
         if (folds)
           Align(
             alignment: Alignment.centerLeft,
@@ -357,6 +389,217 @@ class StoryTranscriptView extends StatelessWidget {
         else
           const SizedBox(height: 8),
       ]),
+    );
+  }
+}
+
+/// A chapter's title (with its photo) above its lines in the transcript.
+class _TranscriptChapterHeading extends StatelessWidget {
+  const _TranscriptChapterHeading({required this.chapter, required this.number});
+  final ContentChapter chapter;
+  final int number;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 10, 4, 4),
+      child: Row(children: [
+        if (chapter.imageUrl.isNotEmpty) ...[
+          ProgressiveImage(
+            url: resolveMediaUrl(chapter.imageUrl),
+            width: 40,
+            height: 28,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: Text('$number · ${chapter.title}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: text.labelLarge?.copyWith(color: SpottoColors.accent, fontWeight: FontWeight.w700)),
+        ),
+      ]),
+    );
+  }
+}
+
+/// The photo of the chapter playing (the first one before playback), with
+/// where it is in the guide. Cross-fades as the guide moves on.
+class StoryChapterHero extends StatelessWidget {
+  const StoryChapterHero({super.key, required this.item, required this.index});
+  final ContentItem item;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final chapter = item.chapters[index];
+    final end = item.chapterEndSec(index);
+    final image = item.chapterImage(index);
+    final range = formatClock(Duration(seconds: chapter.startSec)) +
+        (end > chapter.startSec ? '–${formatClock(Duration(seconds: end))}' : '');
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: AspectRatio(
+        aspectRatio: 16 / 10,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 450),
+          child: Stack(key: ValueKey(index), fit: StackFit.expand, children: [
+            if (image.isEmpty)
+              const ColoredBox(
+                color: SpottoColors.accentTint,
+                child: Icon(Icons.photo_outlined, color: SpottoColors.accent, size: 40),
+              )
+            else
+              ProgressiveImage(url: resolveMediaUrl(image), width: double.infinity, height: double.infinity),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: [0.45, 1],
+                  colors: [Colors.transparent, Color(0xCC000000)],
+                ),
+              ),
+            ),
+            Positioned(
+              left: 14,
+              right: 14,
+              bottom: 12,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text('Chapter ${index + 1} of ${item.chapters.length} · $range',
+                    style: text.labelSmall?.copyWith(color: Colors.white70)),
+                const SizedBox(height: 2),
+                Text(chapter.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w700)),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// A guide's chapters as a row of photos: the one playing ([current], -1
+/// for none) is highlighted and kept in view; tapping one jumps there.
+class StoryChapterStrip extends StatefulWidget {
+  const StoryChapterStrip({super.key, required this.item, required this.current, required this.onTap});
+  final ContentItem item;
+  final int current;
+  final void Function(int index) onTap;
+
+  static const cardWidth = 128.0;
+  static const gap = 10.0;
+
+  @override
+  State<StoryChapterStrip> createState() => _StoryChapterStripState();
+}
+
+class _StoryChapterStripState extends State<StoryChapterStrip> {
+  final _scroll = ScrollController();
+
+  @override
+  void didUpdateWidget(StoryChapterStrip old) {
+    super.didUpdateWidget(old);
+    if (widget.current != old.current && widget.current >= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(widget.current));
+    }
+  }
+
+  void _reveal(int i) {
+    if (!_scroll.hasClients) return;
+    const step = StoryChapterStrip.cardWidth + StoryChapterStrip.gap;
+    final viewport = _scroll.position.viewportDimension;
+    final target = (i * step - (viewport - StoryChapterStrip.cardWidth) / 2).clamp(0.0, _scroll.position.maxScrollExtent);
+    _scroll.animateTo(target, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final item = widget.item;
+    return SizedBox(
+      height: 156,
+      child: ListView.separated(
+        controller: _scroll,
+        scrollDirection: Axis.horizontal,
+        itemCount: item.chapters.length,
+        separatorBuilder: (_, _) => const SizedBox(width: StoryChapterStrip.gap),
+        itemBuilder: (context, i) {
+          final chapter = item.chapters[i];
+          final on = i == widget.current;
+          final image = item.chapterImage(i);
+          final end = item.chapterEndSec(i);
+          return Semantics(
+            button: true,
+            selected: on,
+            label: 'Chapter ${i + 1}: ${chapter.title}',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => widget.onTap(i),
+              child: Container(
+                width: StoryChapterStrip.cardWidth,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: on ? SpottoColors.accent : SpottoColors.line, width: on ? 2 : 1.5),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  SizedBox(
+                    height: 76,
+                    width: double.infinity,
+                    child: Stack(fit: StackFit.expand, children: [
+                      if (image.isEmpty)
+                        const ColoredBox(color: SpottoColors.accentTint, child: Icon(Icons.photo_outlined, color: SpottoColors.accent))
+                      else
+                        ProgressiveImage(url: resolveMediaUrl(image), width: double.infinity, height: 76),
+                      if (on)
+                        const Positioned(
+                          right: 6,
+                          top: 6,
+                          child: CircleAvatar(
+                            radius: 12,
+                            backgroundColor: SpottoColors.accent,
+                            child: Icon(Icons.graphic_eq_rounded, size: 14, color: Colors.white),
+                          ),
+                        ),
+                    ]),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+                    child: Text(chapter.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.labelMedium?.copyWith(
+                          fontWeight: on ? FontWeight.w700 : FontWeight.w600,
+                          color: on ? SpottoColors.accent : SpottoColors.ink,
+                        )),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 2, 8, 0),
+                    child: Text(
+                      formatClock(Duration(seconds: chapter.startSec)) +
+                          (end > chapter.startSec ? '–${formatClock(Duration(seconds: end))}' : ''),
+                      style: text.labelSmall?.copyWith(color: SpottoColors.muted),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -439,10 +682,12 @@ class StoryMiniPlayer extends ConsumerWidget {
                 SizedBox(
                   width: 40,
                   height: 40,
-                  child: story != null
-                      ? StoryCover(item: story, height: 40, borderRadius: BorderRadius.circular(8), iconSize: 20)
-                      : item.artUri != null
-                          ? ProgressiveImage(url: item.artUri.toString(), borderRadius: BorderRadius.circular(8))
+                  // The same artwork as the lock screen: the playing chapter's
+                  // photo, else the cover.
+                  child: item.artUri != null
+                      ? ProgressiveImage(url: item.artUri.toString(), borderRadius: BorderRadius.circular(8))
+                      : story != null
+                          ? StoryCover(item: story, height: 40, borderRadius: BorderRadius.circular(8), iconSize: 20)
                           : const Icon(Icons.headphones_rounded, color: SpottoColors.accent),
                 ),
                 const SizedBox(width: 12),
