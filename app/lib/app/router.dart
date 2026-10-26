@@ -13,6 +13,8 @@ import '../features/traveller/profile/profile_screen.dart';
 import '../features/traveller/shell/traveller_shell.dart';
 import '../features/traveller/discover/discover_screen.dart';
 import '../features/traveller/spots/spots_screen.dart';
+import '../features/traveller/stories/stories_screen.dart';
+import '../features/traveller/stories/story_screen.dart';
 import '../features/traveller/trip/trip_screen.dart';
 import '../features/traveller/weather/weather_screen.dart';
 
@@ -53,7 +55,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => InspirationLinkScreen(linkId: state.pathParameters['id']!),
       ),
       StatefulShellRoute.indexedStack(
-        builder: (context, state, shell) => TravellerShell(shell: shell),
+        builder: (context, state, shell) => TravellerShell(shell: shell, location: state.uri.path),
         redirect: (context, state) {
           if (!ref.read(authProvider)) return '/t/auth';
           if (ref.read(prefsProvider) == null) return '/t/onboarding';
@@ -65,6 +67,20 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           StatefulShellBranch(
             routes: [GoRoute(path: '/t/spots', builder: (context, state) => const SpotsScreen())],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/t/stories',
+                builder: (context, state) => const StoriesScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':id',
+                    builder: (context, state) => StoryScreen(storyId: state.pathParameters['id']!),
+                  ),
+                ],
+              ),
+            ],
           ),
           StatefulShellBranch(
             routes: [GoRoute(path: '/t/trip', builder: (context, state) => const TripScreen())],
