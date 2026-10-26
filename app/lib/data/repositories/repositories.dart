@@ -295,7 +295,8 @@ class AuthNotifier extends Notifier<bool> {
     ref.invalidate(groupProvider);
     ref.invalidate(placesProvider);
     ref.invalidate(meProvider);
-    ref.invalidate(dailyQuestProvider);
+    // Today's quest watches authProvider, so it refetches by itself;
+    // invalidating it from here is a circular dependency (Riverpod 3).
   }
 
   void signOut() {
