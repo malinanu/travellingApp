@@ -4,8 +4,9 @@
 // starts a new one, created on its first save. Publishers save drafts and
 // send them for review; admins publish (their own posts straight away), send
 // a publisher's post back with a note, or take a live post down. An audio
-// post's transcript is made after its upload (the transcriber service) and
-// corrected here.
+// post's transcript is made after its upload (the transcriber service); its
+// chapters (each with a photo) and corrected lines are edited together on one
+// timeline (components/chapters-timeline.tsx) and saved with the post.
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ArrowLeft, CheckCircle2, Eye, Headphones, ImagePlus, Loader2, Send, Trash2, Upload } from 'lucide-react';
@@ -17,9 +18,8 @@ import {
   resolveMediaUrl, shrinkImage, timeAgo, uploadMedia, validateFile,
   type ContentChapter, type ContentItem, type ContentTranscript, type ContentType, type ItineraryDay, type StudioTown,
 } from '@spotto/shared';
-import {
-  ChaptersEditor, Field, ItineraryEditor, LinkedPlaces, MarkdownEditor, StatusPill, TranscriptEditor,
-} from '../../../components/content-fields';
+import { ChaptersTimeline } from '../../../components/chapters-timeline';
+import { Field, ItineraryEditor, LinkedPlaces, MarkdownEditor, StatusPill } from '../../../components/content-fields';
 import { CONTENT_TYPES, LANGUAGES, contentTypeMeta, formatDuration, languageName } from '../../../components/content-meta';
 import { InlineErrorBanner } from '../../../components/route-status';
 import Shell, { useMe } from '../../../components/shell';
@@ -145,13 +145,25 @@ function Editor() {
   const [redoing, setRedoing] = useState(false);
   const [redoError, setRedoError] = useState<string | null>(null);
 
+  // The finished transcript's lines as corrected here, saved with the post.
+  // A new or saved transcript (its updatedAt changes) replaces them.
+  const done = item?.transcript?.status === 'done' && item.transcript.segments.length > 0 ? item.transcript : undefined;
+  const [lineTexts, setLineTexts] = useState<string[]>([]);
+  const [linesOf, setLinesOf] = useState<string | null>(null);
+  if ((done?.updatedAt ?? null) !== linesOf) {
+    setLinesOf(done?.updatedAt ?? null);
+    setLineTexts(done?.segments.map((s) => s.text) ?? []);
+  }
+
   if (isError) return <InlineErrorBanner message="Couldn't open this post. It may have been deleted." />;
   if (!form || (id && !item)) return <p className="text-muted font-semibold text-[13px] py-10 text-center">Loading…</p>;
 
   const status = item?.status ?? 'draft';
   const isOwn = !item || item.authorId === me?.id;
   const editable = isAdmin || status === 'draft' || status === 'rejected' || status === 'archived';
-  const dirty = JSON.stringify(form) !== saved;
+  const formDirty = JSON.stringify(form) !== saved;
+  const linesDirty = !!done && lineTexts.some((t, i) => t !== done.segments[i]?.text);
+  const dirty = formDirty || linesDirty;
   const meta = contentTypeMeta(form.type);
   const set = (patch: Partial<Form>) => setForm((f) => (f ? { ...f, ...patch } : f));
 
@@ -178,6 +190,11 @@ function Editor() {
     return it;
   };
   const ensureId = async () => idRef.current ?? (await save()).id;
+  // The post (with its chapters), then any corrected transcript lines.
+  const saveAll = async () => {
+    if (formDirty || !idRef.current) await save();
+    if (linesDirty) await saveTranscript(lineTexts.map((t) => t.trim()));
+  };
 
   const run = async (label: string, fn: () => Promise<string | void>) => {
     setBusy(label);
@@ -198,8 +215,8 @@ function Editor() {
 
   const transition = (label: string, path: string, body?: unknown, done?: string) =>
     run(label, async () => {
-      const pid = dirty || !idRef.current ? (await save()).id : idRef.current;
-      applyItem(await api.post<ContentItem>(path.replace(':id', encodeURIComponent(pid)), body));
+      await saveAll();
+      applyItem(await api.post<ContentItem>(path.replace(':id', encodeURIComponent(idRef.current ?? '')), body));
       return done;
     });
 
@@ -347,17 +364,15 @@ function Editor() {
                 )}
               </div>
               <div className="panel p-5">
-                <PanelTitle>Chapters</PanelTitle>
-                <ChaptersEditor chapters={form.chapters} onChange={(chapters) => set({ chapters })} disabled={!editable} lengthSec={form.audioSeconds}
-                  audio={item?.audioUrl ? audioRef : undefined} onUploadPhoto={editable ? uploadChapterPhoto : undefined} />
+                <PanelTitle>Chapters &amp; transcript</PanelTitle>
+                <ChaptersTimeline chapters={form.chapters} onChapters={(chapters) => set({ chapters })}
+                  transcript={done} texts={lineTexts} onTexts={setLineTexts}
+                  audio={audioRef} hasAudio={!!item?.audioUrl} lengthSec={form.audioSeconds} editable={editable}
+                  onUploadPhoto={editable ? uploadChapterPhoto : undefined}
+                  onRedo={editable ? redoTranscript : undefined}
+                  onSave={() => run('save', async () => { await saveAll(); return 'Saved.'; })}
+                  saving={busy === 'save'} dirty={dirty} />
               </div>
-              {transcript?.status === 'done' && transcript.segments.length > 0 && (
-                <div className="panel p-5">
-                  <PanelTitle>Transcript</PanelTitle>
-                  <TranscriptEditor transcript={transcript} audio={audioRef} disabled={!editable}
-                    onSave={saveTranscript} onRedo={editable ? redoTranscript : undefined} />
-                </div>
-              )}
             </>
           )}
 
@@ -390,7 +405,7 @@ function Editor() {
             <PanelTitle>{isAdmin ? 'Publish' : 'Review'}</PanelTitle>
             {editable && (
               <button className="btn w-full flex items-center justify-center gap-2" disabled={!!busy || (!dirty && !!id)}
-                onClick={() => run('save', async () => { await save(); return 'Saved.'; })}>
+                onClick={() => run('save', async () => { await saveAll(); return 'Saved.'; })}>
                 {busy === 'save' ? <Loader2 size={14} className="animate-spin" /> : null}
                 {status === 'published' ? 'Save changes' : id ? 'Save draft' : 'Create draft'}
               </button>

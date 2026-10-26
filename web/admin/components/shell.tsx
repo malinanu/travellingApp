@@ -186,7 +186,7 @@ function Rail({ pending, isAdmin }: { pending: number; isAdmin: boolean }) {
   const visibleNav = NAV.filter((n) => (isAdmin ? !n.superAdminOnly || me?.isSuperAdmin : n.forPublishers));
   const badge: Record<string, number> = { '/queue': pending, '/content': review?.count ?? 0 };
   return (
-    <aside className="w-[232px] shrink-0 flex flex-col" style={{ background: '#103d3a', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+    <aside className="w-[232px] shrink-0 flex flex-col overflow-y-auto" style={{ background: '#103d3a', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
       <div className="flex items-center gap-2.5 px-5 h-[58px]" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <SpottoMark size={26} />
         <div className="leading-none">
@@ -442,11 +442,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const title = NAV.find((n) => pathname.startsWith(n.href))?.label ?? (pathname.startsWith('/profile') ? 'Profile' : '');
 
   return (
-    <div className="min-h-screen flex" style={{ background: 'var(--bg)' }}>
+    // The page scrolls inside <main>, under the command bar, so sticky parts
+    // of a page (the content editor's sidebar and audio player) stay in view.
+    <div className="h-screen flex overflow-hidden" style={{ background: 'var(--bg)' }}>
       <Rail pending={kpis?.pendingVendors ?? 0} isAdmin={isAdmin} />
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col">
         <CommandBar title={title} isAdmin={isAdmin} />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 min-h-0 overflow-y-auto p-6">{children}</main>
       </div>
     </div>
   );
