@@ -114,7 +114,12 @@ and **Pull and redeploy**. The `api` and `transcriber` services both read
 it. Without it, the API queues no transcripts and the transcriber just
 waits. The transcriber idles at a few tens of MB and only loads the Whisper
 model (up to about 1 GB, capped at 1.5 GB) while it is transcribing; a
-10-minute guide takes a few minutes on 2 CPUs.
+10-minute guide takes a few minutes. It runs at a low CPU priority, so the
+API comes first.
+
+Its image is the biggest in the stack (about 0.6 GB to pull, 1.3 GB on
+disk, since the model is inside). If a redeploy fails, check the host's free
+disk space and clear old images first: `docker image prune -af`.
 
 ## Images are built by GitHub
 

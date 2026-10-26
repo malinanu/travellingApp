@@ -18,10 +18,15 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-# Bake the model (~460 MB) into the image.
-RUN python -c "import os; from faster_whisper.utils import download_model; download_model(os.environ['MODEL'], cache_dir=os.environ['MODEL_DIR'])"
+RUN useradd --system --uid 10001 --home-dir /app transcriber
 
-RUN useradd --system --uid 10001 --home-dir /app transcriber && chown -R transcriber /models
+# Bake the model (~460 MB) into the image. Download it and hand it to the
+# transcriber user in this one step: a chown in a later step would store
+# every file of it a second time (it doubled the image to 1 GB once).
+RUN python -c "import os; from faster_whisper.utils import download_model; download_model(os.environ['MODEL'], cache_dir=os.environ['MODEL_DIR'])" \
+    && chown -R transcriber /models \
+    && rm -rf /root/.cache
+
 COPY worker.py transcribe.py ./
 USER transcriber
 

@@ -39,8 +39,9 @@ address and a shared token.
 
 `docker-compose.yml` runs it as the `transcriber` service. GitHub Actions
 builds `ghcr.io/malinanu/travellingapp-transcriber` with the model inside, so
-it never downloads anything at runtime. It is capped at 1.5 GB of memory and
-2 CPUs, so a long audiobook can't slow the API down.
+it never downloads anything at runtime (about 0.6 GB to pull). It is capped
+at 1.5 GB of memory, uses two threads and has a low CPU priority, so a long
+audiobook can't slow the API down.
 
 Turning it on:
 
