@@ -23,6 +23,14 @@ const kStorySkip = Duration(seconds: 15);
 /// Playback speeds the player offers.
 const kStorySpeeds = [0.75, 1.0, 1.25, 1.5, 2.0];
 
+/// What the lock screen and notification show while [item] is at [pos]: the
+/// playing chapter (-1 before the first, or with no chapters), its photo
+/// (else the cover; '' for neither) and its title ('' outside a chapter).
+({int chapter, String art, String subtitle}) storyNowShowing(ContentItem item, Duration pos) {
+  final i = item.chapterAt(pos.inMilliseconds / 1000);
+  return (chapter: i, art: item.chapterImage(i), subtitle: i >= 0 ? item.chapters[i].title : '');
+}
+
 class StoryAudioHandler extends BaseAudioHandler {
   StoryAudioHandler({AudioPlayer? player}) : _player = player ?? AudioPlayer() {
     _player.playbackEventStream.listen(
@@ -39,10 +47,30 @@ class StoryAudioHandler extends BaseAudioHandler {
       final story = _story;
       if (playing && story != null && _counted.add(story.id)) onListen?.call(story.id);
     });
+    _player.positionStream.listen(_followChapter);
   }
+
+  /// Shows the playing chapter's photo and title on the lock screen and in
+  /// the notification, so a listener can see where in the guide they are.
+  void _followChapter(Duration pos) {
+    final story = _story;
+    final item = mediaItem.value;
+    if (story == null || item == null || story.chapters.isEmpty) return;
+    final now = storyNowShowing(story, pos);
+    if (now.chapter == _shownChapter) return;
+    _shownChapter = now.chapter;
+    mediaItem.add(item.copyWith(
+      artUri: now.art.isEmpty ? null : Uri.parse(resolveMediaUrl(now.art)),
+      artist: now.subtitle.isNotEmpty ? now.subtitle : _artist(story),
+      displaySubtitle: now.subtitle.isNotEmpty ? now.subtitle : null,
+    ));
+  }
+
+  static String _artist(ContentItem item) => item.authorName.isNotEmpty ? item.authorName : 'Spotto';
 
   final AudioPlayer _player;
   ContentItem? _story;
+  int _shownChapter = -1;
   bool _sessionReady = false;
   final _counted = <String>{};
 
@@ -76,13 +104,16 @@ class StoryAudioHandler extends BaseAudioHandler {
     if (!same) {
       final resumeAt = start ?? (_story?.id == item.id ? _player.position : null);
       _story = item;
+      final now = storyNowShowing(item, resumeAt ?? Duration.zero);
+      _shownChapter = now.chapter;
       mediaItem.add(MediaItem(
         id: item.id,
         title: item.title,
-        artist: item.authorName.isNotEmpty ? item.authorName : 'Spotto',
+        artist: now.subtitle.isNotEmpty ? now.subtitle : _artist(item),
         album: item.regionName.isNotEmpty ? item.regionName : 'Spotto Stories',
+        displaySubtitle: now.subtitle.isNotEmpty ? now.subtitle : null,
         duration: item.audioSeconds > 0 ? Duration(seconds: item.audioSeconds) : null,
-        artUri: item.coverUrl.isEmpty ? null : Uri.parse(resolveMediaUrl(item.coverUrl)),
+        artUri: now.art.isEmpty ? null : Uri.parse(resolveMediaUrl(now.art)),
       ));
       await _player.setUrl(resolveMediaUrl(item.audioUrl), initialPosition: resumeAt);
     } else if (start != null) {
@@ -123,6 +154,7 @@ class StoryAudioHandler extends BaseAudioHandler {
   Future<void> stop() async {
     await _player.stop();
     _story = null;
+    _shownChapter = -1;
     mediaItem.add(null);
     await super.stop();
   }

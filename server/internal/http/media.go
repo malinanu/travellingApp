@@ -22,7 +22,8 @@ import (
 // (and deletes from R2) the previous one. br_cert is single-value (unlike
 // the generic multi-value "doc") because a re-upload should replace the
 // vendor's one Business Registration certificate, not add another. A post's
-// audio file is single-value too; its inline images ("inline") are not.
+// audio file is single-value too; its inline images ("inline") and chapter
+// photos ("chapter") are not.
 var singleValueRoles = map[string]bool{"cover": true, "promo": true, "avatar": true, "br_cert": true, "audio": true}
 
 // roleAllowsKind gates which file kind a role accepts: promo is video-only,

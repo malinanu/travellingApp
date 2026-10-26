@@ -1,12 +1,16 @@
 // Stories: parsing the /content API, "near you" ordering, turning an
 // itinerary into a trip, the Stories tab, adding an itinerary from a story
-// to the traveller's trips, and following an audio guide's transcript.
+// to the traveller's trips, following an audio guide's transcript, and its
+// photo chapters (where in the guide the listener is).
+
+import 'dart:ui' show Tristate;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:spotto/core/audio/story_audio.dart';
 import 'package:spotto/core/storage/local_store.dart';
 import 'package:spotto/data/catalog/itinerary_import.dart';
 import 'package:spotto/data/catalog/trip_catalog.dart';
@@ -188,6 +192,106 @@ void main() {
     expect(currentChapter(chapters, const Duration(seconds: 5)), -1);
     expect(currentChapter(chapters, const Duration(seconds: 10)), 0);
     expect(currentChapter(chapters, const Duration(seconds: 61)), 1);
+  });
+
+  group('photo chapters', () {
+    final guide = ContentItem.fromJson({
+      'id': 'sig',
+      'type': 'audio',
+      'title': 'Sigiriya rock',
+      'coverUrl': '/media/raw/content/sig/cover.jpg?token=c',
+      'audioSeconds': 600,
+      'chapters': [
+        {'title': 'Water gardens', 'startSec': 0, 'imageUrl': '/media/raw/content/sig/a.jpg?token=a'},
+        {'title': 'Mirror wall', 'startSec': 120},
+        {'title': "Lion's Paw", 'startSec': 360, 'imageUrl': '/media/raw/content/sig/c.jpg?token=c'},
+      ],
+    });
+
+    test('reads chapter photos, ends and fallbacks', () {
+      expect(guide.hasChapterPhotos, isTrue);
+      expect(guide.chapters.first.imageUrl, '/media/raw/content/sig/a.jpg?token=a');
+      expect(guide.chapters[1].imageUrl, '');
+      expect([for (var i = 0; i < 3; i++) guide.chapterEndSec(i)], [120, 360, 600]);
+      expect(guide.chapterImage(1), guide.coverUrl, reason: 'no photo: the cover');
+      expect(guide.chapterImage(-1), guide.coverUrl);
+      expect(guide.chapterAt(0), 0);
+      expect(guide.chapterAt(119.9), 0);
+      expect(guide.chapterAt(120), 1);
+      expect(guide.chapterAt(9999), 2);
+      expect(ContentItem.fromJson({'id': 'x', 'type': 'audio', 'chapters': [{'title': 'a', 'startSec': 0}]}).hasChapterPhotos, isFalse);
+    });
+
+    test('the lock screen follows the chapter being heard', () {
+      final start = storyNowShowing(guide, Duration.zero);
+      expect(start.chapter, 0);
+      expect(start.art, '/media/raw/content/sig/a.jpg?token=a');
+      expect(start.subtitle, 'Water gardens');
+      final wall = storyNowShowing(guide, const Duration(minutes: 3));
+      expect(wall.chapter, 1);
+      expect(wall.art, guide.coverUrl);
+      expect(wall.subtitle, 'Mirror wall');
+      expect(storyNowShowing(guide, const Duration(minutes: 7)).art, '/media/raw/content/sig/c.jpg?token=c');
+      final none = storyNowShowing(const ContentItem(id: 'n', kind: ContentKind.audio, title: 'n', coverUrl: 'cov'), Duration.zero);
+      expect((none.chapter, none.art, none.subtitle), (-1, 'cov', ''));
+    });
+
+    // Without photos, so no network images load in the test.
+    final plain = ContentItem.fromJson({
+      'id': 'p',
+      'type': 'audio',
+      'title': 'Galle Fort',
+      'audioSeconds': 300,
+      'chapters': [
+        {'title': 'Lighthouse', 'startSec': 0},
+        {'title': 'Flag Rock', 'startSec': 120},
+        {'title': 'Dutch Church', 'startSec': 200},
+      ],
+    });
+
+    testWidgets('the chapter photo says where in the guide it is', (tester) async {
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryChapterHero(item: plain, index: 1))));
+      expect(find.text('Chapter 2 of 3 · 2:00–3:20'), findsOneWidget);
+      expect(find.text('Flag Rock'), findsOneWidget);
+    });
+
+    testWidgets('the photo strip marks the chapter playing and jumps', (tester) async {
+      final tapped = <int>[];
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: StoryChapterStrip(item: plain, current: 2, onTap: tapped.add)),
+      ));
+      expect(find.text('Lighthouse'), findsOneWidget);
+      expect(find.text('0:00–2:00'), findsOneWidget);
+      expect(find.byIcon(Icons.graphic_eq_rounded), findsOneWidget, reason: 'one card marked as playing');
+      expect(tester.getSemantics(find.bySemanticsLabel(RegExp(r'^Chapter 3: Dutch Church'))).flagsCollection.isSelected, Tristate.isTrue);
+      await tester.tap(find.text('Flag Rock'));
+      expect(tapped, [1]);
+    });
+
+    testWidgets('transcript lines sit under their chapter', (tester) async {
+      final transcript = ContentTranscript(lines: [
+        for (final (s, t) in [(0.0, 'The lighthouse.'), (60.0, 'Built in 1939.'), (125.0, 'Flag Rock ahead.')])
+          TranscriptLine(start: s, end: s + 5, text: t),
+      ]);
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StoryTranscriptView(
+            transcript: transcript,
+            chapters: plain.chapters,
+            current: -1,
+            open: true,
+            onToggle: () {},
+            onTapLine: (_) {},
+          ),
+        ),
+      ));
+      expect(find.text('1 · Lighthouse'), findsOneWidget);
+      expect(find.text('2 · Flag Rock'), findsOneWidget);
+      expect(find.text('3 · Dutch Church'), findsNothing, reason: 'no lines in it');
+      double y(String s) => tester.getTopLeft(find.text(s)).dy;
+      expect(y('1 · Lighthouse') < y('The lighthouse.') && y('Built in 1939.') < y('2 · Flag Rock'), isTrue);
+      expect(y('2 · Flag Rock') < y('Flag Rock ahead.'), isTrue);
+    });
   });
 
   test('currentLine follows the playback position', () {

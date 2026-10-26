@@ -538,9 +538,13 @@ export interface Subscription {
 export type ContentType = 'audio' | 'blog' | 'guide' | 'itinerary' | 'tip';
 export type ContentStatus = 'draft' | 'in_review' | 'published' | 'rejected' | 'archived';
 
+/** A point in an audio guide; it runs until the next chapter starts. */
 export interface ContentChapter {
   title: string;
   startSec: number;
+  /** Photo of the spot this part describes (a signed /media/raw link), shown
+   * to listeners while it plays. */
+  imageUrl?: string;
 }
 
 /** A Spotto place (placeId) or a named point, optionally at a time of day. */

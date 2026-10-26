@@ -118,6 +118,12 @@ func (s *Server) applyContentInput(r *http.Request, item *domain.ContentItem, in
 		if ch.StartSec < 0 || (in.AudioSeconds > 0 && ch.StartSec > in.AudioSeconds) {
 			return "A chapter starts outside the recording."
 		}
+		// The editor sends back the signed link it was given; store the
+		// bare path, and only for a photo uploaded to this post.
+		ch.ImageURL, _, _ = strings.Cut(strings.TrimSpace(ch.ImageURL), "?")
+		if ch.ImageURL != "" && !strings.HasPrefix(ch.ImageURL, "/media/raw/content/"+item.ID+"/") {
+			return "That chapter photo doesn't belong to this post."
+		}
 		chapters = append(chapters, ch)
 	}
 	slices.SortStableFunc(chapters, func(a, b domain.ContentChapter) int { return a.StartSec - b.StartSec })
@@ -263,6 +269,14 @@ func unsignMediaPaths(body string) string {
 func (s *Server) signContent(c domain.ContentItem) domain.ContentItem {
 	c.CoverURL = s.signMediaPath(c.CoverURL)
 	c.AudioURL = s.signMediaPath(c.AudioURL)
+	if len(c.Chapters) > 0 {
+		chapters := make([]domain.ContentChapter, len(c.Chapters))
+		for i, ch := range c.Chapters {
+			ch.ImageURL = s.signMediaPath(ch.ImageURL)
+			chapters[i] = ch
+		}
+		c.Chapters = chapters
+	}
 	if c.Body != "" {
 		c.Body = rawMediaPath.ReplaceAllStringFunc(c.Body, s.signMediaPath)
 	}

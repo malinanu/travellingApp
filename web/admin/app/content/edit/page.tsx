@@ -14,7 +14,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import {
-  resolveMediaUrl, timeAgo, uploadMedia, validateFile,
+  resolveMediaUrl, shrinkImage, timeAgo, uploadMedia, validateFile,
   type ContentChapter, type ContentItem, type ContentTranscript, type ContentType, type ItineraryDay, type StudioTown,
 } from '@spotto/shared';
 import {
@@ -230,6 +230,17 @@ function Editor() {
       return 'Audio uploaded.';
     });
 
+  // Chapter photos are shrunk first: travellers load them on mobile data.
+  const uploadChapterPhoto = async (file: File) => {
+    const small = await shrinkImage(file);
+    const bad = validateFile(small, 'image');
+    if (bad) throw new Error(bad);
+    if (!idRef.current && !form.title.trim()) throw new Error(TITLE_FIRST);
+    const pid = await ensureId();
+    const m = await uploadMedia(api, small, { ownerType: 'content', ownerId: pid, role: 'chapter' });
+    return m.url;
+  };
+
   const uploadInline = async (file: File) => {
     const bad = validateFile(file, 'image');
     if (bad) throw new Error(bad);
@@ -337,7 +348,8 @@ function Editor() {
               </div>
               <div className="panel p-5">
                 <PanelTitle>Chapters</PanelTitle>
-                <ChaptersEditor chapters={form.chapters} onChange={(chapters) => set({ chapters })} disabled={!editable} lengthSec={form.audioSeconds} />
+                <ChaptersEditor chapters={form.chapters} onChange={(chapters) => set({ chapters })} disabled={!editable} lengthSec={form.audioSeconds}
+                  audio={item?.audioUrl ? audioRef : undefined} onUploadPhoto={editable ? uploadChapterPhoto : undefined} />
               </div>
               {transcript?.status === 'done' && transcript.segments.length > 0 && (
                 <div className="panel p-5">
