@@ -1,0 +1,37 @@
+name: Transcriber CI
+
+# Unit tests for the audio guide transcriber (transcriber/). They use a fake
+# API and a fake model, so no Whisper download is needed; the real decoder
+# (PyAV) is installed to test the ten-minute chunking.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'transcriber/**'
+      - '.github/workflows/transcriber-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'transcriber/**'
+      - '.github/workflows/transcriber-ci.yml'
+
+jobs:
+  test:
+    name: Transcriber tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: transcriber
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the decoder
+        run: pip install "$(grep '^av==' requirements.txt)" "$(grep '^numpy==' requirements.txt)"
+
+      - name: Run tests
+        run: python -m unittest -v

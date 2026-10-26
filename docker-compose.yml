@@ -71,6 +71,9 @@ services:
       WHATSAPP_OTP_TEMPLATE: ${WHATSAPP_OTP_TEMPLATE:-}
       WHATSAPP_OTP_TEMPLATE_LANG: ${WHATSAPP_OTP_TEMPLATE_LANG:-}
       WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-}
+      # Audio guide transcripts: shared with the transcriber service below.
+      # Unset, the API queues no transcripts.
+      TRANSCRIBER_TOKEN: ${TRANSCRIBER_TOKEN:-}
     # Instagram rate-limits anonymous yt-dlp requests from server IPs almost
     # immediately, so reel extraction needs a logged-in session. Drop a
     # Netscape cookies.txt (from a throwaway Instagram account) into
@@ -98,6 +101,24 @@ services:
       PORT: 3001
     ports:
       - "3001:3001"
+    depends_on: [api]
+    networks: [spotto]
+
+  # Writes transcripts of audio guides (transcriber/README.md). It idles at
+  # a few tens of MB and asks the api for work every minute; the Whisper
+  # model is only loaded, in a short-lived child process, while a recording
+  # is being transcribed. The limits keep a long audiobook from starving
+  # the api. Without TRANSCRIBER_TOKEN it just waits.
+  transcriber:
+    image: ghcr.io/malinanu/travellingapp-transcriber:${SPOTTO_IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8881
+      TRANSCRIBER_TOKEN: ${TRANSCRIBER_TOKEN:-}
+      CPU_THREADS: 2
+    mem_limit: 1536m
+    cpus: "2"
     depends_on: [api]
     networks: [spotto]
 

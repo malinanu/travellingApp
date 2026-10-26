@@ -3,20 +3,24 @@
 // One travel post in the Content editor. ?id=<post> opens a post; ?type=<type>
 // starts a new one, created on its first save. Publishers save drafts and
 // send them for review; admins publish (their own posts straight away), send
-// a publisher's post back with a note, or take a live post down.
+// a publisher's post back with a note, or take a live post down. An audio
+// post's transcript is made after its upload (the transcriber service) and
+// corrected here.
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CheckCircle2, Eye, Headphones, ImagePlus, Loader2, Send, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, Eye, Headphones, ImagePlus, Loader2, Send, Trash2, Upload } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import {
   resolveMediaUrl, timeAgo, uploadMedia, validateFile,
-  type ContentChapter, type ContentItem, type ContentType, type ItineraryDay, type StudioTown,
+  type ContentChapter, type ContentItem, type ContentTranscript, type ContentType, type ItineraryDay, type StudioTown,
 } from '@spotto/shared';
-import { ChaptersEditor, Field, ItineraryEditor, LinkedPlaces, MarkdownEditor, StatusPill } from '../../../components/content-fields';
-import { CONTENT_TYPES, LANGUAGES, contentTypeMeta, formatDuration } from '../../../components/content-meta';
+import {
+  ChaptersEditor, Field, ItineraryEditor, LinkedPlaces, MarkdownEditor, StatusPill, TranscriptEditor,
+} from '../../../components/content-fields';
+import { CONTENT_TYPES, LANGUAGES, contentTypeMeta, formatDuration, languageName } from '../../../components/content-meta';
 import { InlineErrorBanner } from '../../../components/route-status';
 import Shell, { useMe } from '../../../components/shell';
 import { api } from '../../../lib/api';
@@ -96,6 +100,8 @@ function Editor() {
     queryKey: ['studio-item', id],
     queryFn: () => api.get<ContentItem>(`/studio/content/${encodeURIComponent(id ?? '')}`),
     enabled: !!id,
+    // Check on a transcript being made until it's ready.
+    refetchInterval: (q) => (['queued', 'working'].includes(q.state.data?.transcript?.status ?? '') ? 15_000 : false),
   });
   const { data: towns = [] } = useQuery<StudioTown[]>({
     queryKey: ['studio-regions'],
@@ -122,6 +128,9 @@ function Editor() {
   // upload to a new post) must not create it twice while `id` is still the
   // value from before the first save.
   const idRef = useRef(id);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [redoing, setRedoing] = useState(false);
+  const [redoError, setRedoError] = useState<string | null>(null);
 
   if (isError) return <InlineErrorBanner message="Couldn't open this post. It may have been deleted." />;
   if (!form || (id && !item)) return <p className="text-muted font-semibold text-[13px] py-10 text-center">Loading…</p>;
@@ -220,6 +229,27 @@ function Editor() {
       router.push('/content');
     });
 
+  // Transcript changes update the post as loaded, never the form, so unsaved
+  // edits to the post survive them.
+  const transcriptPath = () => `/studio/content/${encodeURIComponent(idRef.current ?? '')}/transcript`;
+  const saveTranscript = async (texts: string[]) => {
+    const it = await api.put<ContentItem>(transcriptPath(), { texts });
+    qc.setQueryData(['studio-item', it.id], it);
+  };
+  const redoTranscript = async () => {
+    setRedoing(true);
+    setRedoError(null);
+    try {
+      const it = await api.post<ContentItem>(`${transcriptPath()}/retry`);
+      qc.setQueryData(['studio-item', it.id], it);
+    } catch (e) {
+      setRedoError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+    } finally {
+      setRedoing(false);
+    }
+  };
+  const transcript = item?.transcript;
+
   const canPublish = isAdmin && status !== 'published' && (isOwn || status === 'in_review' || status === 'archived');
   const bodyLabel = BODY_LABEL[form.type];
 
@@ -266,7 +296,7 @@ function Editor() {
               <div className="panel p-5">
                 <PanelTitle>Audio file</PanelTitle>
                 {item?.audioUrl ? (
-                  <audio controls preload="metadata" src={resolveMediaUrl(item.audioUrl)} className="w-full mb-2" />
+                  <audio ref={audioRef} controls preload="metadata" src={resolveMediaUrl(item.audioUrl)} className="w-full mb-2" />
                 ) : (
                   <p className="text-[12.5px] text-muted font-semibold mb-2">No file yet. MP3 or M4A, up to 200 MB.</p>
                 )}
@@ -278,11 +308,21 @@ function Editor() {
                   {form.audioSeconds > 0 && <span className="text-[12px] text-muted font-semibold">Length {formatDuration(form.audioSeconds)}</span>}
                   {busy === 'audio' && <span className="text-[12px] text-muted font-semibold">Uploading — large files take a few minutes.</span>}
                 </div>
+                {item?.audioUrl && busy !== 'audio' && (
+                  <TranscriptState transcript={transcript} busy={redoing} error={redoError} onRedo={editable ? redoTranscript : undefined} />
+                )}
               </div>
               <div className="panel p-5">
                 <PanelTitle>Chapters</PanelTitle>
                 <ChaptersEditor chapters={form.chapters} onChange={(chapters) => set({ chapters })} disabled={!editable} lengthSec={form.audioSeconds} />
               </div>
+              {transcript?.status === 'done' && transcript.segments.length > 0 && (
+                <div className="panel p-5">
+                  <PanelTitle>Transcript</PanelTitle>
+                  <TranscriptEditor transcript={transcript} audio={audioRef} disabled={!editable}
+                    onSave={saveTranscript} onRedo={editable ? redoTranscript : undefined} />
+                </div>
+              )}
             </>
           )}
 
@@ -422,6 +462,57 @@ function Editor() {
         </div>
       </div>
     </>
+  );
+}
+
+/** Under the audio player: where the transcript is up to. */
+function TranscriptState({ transcript, busy, error, onRedo }: {
+  transcript?: ContentTranscript;
+  busy: boolean;
+  error: string | null;
+  /** Unset when the post can't be changed now. */
+  onRedo?: () => void;
+}) {
+  const status = transcript?.status;
+  const redo = (label: string) => onRedo && (
+    <button type="button" className="btn py-1 px-2.5 text-[11.5px] flex items-center gap-1.5" disabled={busy} onClick={onRedo}>
+      {busy && <Loader2 size={11} className="animate-spin" />} {label}
+    </button>
+  );
+  let line: ReactNode;
+  if (busy || status === 'queued' || status === 'working') {
+    line = (
+      <span className="flex items-center gap-1.5 text-muted">
+        <Loader2 size={13} className="animate-spin shrink-0" /> Making the transcript… This usually takes a few minutes, and this page updates by itself.
+      </span>
+    );
+  } else if (status === 'done') {
+    line = transcript!.segments.length > 0 ? (
+      <span className="flex items-center gap-1.5" style={{ color: GREEN }}>
+        <CheckCircle2 size={13} className="shrink-0" /> Transcript ready · {languageName(transcript!.language)}{transcript!.edited && ' · corrected'}
+      </span>
+    ) : (
+      <span className="text-muted">The transcriber didn&rsquo;t hear any speech in this recording.</span>
+    );
+  } else if (status === 'failed') {
+    line = (
+      <span className="flex items-start gap-1.5" style={{ color: RED }}>
+        <AlertCircle size={13} className="shrink-0 mt-[2px]" />
+        <span>Couldn&rsquo;t make the transcript{transcript!.error ? `: ${transcript!.error}` : '.'}</span>
+      </span>
+    );
+  } else {
+    line = <span className="text-muted">No transcript yet.</span>;
+  }
+  return (
+    <div className="mt-3 pt-3 text-[12px] font-semibold space-y-2" style={{ borderTop: '1px solid var(--line)' }}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {line}
+        {!busy && status === 'failed' && redo('Try again')}
+        {!busy && !status && redo('Make a transcript')}
+      </div>
+      {error && <p style={{ color: RED }}>{error}</p>}
+    </div>
   );
 }
 

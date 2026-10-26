@@ -191,6 +191,9 @@ func (s *Server) handleMediaConfirm(w http.ResponseWriter, r *http.Request) {
 	if req.OwnerType == "content" && (req.Role == "cover" || req.Role == "audio") {
 		_ = s.Store.SetContentMedia(r.Context(), req.OwnerID, req.Role, m.URL)
 	}
+	if req.OwnerType == "content" && req.Role == "audio" {
+		s.queueTranscript(r.Context(), req.OwnerID, m.URL) // m.URL is still the unsigned path here
+	}
 	if req.OwnerType == "vendor" && req.Role == "doc" {
 		_ = s.Store.SetVendorDocs(r.Context(), req.OwnerID, true)
 	}
@@ -326,6 +329,9 @@ func (s *Server) handleMediaDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	if m.OwnerType == "content" && (m.Role == "cover" || m.Role == "audio") {
 		_ = s.Store.SetContentMedia(r.Context(), m.OwnerID, m.Role, "")
+	}
+	if m.OwnerType == "content" && m.Role == "audio" {
+		_ = s.Store.DeleteTranscript(r.Context(), m.OwnerID)
 	}
 	if m.OwnerType == "vendor" && (m.Role == "doc" || m.Role == "br_cert") {
 		// Recompute the docs flag from whatever remains.

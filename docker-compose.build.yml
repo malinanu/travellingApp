@@ -28,3 +28,8 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         NEXT_PUBLIC_VENDOR_URL: ${NEXT_PUBLIC_VENDOR_URL}
     pull_policy: build
+
+  transcriber:
+    build:
+      context: ./transcriber
+    pull_policy: build

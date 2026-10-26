@@ -1,0 +1,9 @@
+# Only transcribe.py needs these; worker.py is standard-library only.
+faster-whisper==1.2.1
+# Pinned to the versions tested with transcribe.py. faster-whisper's own
+# file decoding passes an option PyAV 19 dropped, so transcribe.py decodes
+# the audio itself and hands the model plain samples.
+av==19.0.2
+ctranslate2==4.8.4
+numpy==2.5.4
+onnxruntime==1.31.0

@@ -1,5 +1,8 @@
-// The audio player on an audio story, and the mini-player that stays above
-// the tabs while something is loaded (see TravellerShell).
+// The audio player on an audio story with its transcript, and the
+// mini-player that stays above the tabs while something is loaded (see
+// TravellerShell).
+
+import 'dart:math' as math;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
@@ -187,6 +190,173 @@ class _StoryPlayerCardState extends ConsumerState<StoryPlayerCard> {
           ]);
         },
       ),
+    );
+  }
+}
+
+/// Index of the transcript line being heard at [pos]: the last one starting
+/// by then, or -1 before the first.
+int currentLine(List<TranscriptLine> lines, Duration pos) {
+  final sec = pos.inMilliseconds / 1000 + 0.05;
+  var lo = 0, hi = lines.length - 1, at = -1;
+  while (lo <= hi) {
+    final mid = (lo + hi) >> 1;
+    if (lines[mid].start <= sec) {
+      at = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return at;
+}
+
+/// How many lines a folded transcript shows.
+const kTranscriptPeek = 6;
+
+/// The lines a folded transcript of [count] lines shows while line [current]
+/// is heard: from the one before it, so it follows along as the audio plays.
+(int, int) transcriptWindow(int count, int current) {
+  var from = math.max(0, current - 1);
+  if (from + kTranscriptPeek > count) from = math.max(0, count - kTranscriptPeek);
+  return (from, math.min(count, from + kTranscriptPeek));
+}
+
+/// An audio story's transcript under its player: the line being heard is
+/// highlighted, and tapping a line plays from there.
+class StoryTranscript extends ConsumerStatefulWidget {
+  const StoryTranscript({super.key, required this.item, required this.transcript});
+  final ContentItem item;
+  final ContentTranscript transcript;
+
+  @override
+  ConsumerState<StoryTranscript> createState() => _StoryTranscriptState();
+}
+
+class _StoryTranscriptState extends ConsumerState<StoryTranscript> {
+  bool _open = false;
+  // The line being heard, only while this story is loaded. Kept between
+  // builds so the subscription isn't restarted on every rebuild.
+  Stream<int> _line = const Stream.empty();
+  bool? _lineLoaded;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final lines = widget.transcript.lines;
+    final handler = ref.watch(audioHandlerProvider);
+    final loaded = ref.watch(nowPlayingProvider).value?.id == item.id;
+    final state = ref.watch(playbackStateProvider).value;
+    final playing = loaded && (state?.playing ?? false) && state?.processingState != AudioProcessingState.completed;
+    if (_lineLoaded != loaded) {
+      _lineLoaded = loaded;
+      _line = loaded ? handler.positionStream.map((p) => currentLine(lines, p)).distinct() : const Stream.empty();
+    }
+
+    void playFrom(int i) {
+      final to = Duration(milliseconds: (lines[i].start * 1000).round());
+      if (loaded) {
+        handler.seek(to);
+        if (!playing) playStoryAudio(context, ref, item);
+      } else {
+        playStoryAudio(context, ref, item, start: to);
+      }
+    }
+
+    return StreamBuilder<int>(
+      stream: _line,
+      initialData: -1,
+      builder: (context, snap) => StoryTranscriptView(
+        transcript: widget.transcript,
+        current: loaded ? (snap.data ?? -1) : -1,
+        open: _open,
+        onToggle: () => setState(() => _open = !_open),
+        onTapLine: playFrom,
+      ),
+    );
+  }
+}
+
+/// The transcript card itself. Long ones are folded to a few lines around
+/// the one being heard ([current], -1 for none) until opened.
+class StoryTranscriptView extends StatelessWidget {
+  const StoryTranscriptView({
+    super.key,
+    required this.transcript,
+    required this.current,
+    required this.open,
+    required this.onToggle,
+    required this.onTapLine,
+  });
+  final ContentTranscript transcript;
+  final int current;
+  final bool open;
+  final VoidCallback onToggle;
+  final void Function(int index) onTapLine;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final lines = transcript.lines;
+    final folds = lines.length > kTranscriptPeek;
+    final (from, to) = open || !folds ? (0, lines.length) : transcriptWindow(lines.length, current);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: SpottoColors.line, width: 1.5),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('Transcript', style: text.titleSmall),
+        const SizedBox(height: 2),
+        Text('Tap a line to play from there.', style: text.labelSmall?.copyWith(color: SpottoColors.muted)),
+        const SizedBox(height: 6),
+        if (from > 0)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 2),
+            child: Text('…', style: text.bodyMedium?.copyWith(color: SpottoColors.muted)),
+          ),
+        for (var i = from; i < to; i++)
+          InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => onTapLine(i),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+              decoration: i == current
+                  ? BoxDecoration(color: SpottoColors.accentTint, borderRadius: BorderRadius.circular(10))
+                  : null,
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                SizedBox(
+                  width: 46,
+                  child: Text(
+                    formatClock(Duration(milliseconds: (lines[i].start * 1000).round())),
+                    style: text.labelSmall?.copyWith(color: i == current ? SpottoColors.accent : SpottoColors.muted),
+                  ),
+                ),
+                Expanded(
+                  child: Text(lines[i].text,
+                      style: text.bodyMedium?.copyWith(
+                        height: 1.4,
+                        fontWeight: i == current ? FontWeight.w600 : FontWeight.w400,
+                        color: i == current ? SpottoColors.ink : SpottoColors.inkSoft,
+                      )),
+                ),
+              ]),
+            ),
+          ),
+        if (folds)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: onToggle,
+              child: Text(open ? 'Show less' : 'Show full transcript (${lines.length} lines)'),
+            ),
+          )
+        else
+          const SizedBox(height: 8),
+      ]),
     );
   }
 }

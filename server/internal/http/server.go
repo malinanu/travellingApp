@@ -87,6 +87,8 @@ type Server struct {
 	// today; an HTTP client for a separate extraction service can replace it.
 	Reels                 reelextract.Interface
 	InspirationDailyLimit int
+	// TranscriberToken authorises the transcriber service; empty = off.
+	TranscriberToken string
 	// GoogleOAuth is nil when GOOGLE_CLIENT_ID/SECRET aren't configured â€”
 	// handleGoogleLogin/handleGoogleCallback report 501 in that case rather
 	// than panicking on a nil config.
@@ -151,6 +153,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		GooglePlacesAPIKey: cfg.GoogleCalendarAPIKey,
 		PlaceDetailsCache:  placedetails.NewCache(),
 		InspirationDailyLimit: cfg.InspirationDailyLimit,
+		TranscriberToken:      cfg.TranscriberToken,
 		loginLimit:         newLoginLimiter(5, 15*time.Minute),
 		totpLimit:          newLoginLimiter(5, 15*time.Minute),
 		resetLimit:         newLoginLimiter(5, 15*time.Minute),
@@ -297,6 +300,16 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.With(publicCORS).Get("/content", s.handleContentList)
 	r.With(publicCORS).Get("/content/{key}", s.handleContentDetail)
 	r.Post("/content/{id}/play", s.handleContentPlay)
+
+	// The transcriber service (transcriber/) claims audio guides to
+	// transcribe and posts the transcripts back — token-protected, and
+	// absent when TRANSCRIBER_TOKEN isn't set. See transcripts.go.
+	r.Group(func(r chi.Router) {
+		r.Use(s.requireTranscriber)
+		r.Post("/internal/transcripts/claim", s.handleTranscriptClaim)
+		r.Post("/internal/transcripts/{id}/result", s.handleTranscriptResult)
+		r.Post("/internal/transcripts/{id}/fail", s.handleTranscriptFail)
+	})
 
 	r.Get("/healthz", s.handleHealthz)
 	r.Get("/categories", s.handleAdminCategories)
@@ -477,6 +490,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Put("/studio/content/{id}", s.handleStudioContentUpdate)
 		r.Delete("/studio/content/{id}", s.handleStudioContentDelete)
 		r.Post("/studio/content/{id}/submit", s.handleStudioContentSubmit)
+		r.Put("/studio/content/{id}/transcript", s.handleStudioTranscriptSave)
+		r.Post("/studio/content/{id}/transcript/retry", s.handleStudioTranscriptRetry)
 		r.Get("/studio/regions", s.handleStudioRegions)
 		r.Get("/studio/places", s.handleStudioPlaces)
 	})

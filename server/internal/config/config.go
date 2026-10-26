@@ -75,6 +75,10 @@ type Config struct {
 	YoutubeAPIKey         string
 	YtdlpCookiesFile      string
 	InspirationDailyLimit int
+	// TranscriberToken is shared with the transcriber service (transcriber/),
+	// which claims audio guides to transcribe through /internal/transcripts.
+	// Empty turns transcripts off.
+	TranscriberToken string
 	// VendorAppURL is the base URL of the vendor Next.js app, used to build
 	// links embedded in emails (invite accept, password reset).
 	VendorAppURL string
@@ -210,6 +214,7 @@ func Load() Config {
 		YoutubeAPIKey:         getenv("YOUTUBE_API_KEY", getenv("GOOGLE_PLACES_API_KEY", getenv("GOOGLE_CALENDAR_API_KEY", ""))),
 		YtdlpCookiesFile:      getenv("YTDLP_COOKIES_FILE", ""),
 		InspirationDailyLimit: getenvInt("INSPIRATION_DAILY_LIMIT", 20),
+		TranscriberToken:      strings.TrimSpace(getenv("TRANSCRIBER_TOKEN", "")),
 		SuperAdminEmails:     superAdmins,
 		AppEnv:               getenv("APP_ENV", "development"),
 		AdminEmail:           adminEmail,
