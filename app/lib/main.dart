@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/router.dart';
 import 'core/api/push_notification_service.dart';
+import 'core/audio/story_audio.dart';
 import 'core/share/incoming_links.dart';
 import 'core/storage/local_store.dart';
 import 'core/theme/theme.dart';
@@ -25,6 +26,9 @@ Future<void> main() async {
     runApp(_StartupErrorApp(error: e));
     return;
   }
+  // Stories audio keeps playing in the background, so its service starts
+  // with the app (it falls back to in-app playback rather than failing).
+  final audio = await initStoryAudio();
   // Built outside the widget tree so push setup below can share the app's
   // ApiClient — the one whose 401 handler signs the user out.
   final container = ProviderContainer(
@@ -35,8 +39,12 @@ Future<void> main() async {
     // delaying/masking error surfacing that existing UI wasn't designed
     // for. Disabled to keep pre-3.0 behavior: fail once, surface it.
     retry: (retryCount, error) => null,
-    overrides: [localStoreProvider.overrideWithValue(store)],
+    overrides: [
+      localStoreProvider.overrideWithValue(store),
+      audioHandlerProvider.overrideWithValue(audio),
+    ],
   );
+  countStoryListens(audio, container.read(apiProvider));
   runApp(UncontrolledProviderScope(container: container, child: const SpottoApp()));
   // After the first frame is scheduled, never before: push setup can fail or
   // hang on iOS builds without the push entitlement and must not block the UI.
