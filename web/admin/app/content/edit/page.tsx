@@ -346,7 +346,8 @@ function Editor() {
               <div className="panel p-5">
                 <PanelTitle>Audio file</PanelTitle>
                 {item?.audioUrl ? (
-                  <audio ref={audioRef} controls preload="metadata" src={resolveMediaUrl(item.audioUrl)} className="w-full mb-2" />
+                  // No controls: the Chapters & transcript player bar plays it.
+                  <audio ref={audioRef} preload="metadata" src={resolveMediaUrl(item.audioUrl)} />
                 ) : (
                   <p className="text-[12.5px] text-muted font-semibold mb-2">No file yet. MP3 or M4A, up to 200 MB.</p>
                 )}
@@ -356,6 +357,9 @@ function Editor() {
                       label={item?.audioUrl ? 'Replace audio' : 'Upload audio'} icon={<Upload size={13} />} />
                   )}
                   {form.audioSeconds > 0 && <span className="text-[12px] text-muted font-semibold">Length {formatDuration(form.audioSeconds)}</span>}
+                  {item?.audioUrl && busy !== 'audio' && (
+                    <span className="text-[12px] text-muted font-semibold">Play it in Chapters &amp; transcript below.</span>
+                  )}
                   {busy === 'audio' && <span className="text-[12px] text-muted font-semibold">Uploading — large files take a few minutes.</span>}
                 </div>
                 {errorIn('audio')}
