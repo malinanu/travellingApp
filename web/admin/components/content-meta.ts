@@ -36,6 +36,17 @@ export const LANGUAGES: { code: string; label: string }[] = [
   { code: 'hi', label: 'Hindi' },
 ];
 
+/** "en" → "English"; any code the browser knows, else the code itself. */
+export function languageName(code: string): string {
+  const known = LANGUAGES.find((l) => l.code === code);
+  if (known) return known.label;
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
 /** 754 → "12:34", 3723 → "1:02:03". */
 export function formatDuration(sec: number): string {
   const s = Math.max(0, Math.round(sec));

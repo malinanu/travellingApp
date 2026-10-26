@@ -42,6 +42,40 @@ class ContentChapter {
       );
 }
 
+/// One line of an audio guide's transcript, timed in seconds.
+class TranscriptLine {
+  final double start;
+  final double end;
+  final String text;
+  const TranscriptLine({required this.start, required this.end, required this.text});
+
+  factory TranscriptLine.fromJson(Map<String, dynamic> json) => TranscriptLine(
+        start: (json['start'] as num?)?.toDouble() ?? 0,
+        end: (json['end'] as num?)?.toDouble() ?? 0,
+        text: (json['text'] as String? ?? '').trim(),
+      );
+}
+
+/// What's said in an audio guide, made by the transcriber service and
+/// checked by its publisher. Only finished transcripts reach the app.
+class ContentTranscript {
+  /// Language code, e.g. "en".
+  final String language;
+  final List<TranscriptLine> lines;
+  const ContentTranscript({this.language = '', required this.lines});
+
+  /// Null when there's nothing to show.
+  static ContentTranscript? fromJson(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final lines = [
+      for (final v in _list(json['segments']))
+        if (v is Map<String, dynamic>) TranscriptLine.fromJson(v),
+    ]..removeWhere((l) => l.text.isEmpty);
+    if (lines.isEmpty) return null;
+    return ContentTranscript(language: json['language'] as String? ?? '', lines: lines);
+  }
+}
+
 /// One stop of an itinerary day: a Spotto place ([placeId] set) or a named
 /// point, optionally at a time of day ("09:30").
 class ItineraryStop {
@@ -149,6 +183,9 @@ class ContentItem {
   /// Linked places — only on a single post (GET /content/{id}).
   final List<ContentPlace> places;
 
+  /// An audio post's transcript — only on a single post, once it's made.
+  final ContentTranscript? transcript;
+
   const ContentItem({
     required this.id,
     required this.kind,
@@ -170,6 +207,7 @@ class ContentItem {
     this.authorName = '',
     this.publishedAt,
     this.places = const [],
+    this.transcript,
   });
 
   factory ContentItem.fromJson(Map<String, dynamic> json) {
@@ -202,6 +240,7 @@ class ContentItem {
       authorName: json['authorName'] as String? ?? '',
       publishedAt: DateTime.tryParse(json['publishedAt'] as String? ?? ''),
       places: list('places', ContentPlace.fromJson),
+      transcript: ContentTranscript.fromJson(json['transcript']),
     );
   }
 

@@ -98,14 +98,30 @@ right side alone, that's the container's internal port).
   (one `KEY=value` per line, using Portainer's environment editor)
 - **Deploy the stack**
 
-This pulls the three images GitHub published and starts them.
+This pulls the four images GitHub published and starts them.
+
+### Audio guide transcripts
+
+The `transcriber` service writes a transcript of every audio guide a
+publisher uploads (see `transcriber/README.md`). To turn it on, add to the
+stack environment:
+
+```
+TRANSCRIBER_TOKEN=<output of: openssl rand -hex 32>
+```
+
+and **Pull and redeploy**. The `api` and `transcriber` services both read
+it. Without it, the API queues no transcripts and the transcriber just
+waits. The transcriber idles at a few tens of MB and only loads the Whisper
+model (up to about 1 GB, capped at 1.5 GB) while it is transcribing; a
+10-minute guide takes a few minutes on 2 CPUs.
 
 ## Images are built by GitHub
 
 Building on the server (two Next.js builds and a Go build on a small arm64
 host) kept failing on disk, memory or time, so `.github/workflows/docker-images.yml`
 builds the images on GitHub instead — natively for amd64 and arm64 — on
-every push to `main` that touches `server/`, `web/` or the compose files,
+every push to `main` that touches `server/`, `web/`, `transcriber/` or the compose files,
 and tags each `latest` and `sha-<short commit>`.
 
 One-time setup:
@@ -113,12 +129,13 @@ One-time setup:
    add `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. `NEXT_PUBLIC_API_URL` and
    `NEXT_PUBLIC_VENDOR_URL` default to `https://spottoapi.threelogiq.com` and
    `https://spotto-vendor.threelogiq.com`; add them only to change those.
-2. After the first run of the **Docker images** workflow, make the three
+2. After the first run of the **Docker images** workflow, make the four
    `travellingapp-*` packages public (GitHub → your profile → Packages →
    package → Package settings → Change visibility) so Portainer can pull
    without a login. They contain nothing secret — the `NEXT_PUBLIC_*`
    values are public in the browser anyway, and every secret stays a
-   runtime env var in Portainer.
+   runtime env var in Portainer. `travellingapp-transcriber` is new: if
+   the stack already ran before it, make that one public too.
 3. Free the space the old on-server builds used:
    `docker builder prune -af && docker image prune -af`.
 

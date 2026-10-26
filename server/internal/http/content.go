@@ -327,7 +327,7 @@ func (s *Server) handleStudioContentCreate(w http.ResponseWriter, r *http.Reques
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.signContent(created))
+	writeJSON(w, http.StatusCreated, s.studioResponse(r.Context(), created))
 }
 
 func (s *Server) handleStudioContentGet(w http.ResponseWriter, r *http.Request) {
@@ -335,7 +335,7 @@ func (s *Server) handleStudioContentGet(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.signContent(item))
+	writeJSON(w, http.StatusOK, s.studioResponse(r.Context(), item))
 }
 
 func (s *Server) handleStudioContentUpdate(w http.ResponseWriter, r *http.Request) {
@@ -365,7 +365,7 @@ func (s *Server) handleStudioContentUpdate(w http.ResponseWriter, r *http.Reques
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.signContent(saved))
+	writeJSON(w, http.StatusOK, s.studioResponse(r.Context(), saved))
 }
 
 func (s *Server) handleStudioContentDelete(w http.ResponseWriter, r *http.Request) {
@@ -416,7 +416,7 @@ func (s *Server) handleStudioContentSubmit(w http.ResponseWriter, r *http.Reques
 	if !s.contentTransitionOK(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.signContent(updated))
+	writeJSON(w, http.StatusOK, s.studioResponse(r.Context(), updated))
 }
 
 func (s *Server) contentTransitionOK(w http.ResponseWriter, err error) bool {
@@ -508,7 +508,7 @@ func (s *Server) handleAdminContentPublish(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.logAdminAction(r.Context(), "content.publish", "content", item.ID, map[string]any{"title": item.Title, "type": item.Type})
-	writeJSON(w, http.StatusOK, s.signContent(updated))
+	writeJSON(w, http.StatusOK, s.studioResponse(r.Context(), updated))
 }
 
 func (s *Server) handleAdminContentReject(w http.ResponseWriter, r *http.Request) {
@@ -530,7 +530,7 @@ func (s *Server) handleAdminContentReject(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.logAdminAction(r.Context(), "content.reject", "content", id, map[string]any{"title": updated.Title, "note": note})
-	writeJSON(w, http.StatusOK, s.signContent(updated))
+	writeJSON(w, http.StatusOK, s.studioResponse(r.Context(), updated))
 }
 
 func (s *Server) handleAdminContentUnpublish(w http.ResponseWriter, r *http.Request) {
@@ -541,7 +541,7 @@ func (s *Server) handleAdminContentUnpublish(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	s.logAdminAction(r.Context(), "content.unpublish", "content", id, map[string]any{"title": updated.Title})
-	writeJSON(w, http.StatusOK, s.signContent(updated))
+	writeJSON(w, http.StatusOK, s.studioResponse(r.Context(), updated))
 }
 
 func (s *Server) handleAdminContentReviewCount(w http.ResponseWriter, r *http.Request) {
@@ -654,7 +654,7 @@ func (s *Server) handleContentDetail(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.CountContentView(r.Context(), item.ID); err != nil {
 		log.Printf("content view id=%s: %v", item.ID, err)
 	}
-	writeJSON(w, http.StatusOK, publicContent(s.signContent(item)))
+	writeJSON(w, http.StatusOK, publicContent(s.withPublicTranscript(r.Context(), s.signContent(item))))
 }
 
 // handleContentPlay counts a listen of a live audio post.

@@ -96,4 +96,46 @@ type ContentItem struct {
 	// Places is filled on a published post's detail: its linked places and
 	// the Spotto places its itinerary stops at.
 	Places []ContentPlace `json:"places,omitempty"`
+	// Transcript of an audio post's recording, when there is one (single
+	// post responses only).
+	Transcript *ContentTranscript `json:"transcript,omitempty"`
+}
+
+// Transcript states (migration 050). A transcript is queued when audio is
+// uploaded, worked on by the transcriber service, then done or failed.
+const (
+	TranscriptQueued  = "queued"
+	TranscriptWorking = "working"
+	TranscriptDone    = "done"
+	TranscriptFailed  = "failed"
+)
+
+// TranscriptSegment is one spoken line, timed in seconds from the start.
+type TranscriptSegment struct {
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+	Text  string  `json:"text"`
+}
+
+type ContentTranscript struct {
+	// Status, Edited and Error are for the Command Center; travellers only
+	// ever get a done transcript.
+	Status      string              `json:"status,omitempty"`
+	Language    string              `json:"language"`
+	DurationSec float64             `json:"durationSec"`
+	Segments    []TranscriptSegment `json:"segments"`
+	Edited      bool                `json:"edited,omitempty"`
+	Error       string              `json:"error,omitempty"`
+	UpdatedAt   time.Time           `json:"updatedAt"`
+}
+
+// TranscriptJob is a transcript the transcriber service has claimed.
+type TranscriptJob struct {
+	ContentID string `json:"id"`
+	// AudioPath identifies the upload; the service sends it back with the
+	// result so a result for replaced audio is ignored.
+	AudioPath string `json:"audioPath"`
+	// AudioURL is a signed "/media/raw/…" path on this API.
+	AudioURL string `json:"audioUrl"`
+	Attempt  int    `json:"attempt"`
 }

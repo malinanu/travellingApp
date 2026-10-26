@@ -1,4 +1,4 @@
-// One story: its cover, then by kind — the audio player and chapters, a
+// One story: its cover, then by kind — the audio player, chapters and transcript, a
 // guide's places, an itinerary's days (which the traveller can add to their
 // trips), or just the text.
 
@@ -92,6 +92,10 @@ class _StoryBody extends ConsumerWidget {
           if (item.kind == ContentKind.audio && item.audioUrl.isNotEmpty) ...[
             StoryPlayerCard(item: item),
             const SizedBox(height: 22),
+            if (item.transcript case final transcript?) ...[
+              StoryTranscript(item: item, transcript: transcript),
+              const SizedBox(height: 22),
+            ],
           ],
           if (item.kind == ContentKind.itinerary && item.stopCount > 0) ...[
             FilledButton.icon(

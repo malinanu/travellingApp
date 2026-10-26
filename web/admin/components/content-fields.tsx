@@ -1,18 +1,19 @@
 'use client';
 
 // Pieces of the Content editor (app/content/edit): the Markdown body with a
-// preview, the place picker, audio chapters and the itinerary day builder.
+// preview, the place picker, audio chapters and transcript, and the itinerary
+// day builder.
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, Bold, Heading2, ImagePlus, Italic, Link2, List, MapPin, Plus, Quote, Search, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ArrowDown, ArrowUp, Bold, Heading2, ImagePlus, Italic, Link2, List, Loader2, MapPin, Plus, Quote, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 
 import {
   renderMarkdown, resolveMediaUrl,
-  type ContentChapter, type ContentPlace, type ContentStatus, type ItineraryDay, type ItineraryStop,
+  type ContentChapter, type ContentPlace, type ContentStatus, type ContentTranscript, type ItineraryDay, type ItineraryStop,
 } from '@spotto/shared';
 import { api } from '../lib/api';
-import { STATUS_META, formatDuration, parseDuration } from './content-meta';
+import { STATUS_META, formatDuration, languageName, parseDuration } from './content-meta';
 
 export function StatusPill({ status }: { status: ContentStatus }) {
   const meta = STATUS_META[status];
@@ -301,6 +302,151 @@ export function ChaptersEditor({ chapters, onChange, disabled, lengthSec }: {
         </button>
       )}
       <p className="text-[11.5px] text-muted font-semibold">Start times are minutes:seconds into the recording, e.g. 4:30.</p>
+    </div>
+  );
+}
+
+// ---- Audio transcript ----
+
+/** The line being heard at sec: the last one starting by then. */
+export function lineAt(segments: { start: number }[], sec: number): number {
+  let lo = 0;
+  let hi = segments.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (segments[mid].start <= sec + 0.05) {
+      found = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return found;
+}
+
+/** A finished transcript, to read along with the recording and correct.
+ * Clicking a time plays from there and the line being played is
+ * highlighted. Only the words change: the timings stay as transcribed. */
+export function TranscriptEditor({ transcript, audio, disabled, onSave, onRedo }: {
+  transcript: ContentTranscript;
+  /** The editor's player. */
+  audio: RefObject<HTMLAudioElement | null>;
+  disabled?: boolean;
+  onSave: (texts: string[]) => Promise<void>;
+  /** Makes a new transcript from the audio. */
+  onRedo?: () => void;
+}) {
+  const segments = transcript.segments;
+  const [texts, setTexts] = useState(() => segments.map((sg) => sg.text));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const [active, setActive] = useState(-1);
+  const list = useRef<HTMLDivElement>(null);
+
+  // A new or saved transcript replaces the lines being edited; a refetch of
+  // the same one (window focus) keeps unsaved corrections.
+  const [shown, setShown] = useState(transcript.updatedAt);
+  if (shown !== transcript.updatedAt) {
+    setShown(transcript.updatedAt);
+    setTexts(segments.map((sg) => sg.text));
+  }
+
+  useEffect(() => {
+    const el = audio.current;
+    if (!el) return;
+    const onTime = () => setActive(lineAt(segments, el.currentTime));
+    el.addEventListener('timeupdate', onTime);
+    el.addEventListener('seeked', onTime);
+    return () => {
+      el.removeEventListener('timeupdate', onTime);
+      el.removeEventListener('seeked', onTime);
+    };
+  }, [audio, segments]);
+
+  // While it plays, keep the line in view, unless you're typing in the list.
+  useEffect(() => {
+    const box = list.current;
+    const row = box?.children[active] as HTMLElement | undefined;
+    if (!box || !row || audio.current?.paused || box.contains(document.activeElement)) return;
+    if (row.offsetTop < box.scrollTop || row.offsetTop + row.offsetHeight > box.scrollTop + box.clientHeight) {
+      box.scrollTo({ top: row.offsetTop - box.clientHeight / 3, behavior: 'smooth' });
+    }
+  }, [active, audio]);
+
+  const changed = texts.some((t, i) => t !== segments[i]?.text);
+  const playFrom = (sec: number) => {
+    const el = audio.current;
+    if (!el) return;
+    el.currentTime = sec;
+    el.play().catch(() => {});
+  };
+  const save = async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await onSave(texts.map((t) => t.trim()));
+      setMessage({ error: false, text: 'Transcript saved.' });
+    } catch (e) {
+      setMessage({ error: true, text: e instanceof Error ? e.message : "Couldn't save. Please try again." });
+    } finally {
+      setSaving(false);
+    }
+  };
+  const redo = () => {
+    const lose = transcript.edited || changed ? ' Your corrections will be lost.' : '';
+    if (window.confirm(`Make a new transcript from the audio?${lose} It takes a few minutes.`)) onRedo?.();
+  };
+
+  return (
+    <div>
+      <p className="text-[12px] text-muted font-semibold mb-3">
+        {segments.length} lines · {languageName(transcript.language)}{transcript.edited && ' · corrected'}.{' '}
+        {disabled ? 'Click a time to hear that line.' : 'Fix names and words the transcriber misheard. Click a time to hear that line.'}
+      </p>
+      <div ref={list} className="relative max-h-[560px] overflow-y-auto space-y-1 pr-1 -mx-1.5">
+        {segments.map((sg, i) => {
+          const on = i === active;
+          const edited = texts[i] !== sg.text;
+          return (
+            <div key={i} className="flex items-start gap-2 rounded-lg px-1.5 py-1"
+              style={{ background: on ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent' }}>
+              <button type="button" title="Play from here" onClick={() => playFrom(sg.start)}
+                className="font-mono text-[11.5px] font-bold w-[52px] text-right shrink-0 pt-[7px] hover:underline"
+                style={{ color: on ? 'var(--accent)' : 'var(--muted)' }}>
+                {formatDuration(sg.start)}
+              </button>
+              {disabled ? (
+                <p className="text-[13px] leading-snug py-1.5">{sg.text}</p>
+              ) : (
+                <textarea className="input py-1.5 resize-none text-[13px] leading-snug" aria-label={`Line at ${formatDuration(sg.start)}`}
+                  rows={Math.max(1, Math.ceil((texts[i]?.length ?? 0) / 90))} maxLength={2000} value={texts[i] ?? ''}
+                  style={edited ? { borderColor: 'var(--accent)' } : undefined}
+                  onChange={(e) => { const v = e.target.value; setTexts((ts) => ts.map((t, j) => (j === i ? v : t))); }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {!disabled && (
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <button type="button" className="btn btn-primary py-1.5 px-3 text-[12px] flex items-center gap-1.5" disabled={!changed || saving} onClick={save}>
+            {saving && <Loader2 size={12} className="animate-spin" />} Save transcript
+          </button>
+          {changed && (
+            <button type="button" className="btn py-1.5 px-3 text-[12px]" disabled={saving}
+              onClick={() => setTexts(segments.map((sg) => sg.text))}>Undo changes</button>
+          )}
+          {onRedo && (
+            <button type="button" className="btn py-1.5 px-3 text-[12px] flex items-center gap-1.5 ml-auto" disabled={saving} onClick={redo}>
+              <RotateCcw size={12} /> Run again from audio
+            </button>
+          )}
+        </div>
+      )}
+      {message && (
+        <p className="text-[12px] font-semibold mt-2" style={{ color: message.error ? '#e11d48' : '#059669' }}>{message.text}</p>
+      )}
     </div>
   );
 }

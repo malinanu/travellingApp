@@ -559,6 +559,30 @@ export interface ItineraryDay {
   stops: ItineraryStop[];
 }
 
+/** One line of an audio guide's transcript, timed in seconds. */
+export interface TranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export type TranscriptStatus = 'queued' | 'working' | 'done' | 'failed';
+
+/** Written by the transcriber service after an audio upload. Travellers only
+ * get a finished one, without status, edited or error. */
+export interface ContentTranscript {
+  status?: TranscriptStatus;
+  /** Detected language code, e.g. "en". */
+  language: string;
+  durationSec: number;
+  segments: TranscriptSegment[];
+  /** Someone corrected the lines. */
+  edited?: boolean;
+  /** Why it failed (status failed). */
+  error?: string;
+  updatedAt: string;
+}
+
 export interface ContentPlace {
   id: string;
   name: string;
@@ -603,6 +627,9 @@ export interface ContentItem {
   plays: number;
   /** A live post's linked places (GET /content/{key} only). */
   places?: ContentPlace[];
+  /** Audio posts: the transcript, if one was made (the Command Center also
+   * gets it while it's being made, or when it failed). */
+  transcript?: ContentTranscript;
 }
 
 /** GET /studio/content */

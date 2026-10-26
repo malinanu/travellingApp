@@ -1,6 +1,6 @@
 // Stories: parsing the /content API, "near you" ordering, turning an
-// itinerary into a trip, the Stories tab, and adding an itinerary from a
-// story to the traveller's trips.
+// itinerary into a trip, the Stories tab, adding an itinerary from a story
+// to the traveller's trips, and following an audio guide's transcript.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -119,6 +119,37 @@ void main() {
       expect(item.kind, ContentKind.audio);
       expect(item.chapters.map((c) => c.startSec), [0, 60]);
       expect(formatListenLength(item.audioSeconds), '3 min');
+      expect(item.transcript, isNull);
+    });
+
+    test("reads an audio post's transcript, skipping empty lines", () {
+      final item = ContentItem.fromJson({
+        'id': 'a',
+        'type': 'audio',
+        'title': 'Fort walk',
+        'transcript': {
+          'language': 'en',
+          'durationSec': 12.5,
+          'segments': [
+            {'start': 0.0, 'end': 4.2, 'text': ' Welcome to Galle Fort. '},
+            {'start': 4.2, 'end': 6.0, 'text': ''},
+            {'start': 6.0, 'end': 9.5, 'text': 'The lighthouse is ahead.'},
+            'not a line',
+          ],
+        },
+      });
+      final t = item.transcript!;
+      expect(t.language, 'en');
+      expect(t.lines.map((l) => l.text), ['Welcome to Galle Fort.', 'The lighthouse is ahead.']);
+      expect(t.lines.last.start, 6.0);
+    });
+
+    test('a transcript with no words, or of the wrong shape, is left out', () {
+      ContentTranscript? read(Object? t) => ContentItem.fromJson({'id': 'a', 'type': 'audio', 'transcript': t}).transcript;
+      expect(read({'language': 'en', 'segments': []}), isNull);
+      expect(read({'segments': [{'start': 0, 'end': 1, 'text': '  '}]}), isNull);
+      expect(read('nope'), isNull);
+      expect(read({'segments': 'nope'}), isNull);
     });
   });
 
@@ -157,6 +188,103 @@ void main() {
     expect(currentChapter(chapters, const Duration(seconds: 5)), -1);
     expect(currentChapter(chapters, const Duration(seconds: 10)), 0);
     expect(currentChapter(chapters, const Duration(seconds: 61)), 1);
+  });
+
+  test('currentLine follows the playback position', () {
+    const lines = [
+      TranscriptLine(start: 1.5, end: 4, text: 'a'),
+      TranscriptLine(start: 4, end: 9, text: 'b'),
+      TranscriptLine(start: 12.25, end: 15, text: 'c'),
+    ];
+    expect(currentLine(lines, Duration.zero), -1);
+    expect(currentLine(lines, const Duration(milliseconds: 1500)), 0);
+    expect(currentLine(lines, const Duration(seconds: 4)), 1);
+    expect(currentLine(lines, const Duration(seconds: 11)), 1, reason: 'a pause keeps the last line');
+    expect(currentLine(lines, const Duration(seconds: 20)), 2);
+    expect(currentLine(const [], const Duration(seconds: 3)), -1);
+  });
+
+  test('a folded transcript shows the lines around the one being heard', () {
+    expect(transcriptWindow(20, -1), (0, kTranscriptPeek));
+    expect(transcriptWindow(20, 0), (0, kTranscriptPeek));
+    expect(transcriptWindow(20, 8), (7, 7 + kTranscriptPeek));
+    expect(transcriptWindow(20, 19), (20 - kTranscriptPeek, 20));
+    expect(transcriptWindow(3, 2), (0, 3));
+  });
+
+  testWidgets('the transcript highlights the line being heard and opens in full', (tester) async {
+    final transcript = ContentTranscript(language: 'en', lines: [
+      for (var i = 0; i < 10; i++) TranscriptLine(start: i * 10.0, end: i * 10.0 + 9, text: 'Line $i'),
+    ]);
+    final tapped = <int>[];
+    var open = false;
+    Future<void> show({required int current}) => tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: StatefulBuilder(
+                builder: (context, setState) => StoryTranscriptView(
+                  transcript: transcript,
+                  current: current,
+                  open: open,
+                  onToggle: () => setState(() => open = !open),
+                  onTapLine: tapped.add,
+                ),
+              ),
+            ),
+          ),
+        ));
+
+    await show(current: -1);
+    expect(find.text('Line 0'), findsOneWidget);
+    expect(find.text('Line 6'), findsNothing);
+    expect(find.text('Show full transcript (10 lines)'), findsOneWidget);
+
+    // Folded, it follows along: from the line before the one being heard.
+    await show(current: 5);
+    expect(find.text('Line 3'), findsNothing);
+    expect(find.text('Line 4'), findsOneWidget);
+    expect(find.text('Line 9'), findsOneWidget);
+    expect(find.text('0:50'), findsOneWidget);
+    expect(find.text('…'), findsOneWidget);
+
+    await tester.tap(find.text('Line 7'));
+    expect(tapped, [7]);
+
+    await tester.tap(find.text('Show full transcript (10 lines)'));
+    await tester.pump();
+    expect(find.text('Line 0'), findsOneWidget);
+    expect(find.text('Line 9'), findsOneWidget);
+    expect(find.text('Show less'), findsOneWidget);
+  });
+
+  testWidgets('an audio story shows its transcript under the player', (tester) async {
+    final container = ProviderContainer(overrides: [
+      storyProvider.overrideWith((ref, id) async => ContentItem.fromJson({
+            'id': 'cnt_a',
+            'type': 'audio',
+            'title': 'Fort walk',
+            'audioUrl': '/media/raw/content/cnt_a/m.mp3?token=t',
+            'audioSeconds': 30,
+            'transcript': {
+              'language': 'en',
+              'segments': [
+                {'start': 0.0, 'end': 4.0, 'text': 'Welcome to Galle Fort.'},
+                {'start': 4.0, 'end': 9.0, 'text': 'The lighthouse is ahead.'},
+              ],
+            },
+          })),
+    ]);
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: StoryScreen(storyId: 'cnt_a')),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('The lighthouse is ahead.'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Transcript'), findsOneWidget);
+    expect(find.text('Welcome to Galle Fort.'), findsOneWidget);
+    expect(find.textContaining('Show full transcript'), findsNothing);
   });
 
   group('tripFromItinerary', () {

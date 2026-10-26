@@ -168,7 +168,10 @@ func (f ContentFilter) where() (string, []any) {
 		add(`? = ANY(c.tags)`, f.Tag)
 	}
 	if q := strings.TrimSpace(f.Q); q != "" {
-		add(`(c.title ILIKE '%' || ? || '%' OR c.summary ILIKE '%' || ? || '%')`, q)
+		// Words spoken in an audio guide count too (its finished transcript).
+		add(`(c.title ILIKE '%' || ? || '%' OR c.summary ILIKE '%' || ? || '%'
+			OR EXISTS (SELECT 1 FROM content_transcripts tr WHERE tr.content_id = c.id
+				AND tr.status = 'done' AND tr.text ILIKE '%' || ? || '%'))`, q)
 	}
 	if len(conds) == 0 {
 		return "", args
