@@ -119,6 +119,9 @@ config). Added a clearer error message for this specific failure mode. **The act
 was your R2 bucket's CORS policy only allowing `GET`** — you added `PUT` + `Content-Type` to
 the allowed methods/headers on the bucket directly (not a code change); should be resolved now
 but worth double-checking a real upload succeeds on staging if you haven't already.
+**Later:** the Command Center uploads too (audio guides, covers and photos in content posts,
+the admin vendor media panel), so its origin must be in the bucket's `AllowedOrigins` as well
+as the vendor site's (see `server/.env.example`); the error now names the origin to add.
 
 ### 7. Real server-side photo thumbnails
 **Commit `cd242c2`.**

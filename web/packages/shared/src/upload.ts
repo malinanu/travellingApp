@@ -56,8 +56,12 @@ export async function uploadMedia(api: Api, file: File, target: UploadTarget): P
     // policy doesn't allow this origin (a Cloudflare dashboard setting,
     // not something wrong with the file or a transient blip most of the
     // time). Rethrow something a vendor/admin can actually act on instead
-    // of that cryptic browser string.
-    throw new Error("Couldn't reach file storage — this is usually a temporary network issue or a storage configuration problem, not your file. Try again in a moment.");
+    // of that cryptic browser string, naming the site that has to be in the
+    // bucket's AllowedOrigins (each web app uploads from its own origin).
+    const origin = typeof window === 'undefined' ? 'this site' : window.location.origin;
+    throw new Error(
+      `Couldn't reach file storage. Try again in a moment; if it keeps failing, the storage isn't allowing uploads from ${origin} yet (Cloudflare R2 → bucket → Settings → CORS policy). It's not your file.`,
+    );
   }
   if (!put.ok) {
     // R2 presigned PUT URLs expire 10 minutes after they're issued (see
