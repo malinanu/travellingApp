@@ -50,6 +50,8 @@ class _Msg {
   final List<GuidePlace> cards;
   final GuidePayload? payload;
   const _Msg(this.mine, this.content, {this.placeIds = const [], this.cards = const [], this.payload});
+
+  String get text => content;
 }
 
 List<GuidePlace> _parseCards(Object? raw) => [
@@ -329,7 +331,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                   final m = _messages[i];
                   final msgPlaces = m.mine || m.payload != null
                       ? const <GuidePlace>[]
-                      : guideCardsFor(m.cards, m.placeIds, places, m.text);
+                      : guideCardsFor(m.cards, m.placeIds, places, m.content);
                   final card = m.payload == null ? null : _payloadCard(i, m.payload!);
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
