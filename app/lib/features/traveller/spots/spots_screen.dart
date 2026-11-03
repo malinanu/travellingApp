@@ -703,7 +703,7 @@ class _QuadTileCarousel extends StatelessWidget {
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: colCount,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
         itemBuilder: (context, colIndex) {
           final topIndex = colIndex * 2;
           final bottomIndex = topIndex + 1;
@@ -752,7 +752,7 @@ class _CategoryCircleCarousel extends StatelessWidget {
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: _circleCategories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 16),
+        separatorBuilder: (_, _) => const SizedBox(width: 16),
         itemBuilder: (context, i) {
           final cat = _circleCategories[i];
           final isSelected = selectedCategory == cat.key;
