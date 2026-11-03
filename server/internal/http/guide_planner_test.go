@@ -91,7 +91,7 @@ func TestGuidePayloadSummaryAndHistory(t *testing.T) {
 	if id := latestPlanID(history); id != "gplan_x" {
 		t.Errorf("latestPlanID = %q", id)
 	}
-	if turn := newGuideTurn(history); turn.plans["gplan_x"].Title != plan.Title {
+	if turn := newGuideTurn(history, guideLocation{}); turn.plans["gplan_x"].Title != plan.Title {
 		t.Errorf("newGuideTurn plans = %+v", turn.plans)
 	}
 }
@@ -166,5 +166,30 @@ func TestTTLCache(t *testing.T) {
 	now = now.Add(2 * time.Hour)
 	if _, ok := c.get("c"); ok {
 		t.Error("c should have expired")
+	}
+}
+
+func TestDatabaseFirstAndCaching(t *testing.T) {
+	s := &Server{}
+	userLoc := guideLocation{Known: true, Lat: 6.9271, Lng: 79.8612, Area: "Colombo"}
+	turn := newGuideTurn(nil, userLoc)
+
+	// Direct cache put & get verification
+	key := "mirissa_test|6|6.93|79.86"
+	findPlacesCache.put(key, `{"places":[{"ref":"p:mirissa_beach","name":"Mirissa Beach","distanceKm":122.4,"distanceText":"122 km from you"}]}`)
+	
+	cached, ok := findPlacesCache.get(key)
+	if !ok || !strings.Contains(cached, "Mirissa Beach") {
+		t.Fatalf("expected cache hit for key %s, got ok=%v", key, ok)
+	}
+	if !strings.Contains(cached, "122 km from you") {
+		t.Errorf("expected distanceText in cached result: %s", cached)
+	}
+
+	// Turn limit check
+	turn.findCalls = guideMaxFindPlaces
+	res := s.findPlacesTool(context.Background(), turn, "Galle", 6)
+	if !strings.Contains(res, "search limit reached") {
+		t.Errorf("expected search limit reached, got: %s", res)
 	}
 }

@@ -78,9 +78,12 @@ class GuidePlace {
     icon: p.icon,
   );
 
-  /// "0.8 km · $$ · ★ 4.6", leaving out whatever isn't known.
+  /// "800 m · $$ · ★ 4.6" or "122 km · $$ · ★ 4.6", leaving out whatever isn't known.
   String get metaLine => [
-    if (distanceKm != null) '${distanceKm! < 10 ? distanceKm!.toStringAsFixed(1) : distanceKm!.round()} km',
+    if (distanceKm != null)
+      distanceKm! < 1.0
+          ? '${(distanceKm! * 1000).round()} m'
+          : '${distanceKm! < 10 ? distanceKm!.toStringAsFixed(1) : distanceKm!.round()} km',
     if (priceLevel.isNotEmpty) priceLevel,
     if (rating > 0) '★ ${rating.toStringAsFixed(1)}',
     if (distanceKm == null && region.isNotEmpty) region,

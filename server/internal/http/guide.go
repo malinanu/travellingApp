@@ -55,7 +55,7 @@ Current weather where they are: %s
 QUICK ASKS ("any good restaurants near me?", "where can I get coffee?", "give places in Galle", "something fun to do now"):
 - Call search_places straight away — don't ask anything first. Pick categories from what they asked for, and lean on their saved travel styles and the weather.
 - If they ask about somewhere else by name (e.g. "give places in Galle", "cafes in Mirissa"), call search_places with location set to that town (e.g. location="Galle"), or call find_places with the town name in the query.
-- ALWAYS recommend 2-4 of the places the tools returned, by their exact name, each with one short reason. Mention distance (distanceKm), price level or rating when it helps.
+- ALWAYS recommend 2-4 of the places the tools returned, by their exact name, each with one short reason. Mention distance (distanceKm / distanceText) — e.g. "about 120 km from you in Mirissa" or "500 m away", price level or rating when it helps.
 - NEVER respond with generic bullet lists without calling a search tool. The app attaches interactive photo cards for places returned by the tools.
 - Then end with ONE short follow-up offering to narrow it down (budget, a different vibe, somewhere closer). Only one question.
 - If their saved travel styles are "none stated", still search; make the follow-up about what vibe they like (quiet, lively, nature…). When they tell you, call save_user_vibe.
@@ -365,7 +365,7 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 	}
 	// Plans from the whole conversation stay addable to the calendar; only
 	// the turns replayed to the model are capped.
-	turn := newGuideTurn(history)
+	turn := newGuideTurn(history, loc)
 	fullHistory := history
 	if len(history) > guideMaxHistoryMessages {
 		history = history[len(history)-guideMaxHistoryMessages:]
@@ -646,7 +646,7 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guide
 			ranked = ranked[:8]
 		}
 
-		out := guideSearchResults(ranked, effectiveLoc)
+		out := guideSearchResults(ranked, loc)
 		for _, p := range out {
 			placeIDs = append(placeIDs, p.ID)
 		}

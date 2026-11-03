@@ -132,10 +132,11 @@ type guideTurn struct {
 	findCalls int
 	payload   *guidePayload
 	message   string
+	loc       guideLocation
 }
 
-func newGuideTurn(history []domain.GuideMessage) *guideTurn {
-	t := &guideTurn{plans: map[string]guidePlan{}}
+func newGuideTurn(history []domain.GuideMessage, loc guideLocation) *guideTurn {
+	t := &guideTurn{plans: map[string]guidePlan{}, loc: loc}
 	for _, m := range history {
 		var p guidePayload
 		if len(m.Payload) > 0 && json.Unmarshal(m.Payload, &p) == nil && p.Plan != nil {
@@ -143,6 +144,38 @@ func newGuideTurn(history []domain.GuideMessage) *guideTurn {
 		}
 	}
 	return t
+}
+
+// catalogPlacesCache caches the 1,082 curated places in memory for 10 minutes so
+// multiple find_places rounds during trip planning don't repeatedly query Postgres.
+type catalogPlacesCache struct {
+	mu        sync.RWMutex
+	places    []domain.Place
+	fetchedAt time.Time
+}
+
+var globalCatalogCache = &catalogPlacesCache{}
+
+func (s *Server) getCachedCatalogPlaces(ctx context.Context) ([]domain.Place, error) {
+	globalCatalogCache.mu.RLock()
+	if len(globalCatalogCache.places) > 0 && time.Since(globalCatalogCache.fetchedAt) < 10*time.Minute {
+		cached := globalCatalogCache.places
+		globalCatalogCache.mu.RUnlock()
+		return cached, nil
+	}
+	globalCatalogCache.mu.RUnlock()
+
+	places, err := s.Store.Places(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	globalCatalogCache.mu.Lock()
+	globalCatalogCache.places = places
+	globalCatalogCache.fetchedAt = time.Now()
+	globalCatalogCache.mu.Unlock()
+
+	return places, nil
 }
 
 // latestPlanID is the most recent plan, for "add this to calendar" when the
@@ -441,10 +474,24 @@ func (s *Server) runPlannerTool(ctx context.Context, tc gemini.ToolCall, turn *g
 	return "", false
 }
 
-// findPlacesTool searches Google, caches the results as geo places (linked
-// to the Spotto catalog when it's the same place) and lists them for the
-// model with refs. If Google Places is unavailable, restricted, or returns an error,
-// it falls back to searching Spotto's curated catalog of Sri Lanka places.
+type guidePlanSearchResult struct {
+	Ref          string   `json:"ref"`
+	Name         string   `json:"name"`
+	Kind         string   `json:"kind,omitempty"`
+	Address      string   `json:"address,omitempty"`
+	Rating       *float64 `json:"rating,omitempty"`
+	RatingCount  int      `json:"ratingCount,omitempty"`
+	Summary      string   `json:"summary,omitempty"`
+	Lat          float64  `json:"lat"`
+	Lng          float64  `json:"lng"`
+	DistanceKm   *float64 `json:"distanceKm,omitempty"`
+	DistanceText string   `json:"distanceText,omitempty"`
+}
+
+// findPlacesTool searches Spotto's curated catalog FIRST. If our database
+// has matching places (>= 2), they are returned directly, saving all external
+// API charges. Google Places API is used only as a secondary fallback for
+// overseas or uncataloged locations.
 func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query string, limit int) string {
 	if query == "" {
 		return `{"error":"query is required"}`
@@ -456,21 +503,34 @@ func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query stri
 	if limit < 3 || limit > 8 {
 		limit = 6
 	}
-	key := fmt.Sprintf("%s|%d", strings.ToLower(query), limit)
+
+	// Cache key includes rough location so distance calculations remain accurate
+	key := fmt.Sprintf("%s|%d|%.2f|%.2f", strings.ToLower(query), limit, turn.loc.Lat, turn.loc.Lng)
 	if cached, ok := findPlacesCache.get(key); ok {
 		return cached
 	}
 
+	// 1. DATABASE FIRST: Search Spotto's 1,082 curated places
+	catalogResults := s.searchCatalogPlaces(ctx, query, limit, turn.loc)
+	if len(catalogResults) >= 2 {
+		b, _ := json.Marshal(map[string]any{"places": catalogResults})
+		findPlacesCache.put(key, string(b))
+		return string(b)
+	}
+
+	// 2. GOOGLE MAPS API FALLBACK: Only if our catalog has fewer than 2 matches
 	type result struct {
-		Ref         string   `json:"ref"`
-		Name        string   `json:"name"`
-		Kind        string   `json:"kind,omitempty"`
-		Address     string   `json:"address,omitempty"`
-		Rating      *float64 `json:"rating,omitempty"`
-		RatingCount int      `json:"ratingCount,omitempty"`
-		Summary     string   `json:"summary,omitempty"`
-		Lat         float64  `json:"lat"`
-		Lng         float64  `json:"lng"`
+		Ref          string   `json:"ref"`
+		Name         string   `json:"name"`
+		Kind         string   `json:"kind,omitempty"`
+		Address      string   `json:"address,omitempty"`
+		Rating       *float64 `json:"rating,omitempty"`
+		RatingCount  int      `json:"ratingCount,omitempty"`
+		Summary      string   `json:"summary,omitempty"`
+		Lat          float64  `json:"lat"`
+		Lng          float64  `json:"lng"`
+		DistanceKm   *float64 `json:"distanceKm,omitempty"`
+		DistanceText string   `json:"distanceText,omitempty"`
 	}
 
 	var found []googleplaces.Place
@@ -495,9 +555,34 @@ func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query stri
 			if catalogID := s.matchCatalogPlace(ctx, p.Name, p.Lat, p.Lng); catalogID != "" {
 				ref = "p:" + catalogID
 			}
+
+			var distKm *float64
+			var distText string
+			if turn.loc.Known && (turn.loc.Lat != 0 || turn.loc.Lng != 0) && (p.Lat != 0 || p.Lng != 0) {
+				d := geo.HaversineKm(turn.loc.Lat, turn.loc.Lng, p.Lat, p.Lng)
+				d = math.Round(d*10) / 10
+				distKm = &d
+				if d < 1.0 {
+					distText = fmt.Sprintf("%d m away", int(d*1000))
+				} else if d < 10.0 {
+					distText = fmt.Sprintf("%.1f km from you", d)
+				} else {
+					distText = fmt.Sprintf("%d km from you", int(math.Round(d)))
+				}
+			}
+
+			summary := p.Summary
+			if summary == "" {
+				summary = p.Name
+			}
+			if distText != "" {
+				summary += " (~" + distText + ")"
+			}
+
 			out = append(out, result{
 				Ref: ref, Name: p.Name, Kind: googleplaces.Kind(p.PrimaryType, p.Types), Address: p.Address,
-				Rating: p.Rating, RatingCount: p.RatingCount, Summary: p.Summary, Lat: p.Lat, Lng: p.Lng,
+				Rating: p.Rating, RatingCount: p.RatingCount, Summary: summary, Lat: p.Lat, Lng: p.Lng,
+				DistanceKm: distKm, DistanceText: distText,
 			})
 		}
 		if len(out) > 0 {
@@ -508,33 +593,21 @@ func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query stri
 	}
 
 	if googleErr != nil {
-		log.Printf("guide: find_places %q google failed: %v (falling back to curated catalog)", query, googleErr)
+		log.Printf("guide: find_places %q google failed: %v", query, googleErr)
 	}
 
-	// Curated catalog fallback: Spotto has 1,082 verified places across Sri Lanka
-	fallbackJSON := s.searchCatalogPlacesFallback(ctx, query, limit)
-	findPlacesCache.put(key, fallbackJSON)
-	return fallbackJSON
+	// If Google returned nothing or failed, return whatever catalog matches we found
+	b, _ := json.Marshal(map[string]any{"places": catalogResults})
+	findPlacesCache.put(key, string(b))
+	return string(b)
 }
 
-// searchCatalogPlacesFallback searches Spotto's curated places when live Google search
-// is unavailable or fails, ensuring trip planning and town recommendations always succeed.
-func (s *Server) searchCatalogPlacesFallback(ctx context.Context, query string, limit int) string {
-	type result struct {
-		Ref         string   `json:"ref"`
-		Name        string   `json:"name"`
-		Kind        string   `json:"kind,omitempty"`
-		Address     string   `json:"address,omitempty"`
-		Rating      *float64 `json:"rating,omitempty"`
-		RatingCount int      `json:"ratingCount,omitempty"`
-		Summary     string   `json:"summary,omitempty"`
-		Lat         float64  `json:"lat"`
-		Lng         float64  `json:"lng"`
-	}
-
-	places, err := s.Store.Places(ctx)
+// searchCatalogPlaces searches Spotto's curated catalog and calculates approximate
+// distance from the user's location using Haversine math.
+func (s *Server) searchCatalogPlaces(ctx context.Context, query string, limit int, userLoc guideLocation) []guidePlanSearchResult {
+	places, err := s.getCachedCatalogPlaces(ctx)
 	if err != nil || len(places) == 0 {
-		return `{"places":[]}`
+		return nil
 	}
 
 	qLower := strings.ToLower(query)
@@ -548,7 +621,7 @@ func (s *Server) searchCatalogPlacesFallback(ctx context.Context, query string, 
 	words := strings.Fields(qLower)
 	var tokens []string
 	for _, w := range words {
-		w = strings.Trim(w, ",.?!:;\"'")
+		w = strings.Trim(w, ",.?!:;"'")
 		if len(w) > 2 && !stopWords[w] {
 			tokens = append(tokens, w)
 		}
@@ -637,7 +710,7 @@ func (s *Server) searchCatalogPlacesFallback(ctx context.Context, query string, 
 		scored = scored[:limit]
 	}
 
-	out := make([]result, 0, len(scored))
+	out := make([]guidePlanSearchResult, 0, len(scored))
 	for _, sp := range scored {
 		p := sp.place
 		f := parseGuideFacts(p)
@@ -646,12 +719,32 @@ func (s *Server) searchCatalogPlacesFallback(ctx context.Context, query string, 
 			r := f.Rating
 			rating = &r
 		}
+
+		var distKm *float64
+		var distText string
+		if userLoc.Known && (userLoc.Lat != 0 || userLoc.Lng != 0) && (f.Lat != 0 || f.Lng != 0) {
+			d := geo.HaversineKm(userLoc.Lat, userLoc.Lng, f.Lat, f.Lng)
+			d = math.Round(d*10) / 10
+			distKm = &d
+			if d < 1.0 {
+				distText = fmt.Sprintf("%d m away", int(d*1000))
+			} else if d < 10.0 {
+				distText = fmt.Sprintf("%.1f km from you", d)
+			} else {
+				distText = fmt.Sprintf("%d km from you", int(math.Round(d)))
+			}
+		}
+
 		addr := f.Region
 		if addr != "" {
 			addr += ", Sri Lanka"
 		} else {
 			addr = "Sri Lanka"
 		}
+		if distText != "" {
+			addr += " (~" + distText + ")"
+		}
+
 		summary := p.Name
 		if f.category() != "" {
 			summary += " · " + f.category()
@@ -659,25 +752,28 @@ func (s *Server) searchCatalogPlacesFallback(ctx context.Context, query string, 
 		if f.Region != "" {
 			summary += " in " + f.Region
 		}
-		out = append(out, result{
-			Ref:         "p:" + p.ID,
-			Name:        p.Name,
-			Kind:        f.category(),
-			Address:     addr,
-			Rating:      rating,
-			RatingCount: 25,
-			Summary:     summary,
-			Lat:         f.Lat,
-			Lng:         f.Lng,
+		if distText != "" {
+			summary += " (" + distText + ")"
+		}
+
+		out = append(out, guidePlanSearchResult{
+			Ref:          "p:" + p.ID,
+			Name:         p.Name,
+			Kind:         f.category(),
+			Address:      addr,
+			Rating:       rating,
+			RatingCount:  25,
+			Summary:      summary,
+			Lat:          f.Lat,
+			Lng:          f.Lng,
+			DistanceKm:   distKm,
+			DistanceText: distText,
 		})
 	}
 
-	b, _ := json.Marshal(map[string]any{"places": out})
-	return string(b)
+	return out
 }
 
-// findPlacesCache keeps recent find_places results: every Google search is
-// billed, and travellers planning the same town ask the same things.
 var findPlacesCache = newTTLCache(300, 24*time.Hour)
 
 type ttlEntry struct {
