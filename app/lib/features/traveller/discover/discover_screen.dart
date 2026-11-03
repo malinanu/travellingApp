@@ -325,6 +325,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       final inTripCalendar =
           tripCalendarPlaceNames.contains(p.id) || tripCalendarPlaceNames.contains(p.name.toLowerCase());
       final matchesInterest = userInterests.any((style) => p.styles.contains(style));
+      final isSponsoredMatch = p.isSponsored && matchesInterest;
 
       final color = SpottoColors.pinTones[p.color] ?? SpottoColors.accent;
       var icon = categoryIcon(p.categoryId);
@@ -336,8 +337,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       }
 
       final isSelected = _selectedPlaceId == p.id;
-      final showBanner = isSelected || (_currentZoom >= 14.5 && (p.deal.active || inTripCalendar || isFavorite));
-      final pinEmphasized = emphasized || isFavorite || matchesInterest;
+      final showBanner = isSelected || isSponsoredMatch || (_currentZoom >= 14.5 && (p.deal.active || inTripCalendar || isFavorite));
+      final pinEmphasized = emphasized || isFavorite || matchesInterest || isSponsoredMatch;
 
       final BitmapDescriptor icon_;
       if (showBanner) {
@@ -346,8 +347,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             '${p.deal.active}|$isFavorite|$inTripCalendar|$matchesInterest|$emphasized';
         icon_ = _resolveBitmap(
           key: key,
-          slotSize: _kBannerSlotSize,
-          placeholderHue: BitmapDescriptor.hueAzure,
+          slotSize: isSponsoredMatch ? const Size(190, 64) : _kBannerSlotSize,
+          placeholderHue: isSponsoredMatch ? BitmapDescriptor.hueYellow : BitmapDescriptor.hueAzure,
           build: () => SpotBannerMarker(
             name: p.name,
             color: color,
@@ -357,6 +358,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             inTripCalendar: inTripCalendar,
             matchesInterest: matchesInterest,
             emphasized: emphasized,
+            isSponsoredMatch: isSponsoredMatch,
           ),
         );
       } else {
@@ -383,6 +385,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           markerId: MarkerId('place_${p.id}'),
           position: LatLng(p.lat, p.lng),
           icon: icon_,
+          zIndex: isSponsoredMatch ? 100.0 : (isSelected ? 50.0 : (showBanner ? 10.0 : 1.0)),
           anchor: const Offset(0.5, 0.5),
           onTap: () {
             setState(() => _selectedPlaceId = p.id);

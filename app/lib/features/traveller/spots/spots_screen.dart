@@ -1,6 +1,6 @@
 // Spots tab: curated business discovery feed with modern multi-section
 // carousels, category discovery, personalized travel recommendations,
-// and quick filtering.
+// and 120fps virtualized sliver scrolling.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,7 +12,6 @@ import '../../../core/widgets/category_icons.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/progressive_image.dart';
-import '../../../core/widgets/stagger_in.dart';
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import '../../../data/vendor_categories.dart';
@@ -20,17 +19,6 @@ import '../place_detail/business_drawer.dart';
 
 // Nearest-section tuning
 const _kNearRadiusKm = 10.0;
-
-// Category filter chips in top scroll row
-const _categoryFilters = [
-  ('food', 'Food & Drink'),
-  ('cafe', 'Cafes'),
-  ('landmark', 'Landmarks'),
-  ('temple', 'Temples'),
-  ('wildlife', 'Wildlife & Parks'),
-  ('beach', 'Beaches & Surf'),
-  ('cowork', 'Coworking'),
-];
 
 // Circular category avatar items
 class _CategoryCircleItem {
@@ -186,152 +174,147 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
 
     final isSearchingOrFiltered = _query.isNotEmpty || _category != null;
 
-    final rows = <Widget>[];
-    var rowIndex = 0;
-    Widget staggered(Widget child) => StaggerIn(index: rowIndex++, child: child);
+    final slivers = <Widget>[];
 
-    // ── Header Title & Subtitle ─────────────────────────────────────────────
-    rows.add(Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          staggered(Text(
-            regionName != null ? 'Spots in $regionName' : 'Curated Spots',
-            style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800, color: SpottoColors.ink),
-          )),
-          const SizedBox(height: 4),
-          staggered(Text(
-            sorted && filtered.first.distanceKm != null
-                ? '${filtered.length} curated places · nearest ${_fmtKm(filtered.first.distanceKm!)} away'
-                : '${filtered.length} curated places across Sri Lanka',
-            style: text.bodyMedium?.copyWith(color: SpottoColors.muted),
-          )),
-        ],
+    // ── Header: Title & Subtitle ────────────────────────────────────────────
+    slivers.add(SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              regionName != null ? 'Spots in $regionName' : 'Curated Spots',
+              style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800, color: SpottoColors.ink),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              sorted && filtered.first.distanceKm != null
+                  ? '${filtered.length} curated places · nearest ${_fmtKm(filtered.first.distanceKm!)} away'
+                  : '${filtered.length} curated places across Sri Lanka',
+              style: text.bodyMedium?.copyWith(color: SpottoColors.muted),
+            ),
+          ],
+        ),
       ),
     ));
 
     // ── Search Field ────────────────────────────────────────────────────────
-    rows.add(const SizedBox(height: 14));
-    rows.add(Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: staggered(_SearchField(
-        controller: _searchController,
-        onChanged: (v) => setState(() => _query = v),
-      )),
+    slivers.add(SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: _SearchField(
+          controller: _searchController,
+          onChanged: (v) => setState(() => _query = v),
+        ),
+      ),
     ));
-
-    // ── Filter Chips Row ────────────────────────────────────────────────────
-    rows.add(const SizedBox(height: 10));
-    rows.add(staggered(_FilterChipRow(
-      category: _category,
-      regionLabel: regionName,
-      onCategoryTap: (id) => setState(() => _category = _category == id ? null : id),
-      onRegionTap: () => _pickRegion(places),
-    )));
 
     // ── Location Hint Banner (if denied) ────────────────────────────────────
     if (locationStatus == PlacesLocationStatus.deniedForever ||
         locationStatus == PlacesLocationStatus.unavailable) {
-      rows.add(const SizedBox(height: 10));
-      rows.add(Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: staggered(_LocationHintBanner(
-          status: locationStatus,
-          onTap: () async {
-            if (locationStatus == PlacesLocationStatus.deniedForever) {
-              await Geolocator.openAppSettings();
-            } else {
-              await ref.read(placesProvider.notifier).refresh();
-            }
-          },
-        )),
+      slivers.add(SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          child: _LocationHintBanner(
+            status: locationStatus,
+            onTap: () async {
+              if (locationStatus == PlacesLocationStatus.deniedForever) {
+                await Geolocator.openAppSettings();
+              } else {
+                await ref.read(placesProvider.notifier).refresh();
+              }
+            },
+          ),
+        ),
       ));
     }
 
-    rows.add(const SizedBox(height: 16));
-
-    // ── Content: Active Search/Filter Grid vs. Multi-Section Discovery Feed ──
+    // ── Content: Active Search/Filter Grid vs. 120fps Discovery Feed ─────────
     if (isSearchingOrFiltered) {
-      // Result summary bar
-      rows.add(Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: [
-            Text(
-              '${filtered.length} spot${filtered.length == 1 ? '' : 's'} found',
-              style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: SpottoColors.ink),
-            ),
-            if (_category != null) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: SpottoColors.accentTint,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  _circleCategories.firstWhere((c) => c.key == _category, orElse: () => _circleCategories.first).label,
-                  style: text.labelSmall?.copyWith(color: SpottoColors.accent, fontWeight: FontWeight.w600, fontSize: 11),
-                ),
-              ),
-            ],
-            const Spacer(),
-            TextButton(
-              onPressed: () {
-                _searchController.clear();
-                setState(() {
-                  _query = '';
-                  _category = null;
-                });
-              },
-              child: const Text('Reset', style: TextStyle(color: SpottoColors.accent, fontWeight: FontWeight.w600)),
-            ),
-          ],
-        ),
-      ));
-      rows.add(const SizedBox(height: 10));
-
-      if (filtered.isEmpty) {
-        rows.add(Padding(
-          padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-          child: Column(
+      // 1. Result Summary Header
+      slivers.add(SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Row(
             children: [
-              Icon(Icons.search_off_rounded, size: 48, color: SpottoColors.muted.withValues(alpha: 0.5)),
-              const SizedBox(height: 12),
               Text(
-                'No spots match your filters.',
-                textAlign: TextAlign.center,
-                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: SpottoColors.ink),
+                '${filtered.length} spot${filtered.length == 1 ? '' : 's'} found',
+                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: SpottoColors.ink),
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Try adjusting your search query, clearing the category, or selecting another region.',
-                textAlign: TextAlign.center,
-                style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+              if (_category != null) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: SpottoColors.accentTint,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    _circleCategories.firstWhere((c) => c.key == _category, orElse: () => _circleCategories.first).label,
+                    style: text.labelSmall?.copyWith(color: SpottoColors.accent, fontWeight: FontWeight.w600, fontSize: 11),
+                  ),
+                ),
+              ],
+              const Spacer(),
+              TextButton(
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() {
+                    _query = '';
+                    _category = null;
+                  });
+                },
+                child: const Text('Reset', style: TextStyle(color: SpottoColors.accent, fontWeight: FontWeight.w600)),
               ),
             ],
           ),
+        ),
+      ));
+
+      if (filtered.isEmpty) {
+        slivers.add(SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+            child: Column(
+              children: [
+                Icon(Icons.search_off_rounded, size: 48, color: SpottoColors.muted.withValues(alpha: 0.5)),
+                const SizedBox(height: 12),
+                Text(
+                  'No spots match your filters.',
+                  textAlign: TextAlign.center,
+                  style: text.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: SpottoColors.ink),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Try adjusting your search query, clearing the category, or selecting another region.',
+                  textAlign: TextAlign.center,
+                  style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+                ),
+              ],
+            ),
+          ),
         ));
       } else {
-        rows.add(Padding(
+        // True Virtualized 120fps Grid
+        slivers.add(SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: filtered.length,
+          sliver: SliverGrid(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
               childAspectRatio: 0.91,
             ),
-            itemBuilder: (context, i) => _SpotTileCard(place: filtered[i]),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => _SpotTileCard(place: filtered[index]),
+              childCount: filtered.length,
+            ),
           ),
         ));
       }
     } else {
-      // Discovery Mode: Multi-section carousels & categorized discovery feed
+      // ── Discovery Mode: Fully Virtualized Multi-Section Feed ───────────────
 
       // 1. Nearest to you
       final nearPlaces = sorted
@@ -340,88 +323,156 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
 
       if (nearPlaces.length >= 2) {
         final maxKm = nearPlaces.map((p) => p.distanceKm!).reduce((a, b) => a > b ? a : b);
-        rows.add(staggered(_SpotSectionHeader(
-          title: 'Nearest to you',
-          pill: 'within ${_fmtKm(maxKm)}',
-          leadIcon: Icons.near_me_rounded,
-          onActionTap: () => setState(() => _category = 'food'),
-        )));
-        rows.add(const SizedBox(height: 12));
-        rows.add(staggered(_QuadTileCarousel(places: nearPlaces)));
-        rows.add(const SizedBox(height: 24));
+        slivers.add(SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SpotSectionHeader(
+                title: 'Nearest to you',
+                pill: 'within ${_fmtKm(maxKm)}',
+                leadIcon: Icons.near_me_rounded,
+                onActionTap: () => setState(() => _category = 'food'),
+              ),
+              const SizedBox(height: 12),
+              RepaintBoundary(child: _QuadTileCarousel(places: nearPlaces)),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ));
       }
 
-      // 2. Explore Categories (Circle Avatar Row)
-      rows.add(staggered(const _SpotSectionHeader(
-        title: 'Explore Categories',
-        pill: 'Curated',
-      )));
-      rows.add(const SizedBox(height: 12));
-      rows.add(staggered(_CategoryCircleCarousel(
-        selectedCategory: _category,
-        places: filtered,
-        onSelectCategory: (catKey) => setState(() => _category = _category == catKey ? null : catKey),
-      )));
-      rows.add(const SizedBox(height: 24));
+      // 2. Explore Categories with "All Regions" Item at Position 0
+      slivers.add(SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _SpotSectionHeader(
+              title: 'Explore Categories',
+              pill: 'Curated',
+            ),
+            const SizedBox(height: 12),
+            RepaintBoundary(
+              child: _CategoryCircleCarousel(
+                selectedCategory: _category,
+                selectedRegionName: regionName,
+                places: filtered,
+                totalPlacesCount: places.length,
+                onSelectCategory: (catKey) => setState(() => _category = _category == catKey ? null : catKey),
+                onPickRegion: () => _pickRegion(places),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ));
 
-      // 3. Hot Deals & Perks
+      // 3. Featured Partners / Sponsored Ads
+      final sponsoredPlaces = filtered.where((p) => p.isSponsored).take(8).toList();
+      if (sponsoredPlaces.length >= 2) {
+        slivers.add(SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SpotSectionHeader(
+                title: 'Featured Partners',
+                pill: 'Sponsored',
+                leadIcon: Icons.auto_awesome_rounded,
+              ),
+              const SizedBox(height: 12),
+              RepaintBoundary(child: _QuadTileCarousel(places: sponsoredPlaces)),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ));
+      }
+
+      // 4. Hot Deals & Perks
       final dealPlaces = filtered.where((p) => p.deal.active).take(8).toList();
       if (dealPlaces.length >= 2) {
-        rows.add(staggered(_SpotSectionHeader(
-          title: 'Hot Deals & Perks',
-          pill: '${dealPlaces.length} perks',
-          leadIcon: Icons.local_offer_rounded,
-        )));
-        rows.add(const SizedBox(height: 12));
-        rows.add(staggered(_QuadTileCarousel(places: dealPlaces)));
-        rows.add(const SizedBox(height: 24));
+        slivers.add(SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SpotSectionHeader(
+                title: 'Hot Deals & Perks',
+                pill: '${dealPlaces.length} perks',
+                leadIcon: Icons.local_offer_rounded,
+              ),
+              const SizedBox(height: 12),
+              RepaintBoundary(child: _QuadTileCarousel(places: dealPlaces)),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ));
       }
 
-      // 4. Personalized / Matched to Travel Style
+      // 5. Matched to Your Travel Style
       final matchedPlaces = _matchedPlacesForUser(filtered, userPrefs);
       if (matchedPlaces.length >= 2) {
-        rows.add(staggered(const _SpotSectionHeader(
-          title: 'Matched to Your Style',
-          pill: 'For you',
-          leadIcon: Icons.auto_awesome_rounded,
-        )));
-        rows.add(const SizedBox(height: 12));
-        rows.add(staggered(_QuadTileCarousel(places: matchedPlaces)));
-        rows.add(const SizedBox(height: 24));
+        slivers.add(SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _SpotSectionHeader(
+                title: 'Matched to Your Style',
+                pill: 'For you',
+                leadIcon: Icons.favorite_rounded,
+              ),
+              const SizedBox(height: 12),
+              RepaintBoundary(child: _QuadTileCarousel(places: matchedPlaces)),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ));
       }
 
-      // 5. Top Rated Gems
+      // 6. Top Rated Gems
       final topRatedPlaces = (List<Place>.from(filtered)..sort((a, b) => b.rating.compareTo(a.rating)))
           .where((p) => p.rating >= 4.0)
           .take(8)
           .toList();
       if (topRatedPlaces.length >= 2) {
-        rows.add(staggered(const _SpotSectionHeader(
-          title: 'Top Rated Gems',
-          pill: '★ 4.0+',
-          leadIcon: Icons.star_rounded,
-        )));
-        rows.add(const SizedBox(height: 12));
-        rows.add(staggered(_QuadTileCarousel(places: topRatedPlaces)));
-        rows.add(const SizedBox(height: 24));
+        slivers.add(SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _SpotSectionHeader(
+                title: 'Top Rated Gems',
+                pill: '★ 4.0+',
+                leadIcon: Icons.star_rounded,
+              ),
+              const SizedBox(height: 12),
+              RepaintBoundary(child: _QuadTileCarousel(places: topRatedPlaces)),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ));
       }
 
-      // 6. Nomad & Wi-Fi Friendly
+      // 7. Nomad & Wi-Fi Friendly
       final nomadPlaces = filtered.where((p) => p.wifi.score >= 8 || p.tags.contains('cowork')).take(8).toList();
       if (nomadPlaces.length >= 2) {
-        rows.add(staggered(const _SpotSectionHeader(
-          title: 'Nomad & Wi-Fi Friendly',
-          pill: 'High speed',
-          leadIcon: Icons.wifi_rounded,
-        )));
-        rows.add(const SizedBox(height: 12));
-        rows.add(staggered(_QuadTileCarousel(places: nomadPlaces)));
-        rows.add(const SizedBox(height: 24));
+        slivers.add(SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _SpotSectionHeader(
+                title: 'Nomad & Wi-Fi Friendly',
+                pill: 'High speed',
+                leadIcon: Icons.wifi_rounded,
+              ),
+              const SizedBox(height: 12),
+              RepaintBoundary(child: _QuadTileCarousel(places: nomadPlaces)),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ));
       }
 
-      // 7. More Spots to Explore (continuous 2-column grid)
+      // 8. Remaining Spots: 120fps Virtualized Continuous SliverGrid
       final seenIds = {
         ...nearPlaces.map((p) => p.id),
+        ...sponsoredPlaces.map((p) => p.id),
         ...dealPlaces.map((p) => p.id),
         ...matchedPlaces.map((p) => p.id),
         ...topRatedPlaces.map((p) => p.id),
@@ -430,35 +481,46 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
       final remainingPlaces = filtered.where((p) => !seenIds.contains(p.id)).toList();
       final allToBrowse = remainingPlaces.isNotEmpty ? remainingPlaces : filtered;
 
-      rows.add(staggered(_SpotSectionHeader(
-        title: regionName != null ? 'All Spots in $regionName' : 'More Spots to Explore',
-        pill: '${allToBrowse.length} spots',
-      )));
-      rows.add(const SizedBox(height: 12));
-      rows.add(Padding(
+      slivers.add(SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _SpotSectionHeader(
+              title: regionName != null ? 'All Spots in $regionName' : 'More Spots to Explore',
+              pill: '${allToBrowse.length} spots',
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ));
+
+      // Virtualized Lazy SliverGrid — only builds ~6 cards visible on screen
+      slivers.add(SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: allToBrowse.length,
+        sliver: SliverGrid(
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
             childAspectRatio: 0.91,
           ),
-          itemBuilder: (context, i) => _SpotTileCard(place: allToBrowse[i]),
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => _SpotTileCard(place: allToBrowse[index]),
+            childCount: allToBrowse.length,
+          ),
         ),
       ));
     }
 
+    // Bottom buffer for smooth tab-bar clearance
+    slivers.add(const SliverToBoxAdapter(child: SizedBox(height: 90)));
+
     return SafeArea(
       child: RefreshIndicator(
         onRefresh: () => ref.read(placesProvider.notifier).refresh(),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(0, 12, 0, 90),
-          children: rows,
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          slivers: slivers,
         ),
       ),
     );
@@ -504,91 +566,6 @@ class _SearchField extends StatelessWidget {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: SpottoColors.accent, width: 1.5),
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterChipRow extends StatelessWidget {
-  const _FilterChipRow({
-    required this.category,
-    required this.regionLabel,
-    required this.onCategoryTap,
-    required this.onRegionTap,
-  });
-
-  final String? category;
-  final String? regionLabel;
-  final ValueChanged<String> onCategoryTap;
-  final VoidCallback onRegionTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 36,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        children: [
-          for (final c in _categoryFilters) ...[
-            _FilterChip(label: c.$2, selected: category == c.$1, onTap: () => onCategoryTap(c.$1)),
-            const SizedBox(width: 8),
-          ],
-          _FilterChip(
-            label: regionLabel ?? 'All regions',
-            selected: regionLabel != null,
-            trailingIcon: Icons.expand_more,
-            onTap: onRegionTap,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({required this.label, required this.selected, required this.onTap, this.trailingIcon});
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  final IconData? trailingIcon;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? SpottoColors.accent : Colors.white,
-          borderRadius: BorderRadius.circular(999),
-          border: selected ? null : Border.all(color: SpottoColors.line, width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: SpottoColors.inkShadow.withValues(alpha: selected ? 0.15 : 0.04),
-              blurRadius: 4,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label,
-                style: text.labelMedium?.copyWith(
-                  color: selected ? Colors.white : SpottoColors.ink,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                )),
-            if (trailingIcon != null) ...[
-              const SizedBox(width: 2),
-              Icon(trailingIcon, size: 16, color: selected ? Colors.white : SpottoColors.muted),
-            ],
-          ],
         ),
       ),
     );
@@ -692,7 +669,6 @@ class _QuadTileCarousel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sw = MediaQuery.sizeOf(context).width;
-    // Exactly 2 columns visible on screen: padding is 16 on each side (32 total), gap is 12.
     final colWidth = ((sw - 32 - 12) / 2).clamp(160.0, 220.0);
     final colCount = (places.length / 2).ceil();
 
@@ -729,32 +705,104 @@ class _QuadTileCarousel extends StatelessWidget {
   }
 }
 
-/// Circular category carousel with icon avatars and live spot counts
+/// Circular category carousel featuring "All Regions" at position 0,
+/// followed by the 7 curated category avatars with real-time spot counts.
 class _CategoryCircleCarousel extends StatelessWidget {
   const _CategoryCircleCarousel({
     required this.selectedCategory,
+    required this.selectedRegionName,
     required this.places,
+    required this.totalPlacesCount,
     required this.onSelectCategory,
+    required this.onPickRegion,
   });
 
   final String? selectedCategory;
+  final String? selectedRegionName;
   final List<Place> places;
+  final int totalPlacesCount;
   final ValueChanged<String> onSelectCategory;
+  final VoidCallback onPickRegion;
 
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
 
+    // Total items: 1 (Regions item) + 7 categories = 8 items
     return SizedBox(
       height: 106,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _circleCategories.length,
+        itemCount: 1 + _circleCategories.length,
         separatorBuilder: (_, _) => const SizedBox(width: 16),
         itemBuilder: (context, i) {
-          final cat = _circleCategories[i];
+          // ── Item 0: All Regions / Selected Region ─────────────────────────
+          if (i == 0) {
+            final isRegionActive = selectedRegionName != null;
+            return PressScale(
+              onTap: onPickRegion,
+              child: SizedBox(
+                width: 72,
+                child: Column(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: isRegionActive ? SpottoColors.accent : SpottoColors.accentTint,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: SpottoColors.accent,
+                          width: isRegionActive ? 2.5 : 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: SpottoColors.accent.withValues(alpha: isRegionActive ? 0.3 : 0.08),
+                            blurRadius: isRegionActive ? 8 : 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        Icons.location_on_rounded,
+                        size: 28,
+                        color: isRegionActive ? Colors.white : SpottoColors.accent,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      selectedRegionName ?? 'All Regions',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: text.labelSmall?.copyWith(
+                        fontWeight: isRegionActive ? FontWeight.w800 : FontWeight.w700,
+                        fontSize: 11,
+                        color: isRegionActive ? SpottoColors.accent : SpottoColors.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      isRegionActive ? '${places.length} spots' : 'Filter region',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: text.bodySmall?.copyWith(
+                        fontSize: 10,
+                        color: SpottoColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          // ── Items 1..N: Curated Category Circles ──────────────────────────
+          final cat = _circleCategories[i - 1];
           final isSelected = selectedCategory == cat.key;
           final count = places.where((p) => _matchesCategory(p, cat.key)).length;
 
@@ -819,7 +867,7 @@ class _CategoryCircleCarousel extends StatelessWidget {
   }
 }
 
-/// Compact Modern Spot Tile Card
+/// Compact Modern Spot Tile Card with support for Sponsored Ads, Deals, and Distance
 class _SpotTileCard extends StatelessWidget {
   const _SpotTileCard({
     required this.place,
@@ -840,11 +888,16 @@ class _SpotTileCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: SpottoColors.line, width: 1.2),
+          border: Border.all(
+            color: place.isSponsored ? const Color(0xFFFFB300) : SpottoColors.line,
+            width: place.isSponsored ? 1.5 : 1.2,
+          ),
           boxShadow: [
             BoxShadow(
-              color: SpottoColors.inkShadow.withValues(alpha: 0.05),
-              blurRadius: 8,
+              color: place.isSponsored
+                  ? const Color(0x33FFB300)
+                  : SpottoColors.inkShadow.withValues(alpha: 0.05),
+              blurRadius: place.isSponsored ? 10 : 8,
               offset: const Offset(0, 3),
             ),
           ],
@@ -872,8 +925,40 @@ class _SpotTileCard extends StatelessWidget {
                     else
                       Illustration(kind: place.photo),
 
-                    // Deal badge top-left
-                    if (place.deal.active)
+                    // Top-Left: Sponsored Badge OR Deal Badge OR Distance Pill
+                    if (place.isSponsored)
+                      Positioned(
+                        left: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF103D3A),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFFFB300), width: 1.2),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 1)),
+                            ],
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.auto_awesome, size: 9, color: Color(0xFFFFB300)),
+                              SizedBox(width: 3),
+                              Text(
+                                'SPONSORED',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 8.5,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else if (place.deal.active)
                       Positioned(
                         left: 8,
                         top: 8,
@@ -991,7 +1076,22 @@ class _SpotTileCard extends StatelessWidget {
                   const SizedBox(height: 2),
                   Row(
                     children: [
-                      if (place.deal.active) ...[
+                      if (place.isSponsored) ...[
+                        const Icon(Icons.verified_rounded, size: 12, color: Color(0xFFFFB300)),
+                        const SizedBox(width: 3),
+                        Expanded(
+                          child: Text(
+                            'Featured Partner',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.labelSmall?.copyWith(
+                              fontSize: 11,
+                              color: SpottoColors.ink,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ] else if (place.deal.active) ...[
                         const Icon(Icons.local_offer_outlined, size: 12, color: SpottoColors.accent),
                         const SizedBox(width: 3),
                         Expanded(

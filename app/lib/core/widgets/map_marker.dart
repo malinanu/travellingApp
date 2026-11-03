@@ -16,6 +16,7 @@ class SpotBannerMarker extends StatelessWidget {
   final bool inTripCalendar;
   final bool matchesInterest;
   final bool emphasized;
+  final bool isSponsoredMatch;
 
   const SpotBannerMarker({
     super.key,
@@ -27,17 +28,20 @@ class SpotBannerMarker extends StatelessWidget {
     this.inTripCalendar = false,
     this.matchesInterest = false,
     this.emphasized = true,
+    this.isSponsoredMatch = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isHighPriority = matchesInterest || isFavorite || inTripCalendar;
+    final isHighPriority = matchesInterest || isFavorite || inTripCalendar || isSponsoredMatch;
     final opacity = emphasized || isHighPriority ? 1.0 : 0.65;
-    final borderColor = inTripCalendar
-        ? SpottoColors.accent
-        : (isFavorite
-            ? Colors.pinkAccent
-            : (isHighPriority ? color : Colors.white));
+    final borderColor = isSponsoredMatch
+        ? const Color(0xFFFFB300)
+        : (inTripCalendar
+            ? SpottoColors.accent
+            : (isFavorite
+                ? Colors.pinkAccent
+                : (isHighPriority ? color : Colors.white)));
 
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 200),
@@ -45,16 +49,26 @@ class SpotBannerMarker extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.fromLTRB(4, 4, 10, 4),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isSponsoredMatch ? const Color(0xFFFFFDF5) : Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border:
-              Border.all(color: borderColor, width: isHighPriority ? 2.0 : 1.5),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x2E000000),
-              blurRadius: 8,
-              offset: Offset(0, 3),
-            ),
+          border: Border.all(
+            color: borderColor,
+            width: isSponsoredMatch ? 2.5 : (isHighPriority ? 2.0 : 1.5),
+          ),
+          boxShadow: [
+            if (isSponsoredMatch)
+              const BoxShadow(
+                color: Color(0x66FFB300),
+                blurRadius: 14,
+                spreadRadius: 2,
+                offset: Offset(0, 3),
+              )
+            else
+              const BoxShadow(
+                color: Color(0x2E000000),
+                blurRadius: 8,
+                offset: Offset(0, 3),
+              ),
           ],
         ),
         child: Row(
@@ -69,12 +83,16 @@ class SpotBannerMarker extends StatelessWidget {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: color,
+                    color: isSponsoredMatch ? const Color(0xFFFFB300) : color,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, color: Colors.white, size: 15),
+                  child: Icon(
+                    isSponsoredMatch ? Icons.auto_awesome : icon,
+                    color: Colors.white,
+                    size: 15,
+                  ),
                 ),
-                if (hasDeal)
+                if (hasDeal && !isSponsoredMatch)
                   Positioned(
                     top: -2,
                     right: -2,
@@ -105,7 +123,25 @@ class SpotBannerMarker extends StatelessWidget {
                 ),
               ),
             ),
-            if (inTripCalendar) ...[
+            if (isSponsoredMatch) ...[
+              const SizedBox(width: 5),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB300),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'FOR YOU',
+                  style: TextStyle(
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ] else if (inTripCalendar) ...[
               const SizedBox(width: 4),
               const Icon(Icons.calendar_today_rounded,
                   size: 11, color: SpottoColors.accent),
@@ -130,6 +166,7 @@ class PlacePinMarker extends StatelessWidget {
   // null when there's no real sample yet so an unrated place shows no
   // badge rather than implying data that doesn't exist.
   final IconData? vibeIcon;
+  final bool isSponsoredMatch;
 
   const PlacePinMarker({
     super.key,
@@ -138,6 +175,7 @@ class PlacePinMarker extends StatelessWidget {
     required this.hasDeal,
     required this.emphasized,
     this.vibeIcon,
+    this.isSponsoredMatch = false,
   });
 
   @override

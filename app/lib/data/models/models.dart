@@ -292,6 +292,7 @@ class Place {
   final List<String> styles; // travel styles this stop suits
   final String hint; // suggested time "HH:mm"
   final bool curated; // true for the 5 original Spotto business places —
+  final bool isSponsored; // active vendor sponsorship or promo ad
   // gates whether the trip planner links a stop to the full business drawer
   // (menu/wifi/deal/reviews); plain points of interest have none of that.
 
@@ -341,6 +342,7 @@ class Place {
     this.styles = const [],
     this.hint = '',
     this.curated = false,
+    this.isSponsored = false,
   });
 
   /// Parses the API shape: place row flattened with its JSONB data document.
@@ -419,6 +421,11 @@ class Place {
       styles: _parseStringList(json['styles']),
       hint: json['hint'] as String? ?? '',
       curated: json['curated'] as bool? ?? false,
+      isSponsored: json['isSponsored'] as bool? ??
+          (json['tags'] is List &&
+              (json['tags'] as List).any((t) =>
+                  t.toString().toLowerCase() == 'sponsored' ||
+                  t.toString().toLowerCase() == 'promoted')),
     );
   }
 }
