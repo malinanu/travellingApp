@@ -50,15 +50,17 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/seedcategories ./cmd/seedcategorie
 # staging runs on arm64, and the x86_64 yt-dlp_linux asset dies there with
 # "exec format error" at runtime even though the build succeeds.
 FROM debian:bookworm-slim
-ARG YTDLP_SHA256_AMD64=d8bd33fca9d5b23bd5b9952b3fca36db5c46331933fda9f598a3da14ce2c243f
-ARG YTDLP_SHA256_ARM64=e137c2171b0b8ef648e6136e86aa70c65923e93e434f01c93901d64744b190aa
+ARG YTDLP_VERSION=2026.10.26
+ARG YTDLP_SHA256_AMD64=767ba9dce7052aa196f8b12652f433d76de128ba168966fa84b6394d5e6c6795
+ARG YTDLP_SHA256_ARM64=e87e9533e89fe5889abaa21f5114dfe7756d6aa6219b83551add04d48b18e483
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && \
     case "$(dpkg --print-architecture)" in \
       amd64) ytdlp_asset=yt-dlp_linux; ytdlp_sha="${YTDLP_SHA256_AMD64}" ;; \
       arm64) ytdlp_asset=yt-dlp_linux_aarch64; ytdlp_sha="${YTDLP_SHA256_ARM64}" ;; \
       *) echo "unsupported architecture for yt-dlp: $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac && \
-    curl -fL --retry 3 --retry-delay 2 -o /usr/local/bin/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${ytdlp_asset}" && \
+    (curl -fL --retry 3 --retry-delay 2 -o /usr/local/bin/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/${ytdlp_asset}" || \
+     curl -fL --retry 3 --retry-delay 2 -o /usr/local/bin/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${ytdlp_asset}") && \
     echo "${ytdlp_sha}  /usr/local/bin/yt-dlp" | sha256sum -c - && \
     chmod +x /usr/local/bin/yt-dlp && \
     rm -rf /var/lib/apt/lists/* && \
