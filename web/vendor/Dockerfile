@@ -1,7 +1,8 @@
 # Built with context = web/ (the npm workspace root), since this app depends
 # on local @spotto/shared and @spotto/charts packages:
 #   docker build -f web/vendor/Dockerfile --build-arg NEXT_PUBLIC_API_URL=... \
-#     --build-arg NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=... web/
+#     --build-arg NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=... \
+#     --build-arg NEXT_PUBLIC_VENDOR_URL=... web/
 
 FROM node:20-alpine AS builder
 # NEXT_PUBLIC_* build args are Next.js's own convention for values it inlines
@@ -17,6 +18,8 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 # referrer restrictions in Google Cloud Console instead, not by hiding it.
 ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 ENV NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+ARG NEXT_PUBLIC_VENDOR_URL
+ENV NEXT_PUBLIC_VENDOR_URL=${NEXT_PUBLIC_VENDOR_URL}
 WORKDIR /web
 COPY . .
 RUN npm install

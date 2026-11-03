@@ -18,6 +18,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+        NEXT_PUBLIC_VENDOR_URL: ${NEXT_PUBLIC_VENDOR_URL}
     pull_policy: build
 
   admin:

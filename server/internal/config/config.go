@@ -80,7 +80,8 @@ type Config struct {
 	// Empty turns transcripts off.
 	TranscriberToken string
 	// VendorAppURL is the base URL of the vendor Next.js app, used to build
-	// links embedded in emails (invite accept, password reset).
+	// links embedded in emails (invite accept, password reset). Set via
+	// NEXT_PUBLIC_VENDOR_URL (preferred) or VENDOR_APP_URL.
 	VendorAppURL string
 	// AdminAppURL is the base URL of the admin Next.js app — used the same
 	// way as VendorAppURL, but for admin-role accounts (e.g. the
@@ -185,6 +186,9 @@ func Load() Config {
 		log.Fatalf("TOTP_ENCRYPTION_KEY: %v", err)
 	}
 
+	vendorAppURL := ResolveVendorAppURL(getenv("NEXT_PUBLIC_VENDOR_URL", ""), getenv("VENDOR_APP_URL", ""))
+	adminAppURL := strings.TrimRight(strings.TrimSpace(getenv("ADMIN_APP_URL", "http://localhost:3001")), "/")
+
 	return Config{
 		Port:              getenv("PORT", "8080"),
 		DatabaseURL:       mustGetenv("DATABASE_URL"),
@@ -206,8 +210,8 @@ func Load() Config {
 		GeminiAPIKey:         getenv("GEMINI_API_KEY", ""),
 		GeminiChatModel:      getenv("GEMINI_CHAT_MODEL", ""),
 		GeminiEmbedModel:     getenv("GEMINI_EMBED_MODEL", ""),
-		VendorAppURL:         getenv("VENDOR_APP_URL", "http://localhost:3000"),
-		AdminAppURL:          getenv("ADMIN_APP_URL", "http://localhost:3001"),
+		VendorAppURL:         vendorAppURL,
+		AdminAppURL:          adminAppURL,
 		PublicAPIURL:         strings.TrimRight(getenv("PUBLIC_API_URL", ""), "/"),
 		GeminiVideoModel:      getenv("GEMINI_VIDEO_MODEL", ""),
 		GooglePlacesAPIKey:    getenv("GOOGLE_PLACES_API_KEY", getenv("GOOGLE_CALENDAR_API_KEY", "")),
@@ -237,6 +241,19 @@ func Load() Config {
 		WhatsAppTemplateLang:  getenv("WHATSAPP_OTP_TEMPLATE_LANG", ""),
 		WhatsAppAPIVersion:    getenv("WHATSAPP_API_VERSION", ""),
 	}
+}
+
+// ResolveVendorAppURL determines the vendor app base URL, giving precedence to
+// NEXT_PUBLIC_VENDOR_URL, then VENDOR_APP_URL, defaulting to http://localhost:3000,
+// and stripping any trailing slashes.
+func ResolveVendorAppURL(nextPublicVendorURL, vendorAppURL string) string {
+	if u := strings.TrimRight(strings.TrimSpace(nextPublicVendorURL), "/"); u != "" {
+		return u
+	}
+	if u := strings.TrimRight(strings.TrimSpace(vendorAppURL), "/"); u != "" {
+		return u
+	}
+	return "http://localhost:3000"
 }
 
 // sanitizedR2AccountID guards against the R2 endpoint silently becoming

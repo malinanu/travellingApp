@@ -45,6 +45,7 @@ JWT_SECRET=<a long random string>
 TOTP_ENCRYPTION_KEY=<output of: openssl rand -base64 32>
 CORS_ORIGINS=https://spotto-vendor.yourdomain.com,https://spotto-admin.yourdomain.com
 NEXT_PUBLIC_API_URL=https://spotto-api.yourdomain.com
+NEXT_PUBLIC_VENDOR_URL=https://spotto-vendor.yourdomain.com
 ADMIN_EMAIL=<your admin login email>
 ADMIN_PASSWORD=<a long random password, 12+ characters>
 APP_ENV=development   # set to production on the live deployment
@@ -75,7 +76,7 @@ Two different kinds of "optional" here, by how they take effect:
   **GitHub repository variables**, not in Portainer — see "Images are built
   by GitHub" below.
 - **Runtime** (everything else — `GOOGLE_CALENDAR_API_KEY`, the SMTP vars,
-  the Google OAuth vars, `VENDOR_APP_URL`, `PUBLIC_API_URL`): read by the `api` container each
+  the Google OAuth vars, `NEXT_PUBLIC_VENDOR_URL` / `VENDOR_APP_URL`, `PUBLIC_API_URL`): read by the `api` container each
   time it starts — a plain restart after changing these is enough.
 
 If your Postgres runs as another container on the same Docker host (not via

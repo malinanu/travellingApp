@@ -644,7 +644,8 @@ function TeamSection({ isOwner }: { isOwner: boolean }) {
   const createInvite = useMutation({
     mutationFn: () => api.post<{ code: string }>('/vendor/team/invite', { email: inviteEmail.trim(), role: inviteRole }),
     onSuccess: (inv) => {
-      setNewInviteLink(`${window.location.origin}/join/${inv.code}`);
+      const base = (process.env.NEXT_PUBLIC_VENDOR_URL || '').replace(/\/+$/, '') || (typeof window !== 'undefined' ? window.location.origin : '');
+      setNewInviteLink(`${base}/join/${inv.code}`);
       setInviteEmail('');
       qc.invalidateQueries({ queryKey: ['vendor-team'] });
     },

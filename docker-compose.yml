@@ -21,7 +21,8 @@ services:
       # These were already documented in .env.example but never actually
       # forwarded here, so Google sign-in/transactional email/live holiday
       # lookups have silently no-op'd on this deployment until now.
-      VENDOR_APP_URL: ${VENDOR_APP_URL}
+      VENDOR_APP_URL: ${NEXT_PUBLIC_VENDOR_URL:-${VENDOR_APP_URL}}
+      NEXT_PUBLIC_VENDOR_URL: ${NEXT_PUBLIC_VENDOR_URL:-${VENDOR_APP_URL}}
       PUBLIC_API_URL: ${PUBLIC_API_URL}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
