@@ -30,6 +30,11 @@ func (s *Server) handleResetPasswordPage(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	}
+	if r.Method == http.MethodGet && data.Token != "" {
+		if _, err := s.Store.PasswordResetTokenByHash(r.Context(), hashResetToken(data.Token)); err != nil {
+			status, data.Error, data.Invalid = http.StatusBadRequest, "This reset link is invalid, already used, or expired. Request a new one from the app.", true
+		}
+	}
 	if data.Token == "" && !data.Done {
 		status, data.Error, data.Invalid = http.StatusBadRequest, "This reset link is incomplete. Request a new one from the app.", true
 	} else if data.Error == "invalid or expired reset link" {

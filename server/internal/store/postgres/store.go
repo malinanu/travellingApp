@@ -754,18 +754,23 @@ type ResetToken struct {
 }
 
 func (s *Store) CreatePasswordResetToken(ctx context.Context, id, userID, tokenHash string, expiresAt time.Time) error {
+	// Purge any existing tokens for this user and any globally expired tokens
+	// so only the latest valid reset link exists in the database.
+	_, _ = s.Pool.Exec(ctx,
+		`DELETE FROM password_reset_tokens WHERE user_id=$1 OR expires_at < now()`,
+		userID)
 	_, err := s.Pool.Exec(ctx,
 		`INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at) VALUES ($1,$2,$3,$4)`,
 		id, userID, tokenHash, expiresAt)
 	return err
 }
 
-// InvalidatePasswordResetTokens marks every unused reset link for the user
+// InvalidatePasswordResetTokens purges every reset link for the user.
 // as used. Called when an admin moves the account to a new email, since
 // earlier links went to the old inbox.
 func (s *Store) InvalidatePasswordResetTokens(ctx context.Context, userID string) error {
 	_, err := s.Pool.Exec(ctx,
-		`UPDATE password_reset_tokens SET used_at=now() WHERE user_id=$1 AND used_at IS NULL`, userID)
+		`DELETE FROM password_reset_tokens WHERE user_id=$1`, userID)
 	return err
 }
 
@@ -774,6 +779,7 @@ func (s *Store) PasswordResetTokenByHash(ctx context.Context, tokenHash string) 
 	err := s.Pool.QueryRow(ctx,
 		`SELECT id, user_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash=$1`, tokenHash,
 	).Scan(&t.ID, &t.UserID, &t.ExpiresAt, &t.UsedAt)
+	err = s.checkAndPurgeResetToken(ctx, &t, err)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return t, ErrNotFound
 	}
@@ -781,8 +787,23 @@ func (s *Store) PasswordResetTokenByHash(ctx context.Context, tokenHash string) 
 }
 
 func (s *Store) MarkPasswordResetTokenUsed(ctx context.Context, id string) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE password_reset_tokens SET used_at=now() WHERE id=$1`, id)
+	// Delete the token immediately upon usage to prevent token reuse or retention.
+	_, err := s.Pool.Exec(ctx, `DELETE FROM password_reset_tokens WHERE id=$1`, id)
 	return err
+}
+
+func (s *Store) checkAndPurgeResetToken(ctx context.Context, t *ResetToken, err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if t.UsedAt != nil || time.Now().After(t.ExpiresAt) {
+		_, _ = s.Pool.Exec(ctx, `DELETE FROM password_reset_tokens WHERE id=$1`, t.ID)
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SetUserTOTPPending stores a freshly generated (not yet active) secret.

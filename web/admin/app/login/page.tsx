@@ -40,11 +40,30 @@ function AdminLoginPageInner() {
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [resetDone, setResetDone] = useState(false);
+  const [resetTokenState, setResetTokenState] = useState<'idle' | 'verifying' | 'valid' | 'invalid'>('idle');
+  const [resetTokenError, setResetTokenError] = useState<string | null>(null);
 
   // A password-reset email always links back here with ?resetToken=... —
   // jump straight into the "set a new password" view.
   useEffect(() => {
     const rToken = searchParams.get('resetToken');
+    if (rToken) {
+      setResetToken(rToken);
+      setMode('forgot');
+      setResetTokenState('verifying');
+      setResetTokenError(null);
+      router.replace('/login');
+      api.get<{ valid: boolean }>(`/auth/verify-reset-token?token=${encodeURIComponent(rToken)}`)
+        .then(() => {
+          setResetTokenState('valid');
+        })
+        .catch((err) => {
+          setResetTokenState('invalid');
+          setResetTokenError(err instanceof Error ? err.message : 'This reset link is invalid or has expired.');
+        });
+      return;
+    }
+    if (false) {}
     if (rToken) {
       setResetToken(rToken);
       setMode('forgot');
@@ -120,9 +139,9 @@ function AdminLoginPageInner() {
     try {
       await api.post('/auth/forgot-password', { email: forgotEmail });
       setForgotSent(true);
-    } catch {
+    } catch (err) {
       // handleForgotPassword always 200s — this only fails on network error.
-      setError('Something went wrong — try again in a moment.');
+      setError(err instanceof Error ? err.message : 'Something went wrong — try again in a moment.');
     } finally {
       setBusy(false);
     }
@@ -227,7 +246,32 @@ function AdminLoginPageInner() {
           </div>
         )}
 
-        {mode === 'forgot' && resetToken && (
+        {mode === 'forgot' && resetToken && resetTokenState === 'verifying' && (
+          <div className="w-full max-w-md">
+            <h2 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Verifying reset link</h2>
+            <p className="text-muted font-medium mt-1 mb-6">Checking the validity of your password reset link…</p>
+            <div className="flex items-center justify-center py-10">
+              <span className="w-8 h-8 rounded-full border-2 border-[#103d3a] border-t-transparent animate-spin" />
+            </div>
+          </div>
+        )}
+
+        {mode === 'forgot' && resetToken && resetTokenState === 'invalid' && (
+          <div className="w-full max-w-md">
+            <h2 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Invalid or expired link</h2>
+            <p className="text-muted font-medium mt-1 mb-6">
+              {resetTokenError || 'This reset link is invalid, already used, or expired. If you requested a newer link, please check your latest email.'}
+            </p>
+            <button className="btn btn-primary w-full py-3 mb-3" onClick={() => { setResetToken(null); setResetTokenState('idle'); setForgotSent(false); setError(null); }}>
+              Request a new reset link
+            </button>
+            <button type="button" onClick={() => { setResetToken(null); setResetTokenState('idle'); setMode('creds'); setError(null); }} className="w-full text-center text-[13px] font-bold text-muted">
+              ← Back to sign in
+            </button>
+          </div>
+        )}
+
+        {mode === 'forgot' && resetToken && resetTokenState !== 'verifying' && resetTokenState !== 'invalid' && (
           <div className="w-full max-w-md">
             <h2 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Set a new password</h2>
             <p className="text-muted font-medium mt-1 mb-6">Choose a new password for your account.</p>

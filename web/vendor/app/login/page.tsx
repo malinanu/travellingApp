@@ -229,6 +229,8 @@ function LoginPageInner() {
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [resetDone, setResetDone] = useState(false);
+  const [resetTokenState, setResetTokenState] = useState<'idle' | 'verifying' | 'valid' | 'invalid'>('idle');
+  const [resetTokenError, setResetTokenError] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -259,6 +261,22 @@ function LoginPageInner() {
       return;
     }
     if (rToken) {
+      setResetToken(rToken);
+      setMode('forgot');
+      setResetTokenState('verifying');
+      setResetTokenError(null);
+      api.get<{ valid: boolean }>(`/auth/verify-reset-token?token=${encodeURIComponent(rToken)}`)
+        .then(() => {
+          setResetTokenState('valid');
+        })
+        .catch((err) => {
+          setResetTokenState('invalid');
+          setResetTokenError(err instanceof Error ? err.message : 'This reset link is invalid or has expired.');
+        });
+      router.replace('/login');
+      return;
+    }
+    if (false && rToken) {
       setResetToken(rToken);
       setMode('forgot');
       router.replace('/login');
@@ -513,9 +531,9 @@ function LoginPageInner() {
     try {
       await api.post('/auth/forgot-password', { email: forgotEmail });
       setForgotSent(true);
-    } catch {
+    } catch (err) {
       // handleForgotPassword always 200s — this only fails on network error.
-      setError('Something went wrong — try again in a moment.');
+      setError(err instanceof Error ? err.message : 'Something went wrong — try again in a moment.');
     } finally {
       setBusy(false);
     }
@@ -555,6 +573,36 @@ function LoginPageInner() {
 
   if (mode === 'forgot') {
     if (resetToken) {
+      if (resetTokenState === 'verifying') {
+        return (
+          <AuthShell>
+            <h1 className="font-display font-extrabold leading-tight text-[28px]">Verifying reset link</h1>
+            <p className="text-[14px] text-muted font-semibold mt-1.5 mb-6">Checking the validity of your password reset link…</p>
+            <div className="flex items-center justify-center py-10">
+              <span className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+            </div>
+          </AuthShell>
+        );
+      }
+      if (resetTokenState === 'invalid') {
+        return (
+          <AuthShell>
+            <h1 className="font-display font-extrabold leading-tight text-[28px]">Invalid or expired link</h1>
+            <p className="text-[14px] text-muted font-semibold mt-1.5 mb-6">
+              {resetTokenError || 'This reset link is invalid, already used, or expired. If you requested a newer link, please check your latest email.'}
+            </p>
+            <div className="flex flex-col gap-3">
+              <Primary onClick={() => { setResetToken(null); setResetTokenState('idle'); setForgotSent(false); setError(null); }} icon={ArrowLeft}>
+                Request a new reset link
+              </Primary>
+              <button type="button" onClick={() => { setResetToken(null); setResetTokenState('idle'); setMode('login'); setError(null); }}
+                className="w-full text-center text-[13px] font-bold text-muted hover:text-ink py-2 transition-colors">
+                Back to sign in
+              </button>
+            </div>
+          </AuthShell>
+        );
+      }
       return (
         <AuthShell>
           <h1 className="font-display font-extrabold leading-tight text-[28px]">Set a new password</h1>

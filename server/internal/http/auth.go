@@ -1,4 +1,4 @@
-﻿package httpapi
+package httpapi
 
 import (
 	"context"
@@ -657,7 +657,13 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 				log.Printf("forgot password: PUBLIC_API_URL unset, sending traveller %s the vendor-app reset link", u.ID)
 			}
 			to, body := u.Email, resetEmailHTML(link)
-			s.Jobs.Enqueue(func() { s.Mail.Send(to, "Reset your Spotto password", body) })
+			s.Jobs.Enqueue(func() {
+				if err := s.Mail.Send(to, "Reset your Spotto password", body); err != nil {
+					log.Printf("forgot password mail error user=%s email=%s: %v", u.ID, to, err)
+				} else {
+					log.Printf("forgot password mail sent user=%s email=%s", u.ID, to)
+				}
+			})
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -667,6 +673,21 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 // never stored), applies the same password-strength rules as
 // registration, and bumps token_version so any existing sessions are
 // signed out (same revocation mechanism as a 2FA disable).
+// handleVerifyResetToken checks whether a password reset token is valid, unused, and unexpired.
+func (s *Server) handleVerifyResetToken(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		writeErr(w, http.StatusBadRequest, "invalid or expired reset link")
+		return
+	}
+	rt, err := s.Store.PasswordResetTokenByHash(r.Context(), hashResetToken(token))
+	if err != nil || rt.UsedAt != nil || time.Now().After(rt.ExpiresAt) {
+		writeErr(w, http.StatusBadRequest, "invalid or expired reset link")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"valid": true})
+}
+
 func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Token       string `json:"token"`

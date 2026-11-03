@@ -321,6 +321,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Post("/auth/2fa/login-verify", s.handleTwoFactorLoginVerify)
 	r.Post("/auth/forgot-password", s.handleForgotPassword)
 	r.Post("/auth/reset-password", s.handleResetPassword)
+	r.Get("/auth/verify-reset-token", s.handleVerifyResetToken)
 	// Browser reset page for travellers (no web app) — see reset_page.go.
 	r.Get("/reset-password", s.handleResetPasswordPage)
 	r.Post("/reset-password", s.handleResetPasswordPage)

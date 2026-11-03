@@ -1,4 +1,4 @@
-﻿package httpapi
+package httpapi
 
 import (
 	"net"
@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// loginLimiter is a simple per-key sliding-window attempt counter â€” enough
+// loginLimiter is a simple per-key sliding-window attempt counter — enough
 // to blunt brute-force/credential-stuffing against a single-instance
 // deployment without pulling in an external dependency (Redis etc.). Keys
 // are typically "clientIP:identity" so one attacker can't lock out
@@ -56,7 +56,7 @@ func (l *loginLimiter) recordFailure(key string) {
 	w.count++
 }
 
-// reset clears key's counter â€” call on a successful attempt.
+// reset clears key's counter — call on a successful attempt.
 func (l *loginLimiter) reset(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -78,36 +78,56 @@ func (l *loginLimiter) cleanupLoop() {
 	}
 }
 
-// realIP replaces chi's stock middleware.RealIP, which trusts the
-// left-most (client-supplied, spoofable) X-Forwarded-For entry. That let an
-// attacker send a different X-Forwarded-For value on every request to get a
-// fresh rate-limit bucket each time, defeating loginLimit/totpLimit
-// entirely. Instead, this trusts only the right-most entry â€” the one
-// CloudPanel's reverse proxy itself appends via
-// `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` â€” which
-// reflects what the proxy actually saw on its own client-facing socket and
-// can't be overridden by anything the client puts in the header.
+// resolveProxyIP extracts the real client IP from reverse-proxy headers (X-Forwarded-For or X-Real-IP).
+// If X-Forwarded-For has multiple entries, it inspects from right to left, skipping internal/private
+// network hops (e.g. docker bridge, loopback) to find the public IP seen by the outer proxy.
+func resolveProxyIP(xff, xri string) string {
+	if xff != "" {
+		parts := strings.Split(xff, ",")
+		var candidate string
+		for i := len(parts) - 1; i >= 0; i-- {
+			ipStr := strings.TrimSpace(parts[i])
+			if ipStr == "" {
+				continue
+			}
+			ip := net.ParseIP(ipStr)
+			if ip == nil {
+				continue
+			}
+			if candidate == "" {
+				candidate = ipStr
+			}
+			if !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsUnspecified() {
+				return ipStr
+			}
+		}
+		if candidate != "" {
+			return candidate
+		}
+	}
+	if xri = strings.TrimSpace(xri); xri != "" {
+		if ip := net.ParseIP(xri); ip != nil {
+			return xri
+		}
+	}
+	return ""
+}
+
+// realIP resolves r.RemoteAddr to the actual client IP observed by upstream proxies.
 func realIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Deliberately X-Forwarded-For only, not X-Real-IP: we know
-		// CloudPanel's nginx appends to the former (see comment above), but
-		// we have no such guarantee for the latter â€” trusting it unverified
-		// would reopen the same spoofing hole under a different header
-		// name. Absent X-Forwarded-For, r.RemoteAddr (the direct TCP peer,
-		// i.e. nginx itself) is used as-is: a safe, if coarse, fallback.
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			parts := strings.Split(xff, ",")
-			if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
-				r.RemoteAddr = net.JoinHostPort(ip, "0")
-			}
+		if ip := resolveProxyIP(r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Real-IP")); ip != "" {
+			r.RemoteAddr = net.JoinHostPort(ip, "0")
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// clientIP extracts the request's client IP from r.RemoteAddr, which realIP
-// has already resolved to the trusted proxy-observed address.
+// clientIP extracts the request's client IP from r.RemoteAddr or proxy headers.
 func clientIP(r *http.Request) string {
+	if ip := resolveProxyIP(r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Real-IP")); ip != "" {
+		return ip
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
@@ -242,4 +262,3 @@ func (s *Server) GlobalRateLimitMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
