@@ -18,7 +18,8 @@ import native_geofence
     // placeholder keeps the app alive; the map just won't load tiles.
     var mapsApiKey = "MISSING_MAPS_API_KEY"
     if let configured = Bundle.main.object(forInfoDictionaryKey: "GMSApiKey") as? String,
-      !configured.isEmpty
+      !configured.isEmpty,
+      !configured.hasPrefix("$(")
     {
       mapsApiKey = configured
     }

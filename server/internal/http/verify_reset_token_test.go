@@ -131,3 +131,4 @@ func TestVerifyResetTokenEndpoint(t *testing.T) {
 		t.Errorf("expired token: got status %d, want 400", res.StatusCode)
 	}
 }
+

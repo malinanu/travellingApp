@@ -80,3 +80,4 @@ func TestClientIP(t *testing.T) {
 		t.Errorf("clientIP with X-Real-IP = %q, want %q", got, "203.0.113.77")
 	}
 }
+

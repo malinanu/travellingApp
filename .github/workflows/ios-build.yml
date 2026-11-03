@@ -13,6 +13,7 @@ permissions:
 jobs:
   build-ios:
     runs-on: macos-latest
+    environment: IOS_MAPS_API_KEY
     defaults:
       run:
         working-directory: app
@@ -40,7 +41,7 @@ jobs:
       # when the IOS_MAPS_API_KEY repository secret isn't set.
       - name: Write Google Maps key for iOS
         env:
-          IOS_MAPS_API_KEY: ${{ secrets.IOS_MAPS_API_KEY }}
+          IOS_MAPS_API_KEY: ${{ secrets.IOS_MAPS_API_KEY || vars.IOS_MAPS_API_KEY }}
         run: |
           if [ -n "$IOS_MAPS_API_KEY" ]; then
             echo "MAPS_API_KEY = $IOS_MAPS_API_KEY" > ios/Flutter/Secrets.xcconfig
@@ -49,7 +50,11 @@ jobs:
           fi
 
       - name: Build unsigned iOS release
-        run: flutter build ios --release --no-codesign
+        env:
+          GOOGLE_SERVER_CLIENT_ID: ${{ secrets.GOOGLE_SERVER_CLIENT_ID || vars.GOOGLE_SERVER_CLIENT_ID }}
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID="$GOOGLE_SERVER_CLIENT_ID"
 
       - name: Package Runner.app into an .ipa
         run: |
