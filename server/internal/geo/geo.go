@@ -5,6 +5,7 @@ package geo
 
 import (
 	"math"
+	"strings"
 
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/seed"
@@ -25,6 +26,24 @@ func NearestRegion(lat, lng float64) domain.Region {
 	return best
 }
 
+// FindRegion searches seeded regions by name or ID (case-insensitive match).
+func FindRegion(query string) *domain.Region {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return nil
+	}
+	// First check exact match or if query contains the region name/id
+	for i := range seed.Regions {
+		r := &seed.Regions[i]
+		rName := strings.ToLower(r.Name)
+		rID := strings.ToLower(r.ID)
+		if q == rName || q == rID || strings.Contains(q, rName) || strings.Contains(q, rID) {
+			return r
+		}
+	}
+	return nil
+}
+
 // HaversineKm is the great-circle distance in km between two lat/lng
 // points — same formula as the SQL version used by
 // NearbyTravellers, just applied in Go for callers whose lat/lng live
@@ -35,4 +54,3 @@ func HaversineKm(lat1, lng1, lat2, lng2 float64) float64 {
 		math.Sin(toRad(lat1))*math.Sin(toRad(lat2))
 	return 6371 * math.Acos(math.Min(1, math.Max(-1, x)))
 }
-

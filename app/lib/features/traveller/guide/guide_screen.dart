@@ -329,7 +329,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                   final m = _messages[i];
                   final msgPlaces = m.mine || m.payload != null
                       ? const <GuidePlace>[]
-                      : guideCardsFor(m.cards, m.placeIds, places);
+                      : guideCardsFor(m.cards, m.placeIds, places, m.text);
                   final card = m.payload == null ? null : _payloadCard(i, m.payload!);
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),

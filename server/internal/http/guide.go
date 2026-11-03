@@ -28,6 +28,7 @@ import (
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/gemini"
+	"github.com/spotto/server/internal/geo"
 	"github.com/spotto/server/internal/recommend"
 )
 
@@ -51,16 +52,18 @@ Traveller's location: %s
 Traveller's saved travel styles: %s
 Current weather where they are: %s
 
-QUICK ASKS ("any good restaurants near me?", "where can I get coffee?", "something fun to do now"):
-- Call search_places straight away — don't ask anything first. Pick categories from what they asked for, and lean on their saved travel styles and the weather. When their location is known, never ask which city or town they're in. If they ask about somewhere else by name, use find_places with that place in the query instead.
-- Recommend 2-3 of the places the tools returned, by their exact name, each with one short reason. Mention distance (distanceKm), price level or rating when it helps.
+QUICK ASKS ("any good restaurants near me?", "where can I get coffee?", "give places in Galle", "something fun to do now"):
+- Call search_places straight away — don't ask anything first. Pick categories from what they asked for, and lean on their saved travel styles and the weather.
+- If they ask about somewhere else by name (e.g. "give places in Galle", "cafes in Mirissa"), call search_places with location set to that town (e.g. location="Galle"), or call find_places with the town name in the query.
+- ALWAYS recommend 2-4 of the places the tools returned, by their exact name, each with one short reason. Mention distance (distanceKm), price level or rating when it helps.
+- NEVER respond with generic bullet lists without calling a search tool. The app attaches interactive photo cards for places returned by the tools.
 - Then end with ONE short follow-up offering to narrow it down (budget, a different vibe, somewhere closer). Only one question.
 - If their saved travel styles are "none stated", still search; make the follow-up about what vibe they like (quiet, lively, nature…). When they tell you, call save_user_vibe.
 
-TRIP PLANNING ("plan a trip to…", "I'm visiting Sigiriya, create a trip", multi-day or dated plans):
+TRIP PLANNING ("plan a trip to…", "I'm visiting Mirissa, create a trip", multi-day or dated plans):
 1. First call ask_trip_questions — never write a plan straight away. If they haven't said where they're going, the first question is where (kind "text"); if they only named a country or a big region, ask which towns or areas. Ask only what they haven't told you, usually: travel dates or how many nights (kind "dates"), whether they've booked a hotel and which one (kind "text" with options like "Not booked yet"), whether they're staying only in that area or open to nearby day trips (kind "single"), what they enjoy (kind "multi": e.g. history & culture, hiking, nature & wildlife, food, relaxing, photography), and pace (relaxed / balanced / packed). 3-5 questions.
-2. Turn any relative dates ("this weekend", "next Friday", "in two weeks") into real dates using today's date, and pass startDate as YYYY-MM-DD. When they answer, call find_places a few times with specific queries (the main sights, things matching their interests, good food near where they stay), then call propose_trip_plan. Use only refs from the tools. Put each day's stops in a sensible order with realistic times (e.g. climb rocks early, sunset spots late), 3-5 stops a day including a meal. Every note is 1-2 sentences: why it's worth it plus one practical tip.
-3. The message for a card tool is 1-2 short sentences. Never repeat the questions or the plan as text — the app shows them as cards.
+2. Turn any relative dates ("this weekend", "next Friday", "in two weeks") into real dates using today's date, and pass startDate as YYYY-MM-DD. When they answer, call find_places a few times with specific queries (e.g. "sights in Mirissa, Sri Lanka", "surf spots and cafes in Mirissa"), then call propose_trip_plan. Use only refs from the tools. Put each day's stops in a sensible order with realistic times (e.g. climb rocks early, sunset spots late), 3-5 stops a day including a meal. Every note is 1-2 sentences: why it's worth it plus one practical tip.
+3. The message for a card tool is 1-2 short sentences. Never repeat the questions or the plan as text — the app shows them as cards. NEVER output bullet point lists in text when planning a trip — always use propose_trip_plan.
 4. When they ask to add the plan, or some places, to their calendar or trip ("add this to my calendar", "put Pidurangala on day 2"), call add_to_calendar. Use mode "ask" unless they said whether it's a new trip or their current one. For only some places, pass just those as stops (refs from the plan or find_places). To add a place that isn't in the plan yet, find it with find_places first.
 5. If they ask to change the plan (more relaxed, swap a place, add a day), call propose_trip_plan again with the updated plan.
 
@@ -231,6 +234,21 @@ func (s *Server) guideCardsForReply(ctx context.Context, reply string, surfacedI
 	for _, id := range guideCardOrder(reply, surfacedIDs, names) {
 		if p, ok := byID[id]; ok {
 			cards = append(cards, guidePlaceCardFor(p, s.placeJSON(ctx, p), loc))
+		}
+	}
+	// Safety net: if no cards were generated from surfacedIDs, scan the reply for mentions of curated catalog places
+	if len(cards) == 0 && len(reply) > 0 {
+		if allPlaces, err := s.Store.Places(ctx); err == nil {
+			lowerReply := strings.ToLower(reply)
+			for _, p := range allPlaces {
+				name := strings.TrimSpace(p.Name)
+				if len(name) >= 4 && strings.Contains(lowerReply, strings.ToLower(name)) {
+					cards = append(cards, guidePlaceCardFor(p, s.placeJSON(ctx, p), loc))
+					if len(cards) >= guideMaxPlaceCards {
+						break
+					}
+				}
+			}
 		}
 	}
 	return cards
@@ -470,6 +488,10 @@ func guideTools() []gemini.Tool {
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
+						"location": map[string]any{
+							"type": "string",
+							"description": "Optional: Specific town, city, or area if the traveller is asking about somewhere other than their current location (e.g. 'Galle', 'Mirissa', 'Ella', 'Kandy', 'Colombo', 'Sigiriya').",
+						},
 						"categories": map[string]any{
 							"type": "array", "items": map[string]any{"type": "string"},
 							"description": "Canonical category ids, e.g. [\"cafe\"], [\"surf-school\"]. Real options: " +
@@ -562,6 +584,7 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guide
 
 	case "search_places":
 		var args struct {
+			Location          string   `json:"location"`
 			Categories        []string `json:"categories"`
 			Tags              []string `json:"tags"`
 			Query             string   `json:"query"`
@@ -576,6 +599,17 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guide
 			WantsDeals        bool     `json:"wantsDeals"`
 		}
 		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+
+		effectiveLoc := loc
+		if locName := strings.TrimSpace(args.Location); locName != "" {
+			if r := geo.FindRegion(locName); r != nil {
+				effectiveLoc = guideLocation{Known: true, Lat: r.Lat, Lng: r.Lng, Area: r.Name}
+			}
+		} else if !loc.Known && args.Query != "" {
+			if r := geo.FindRegion(args.Query); r != nil {
+				effectiveLoc = guideLocation{Known: true, Lat: r.Lat, Lng: r.Lng, Area: r.Name}
+			}
+		}
 
 		if args.MaxPriceLevel != "$" && args.MaxPriceLevel != "$$" && args.MaxPriceLevel != "$$$" {
 			args.MaxPriceLevel = ""
@@ -606,13 +640,13 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guide
 			DesiredProductive: args.DesiredProductive, DesiredLoud: args.DesiredLoud, DesiredCrowded: args.DesiredCrowded,
 			MaxDistanceKm: args.MaxDistanceKm, MaxPriceLevel: args.MaxPriceLevel,
 			RequireIndoor: args.RequireIndoor, RequireOpenNow: args.RequireOpenNow, RequireSeaView: args.RequireSeaView,
-			WantsDeals: args.WantsDeals, Lat: loc.Lat, Lng: loc.Lng, QueryEmbedding: queryEmbedding,
+			WantsDeals: args.WantsDeals, Lat: effectiveLoc.Lat, Lng: effectiveLoc.Lng, QueryEmbedding: queryEmbedding,
 		}, weather)
 		if len(ranked) > 8 {
 			ranked = ranked[:8]
 		}
 
-		out := guideSearchResults(ranked, loc)
+		out := guideSearchResults(ranked, effectiveLoc)
 		for _, p := range out {
 			placeIDs = append(placeIDs, p.ID)
 		}

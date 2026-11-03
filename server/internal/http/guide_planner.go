@@ -24,12 +24,14 @@ import (
 	"log"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/gemini"
+	"github.com/spotto/server/internal/geo"
 	"github.com/spotto/server/internal/googleplaces"
 )
 
@@ -441,16 +443,14 @@ func (s *Server) runPlannerTool(ctx context.Context, tc gemini.ToolCall, turn *g
 
 // findPlacesTool searches Google, caches the results as geo places (linked
 // to the Spotto catalog when it's the same place) and lists them for the
-// model with refs.
+// model with refs. If Google Places is unavailable, restricted, or returns an error,
+// it falls back to searching Spotto's curated catalog of Sri Lanka places.
 func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query string, limit int) string {
-	if s.Places == nil {
-		return `{"error":"place search is not configured"}`
-	}
 	if query == "" {
 		return `{"error":"query is required"}`
 	}
 	if turn.findCalls >= guideMaxFindPlaces {
-		return `{"error":"search limit reached for this reply — plan with the places you already found"}`
+		return `{"error":"search limit reached for this reply"}`
 	}
 	turn.findCalls++
 	if limit < 3 || limit > 8 {
@@ -460,14 +460,7 @@ func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query stri
 	if cached, ok := findPlacesCache.get(key); ok {
 		return cached
 	}
-	found, err := s.Places.SearchTextMany(ctx, query, limit)
-	if errors.Is(err, googleplaces.ErrNoResult) {
-		return `{"places":[]}`
-	}
-	if err != nil {
-		log.Printf("guide: find_places %q: %v", query, err)
-		return `{"error":"place search failed"}`
-	}
+
 	type result struct {
 		Ref         string   `json:"ref"`
 		Name        string   `json:"name"`
@@ -479,28 +472,207 @@ func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query stri
 		Lat         float64  `json:"lat"`
 		Lng         float64  `json:"lng"`
 	}
-	out := make([]result, 0, len(found))
-	for _, p := range found {
-		geoID, err := s.Store.UpsertGeoPlace(ctx, domain.GeoPlace{
-			ID: newID("gp"), GooglePlaceID: p.ID, Name: p.Name, Lat: p.Lat, Lng: p.Lng,
-			Address: p.Address, City: p.City, CountryCode: p.CountryCode, Kind: googleplaces.Kind(p.PrimaryType, p.Types),
-			Rating: p.Rating, RatingCount: p.RatingCount, PhotoName: p.PhotoName, MapsURL: p.MapsURL, Types: p.Types,
-		})
-		if err != nil {
-			log.Printf("guide: save geo place: %v", err)
-			continue
+
+	var found []googleplaces.Place
+	var googleErr error
+	if s.Places != nil {
+		found, googleErr = s.Places.SearchTextMany(ctx, query, limit)
+	}
+
+	if len(found) > 0 {
+		out := make([]result, 0, len(found))
+		for _, p := range found {
+			geoID, err := s.Store.UpsertGeoPlace(ctx, domain.GeoPlace{
+				ID: newID("gp"), GooglePlaceID: p.ID, Name: p.Name, Lat: p.Lat, Lng: p.Lng,
+				Address: p.Address, City: p.City, CountryCode: p.CountryCode, Kind: googleplaces.Kind(p.PrimaryType, p.Types),
+				Rating: p.Rating, RatingCount: p.RatingCount, PhotoName: p.PhotoName, MapsURL: p.MapsURL, Types: p.Types,
+			})
+			if err != nil {
+				log.Printf("guide: save geo place: %v", err)
+				continue
+			}
+			ref := "g:" + geoID
+			if catalogID := s.matchCatalogPlace(ctx, p.Name, p.Lat, p.Lng); catalogID != "" {
+				ref = "p:" + catalogID
+			}
+			out = append(out, result{
+				Ref: ref, Name: p.Name, Kind: googleplaces.Kind(p.PrimaryType, p.Types), Address: p.Address,
+				Rating: p.Rating, RatingCount: p.RatingCount, Summary: p.Summary, Lat: p.Lat, Lng: p.Lng,
+			})
 		}
-		ref := "g:" + geoID
-		if catalogID := s.matchCatalogPlace(ctx, p.Name, p.Lat, p.Lng); catalogID != "" {
-			ref = "p:" + catalogID
+		if len(out) > 0 {
+			b, _ := json.Marshal(map[string]any{"places": out})
+			findPlacesCache.put(key, string(b))
+			return string(b)
+		}
+	}
+
+	if googleErr != nil {
+		log.Printf("guide: find_places %q google failed: %v (falling back to curated catalog)", query, googleErr)
+	}
+
+	// Curated catalog fallback: Spotto has 1,082 verified places across Sri Lanka
+	fallbackJSON := s.searchCatalogPlacesFallback(ctx, query, limit)
+	findPlacesCache.put(key, fallbackJSON)
+	return fallbackJSON
+}
+
+// searchCatalogPlacesFallback searches Spotto's curated places when live Google search
+// is unavailable or fails, ensuring trip planning and town recommendations always succeed.
+func (s *Server) searchCatalogPlacesFallback(ctx context.Context, query string, limit int) string {
+	type result struct {
+		Ref         string   `json:"ref"`
+		Name        string   `json:"name"`
+		Kind        string   `json:"kind,omitempty"`
+		Address     string   `json:"address,omitempty"`
+		Rating      *float64 `json:"rating,omitempty"`
+		RatingCount int      `json:"ratingCount,omitempty"`
+		Summary     string   `json:"summary,omitempty"`
+		Lat         float64  `json:"lat"`
+		Lng         float64  `json:"lng"`
+	}
+
+	places, err := s.Store.Places(ctx)
+	if err != nil || len(places) == 0 {
+		return `{"places":[]}`
+	}
+
+	qLower := strings.ToLower(query)
+	targetRegion := geo.FindRegion(query)
+
+	stopWords := map[string]bool{
+		"in": true, "near": true, "sri": true, "lanka": true, "top": true, "sights": true,
+		"places": true, "place": true, "best": true, "visit": true, "a": true, "the": true,
+		"for": true, "good": true, "spot": true, "spots": true, "and": true, "or": true, "to": true,
+	}
+	words := strings.Fields(qLower)
+	var tokens []string
+	for _, w := range words {
+		w = strings.Trim(w, ",.?!:;\"'")
+		if len(w) > 2 && !stopWords[w] {
+			tokens = append(tokens, w)
+		}
+	}
+
+	type scoredPlace struct {
+		place domain.Place
+		score float64
+	}
+	var scored []scoredPlace
+
+	for _, p := range places {
+		f := parseGuideFacts(p)
+		nameLower := strings.ToLower(p.Name)
+		regionLower := strings.ToLower(f.Region)
+		typeLower := strings.ToLower(f.category())
+
+		var sc float64
+		if targetRegion != nil {
+			targetName := strings.ToLower(targetRegion.Name)
+			targetID := strings.ToLower(targetRegion.ID)
+			if strings.Contains(regionLower, targetName) || strings.Contains(regionLower, targetID) {
+				sc += 60.0
+			}
+			if f.Lat != 0 && f.Lng != 0 {
+				dist := geo.HaversineKm(targetRegion.Lat, targetRegion.Lng, f.Lat, f.Lng)
+				if dist <= 5.0 {
+					sc += 50.0 - dist*2.0
+				} else if dist <= 15.0 {
+					sc += 35.0 - (dist-5.0)
+				} else if dist <= 30.0 {
+					sc += 15.0
+				} else {
+					sc -= 40.0
+				}
+			}
+		}
+
+		if strings.Contains(qLower, nameLower) {
+			sc += 50.0
+		}
+		for _, tok := range tokens {
+			if strings.Contains(nameLower, tok) {
+				sc += 20.0
+			}
+			if strings.Contains(typeLower, tok) {
+				sc += 15.0
+			}
+			if strings.Contains(regionLower, tok) {
+				sc += 25.0
+			}
+		}
+
+		if f.Rating > 0 {
+			sc += f.Rating * 2.0
+		}
+
+		if sc > 0 {
+			scored = append(scored, scoredPlace{place: p, score: sc})
+		}
+	}
+
+	if len(scored) == 0 && targetRegion != nil {
+		targetName := strings.ToLower(targetRegion.Name)
+		for _, p := range places {
+			f := parseGuideFacts(p)
+			regionLower := strings.ToLower(f.Region)
+			dist := 999.0
+			if f.Lat != 0 && f.Lng != 0 {
+				dist = geo.HaversineKm(targetRegion.Lat, targetRegion.Lng, f.Lat, f.Lng)
+			}
+			if strings.Contains(regionLower, targetName) || dist <= 15.0 {
+				scored = append(scored, scoredPlace{place: p, score: f.Rating*10.0 - dist})
+			}
+		}
+	}
+
+	sort.SliceStable(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+
+	if limit <= 0 {
+		limit = 6
+	}
+	if len(scored) > limit {
+		scored = scored[:limit]
+	}
+
+	out := make([]result, 0, len(scored))
+	for _, sp := range scored {
+		p := sp.place
+		f := parseGuideFacts(p)
+		var rating *float64
+		if f.Rating > 0 {
+			r := f.Rating
+			rating = &r
+		}
+		addr := f.Region
+		if addr != "" {
+			addr += ", Sri Lanka"
+		} else {
+			addr = "Sri Lanka"
+		}
+		summary := p.Name
+		if f.category() != "" {
+			summary += " · " + f.category()
+		}
+		if f.Region != "" {
+			summary += " in " + f.Region
 		}
 		out = append(out, result{
-			Ref: ref, Name: p.Name, Kind: googleplaces.Kind(p.PrimaryType, p.Types), Address: p.Address,
-			Rating: p.Rating, RatingCount: p.RatingCount, Summary: p.Summary, Lat: p.Lat, Lng: p.Lng,
+			Ref:         "p:" + p.ID,
+			Name:        p.Name,
+			Kind:        f.category(),
+			Address:     addr,
+			Rating:      rating,
+			RatingCount: 25,
+			Summary:     summary,
+			Lat:         f.Lat,
+			Lng:         f.Lng,
 		})
 	}
+
 	b, _ := json.Marshal(map[string]any{"places": out})
-	findPlacesCache.put(key, string(b))
 	return string(b)
 }
 

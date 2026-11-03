@@ -93,13 +93,35 @@ class GuidePlace {
 
 /// Cards for one reply: the server's summaries when it sent them, otherwise
 /// [ids] resolved against [cached] (ids not in it are skipped).
-List<GuidePlace> guideCardsFor(List<GuidePlace> summaries, List<String> ids, List<Place> cached) {
+/// If neither produced cards, scans [replyText] to match known place names
+/// as a resilient fallback.
+List<GuidePlace> guideCardsFor(
+  List<GuidePlace> summaries,
+  List<String> ids,
+  List<Place> cached, [
+  String replyText = '',
+]) {
   if (summaries.isNotEmpty) return summaries.take(kGuideMaxCards).toList();
   final byId = {for (final p in cached) p.id: p};
-  return [
+  final cards = [
     for (final id in ids)
       if (byId[id] != null) GuidePlace.fromPlace(byId[id]!),
-  ].take(kGuideMaxCards).toList();
+  ];
+  if (cards.isNotEmpty) return cards.take(kGuideMaxCards).toList();
+
+  // Resilient fallback: if the reply mentioned known places in text, show their cards
+  if (replyText.isNotEmpty) {
+    final lower = replyText.toLowerCase();
+    final matched = <GuidePlace>[];
+    for (final p in cached) {
+      if (p.name.length >= 4 && lower.contains(p.name.toLowerCase())) {
+        matched.add(GuidePlace.fromPlace(p));
+        if (matched.length >= kGuideMaxCards) break;
+      }
+    }
+    if (matched.isNotEmpty) return matched;
+  }
+  return const [];
 }
 
 class GuidePlaceCard extends ConsumerStatefulWidget {

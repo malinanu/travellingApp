@@ -100,6 +100,12 @@ func TestPlannerToolsRegistered(t *testing.T) {
 	names := map[string]bool{}
 	for _, tool := range guideTools() {
 		names[tool.Function.Name] = true
+		if tool.Function.Name == "search_places" {
+			props, _ := tool.Function.Parameters["properties"].(map[string]any)
+			if props["location"] == nil {
+				t.Error("search_places should declare location parameter")
+			}
+		}
 	}
 	for _, n := range []string{"search_places", "find_places", "ask_trip_questions", "propose_trip_plan", "add_to_calendar"} {
 		if !names[n] {
