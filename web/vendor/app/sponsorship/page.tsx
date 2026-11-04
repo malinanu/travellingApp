@@ -175,11 +175,11 @@ export default function SponsorshipPage() {
             <div className="flex items-center gap-2.5">
               <h1 className="text-2xl font-black font-display tracking-tight text-ink">Daily Quest Sponsorship</h1>
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-accent/10 text-accent border border-accent/20">
-                <Sparkles size={11} /> Featured Perks
+                <Sparkles size={11} /> Official Town Spotlight
               </span>
             </div>
             <p className="text-muted font-medium text-[13.5px] mt-1 max-w-2xl">
-              Propose complimentary perks for travellers completing the Daily Quest. When featured, travellers are directed to your venue to redeem their reward.
+              The Official Town Grand Prize · Sponsor the featured reward for travellers completing local quests in your region. On your scheduled day, every active adventurer in town is guided to your counter.
             </p>
           </div>
 

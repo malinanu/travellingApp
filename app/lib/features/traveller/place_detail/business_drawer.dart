@@ -1279,7 +1279,7 @@ class _DealCardState extends ConsumerState<DealCard> {
                           ),
                           icon: const Icon(Icons.check_circle_outline_rounded, size: 14, color: SpottoColors.sun),
                           label: Text(
-                            "Mark as used",
+                            'Mark as used',
                             style: text.labelSmall?.copyWith(color: SpottoColors.sun),
                           ),
                         ),
