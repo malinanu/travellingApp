@@ -124,30 +124,86 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
   Future<void> _pickRegion(List<Place> allPlaces) async {
     final options = <String, String>{};
     for (final p in allPlaces) {
-      if (p.regionId.isNotEmpty) options[p.regionId] = p.region;
+      final rid = p.regionId.trim();
+      final rname = p.region.trim();
+      if (rid.isNotEmpty && rname.isNotEmpty) {
+        options[rid] = rname;
+      }
     }
     final sorted = options.entries.toList()..sort((a, b) => a.value.compareTo(b.value));
     final picked = await showModalBottomSheet<String?>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      clipBehavior: Clip.antiAlias,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+        top: false,
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                title: const Text('All regions'),
-                trailing: _regionId == null ? const Icon(Icons.check, color: SpottoColors.accent) : null,
-                onTap: () => Navigator.pop(context, ''),
-              ),
-              for (final e in sorted)
-                ListTile(
-                  title: Text(e.value),
-                  trailing: _regionId == e.key ? const Icon(Icons.check, color: SpottoColors.accent) : null,
-                  onTap: () => Navigator.pop(context, e.key),
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(top: 10, bottom: 8),
+                decoration: BoxDecoration(
+                  color: SpottoColors.line,
+                  borderRadius: BorderRadius.circular(2),
                 ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 2, 8, 8),
+                child: Row(
+                  children: [
+                    Text(
+                      'Select Region',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: SpottoColors.ink,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (_regionId != null)
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, ''),
+                        child: const Text('Reset', style: TextStyle(color: SpottoColors.accent, fontWeight: FontWeight.w600)),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: SpottoColors.muted),
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1, color: SpottoColors.line),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.public_rounded, color: SpottoColors.accent),
+                      title: const Text('All regions', style: TextStyle(fontWeight: FontWeight.w600)),
+                      trailing: _regionId == null ? const Icon(Icons.check, color: SpottoColors.accent) : null,
+                      onTap: () => Navigator.pop(context, ''),
+                    ),
+                    for (final e in sorted)
+                      ListTile(
+                        leading: const Icon(Icons.place_outlined, color: SpottoColors.muted),
+                        title: Text(e.value),
+                        trailing: _regionId == e.key ? const Icon(Icons.check, color: SpottoColors.accent) : null,
+                        onTap: () => Navigator.pop(context, e.key),
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -168,9 +224,9 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
         filtered.any((p) => p.distanceKm != null) &&
         filtered.length >= 4;
 
-    final regionName = _regionId == null
+    final regionName = _regionId == null || places.isEmpty
         ? null
-        : places.firstWhere((p) => p.regionId == _regionId, orElse: () => places.first).region;
+        : places.where((p) => p.regionId == _regionId).firstOrNull?.region;
 
     final isSearchingOrFiltered = _query.isNotEmpty || _category != null;
 
@@ -341,7 +397,7 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
         ));
       }
 
-      // 2. Explore Categories with "All Regions" Item at Position 0
+      // 2. Explore Categories with "All Regions" Item at the Last Position
       slivers.add(SliverToBoxAdapter(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -705,8 +761,8 @@ class _QuadTileCarousel extends StatelessWidget {
   }
 }
 
-/// Circular category carousel featuring "All Regions" at position 0,
-/// followed by the 7 curated category avatars with real-time spot counts.
+/// Circular category carousel featuring the 7 curated category avatars
+/// with real-time spot counts, followed by "All Regions" at the last position.
 class _CategoryCircleCarousel extends StatelessWidget {
   const _CategoryCircleCarousel({
     required this.selectedCategory,
@@ -728,18 +784,18 @@ class _CategoryCircleCarousel extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
 
-    // Total items: 1 (Regions item) + 7 categories = 8 items
+    // Total items: 7 categories + 1 (Regions item at last position) = 8 items
     return SizedBox(
       height: 106,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: 1 + _circleCategories.length,
+        itemCount: _circleCategories.length + 1,
         separatorBuilder: (_, _) => const SizedBox(width: 16),
         itemBuilder: (context, i) {
-          // ── Item 0: All Regions / Selected Region ─────────────────────────
-          if (i == 0) {
+          // ── Last Item: All Regions / Selected Region ──────────────────────
+          if (i == _circleCategories.length) {
             final isRegionActive = selectedRegionName != null;
             return PressScale(
               onTap: onPickRegion,
@@ -801,8 +857,8 @@ class _CategoryCircleCarousel extends StatelessWidget {
             );
           }
 
-          // ── Items 1..N: Curated Category Circles ──────────────────────────
-          final cat = _circleCategories[i - 1];
+          // ── Items 0..N-1: Curated Category Circles ─────────────────────────
+          final cat = _circleCategories[i];
           final isSelected = selectedCategory == cat.key;
           final count = places.where((p) => _matchesCategory(p, cat.key)).length;
 
