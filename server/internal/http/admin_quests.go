@@ -1,4 +1,4 @@
-﻿package httpapi
+package httpapi
 
 import (
 	"log"
@@ -8,6 +8,19 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/spotto/server/internal/domain"
 )
+
+func (s *Server) handleAdminListSponsorships(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	spons, err := s.Store.ListVendorSponsorshipsByStatus(r.Context(), status)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if spons == nil {
+		spons = []domain.VendorSponsorship{}
+	}
+	writeJSON(w, http.StatusOK, spons)
+}
 
 func (s *Server) handleAdminListPendingSponsorships(w http.ResponseWriter, r *http.Request) {
 	spons, err := s.Store.ListVendorSponsorshipsByStatus(r.Context(), "pending")
@@ -78,6 +91,19 @@ func (s *Server) handleAdminSetQuestSchedule(w http.ResponseWriter, r *http.Requ
 		req.Goal = 5
 	}
 	if err := s.Store.SetQuestSchedule(r.Context(), req); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleAdminDeleteQuestSchedule(w http.ResponseWriter, r *http.Request) {
+	date := chi.URLParam(r, "date")
+	if date == "" {
+		writeErr(w, http.StatusBadRequest, "date required")
+		return
+	}
+	if err := s.Store.DeleteQuestSchedule(r.Context(), date); err != nil {
 		storeErr(w, err)
 		return
 	}

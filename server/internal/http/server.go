@@ -429,6 +429,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Patch("/vendor/business/identity", s.handleUpdateVendorIdentity)
 		r.Patch("/vendor/business/br-cert-number", s.handleUpdateVendorBRCertNumber)
 		r.Get("/vendor/sponsorship", s.handleGetSponsorship)
+		r.Get("/vendor/quest/schedules", s.handleVendorQuestSchedules)
 		r.Get("/vendor/quest/completions", s.handleVendorQuestCompletions)
 		r.Put("/vendor/sponsorship", s.handlePutSponsorship)
 		r.Get("/vendor/menu", s.handleVendorMenu)
@@ -554,11 +555,13 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Post("/admin/local-guide/reembed", s.handleAdminGuideReembed)
 
 		// Quests
+		r.Get("/admin/quests/sponsorships", s.handleAdminListSponsorships)
 		r.Get("/admin/quests/sponsorships/pending", s.handleAdminListPendingSponsorships)
 		r.Get("/admin/quests/sponsorships/approved", s.handleAdminListApprovedSponsorships)
 		r.Post("/admin/quests/sponsorships/{vendor_id}/status", s.handleAdminUpdateSponsorshipStatus)
 		r.Get("/admin/quests/schedules", s.handleAdminListQuestSchedules)
 		r.Post("/admin/quests/schedules", s.handleAdminSetQuestSchedule)
+		r.Delete("/admin/quests/schedules/{date}", s.handleAdminDeleteQuestSchedule)
 		r.Get("/admin/quests/completions", s.handleAdminQuestCompletions)
 		r.Get("/admin/users", s.handleAdminUsers)
 		r.Get("/admin/users/{id}", s.handleAdminUserDetail)

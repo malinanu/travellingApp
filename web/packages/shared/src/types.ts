@@ -480,13 +480,28 @@ export interface AdminChangeRoleResponse {
   noPassword: boolean;
 }
 
-/** One scheduled day (GET /admin/quests/schedules). */
+/** A vendor's daily quest sponsorship proposal (GET /admin/quests/sponsorships, GET /vendor/sponsorship). */
+export interface VendorSponsorship {
+  vendorId: string;
+  vendorName?: string;
+  vendorCategory?: string;
+  vendorTown?: string;
+  rewardDescription: string;
+  rewardLimit: number;
+  isActive: boolean;
+  status: 'pending' | 'approved' | 'rejected' | 'none';
+  createdAt?: string;
+}
+
+/** One scheduled day (GET /admin/quests/schedules, GET /vendor/quest/schedules). */
 export interface QuestSchedule {
   date: string;
   vendorId: string;
   goal: number;
   sponsorName?: string;
   rewardDescription?: string;
+  vendorCategory?: string;
+  vendorTown?: string;
   completions: number;
   redemptions: number;
 }

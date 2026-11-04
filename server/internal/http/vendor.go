@@ -1,4 +1,4 @@
-﻿package httpapi
+package httpapi
 
 import (
 	"context"
@@ -1243,7 +1243,11 @@ func (s *Server) handleGetSponsorship(w http.ResponseWriter, r *http.Request) {
 	}
 	spons, err := s.Store.GetVendorSponsorship(r.Context(), v.ID)
 	if errors.Is(err, postgres.ErrNotFound) {
-		writeJSON(w, http.StatusOK, map[string]any{"isActive": false})
+		writeJSON(w, http.StatusOK, domain.VendorSponsorship{
+			VendorID: v.ID,
+			IsActive: false,
+			Status:   "none",
+		})
 		return
 	}
 	if err != nil {
@@ -1280,7 +1284,26 @@ func (s *Server) handlePutSponsorship(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
+	if updated, err := s.Store.GetVendorSponsorship(r.Context(), v.ID); err == nil {
+		spons = updated
+	}
 	writeJSON(w, http.StatusOK, spons)
+}
+
+func (s *Server) handleVendorQuestSchedules(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	scheds, err := s.Store.ListVendorQuestSchedules(r.Context(), v.ID)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if scheds == nil {
+		scheds = []domain.QuestSchedule{}
+	}
+	writeJSON(w, http.StatusOK, scheds)
 }
 
 func (s *Server) handleQuestValidate(w http.ResponseWriter, r *http.Request, v domain.Vendor, code string) {

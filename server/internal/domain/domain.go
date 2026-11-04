@@ -274,6 +274,9 @@ type QuestCompletionFilter struct {
 
 type VendorSponsorship struct {
 	VendorID          string    `json:"vendorId"`
+	VendorName        string    `json:"vendorName,omitempty"`
+	VendorCategory    string    `json:"vendorCategory,omitempty"`
+	VendorTown        string    `json:"vendorTown,omitempty"`
 	RewardDescription string    `json:"rewardDescription"`
 	RewardLimit       int       `json:"rewardLimit"`
 	IsActive          bool      `json:"isActive"`
@@ -287,6 +290,8 @@ type QuestSchedule struct {
 	Goal              int    `json:"goal"`
 	SponsorName       string `json:"sponsorName,omitempty"`
 	RewardDescription string `json:"rewardDescription,omitempty"`
+	VendorCategory    string `json:"vendorCategory,omitempty"`
+	VendorTown        string `json:"vendorTown,omitempty"`
 	// Filled by ListQuestSchedules only.
 	Completions int `json:"completions"`
 	Redemptions int `json:"redemptions"`

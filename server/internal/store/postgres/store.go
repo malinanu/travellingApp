@@ -3230,9 +3230,13 @@ func (s *Store) CreatePaymentTransaction(ctx context.Context, tx domain.PaymentT
 func (s *Store) GetVendorSponsorship(ctx context.Context, vendorID string) (domain.VendorSponsorship, error) {
 	var v domain.VendorSponsorship
 	err := s.Pool.QueryRow(ctx, `
-		SELECT vendor_id, reward_description, reward_limit, is_active, status, created_at
-		FROM vendor_sponsorships WHERE vendor_id = $1`, vendorID).
-		Scan(&v.VendorID, &v.RewardDescription, &v.RewardLimit, &v.IsActive, &v.Status, &v.CreatedAt)
+		SELECT vs.vendor_id, vs.reward_description, vs.reward_limit, vs.is_active, vs.status, vs.created_at,
+		       COALESCE(vn.name, ''), COALESCE(vn.category, ''), COALESCE(vn.town, '')
+		FROM vendor_sponsorships vs
+		LEFT JOIN vendors vn ON vn.id = vs.vendor_id
+		WHERE vs.vendor_id = $1`, vendorID).
+		Scan(&v.VendorID, &v.RewardDescription, &v.RewardLimit, &v.IsActive, &v.Status, &v.CreatedAt,
+			&v.VendorName, &v.VendorCategory, &v.VendorTown)
 	if err == pgx.ErrNoRows {
 		return domain.VendorSponsorship{}, ErrNotFound
 	}
@@ -3244,7 +3248,10 @@ func (s *Store) UpsertVendorSponsorship(ctx context.Context, v domain.VendorSpon
 		INSERT INTO vendor_sponsorships (vendor_id, reward_description, reward_limit, is_active, status, created_at)
 		VALUES ($1, $2, $3, $4, 'pending', now())
 		ON CONFLICT (vendor_id) DO UPDATE SET
-			status = CASE WHEN vendor_sponsorships.reward_description != EXCLUDED.reward_description THEN 'pending' ELSE vendor_sponsorships.status END,
+			status = CASE
+				WHEN vendor_sponsorships.status = 'rejected' OR vendor_sponsorships.reward_description != EXCLUDED.reward_description THEN 'pending'
+				ELSE vendor_sponsorships.status
+			END,
 			reward_description = EXCLUDED.reward_description,
 			reward_limit = EXCLUDED.reward_limit,
 			is_active = EXCLUDED.is_active`,
@@ -3269,9 +3276,20 @@ func (s *Store) GetQuestClaimsCount(ctx context.Context, vendorID, date string) 
 }
 
 func (s *Store) ListVendorSponsorshipsByStatus(ctx context.Context, status string) ([]domain.VendorSponsorship, error) {
-	rows, err := s.Pool.Query(ctx, `
-		SELECT vendor_id, reward_description, reward_limit, is_active, status, created_at
-		FROM vendor_sponsorships WHERE status = $1 ORDER BY created_at DESC`, status)
+	query := `
+		SELECT vs.vendor_id, vs.reward_description, vs.reward_limit, vs.is_active, vs.status, vs.created_at,
+		       COALESCE(v.name, ''), COALESCE(v.category, ''), COALESCE(v.town, '')
+		FROM vendor_sponsorships vs
+		LEFT JOIN vendors v ON v.id = vs.vendor_id`
+	var rows pgx.Rows
+	var err error
+	if status != "" && status != "all" {
+		query += ` WHERE vs.status = $1 ORDER BY vs.created_at DESC`
+		rows, err = s.Pool.Query(ctx, query, status)
+	} else {
+		query += ` ORDER BY vs.created_at DESC`
+		rows, err = s.Pool.Query(ctx, query)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -3279,7 +3297,8 @@ func (s *Store) ListVendorSponsorshipsByStatus(ctx context.Context, status strin
 	var res []domain.VendorSponsorship
 	for rows.Next() {
 		var v domain.VendorSponsorship
-		if err := rows.Scan(&v.VendorID, &v.RewardDescription, &v.RewardLimit, &v.IsActive, &v.Status, &v.CreatedAt); err != nil {
+		if err := rows.Scan(&v.VendorID, &v.RewardDescription, &v.RewardLimit, &v.IsActive, &v.Status, &v.CreatedAt,
+			&v.VendorName, &v.VendorCategory, &v.VendorTown); err != nil {
 			return nil, err
 		}
 		res = append(res, v)
@@ -3295,12 +3314,14 @@ func (s *Store) UpdateVendorSponsorshipStatus(ctx context.Context, vendorID, sta
 func (s *Store) GetQuestSchedule(ctx context.Context, date string) (domain.QuestSchedule, error) {
 	var q domain.QuestSchedule
 	err := s.Pool.QueryRow(ctx, `
-		SELECT d.date, d.vendor_id, d.goal, v.name, vs.reward_description
+		SELECT d.date, d.vendor_id, d.goal, COALESCE(v.name, d.vendor_id), COALESCE(vs.reward_description, ''),
+		       COALESCE(v.category, ''), COALESCE(v.town, '')
 		FROM daily_quests d
-		JOIN vendors v ON v.id = d.vendor_id
-		JOIN vendor_sponsorships vs ON vs.vendor_id = d.vendor_id
+		LEFT JOIN vendors v ON v.id = d.vendor_id
+		LEFT JOIN vendor_sponsorships vs ON vs.vendor_id = d.vendor_id
 		WHERE d.date = $1`, date).
-		Scan(&q.Date, &q.VendorID, &q.Goal, &q.SponsorName, &q.RewardDescription)
+		Scan(&q.Date, &q.VendorID, &q.Goal, &q.SponsorName, &q.RewardDescription,
+			&q.VendorCategory, &q.VendorTown)
 	if err == pgx.ErrNoRows {
 		return domain.QuestSchedule{}, ErrNotFound
 	}
@@ -3316,15 +3337,21 @@ func (s *Store) SetQuestSchedule(ctx context.Context, q domain.QuestSchedule) er
 	return err
 }
 
+func (s *Store) DeleteQuestSchedule(ctx context.Context, date string) error {
+	_, err := s.Pool.Exec(ctx, `DELETE FROM daily_quests WHERE date = $1`, date)
+	return err
+}
+
 func (s *Store) ListQuestSchedules(ctx context.Context) ([]domain.QuestSchedule, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT d.date, d.vendor_id, d.goal, v.name, vs.reward_description,
+		SELECT d.date, d.vendor_id, d.goal, COALESCE(v.name, d.vendor_id), COALESCE(vs.reward_description, ''),
+		       COALESCE(v.category, ''), COALESCE(v.town, ''),
 		       (SELECT COUNT(*) FROM quest_completions qc WHERE qc.date = d.date),
 		       (SELECT COUNT(*) FROM quest_claims cl WHERE cl.date = d.date)
 		FROM daily_quests d
-		JOIN vendors v ON v.id = d.vendor_id
-		JOIN vendor_sponsorships vs ON vs.vendor_id = d.vendor_id
-		ORDER BY d.date DESC LIMIT 30`)
+		LEFT JOIN vendors v ON v.id = d.vendor_id
+		LEFT JOIN vendor_sponsorships vs ON vs.vendor_id = d.vendor_id
+		ORDER BY d.date DESC LIMIT 50`)
 	if err != nil {
 		return nil, err
 	}
@@ -3332,7 +3359,35 @@ func (s *Store) ListQuestSchedules(ctx context.Context) ([]domain.QuestSchedule,
 	var res []domain.QuestSchedule
 	for rows.Next() {
 		var q domain.QuestSchedule
-		if err := rows.Scan(&q.Date, &q.VendorID, &q.Goal, &q.SponsorName, &q.RewardDescription, &q.Completions, &q.Redemptions); err != nil {
+		if err := rows.Scan(&q.Date, &q.VendorID, &q.Goal, &q.SponsorName, &q.RewardDescription,
+			&q.VendorCategory, &q.VendorTown, &q.Completions, &q.Redemptions); err != nil {
+			return nil, err
+		}
+		res = append(res, q)
+	}
+	return res, rows.Err()
+}
+
+func (s *Store) ListVendorQuestSchedules(ctx context.Context, vendorID string) ([]domain.QuestSchedule, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT d.date, d.vendor_id, d.goal, COALESCE(v.name, d.vendor_id), COALESCE(vs.reward_description, ''),
+		       COALESCE(v.category, ''), COALESCE(v.town, ''),
+		       (SELECT COUNT(*) FROM quest_completions qc WHERE qc.date = d.date),
+		       (SELECT COUNT(*) FROM quest_claims cl WHERE cl.date = d.date)
+		FROM daily_quests d
+		LEFT JOIN vendors v ON v.id = d.vendor_id
+		LEFT JOIN vendor_sponsorships vs ON vs.vendor_id = d.vendor_id
+		WHERE d.vendor_id = $1
+		ORDER BY d.date DESC LIMIT 50`, vendorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var res []domain.QuestSchedule
+	for rows.Next() {
+		var q domain.QuestSchedule
+		if err := rows.Scan(&q.Date, &q.VendorID, &q.Goal, &q.SponsorName, &q.RewardDescription,
+			&q.VendorCategory, &q.VendorTown, &q.Completions, &q.Redemptions); err != nil {
 			return nil, err
 		}
 		res = append(res, q)
