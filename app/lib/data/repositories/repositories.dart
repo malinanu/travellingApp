@@ -201,10 +201,39 @@ class AuthNotifier extends Notifier<bool> {
     return signedIn;
   }
 
+  String? _pendingTwoFactorToken;
+  String? get pendingTwoFactorToken => _pendingTwoFactorToken;
+
+  void clearTwoFactor() {
+    _pendingTwoFactorToken = null;
+  }
+
   /// Returns null on success, or a user-facing error message.
   Future<String?> login(String email, String password) async {
     try {
+      _pendingTwoFactorToken = null;
       final res = await ref.read(apiProvider).dio.post('/auth/login', data: {'email': email, 'password': password});
+      final data = res.data as Map<String, dynamic>;
+      if (data['twoFactorRequired'] == true) {
+        _pendingTwoFactorToken = data['twoFactorToken'] as String?;
+        return null;
+      }
+      await _adoptSession(data);
+      return null;
+    } catch (e) {
+      return ApiClient.errorMessage(e);
+    }
+  }
+
+  Future<String?> verifyTwoFactorLogin(String code) async {
+    if (_pendingTwoFactorToken == null) return 'No two-factor login pending';
+    final cleanCode = code.replaceAll(RegExp(r'\s+|-'), '');
+    try {
+      final res = await ref.read(apiProvider).dio.post('/auth/2fa/login-verify', data: {
+        'twoFactorToken': _pendingTwoFactorToken,
+        'code': cleanCode,
+      });
+      _pendingTwoFactorToken = null;
       await _adoptSession(res.data as Map<String, dynamic>);
       return null;
     } catch (e) {

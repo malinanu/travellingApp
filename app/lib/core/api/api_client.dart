@@ -7,8 +7,9 @@
 // when the server rejects the refresh does onUnauthorized fire (wired to
 // sign-out in repositories.dart).
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show debugPrint, defaultTargetPlatform, kReleaseMode, visibleForTesting;
+import 'package:flutter/foundation.dart' show TargetPlatform, debugPrint, defaultTargetPlatform, kReleaseMode, visibleForTesting;
 
 import '../storage/local_store.dart';
 
@@ -56,6 +57,32 @@ class ApiClient {
   final LocalStore store;
   void Function()? onUnauthorized;
 
+  static Future<void> detectDevice() async {
+    try {
+      final info = DeviceInfoPlugin();
+      String? deviceName;
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final a = await info.androidInfo;
+        final mfg = a.manufacturer.trim();
+        final model = a.model.trim();
+        if (model.toLowerCase().startsWith(mfg.toLowerCase())) {
+          deviceName = model;
+        } else {
+          deviceName = '$mfg $model'.trim();
+        }
+      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+        final i = await info.iosInfo;
+        deviceName = i.utsname.machine.trim();
+        if (deviceName.isEmpty) deviceName = i.model.trim();
+      }
+      if (deviceName != null && deviceName.isNotEmpty) {
+        _clientHeaders['X-Spotto-Device'] = deviceName;
+      }
+    } catch (e) {
+      debugPrint('Device info detection failed: $e');
+    }
+  }
+
   // No interceptors, so a failing refresh can't trigger another refresh.
   final Dio _refreshDio;
   // Single-flight: several requests hitting 401 together share one refresh.
@@ -81,6 +108,7 @@ class ApiClient {
     }
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
+        options.headers['X-Spotto-Device'] = _clientHeaders['X-Spotto-Device'];
         final token = store.getToken();
         if (token != null && token.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $token';

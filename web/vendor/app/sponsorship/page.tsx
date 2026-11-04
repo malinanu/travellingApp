@@ -5,16 +5,23 @@ import {
   AlertCircle,
   Award,
   Calendar,
+  Check,
   CheckCircle2,
   Clock,
+  Edit2,
   ExternalLink,
   Gift,
   HelpCircle,
   Info,
   MapPin,
+  Plus,
+  Power,
+  RotateCcw,
   Save,
   Sparkles,
+  Trash2,
   Users,
+  X,
   XCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -25,9 +32,18 @@ import { api } from '../../lib/api';
 export default function SponsorshipPage() {
   const qc = useQueryClient();
 
-  const { data: spons, isLoading } = useQuery<VendorSponsorship>({
-    queryKey: ['sponsorship'],
-    queryFn: () => api.get<VendorSponsorship>('/vendor/sponsorship'),
+  const { data: sponsorships = [], isLoading: sponsorshipsLoading } = useQuery<VendorSponsorship[]>({
+    queryKey: ['vendor-sponsorships'],
+    queryFn: async () => {
+      try {
+        const res = await api.get<VendorSponsorship[]>('/vendor/sponsorships');
+        if (Array.isArray(res)) return res;
+      } catch (err) {
+        // Fallback to legacy single-endpoint if running older server instance
+      }
+      const single = await api.get<VendorSponsorship>('/vendor/sponsorship');
+      return single && single.status !== 'none' ? [single] : [];
+    },
   });
 
   const { data: schedules = [], isLoading: schedulesLoading } = useQuery<QuestSchedule[]>({
@@ -35,34 +51,104 @@ export default function SponsorshipPage() {
     queryFn: () => api.get<QuestSchedule[]>('/vendor/quest/schedules'),
   });
 
-  const [desc, setDesc] = useState('');
-  const [limit, setLimit] = useState(0);
-  const [active, setActive] = useState(false);
-  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<VendorSponsorship | null>(null);
+  const [formTitle, setFormTitle] = useState('');
+  const [formDesc, setFormDesc] = useState('');
+  const [formLimit, setFormLimit] = useState(0);
+  const [formActive, setFormActive] = useState(true);
+  const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  useEffect(() => {
-    if (spons) {
-      setDesc(spons.rewardDescription || '');
-      setLimit(spons.rewardLimit || 0);
-      setActive(spons.isActive ?? false);
-    }
-  }, [spons]);
+  const openCreateModal = () => {
+    setEditingItem(null);
+    setFormTitle('');
+    setFormDesc('');
+    setFormLimit(0);
+    setFormActive(true);
+    setModalOpen(true);
+  };
 
-  const save = useMutation({
-    mutationFn: () =>
-      api.put<VendorSponsorship>('/vendor/sponsorship', {
-        rewardDescription: desc,
-        rewardLimit: limit,
-        isActive: active,
-      }),
+  const openEditModal = (s: VendorSponsorship) => {
+    setEditingItem(s);
+    setFormTitle(s.title || '');
+    setFormDesc(s.rewardDescription || '');
+    setFormLimit(s.rewardLimit || 0);
+    setFormActive(s.isActive ?? true);
+    setModalOpen(true);
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (editingItem && editingItem.id) {
+        return api.put<VendorSponsorship>(`/vendor/sponsorships/${editingItem.id}`, {
+          title: formTitle,
+          rewardDescription: formDesc,
+          rewardLimit: formLimit,
+          isActive: formActive,
+        });
+      } else if (editingItem) {
+        return api.put<VendorSponsorship>('/vendor/sponsorship', {
+          title: formTitle,
+          rewardDescription: formDesc,
+          rewardLimit: formLimit,
+          isActive: formActive,
+        });
+      } else {
+        return api.post<VendorSponsorship>('/vendor/sponsorships', {
+          title: formTitle,
+          rewardDescription: formDesc,
+          rewardLimit: formLimit,
+          isActive: formActive,
+        });
+      }
+    },
     onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['vendor-sponsorships'] });
       qc.invalidateQueries({ queryKey: ['sponsorship'] });
-      setSaveSuccessMsg(
-        data.status === 'pending'
-          ? 'Reward saved! Proposal submitted for admin review.'
-          : 'Sponsorship configuration updated.'
-      );
-      setTimeout(() => setSaveSuccessMsg(null), 5000);
+      setModalOpen(false);
+      setStatusMsg({
+        type: 'success',
+        text: editingItem
+          ? 'Reward updated successfully.'
+          : 'New quest reward proposed and submitted for admin review!',
+      });
+      setTimeout(() => setStatusMsg(null), 5000);
+    },
+    onError: () => {
+      setStatusMsg({ type: 'error', text: 'Failed to save quest reward. Please check your inputs.' });
+    },
+  });
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: (item: VendorSponsorship) => {
+      const nextActive = !item.isActive;
+      if (item.id) {
+        return api.put<VendorSponsorship>(`/vendor/sponsorships/${item.id}`, {
+          title: item.title || '',
+          rewardDescription: item.rewardDescription,
+          rewardLimit: item.rewardLimit,
+          isActive: nextActive,
+        });
+      }
+      return api.put<VendorSponsorship>('/vendor/sponsorship', {
+        rewardDescription: item.rewardDescription,
+        rewardLimit: item.rewardLimit,
+        isActive: nextActive,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vendor-sponsorships'] });
+      qc.invalidateQueries({ queryKey: ['sponsorship'] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.del(`/vendor/sponsorships/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vendor-sponsorships'] });
+      qc.invalidateQueries({ queryKey: ['sponsorship'] });
+      setStatusMsg({ type: 'success', text: 'Quest reward removed.' });
+      setTimeout(() => setStatusMsg(null), 4000);
     },
   });
 
@@ -74,211 +160,315 @@ export default function SponsorshipPage() {
       .sort((a, b) => a.date.localeCompare(b.date))[0];
   }, [schedules, todayStr]);
 
-  const isPending = spons?.status === 'pending';
-  const isApproved = spons?.status === 'approved';
-  const isRejected = spons?.status === 'rejected';
-  const isInactive = !active && spons?.status !== 'none';
+  const approvedCount = sponsorships.filter((s) => s.status === 'approved').length;
+  const pendingCount = sponsorships.filter((s) => s.status === 'pending').length;
+  const totalRedemptions = schedules.reduce((acc, s) => acc + (s.redemptions || 0), 0);
 
   return (
     <Shell>
-      <div className="max-w-4xl space-y-6 pb-16">
-        {/* Page Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="max-w-5xl space-y-7 pb-16">
+        {/* Top Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <h1 className="text-2xl font-extrabold font-display text-ink">Daily Quest Sponsorship</h1>
-              {/* Dynamic Status Badge (Mutually Exclusive) */}
-              {!active && spons?.status !== 'none' ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-bold bg-sand text-muted border border-line">
-                  Sponsorship Paused (Inactive)
-                </span>
-              ) : isPending ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-extrabold bg-amber-500/15 text-amber-600 border border-amber-500/20">
-                  <Clock size={13} /> Pending Admin Review
-                </span>
-              ) : isApproved && upcomingSchedule ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-extrabold bg-accent text-white shadow-sm">
-                  <Calendar size={13} /> Scheduled for {upcomingSchedule.date}
-                </span>
-              ) : isApproved && !upcomingSchedule ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-extrabold bg-emerald-500/15 text-emerald-700 border border-emerald-500/20">
-                  <CheckCircle2 size={13} /> Approved & Ready for Scheduling
-                </span>
-              ) : isRejected ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-extrabold bg-coral/15 text-coral border border-coral/20">
-                  <XCircle size={13} /> Edits Requested
-                </span>
-              ) : null}
+              <h1 className="text-2xl font-black font-display tracking-tight text-ink">Daily Quest Sponsorship</h1>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-accent/10 text-accent border border-accent/20">
+                <Sparkles size={11} /> Featured Perks
+              </span>
             </div>
-            <p className="text-muted font-semibold text-[13.5px] mt-1 max-w-2xl">
-              Partner with Spotto to sponsor the Daily Quest. When travelers complete today&apos;s exploration challenge, they are directed to your venue to collect their reward.
+            <p className="text-muted font-medium text-[13.5px] mt-1 max-w-2xl">
+              Propose complimentary perks for travellers completing the Daily Quest. When featured, travellers are directed to your venue to redeem their reward.
             </p>
+          </div>
+
+          <button
+            onClick={openCreateModal}
+            className="btn-accent px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-sm font-extrabold text-[13.5px] shrink-0 self-start md:self-auto"
+          >
+            <Plus size={16} />
+            <span>Propose New Reward</span>
+          </button>
+        </div>
+
+        {/* Global Toast Alert */}
+        {statusMsg && (
+          <div
+            className={`p-3.5 rounded-xl text-[13px] font-bold flex items-center gap-2.5 border transition-all ${
+              statusMsg.type === 'success'
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400'
+                : 'bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-400'
+            }`}
+          >
+            {statusMsg.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+            <span>{statusMsg.text}</span>
+          </div>
+        )}
+
+        {/* Quick Stats Pill Strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+          <div className="card p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent flex items-center justify-center shrink-0">
+              <Gift size={18} />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-muted uppercase tracking-wider">Total Perks</p>
+              <p className="text-[18px] font-black text-ink leading-tight">{sponsorships.length}</p>
+            </div>
+          </div>
+
+          <div className="card p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-600 flex items-center justify-center shrink-0">
+              <CheckCircle2 size={18} />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-muted uppercase tracking-wider">Approved</p>
+              <p className="text-[18px] font-black text-emerald-600 leading-tight">{approvedCount}</p>
+            </div>
+          </div>
+
+          <div className="card p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-600 flex items-center justify-center shrink-0">
+              <Clock size={18} />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-muted uppercase tracking-wider">In Review</p>
+              <p className="text-[18px] font-black text-amber-600 leading-tight">{pendingCount}</p>
+            </div>
+          </div>
+
+          <div className="card p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/15 text-purple-600 flex items-center justify-center shrink-0">
+              <Users size={18} />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-muted uppercase tracking-wider">Redemptions</p>
+              <p className="text-[18px] font-black text-purple-600 leading-tight">{totalRedemptions}</p>
+            </div>
           </div>
         </div>
 
-        {/* How it Works / Lifecycle Explanation Banner */}
-        <div className="card p-5 bg-sand/40 border border-line">
+        {/* How It Works Explainer Banner */}
+        <div className="card p-5 bg-sand/30 border border-line">
           <div className="flex items-center gap-2 mb-3">
             <Sparkles size={16} className="text-accent" />
             <h3 className="font-extrabold text-[14.5px] text-ink">How Daily Quest Sponsorship Works</h3>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div className="bg-white p-3.5 rounded-xl border border-line/70">
+            <div className="bg-white dark:bg-black/20 p-3.5 rounded-xl border border-line/70">
               <span className="w-6 h-6 rounded-full bg-accent/15 text-accent text-[12px] font-black flex items-center justify-center mb-2">1</span>
-              <p className="font-extrabold text-[13px] text-ink">Set Your Perk</p>
-              <p className="text-[11.5px] text-muted font-semibold mt-0.5 leading-snug">
-                Propose a small complimentary gift (e.g. Free Tea, Snack, or Dessert).
+              <p className="font-extrabold text-[13px] text-ink">Propose Your Perk</p>
+              <p className="text-[11.5px] text-muted font-medium mt-0.5 leading-snug">
+                Offer a small complimentary gift (e.g. Free Pot of Tea, Drink, Snack, or Dessert).
               </p>
             </div>
 
-            <div className="bg-white p-3.5 rounded-xl border border-line/70">
+            <div className="bg-white dark:bg-black/20 p-3.5 rounded-xl border border-line/70">
               <span className="w-6 h-6 rounded-full bg-accent/15 text-accent text-[12px] font-black flex items-center justify-center mb-2">2</span>
-              <p className="font-extrabold text-[13px] text-ink">Admin Review</p>
-              <p className="text-[11.5px] text-muted font-semibold mt-0.5 leading-snug">
-                Spotto Command Center reviews and approves your proposed perk.
+              <p className="font-extrabold text-[13px] text-ink">Spotto Approval</p>
+              <p className="text-[11.5px] text-muted font-medium mt-0.5 leading-snug">
+                Admins review and approve your proposed perk so it can be scheduled for upcoming dates.
               </p>
             </div>
 
-            <div className="bg-white p-3.5 rounded-xl border border-line/70">
+            <div className="bg-white dark:bg-black/20 p-3.5 rounded-xl border border-line/70">
               <span className="w-6 h-6 rounded-full bg-accent/15 text-accent text-[12px] font-black flex items-center justify-center mb-2">3</span>
-              <p className="font-extrabold text-[13px] text-ink">Featured Date</p>
-              <p className="text-[11.5px] text-muted font-semibold mt-0.5 leading-snug">
-                Your venue becomes the featured destination for all active travelers that day.
+              <p className="font-extrabold text-[13px] text-ink">Featured Day</p>
+              <p className="text-[11.5px] text-muted font-medium mt-0.5 leading-snug">
+                Your venue becomes the featured destination for all active travelers exploring that day.
               </p>
             </div>
 
-            <div className="bg-white p-3.5 rounded-xl border border-line/70">
+            <div className="bg-white dark:bg-black/20 p-3.5 rounded-xl border border-line/70">
               <span className="w-6 h-6 rounded-full bg-accent/15 text-accent text-[12px] font-black flex items-center justify-center mb-2">4</span>
-              <p className="font-extrabold text-[13px] text-ink">Redeem & Greet</p>
-              <p className="text-[11.5px] text-muted font-semibold mt-0.5 leading-snug">
-                Travelers show their in-app code. You scan or confirm it to welcome them.
+              <p className="font-extrabold text-[13px] text-ink">Scan & Welcome</p>
+              <p className="text-[11.5px] text-muted font-medium mt-0.5 leading-snug">
+                Travelers show their SPOTTO code at your counter. Scan or enter it to verify and greet them.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Configuration Form Card */}
-        {isLoading ? (
-          <div className="card p-8 text-center text-muted font-bold">Loading sponsorship details...</div>
-        ) : (
-          <div className="card p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-line pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-accent/15 text-accent flex items-center justify-center">
-                  <Gift size={18} />
-                </div>
-                <div>
-                  <h2 className="font-extrabold text-[16px] text-ink">Configure Sponsorship Reward</h2>
-                  <p className="text-[12.5px] text-muted font-semibold">Customize what completed quest travellers will receive</p>
-                </div>
-              </div>
-
-              {/* Status Explanation Pill */}
-              {isPending && (
-                <div className="flex items-center gap-1.5 text-[12px] text-amber-600 font-extrabold bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
-                  <Clock size={13} /> Changes will be reviewed by admin
-                </div>
-              )}
-            </div>
-
-            {/* Active Switch */}
-            <label className="flex items-center gap-3 bg-sand p-4 rounded-xl cursor-pointer transition-colors hover:bg-sand/80">
-              <input
-                type="checkbox"
-                checked={active}
-                onChange={(e) => setActive(e.target.checked)}
-                className="w-5 h-5 accent-accent cursor-pointer"
-              />
-              <div className="flex-1">
-                <p className="font-extrabold text-[14px] text-ink">Active Quest Sponsorship</p>
-                <p className="text-[12px] text-muted font-semibold mt-0.5">
-                  Keep this turned on so Spotto admins can feature your venue on daily quest schedules.
-                </p>
-              </div>
-            </label>
-
-            {/* Status Information Callout */}
-            {isRejected && (
-              <div className="p-4 rounded-xl bg-coral/10 border border-coral/20 text-coral text-[13px] font-semibold space-y-1">
-                <div className="flex items-center gap-2 font-extrabold">
-                  <AlertCircle size={16} />
-                  <span>Sponsorship Proposal Needs Revision</span>
-                </div>
-                <p className="text-[12px] leading-relaxed">
-                  Your previous reward was not approved. Please adjust the reward description below to a clear, complimentary perk and save to submit for re-approval.
-                </p>
-              </div>
-            )}
-
-            {isApproved && (
-              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 text-[13px] font-semibold space-y-1">
-                <div className="flex items-center gap-2 font-extrabold text-emerald-700">
-                  <CheckCircle2 size={16} />
-                  <span>Your Sponsorship is Approved</span>
-                </div>
-                <p className="text-[12px] text-emerald-700/90 leading-relaxed">
-                  Your current perk is approved and ready. Changing the description will submit it for admin re-approval.
-                </p>
-              </div>
-            )}
-
-            {/* Reward Description */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-[13px] font-extrabold text-ink">Reward Description</label>
-                <span className="text-[11.5px] font-bold text-muted">Example: Free Ceylon Tea & Cake</span>
-              </div>
-              <input
-                className="input w-full"
-                placeholder="e.g. Free Pot of Ceylon Tea & Cake"
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-              />
-              <p className="text-[12px] text-muted font-semibold">
-                What will the traveler receive upon presenting their verified completion code at your counter?
+        {/* Quest Rewards Section Header */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-[17px] font-extrabold text-ink">Your Quest Reward Offerings</h2>
+              <p className="text-[12.5px] text-muted font-medium">
+                Manage the rewards you provide to travelers. You can offer multiple rewards, and admins can feature any approved reward.
               </p>
             </div>
-
-            {/* Daily Limit */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-[13px] font-extrabold text-ink">Daily Redemption Limit</label>
-                <span className="text-[11.5px] font-bold text-muted">0 = Unlimited</span>
-              </div>
-              <input
-                className="input w-full"
-                type="number"
-                min="0"
-                value={limit}
-                onChange={(e) => setLimit(parseInt(e.target.value, 10) || 0)}
-              />
-              <p className="text-[12px] text-muted font-semibold">
-                Maximum number of quest rewards you wish to redeem per scheduled day. Set to 0 if you have no limit.
-              </p>
-            </div>
-
-            {/* Submit Button */}
             <button
-              onClick={() => save.mutate()}
-              disabled={save.isPending || !desc.trim()}
-              className="btn-accent w-full py-3 mt-4 flex items-center justify-center gap-2 shadow-sm font-extrabold text-[14px]"
+              onClick={openCreateModal}
+              className="btn btn-primary text-[12.5px] py-1.5 px-3 flex items-center gap-1.5 font-bold"
             >
-              <Save size={18} />
-              {save.isPending ? 'Saving Proposal...' : 'Save & Submit Sponsorship'}
+              <Plus size={14} />
+              <span>Add Reward</span>
             </button>
-
-            {saveSuccessMsg && (
-              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 text-center text-[13px] font-bold">
-                {saveSuccessMsg}
-              </div>
-            )}
-            {save.isError && (
-              <div className="p-3 rounded-xl bg-coral/10 border border-coral/20 text-coral text-center text-[13px] font-bold">
-                Failed to save. Please verify all fields and try again.
-              </div>
-            )}
           </div>
-        )}
+
+          {sponsorshipsLoading ? (
+            <div className="card p-12 text-center text-muted font-bold">
+              <Clock className="w-7 h-7 text-accent animate-spin mx-auto mb-2" />
+              <span>Loading quest rewards...</span>
+            </div>
+          ) : sponsorships.length === 0 ? (
+            <div className="card p-10 text-center space-y-3 bg-sand/20 border-dashed">
+              <div className="w-12 h-12 rounded-2xl bg-accent/10 text-accent flex items-center justify-center mx-auto">
+                <Gift size={24} />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <h3 className="font-extrabold text-[15px] text-ink">No Quest Rewards Yet</h3>
+                <p className="text-[12.5px] text-muted font-medium">
+                  Partner with Spotto by offering a complimentary perk for travelers. Submit your first reward to get started!
+                </p>
+              </div>
+              <button
+                onClick={openCreateModal}
+                className="btn-accent px-4 py-2 rounded-xl text-[13px] font-extrabold inline-flex items-center gap-2 shadow-sm"
+              >
+                <Plus size={15} />
+                <span>Propose Your First Reward</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {sponsorships.map((s) => {
+                const isPending = s.status === 'pending';
+                const isApproved = s.status === 'approved';
+                const isRejected = s.status === 'rejected';
+                const isPaused = !s.isActive;
+
+                // Check if this specific reward is scheduled
+                const isScheduledUpcoming = schedules.some(
+                  (sch) => (sch.sponsorshipId === s.id || (!sch.sponsorshipId && s.rewardDescription === sch.rewardDescription)) && sch.date >= todayStr
+                );
+
+                return (
+                  <div
+                    key={s.id || s.rewardDescription}
+                    className="card p-5 flex flex-col justify-between gap-4 transition-all hover:border-accent/40 shadow-sm relative overflow-hidden"
+                  >
+                    <div className="space-y-3">
+                      {/* Top Bar: Title & Status Badge */}
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-9 h-9 rounded-xl bg-accent/15 text-accent flex items-center justify-center shrink-0">
+                            <Gift size={18} />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="font-extrabold text-[15px] text-ink truncate leading-tight">
+                              {s.title || 'Daily Quest Perk'}
+                            </h3>
+                            <p className="text-[11px] text-muted font-semibold mt-0.5">
+                              {s.createdAt ? `Created ${timeAgo(s.createdAt)}` : 'Active proposal'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Status Badges */}
+                        {isPaused ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-sand text-muted border border-line shrink-0">
+                            <Power size={11} /> Paused
+                          </span>
+                        ) : isScheduledUpcoming ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-accent text-white shadow-xs shrink-0">
+                            <Calendar size={11} /> Scheduled
+                          </span>
+                        ) : isApproved ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-500/15 text-emerald-700 border border-emerald-500/20 shrink-0">
+                            <CheckCircle2 size={11} /> Approved
+                          </span>
+                        ) : isPending ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-500/15 text-amber-600 border border-amber-500/20 shrink-0">
+                            <Clock size={11} /> Pending Review
+                          </span>
+                        ) : isRejected ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-coral/15 text-coral border border-coral/20 shrink-0">
+                            <XCircle size={11} /> Edits Requested
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {/* Reward Description Block */}
+                      <div className="p-3.5 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-line">
+                        <p className="text-[11px] font-extrabold text-muted uppercase tracking-wider mb-1">
+                          Offered Quest Reward
+                        </p>
+                        <p className="text-[13.5px] font-bold text-ink leading-relaxed">
+                          {s.rewardDescription}
+                        </p>
+                      </div>
+
+                      {/* Badges strip: Daily limit & Active state */}
+                      <div className="flex items-center gap-3 text-[12px] font-semibold text-muted">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-sand/70 text-ink border border-line/60">
+                          Limit: <strong className="font-extrabold">{s.rewardLimit > 0 ? `${s.rewardLimit}/day` : 'Unlimited'}</strong>
+                        </span>
+
+                        <span className="inline-flex items-center gap-1">
+                          <span className={`w-2 h-2 rounded-full ${s.isActive ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                          <span>{s.isActive ? 'Active for scheduling' : 'Paused by you'}</span>
+                        </span>
+                      </div>
+
+                      {/* Rejection notice if edits requested */}
+                      {isRejected && (
+                        <div className="p-2.5 rounded-xl bg-coral/10 border border-coral/20 text-coral text-[12px] font-semibold flex items-start gap-2">
+                          <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                          <span>Admins requested adjustments. Click &ldquo;Edit&rdquo; to modify the perk description.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bottom Action Bar */}
+                    <div className="flex items-center justify-between pt-3 border-t border-line mt-1">
+                      {/* Active Toggle Switch */}
+                      <button
+                        type="button"
+                        onClick={() => toggleActiveMutation.mutate(s)}
+                        disabled={toggleActiveMutation.isPending}
+                        className={`text-[12px] font-extrabold flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors ${
+                          s.isActive
+                            ? 'text-emerald-700 bg-emerald-500/10 hover:bg-emerald-500/20'
+                            : 'text-muted bg-sand hover:bg-sand/80'
+                        }`}
+                        title={s.isActive ? 'Pause this reward' : 'Activate this reward'}
+                      >
+                        <Power size={13} />
+                        <span>{s.isActive ? 'Active' : 'Paused'}</span>
+                      </button>
+
+                      <div className="flex items-center gap-1.5">
+                        {s.id && (
+                          <button
+                            onClick={() => {
+                              if (confirm('Are you sure you want to delete this quest reward proposal?')) {
+                                deleteMutation.mutate(s.id!);
+                              }
+                            }}
+                            disabled={deleteMutation.isPending}
+                            className="p-1.5 text-muted hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"
+                            title="Delete this reward proposal"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => openEditModal(s)}
+                          className="btn text-[12px] py-1 px-3 flex items-center gap-1 font-bold text-ink hover:text-accent"
+                        >
+                          <Edit2 size={13} />
+                          <span>Edit</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Quest Schedules & History */}
         <div className="card p-6 space-y-4">
@@ -306,7 +496,7 @@ export default function SponsorshipPage() {
             <div className="p-6 rounded-xl bg-sand/30 border border-line text-center space-y-1">
               <p className="font-extrabold text-[14px] text-ink">No scheduled dates yet</p>
               <p className="text-[12.5px] text-muted font-semibold max-w-md mx-auto">
-                Once your sponsorship proposal is approved, Spotto Command Center admins will schedule dates for your business. They will appear right here.
+                Once an offered reward is approved, Spotto Command Center admins will schedule dates for your business. They will appear right here.
               </p>
             </div>
           ) : (
@@ -357,7 +547,7 @@ export default function SponsorshipPage() {
                           )}
                         </div>
                         <p className="text-[12.5px] text-muted font-semibold mt-0.5">
-                          Reward: <span className="text-ink font-bold">{s.rewardDescription || desc}</span> (Goal: {s.goal} places)
+                          Featured Perk: <span className="text-ink font-bold">{s.rewardTitle ? `${s.rewardTitle} — ` : ''}{s.rewardDescription || 'Quest Reward'}</span> (Goal: {s.goal} places)
                         </p>
                       </div>
                     </div>
@@ -381,6 +571,128 @@ export default function SponsorshipPage() {
 
         {/* Live Completions Feed */}
         <QuestCompletions />
+
+        {/* Create / Edit Reward Modal */}
+        {modalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+            <div className="bg-white dark:bg-stone-900 border border-line rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in zoom-in-95 duration-150">
+              <div className="p-5 border-b border-line flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center">
+                    <Gift size={16} />
+                  </div>
+                  <h3 className="font-extrabold text-[16px] text-ink">
+                    {editingItem ? 'Edit Quest Reward' : 'Propose New Quest Reward'}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setModalOpen(false)}
+                  className="p-1 rounded-lg text-muted hover:text-ink hover:bg-black/5 dark:hover:bg-white/5"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4.5">
+                {/* Reward Short Title */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[12.5px] font-extrabold text-ink">Reward Title (Optional)</label>
+                    <span className="text-[11px] text-muted font-bold">e.g. Free Pot of Tea & Cake</span>
+                  </div>
+                  <input
+                    className="input w-full text-[13.5px]"
+                    placeholder="e.g. Pot of Ceylon Tea & Homemade Cake"
+                    value={formTitle}
+                    onChange={(e) => setFormTitle(e.target.value)}
+                  />
+                </div>
+
+                {/* Reward Description */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[12.5px] font-extrabold text-ink">
+                      Reward Description <span className="text-coral">*</span>
+                    </label>
+                    <span className="text-[11px] text-muted font-bold">Clear complimentary perk</span>
+                  </div>
+                  <textarea
+                    rows={3}
+                    className="input w-full text-[13.5px] py-2 leading-relaxed resize-none"
+                    placeholder="e.g. Free pot of premium Ceylon black tea and a slice of chocolate cake upon presenting verified quest completion code."
+                    value={formDesc}
+                    onChange={(e) => setFormDesc(e.target.value)}
+                  />
+                  <p className="text-[11.5px] text-muted font-medium">
+                    What will completed travellers receive when visiting your counter?
+                  </p>
+                </div>
+
+                {/* Daily Redemption Limit */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[12.5px] font-extrabold text-ink">Daily Redemption Limit</label>
+                    <span className="text-[11px] text-muted font-bold">0 = Unlimited</span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    className="input w-full text-[13.5px]"
+                    value={formLimit}
+                    onChange={(e) => setFormLimit(parseInt(e.target.value, 10) || 0)}
+                  />
+                  <p className="text-[11.5px] text-muted font-medium">
+                    Maximum number of rewards you wish to redeem per scheduled day.
+                  </p>
+                </div>
+
+                {/* Active for Scheduling Switch */}
+                <label className="flex items-center gap-3 p-3 rounded-xl bg-sand/60 border border-line cursor-pointer hover:bg-sand/80 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={formActive}
+                    onChange={(e) => setFormActive(e.target.checked)}
+                    className="w-4 h-4 accent-accent cursor-pointer rounded"
+                  />
+                  <div>
+                    <p className="text-[13px] font-extrabold text-ink">Active for Daily Quest Scheduling</p>
+                    <p className="text-[11.5px] text-muted font-medium">
+                      Keep enabled so Spotto Command Center admins can schedule this reward on featured days.
+                    </p>
+                  </div>
+                </label>
+
+                {/* Review Notice */}
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-[12px] font-semibold flex items-start gap-2">
+                  <Clock size={14} className="shrink-0 mt-0.5 text-amber-500" />
+                  <span>
+                    New proposals or changes to reward description are reviewed by the Spotto team to ensure guest safety and quality standards before going live.
+                  </span>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-sand/30 border-t border-line flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setModalOpen(false)}
+                  className="btn text-[13px] px-4 py-2 font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => saveMutation.mutate()}
+                  disabled={saveMutation.isPending || !formDesc.trim()}
+                  className="btn-accent text-[13px] px-5 py-2 rounded-xl flex items-center gap-2 font-extrabold shadow-sm"
+                >
+                  <Save size={15} />
+                  <span>{saveMutation.isPending ? 'Saving...' : editingItem ? 'Save Changes' : 'Submit Proposal'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Shell>
   );

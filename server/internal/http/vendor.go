@@ -1257,12 +1257,75 @@ func (s *Server) handleGetSponsorship(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, spons)
 }
 
-func (s *Server) handlePutSponsorship(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListSponsorships(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	spons, err := s.Store.ListVendorSponsorships(r.Context(), v.ID)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if spons == nil {
+		spons = []domain.VendorSponsorship{}
+	}
+	writeJSON(w, http.StatusOK, spons)
+}
+
+func (s *Server) handleCreateSponsorship(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireVendor(w, r)
 	if !ok {
 		return
 	}
 	var req struct {
+		Title             string `json:"title"`
+		RewardDescription string `json:"rewardDescription"`
+		RewardLimit       int    `json:"rewardLimit"`
+		IsActive          *bool  `json:"isActive"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.RewardDescription) == "" {
+		writeErr(w, http.StatusBadRequest, "rewardDescription is required")
+		return
+	}
+	isActive := true
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+	spons := domain.VendorSponsorship{
+		ID:                newID("spon"),
+		VendorID:          v.ID,
+		Title:             strings.TrimSpace(req.Title),
+		RewardDescription: strings.TrimSpace(req.RewardDescription),
+		RewardLimit:       req.RewardLimit,
+		IsActive:          isActive,
+		Status:            "pending",
+	}
+	if err := s.Store.CreateVendorSponsorship(r.Context(), spons); err != nil {
+		storeErr(w, err)
+		return
+	}
+	if created, err := s.Store.GetVendorSponsorship(r.Context(), spons.ID); err == nil {
+		spons = created
+	}
+	writeJSON(w, http.StatusCreated, spons)
+}
+
+func (s *Server) handleUpdateSponsorship(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeErr(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	var req struct {
+		Title             string `json:"title"`
 		RewardDescription string `json:"rewardDescription"`
 		RewardLimit       int    `json:"rewardLimit"`
 		IsActive          bool   `json:"isActive"`
@@ -1270,21 +1333,81 @@ func (s *Server) handlePutSponsorship(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.RewardDescription == "" {
+	if strings.TrimSpace(req.RewardDescription) == "" {
 		writeErr(w, http.StatusBadRequest, "rewardDescription is required")
 		return
 	}
 	spons := domain.VendorSponsorship{
+		ID:                id,
 		VendorID:          v.ID,
-		RewardDescription: req.RewardDescription,
+		Title:             strings.TrimSpace(req.Title),
+		RewardDescription: strings.TrimSpace(req.RewardDescription),
 		RewardLimit:       req.RewardLimit,
 		IsActive:          req.IsActive,
 	}
-	if err := s.Store.UpsertVendorSponsorship(r.Context(), spons); err != nil {
+	if err := s.Store.UpdateVendorSponsorship(r.Context(), spons); err != nil {
 		storeErr(w, err)
 		return
 	}
-	if updated, err := s.Store.GetVendorSponsorship(r.Context(), v.ID); err == nil {
+	if updated, err := s.Store.GetVendorSponsorship(r.Context(), id); err == nil {
+		spons = updated
+	}
+	writeJSON(w, http.StatusOK, spons)
+}
+
+func (s *Server) handleDeleteSponsorship(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeErr(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	if err := s.Store.DeleteVendorSponsorship(r.Context(), id, v.ID); err != nil {
+		if strings.Contains(err.Error(), "scheduled") {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handlePutSponsorship(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.requireVendor(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		ID                string `json:"id,omitempty"`
+		Title             string `json:"title,omitempty"`
+		RewardDescription string `json:"rewardDescription"`
+		RewardLimit       int    `json:"rewardLimit"`
+		IsActive          bool   `json:"isActive"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.RewardDescription) == "" {
+		writeErr(w, http.StatusBadRequest, "rewardDescription is required")
+		return
+	}
+	spons := domain.VendorSponsorship{
+		ID:                req.ID,
+		VendorID:          v.ID,
+		Title:             strings.TrimSpace(req.Title),
+		RewardDescription: strings.TrimSpace(req.RewardDescription),
+		RewardLimit:       req.RewardLimit,
+		IsActive:          req.IsActive,
+	}
+	if err := s.Store.UpsertVendorSponsorship(r.Context(), &spons); err != nil {
+		storeErr(w, err)
+		return
+	}
+	if updated, err := s.Store.GetVendorSponsorship(r.Context(), spons.ID); err == nil {
 		spons = updated
 	}
 	writeJSON(w, http.StatusOK, spons)
@@ -1330,9 +1453,15 @@ func (s *Server) handleQuestValidate(w http.ResponseWriter, r *http.Request, v d
 	}
 
 	// Check if vendor has an active sponsorship
-	spons, err := s.Store.GetVendorSponsorship(r.Context(), v.ID)
+	var spons domain.VendorSponsorship
+	if schedule.SponsorshipID != "" {
+		spons, err = s.Store.GetVendorSponsorship(r.Context(), schedule.SponsorshipID)
+	}
+	if schedule.SponsorshipID == "" || err != nil || !spons.IsActive || spons.Status != "approved" {
+		spons, err = s.Store.GetVendorSponsorship(r.Context(), v.ID)
+	}
 	if err != nil || !spons.IsActive || spons.Status != "approved" {
-		writeJSON(w, http.StatusOK, map[string]any{"result": "unknown"}) // For now, just unknown if not active/approved
+		writeJSON(w, http.StatusOK, map[string]any{"result": "unknown"})
 		return
 	}
 	

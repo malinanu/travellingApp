@@ -36,6 +36,7 @@ type Tab = 'queue' | 'approved' | 'scheduler' | 'completions';
 export default function QuestsPage() {
   const [tab, setTab] = useState<Tab>('queue');
   const [prefilledVendor, setPrefilledVendor] = useState<string>('');
+  const [prefilledSponsorship, setPrefilledSponsorship] = useState<string>('');
   const [searchFilter, setSearchFilter] = useState('');
   const qc = useQueryClient();
 
@@ -76,8 +77,9 @@ export default function QuestsPage() {
     [schedules]
   );
 
-  const handleScheduleSponsor = (vendorId: string) => {
+  const handleScheduleSponsor = (vendorId: string, sponsorshipId?: string) => {
     setPrefilledVendor(vendorId);
+    setPrefilledSponsorship(sponsorshipId || '');
     setTab('scheduler');
   };
 
@@ -115,7 +117,7 @@ export default function QuestsPage() {
                 <Award size={16} />
               </div>
               <div>
-                <p className="text-[10.5px] font-bold text-muted uppercase tracking-wider">Approved Sponsors</p>
+                <p className="text-[10.5px] font-bold text-muted uppercase tracking-wider">Approved Perks</p>
                 <p className="text-[16px] font-bold text-ink leading-tight">{approved.length}</p>
               </div>
             </div>
@@ -163,7 +165,7 @@ export default function QuestsPage() {
                   : 'text-ink-soft hover:text-ink hover:bg-black/5 dark:hover:bg-white/5'
               }`}
             >
-              <span>Approved Sponsors</span>
+              <span>Approved Perks</span>
               <span
                 className={`text-[11px] font-bold px-1.5 py-0.2 rounded-full ${
                   tab === 'approved' ? 'bg-white/20 text-white' : 'bg-black/10 dark:bg-white/10 text-muted'
@@ -251,7 +253,11 @@ export default function QuestsPage() {
             approved={approved}
             schedules={schedules}
             prefilledVendor={prefilledVendor}
-            onClearPrefilled={() => setPrefilledVendor('')}
+            prefilledSponsorship={prefilledSponsorship}
+            onClearPrefilled={() => {
+              setPrefilledVendor('');
+              setPrefilledSponsorship('');
+            }}
           />
         )}
 
@@ -304,6 +310,7 @@ function ApprovalQueueTab({
         s.vendorTown?.toLowerCase().includes(q) ||
         s.vendorCategory?.toLowerCase().includes(q) ||
         s.vendorId.toLowerCase().includes(q) ||
+        s.title?.toLowerCase().includes(q) ||
         s.rewardDescription.toLowerCase().includes(q)
     );
   }, [items, filter]);
@@ -405,15 +412,16 @@ function ApprovalQueueTab({
         <div className="grid grid-cols-1 gap-4">
           {filtered.map((s) => {
             const isItemRejected = s.status === 'rejected';
+            const actionId = s.id || s.vendorId;
 
             return (
               <div
-                key={s.vendorId}
-                className="panel p-5 transition-all hover:border-accent/40 shadow-sm"
+                key={s.id || s.vendorId}
+                className="panel p-5 transition-all hover:border-accent/40 shadow-sm space-y-4"
               >
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  {/* Vendor Identification Details */}
-                  <div className="space-y-2 min-w-0 flex-1">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                  {/* Vendor Details */}
+                  <div className="space-y-1 min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2.5">
                       <Link
                         href={`/vendors?id=${s.vendorId}`}
@@ -439,102 +447,112 @@ function ApprovalQueueTab({
                       <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-black/5 dark:bg-white/5 text-muted border border-line">
                         {s.vendorId}
                       </span>
-
-                      {isItemRejected ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">
-                          <XCircle size={11} /> Edits Requested
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                          <Clock size={11} /> Pending Review
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Reward Description & Limit Block */}
-                    <div className="rounded-xl p-3 bg-black/[0.02] dark:bg-white/[0.02] border border-line flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-start gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center shrink-0 mt-0.5">
-                          <Gift size={16} />
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-bold text-muted uppercase tracking-wider">Offered Quest Reward</p>
-                          <p className="text-[14px] font-bold text-ink leading-snug">{s.rewardDescription}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-4 text-[12.5px] font-medium shrink-0 pt-2 sm:pt-0 sm:border-l sm:border-line sm:pl-4">
-                        <div>
-                          <span className="text-muted block text-[11px] font-bold uppercase">Daily Limit</span>
-                          <span className="font-bold text-ink">
-                            {s.rewardLimit > 0 ? `${s.rewardLimit} per day` : 'Unlimited'}
-                          </span>
-                        </div>
-
-                        <div>
-                          <span className="text-muted block text-[11px] font-bold uppercase">Sponsorship</span>
-                          <span className={`font-bold ${s.isActive ? 'text-emerald-500' : 'text-muted'}`}>
-                            {s.isActive ? 'Active' : 'Disabled by vendor'}
-                          </span>
-                        </div>
-                      </div>
                     </div>
 
                     {s.createdAt && (
                       <p className="text-[11.5px] text-muted font-medium">
-                        Requested {timeAgo(s.createdAt)}
+                        Submitted {timeAgo(s.createdAt)}
                       </p>
                     )}
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="flex items-center gap-2.5 shrink-0 self-end lg:self-center">
-                    {isItemRejected ? (
-                      <>
-                        <button
-                          onClick={() => onResetPending(s.vendorId)}
-                          disabled={isPending}
-                          className="btn text-amber-500 hover:border-amber-500/50 hover:bg-amber-500/10 flex items-center gap-1.5 px-3.5 py-2 text-[13px]"
-                          title="Restore to Pending Review status"
-                        >
-                          <Undo2 size={15} />
-                          <span>Reset to Pending</span>
-                        </button>
+                  {/* Prominent Status Pill */}
+                  {isItemRejected ? (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-extrabold bg-rose-500/10 text-rose-500 border border-rose-500/20 shrink-0">
+                      <XCircle size={12} /> Edits Requested
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-extrabold bg-amber-500/15 text-amber-600 border border-amber-500/25 shrink-0">
+                      <Clock size={12} /> Pending Admin Review
+                    </span>
+                  )}
+                </div>
 
-                        <button
-                          onClick={() => onApprove(s.vendorId)}
-                          disabled={isPending}
-                          className="btn bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-600 flex items-center gap-1.5 px-4 py-2 text-[13px] shadow-sm font-bold"
-                          title="Reconsider and approve proposal"
-                        >
-                          <CheckCircle2 size={16} />
-                          <span>Approve Sponsorship</span>
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => onReject(s.vendorId)}
-                          disabled={isPending}
-                          className="btn text-rose-500 hover:border-rose-500/50 hover:bg-rose-500/10 flex items-center gap-1.5 px-3.5 py-2 text-[13px]"
-                          title="Reject proposal"
-                        >
-                          <XCircle size={16} />
-                          <span>Reject</span>
-                        </button>
-
-                        <button
-                          onClick={() => onApprove(s.vendorId)}
-                          disabled={isPending}
-                          className="btn bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-600 flex items-center gap-1.5 px-4 py-2 text-[13px] shadow-sm font-bold"
-                          title="Approve for scheduling"
-                        >
-                          <CheckCircle2 size={16} />
-                          <span>Approve Sponsorship</span>
-                        </button>
-                      </>
-                    )}
+                {/* Reward Description & Limit Block */}
+                <div className="rounded-xl p-4 bg-black/[0.02] dark:bg-white/[0.02] border border-line flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <div className="w-9 h-9 rounded-xl bg-accent/15 text-accent flex items-center justify-center shrink-0 mt-0.5">
+                      <Gift size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      {s.title && (
+                        <p className="font-extrabold text-[14.5px] text-ink mb-0.5 leading-snug">
+                          {s.title}
+                        </p>
+                      )}
+                      <p className="text-[10.5px] font-bold text-muted uppercase tracking-wider">
+                        Offered Quest Reward
+                      </p>
+                      <p className="text-[14px] font-bold text-ink leading-relaxed mt-0.5">
+                        {s.rewardDescription}
+                      </p>
+                    </div>
                   </div>
+
+                  <div className="flex items-center gap-4 text-[12.5px] font-medium shrink-0 pt-2 md:pt-0 md:border-l md:border-line md:pl-5">
+                    <div>
+                      <span className="text-muted block text-[11px] font-bold uppercase">Daily Limit</span>
+                      <span className="font-bold text-ink">
+                        {s.rewardLimit > 0 ? `${s.rewardLimit} / day` : 'Unlimited'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-muted block text-[11px] font-bold uppercase">Sponsorship</span>
+                      <span className={`font-bold ${s.isActive ? 'text-emerald-500' : 'text-muted'}`}>
+                        {s.isActive ? 'Active' : 'Paused by vendor'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Clear, Prominent Action Strip */}
+                <div className="flex items-center justify-end gap-3 pt-2 border-t border-line">
+                  {isItemRejected ? (
+                    <>
+                      <button
+                        onClick={() => onResetPending(actionId)}
+                        disabled={isPending}
+                        className="btn text-amber-500 hover:border-amber-500/50 hover:bg-amber-500/10 flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold rounded-xl transition-all"
+                        title="Restore to Pending Review status"
+                      >
+                        <Undo2 size={15} />
+                        <span>Reset to Pending</span>
+                      </button>
+
+                      <button
+                        onClick={() => onApprove(actionId)}
+                        disabled={isPending}
+                        className="btn bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-600 flex items-center gap-2 px-5 py-2 text-[13px] shadow-sm font-extrabold rounded-xl transition-all"
+                        title="Reconsider and approve proposal"
+                      >
+                        <CheckCircle2 size={16} />
+                        <span>Approve Reward</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => onReject(actionId)}
+                        disabled={isPending}
+                        className="btn border-rose-300 dark:border-rose-900/60 text-rose-600 hover:bg-rose-500/10 hover:border-rose-400 flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold rounded-xl transition-all"
+                        title="Reject or request edits for this perk"
+                      >
+                        <XCircle size={15} />
+                        <span>Request Edits / Reject</span>
+                      </button>
+
+                      <button
+                        onClick={() => onApprove(actionId)}
+                        disabled={isPending}
+                        className="btn bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-600 flex items-center gap-2 px-5 py-2 text-[13px] shadow-sm font-extrabold rounded-xl transition-all"
+                        title="Approve for scheduling"
+                      >
+                        <CheckCircle2 size={16} />
+                        <span>Approve Reward</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -546,7 +564,7 @@ function ApprovalQueueTab({
 }
 
 // -------------------------------------------------------------
-// Sub-tab 2: Approved Sponsors
+// Sub-tab 2: Approved Sponsors & Rewards
 // -------------------------------------------------------------
 function ApprovedSponsorsTab({
   items,
@@ -559,7 +577,7 @@ function ApprovedSponsorsTab({
   items: VendorSponsorship[];
   isLoading: boolean;
   filter: string;
-  onSchedule: (id: string) => void;
+  onSchedule: (vendorId: string, sponsorshipId?: string) => void;
   onRevoke: (id: string) => void;
   isPending: boolean;
 }) {
@@ -572,6 +590,7 @@ function ApprovedSponsorsTab({
         s.vendorTown?.toLowerCase().includes(q) ||
         s.vendorCategory?.toLowerCase().includes(q) ||
         s.vendorId.toLowerCase().includes(q) ||
+        s.title?.toLowerCase().includes(q) ||
         s.rewardDescription.toLowerCase().includes(q)
     );
   }, [items, filter]);
@@ -591,7 +610,7 @@ function ApprovedSponsorsTab({
         <div className="w-12 h-12 rounded-2xl bg-black/5 dark:bg-white/5 text-muted flex items-center justify-center mx-auto mb-3">
           <Award size={24} />
         </div>
-        <h3 className="font-bold text-[16px] text-ink">No approved sponsors found</h3>
+        <h3 className="font-bold text-[16px] text-ink">No approved rewards found</h3>
         <p className="text-[13px] text-muted max-w-md mx-auto mt-1 font-medium">
           Once you approve vendor sponsorship requests from the Approval Queue, they will be listed here ready to be scheduled for daily quests.
         </p>
@@ -602,13 +621,13 @@ function ApprovedSponsorsTab({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between text-[12px] font-bold text-muted px-1">
-        <span>{filtered.length} approved {filtered.length === 1 ? 'sponsor' : 'sponsors'} ready to schedule</span>
-        <span>Click &ldquo;Schedule Quest&rdquo; to assign a date</span>
+        <span>{filtered.length} approved {filtered.length === 1 ? 'reward' : 'rewards'} ready to schedule</span>
+        <span>Click &ldquo;Schedule Quest&rdquo; to feature this perk on a date</span>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filtered.map((s) => (
-          <div key={s.vendorId} className="panel p-5 flex flex-col justify-between gap-4 transition-all hover:border-accent/40">
+          <div key={s.id || s.rewardDescription} className="panel p-5 flex flex-col justify-between gap-4 transition-all hover:border-accent/40">
             <div>
               <div className="flex items-start justify-between gap-2">
                 <div>
@@ -636,11 +655,14 @@ function ApprovedSponsorsTab({
                 </span>
               </div>
 
-              <div className="mt-3.5 p-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-line">
-                <p className="text-[11px] font-bold text-muted uppercase tracking-wider">Reward</p>
-                <p className="text-[13.5px] font-bold text-ink mt-0.5">{s.rewardDescription}</p>
-                <div className="flex items-center gap-3 mt-1.5 text-[11.5px] text-muted font-medium">
-                  <span>Limit: {s.rewardLimit > 0 ? `${s.rewardLimit}/day` : 'Unlimited'}</span>
+              <div className="mt-3.5 p-3.5 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-line">
+                {s.title && (
+                  <p className="font-extrabold text-[13.5px] text-ink mb-0.5">{s.title}</p>
+                )}
+                <p className="text-[10.5px] font-bold text-muted uppercase tracking-wider">Perk Description</p>
+                <p className="text-[13.5px] font-bold text-ink mt-0.5 leading-relaxed">{s.rewardDescription}</p>
+                <div className="flex items-center gap-3 mt-2 text-[11.5px] text-muted font-medium">
+                  <span>Limit: <strong className="text-ink">{s.rewardLimit > 0 ? `${s.rewardLimit}/day` : 'Unlimited'}</strong></span>
                   <span>·</span>
                   <span className={s.isActive ? 'text-emerald-500 font-semibold' : 'text-muted'}>
                     {s.isActive ? 'Active sponsorship' : 'Turned off by vendor'}
@@ -649,19 +671,19 @@ function ApprovedSponsorsTab({
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-2 border-t border-line">
+            <div className="flex items-center justify-between pt-3 border-t border-line">
               <span className="font-mono text-[11px] text-muted">{s.vendorId}</span>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => onRevoke(s.vendorId)}
+                  onClick={() => onRevoke(s.id || s.vendorId)}
                   disabled={isPending}
                   className="text-[12px] font-bold text-rose-500 hover:underline px-2 py-1"
                 >
                   Revoke
                 </button>
                 <button
-                  onClick={() => onSchedule(s.vendorId)}
-                  className="btn btn-primary flex items-center gap-1.5 text-[12.5px] py-1.5 px-3.5"
+                  onClick={() => onSchedule(s.vendorId, s.id)}
+                  className="btn btn-primary flex items-center gap-1.5 text-[12.5px] py-1.5 px-3.5 font-bold shadow-xs"
                 >
                   <Calendar size={13} />
                   <span>Schedule Quest</span>
@@ -682,28 +704,64 @@ function SchedulerTab({
   approved,
   schedules,
   prefilledVendor,
+  prefilledSponsorship,
   onClearPrefilled,
 }: {
   approved: VendorSponsorship[];
   schedules: QuestSchedule[];
   prefilledVendor: string;
+  prefilledSponsorship: string;
   onClearPrefilled: () => void;
 }) {
   const qc = useQueryClient();
   const todayStr = new Date().toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [selectedVendor, setSelectedVendor] = useState(prefilledVendor || (approved[0]?.vendorId ?? ''));
+  const [selectedSponsorshipId, setSelectedSponsorshipId] = useState(prefilledSponsorship || '');
   const [goal, setGoal] = useState(5);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
+
+  // Group approved rewards by vendor
+  const uniqueVendors = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; town: string; count: number }>();
+    for (const a of approved) {
+      if (!map.has(a.vendorId)) {
+        map.set(a.vendorId, {
+          id: a.vendorId,
+          name: a.vendorName || a.vendorId,
+          town: a.vendorTown || '',
+          count: 0,
+        });
+      }
+      map.get(a.vendorId)!.count++;
+    }
+    return Array.from(map.values());
+  }, [approved]);
 
   // Synchronize prefilled vendor when prop updates or approved list loads
   useEffect(() => {
     if (prefilledVendor) {
       setSelectedVendor(prefilledVendor);
-    } else if (!selectedVendor && approved.length > 0) {
+    } else if (approved.length > 0 && !approved.some((a) => a.vendorId === selectedVendor)) {
       setSelectedVendor(approved[0].vendorId);
     }
-  }, [prefilledVendor, approved, selectedVendor]);
+  }, [prefilledVendor, approved]);
+
+  // Filter approved rewards for the currently selected vendor
+  const vendorRewards = useMemo(() => {
+    return approved.filter((a) => a.vendorId === selectedVendor);
+  }, [approved, selectedVendor]);
+
+  // Keep selected sponsorship ID in sync with the vendor's rewards
+  useEffect(() => {
+    if (prefilledSponsorship && vendorRewards.some((r) => r.id === prefilledSponsorship)) {
+      setSelectedSponsorshipId(prefilledSponsorship);
+    } else if (vendorRewards.length > 0 && !vendorRewards.some((r) => r.id === selectedSponsorshipId)) {
+      setSelectedSponsorshipId(vendorRewards[0].id || '');
+    } else if (vendorRewards.length === 0) {
+      setSelectedSponsorshipId('');
+    }
+  }, [selectedVendor, prefilledSponsorship]);
 
   const existingScheduleForDate = useMemo(
     () => schedules.find((s) => s.date === selectedDate),
@@ -711,7 +769,7 @@ function SchedulerTab({
   );
 
   const scheduleMutation = useMutation({
-    mutationFn: (req: { date: string; vendorId: string; goal: number }) =>
+    mutationFn: (req: { date: string; vendorId: string; sponsorshipId?: string; goal: number }) =>
       api.post('/admin/quests/schedules', req),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-quests'] });
@@ -736,13 +794,14 @@ function SchedulerTab({
     scheduleMutation.mutate({
       date: selectedDate,
       vendorId: selectedVendor,
+      sponsorshipId: selectedSponsorshipId || undefined,
       goal: Number(goal) || 5,
     });
   };
 
-  const selectedVendorData = useMemo(
-    () => approved.find((a) => a.vendorId === selectedVendor),
-    [approved, selectedVendor]
+  const selectedRewardData = useMemo(
+    () => approved.find((a) => a.id === selectedSponsorshipId || (a.vendorId === selectedVendor && !selectedSponsorshipId)),
+    [approved, selectedSponsorshipId, selectedVendor]
   );
 
   return (
@@ -752,7 +811,7 @@ function SchedulerTab({
         <div>
           <h2 className="font-bold text-[16px] text-ink">Schedule a Quest Day</h2>
           <p className="text-[12.5px] text-muted font-medium mt-0.5">
-            Select an approved sponsor to be the featured destination for travellers.
+            Select an approved sponsor and reward to feature for travellers on a specific date.
           </p>
         </div>
 
@@ -801,7 +860,7 @@ function SchedulerTab({
                 <AlertCircle size={15} className="shrink-0 mt-0.5 text-amber-500" />
                 <span>
                   <strong>{selectedDate}</strong> is currently scheduled for{' '}
-                  <strong>{existingScheduleForDate.sponsorName || existingScheduleForDate.vendorId}</strong>. Submitting will reassign this quest day.
+                  <strong>{existingScheduleForDate.sponsorName || existingScheduleForDate.vendorId}</strong> ({existingScheduleForDate.rewardDescription}). Submitting will reassign this quest day.
                 </span>
               </div>
             ) : selectedDate ? (
@@ -814,9 +873,9 @@ function SchedulerTab({
 
           <div>
             <label className="block text-[12px] font-bold text-muted mb-1.5 uppercase tracking-wider">
-              Featured Sponsor
+              Featured Vendor
             </label>
-            {approved.length === 0 ? (
+            {uniqueVendors.length === 0 ? (
               <p className="text-[13px] text-rose-500 font-bold p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
                 No approved sponsors available. Please approve a sponsorship from the Approval Queue first.
               </p>
@@ -827,22 +886,45 @@ function SchedulerTab({
                 required
                 className="input text-[13.5px] cursor-pointer"
               >
-                <option value="">-- Choose an approved sponsor --</option>
-                {approved.map((s) => (
-                  <option key={s.vendorId} value={s.vendorId}>
-                    {s.vendorName || s.vendorId} ({s.vendorTown || 'Unknown'} · {s.rewardDescription})
+                <option value="">-- Choose an approved vendor --</option>
+                {uniqueVendors.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name} ({v.town || 'Unknown'} · {v.count} {v.count === 1 ? 'reward' : 'rewards'})
                   </option>
                 ))}
               </select>
             )}
           </div>
 
-          {selectedVendorData && (
-            <div className="rounded-xl p-3 bg-black/[0.02] dark:bg-white/[0.02] border border-line space-y-1">
-              <p className="text-[11px] font-bold text-muted uppercase">Selected Reward</p>
-              <p className="text-[13px] font-bold text-ink">{selectedVendorData.rewardDescription}</p>
-              <p className="text-[11px] text-muted">
-                Limit: {selectedVendorData.rewardLimit > 0 ? `${selectedVendorData.rewardLimit}/day` : 'Unlimited'} · Location: {selectedVendorData.vendorTown || '—'}
+          {/* Reward Picker for selected vendor */}
+          {vendorRewards.length > 0 && (
+            <div>
+              <label className="block text-[12px] font-bold text-muted mb-1.5 uppercase tracking-wider">
+                Featured Quest Reward
+              </label>
+              <select
+                value={selectedSponsorshipId}
+                onChange={(e) => setSelectedSponsorshipId(e.target.value)}
+                className="input text-[13.5px] cursor-pointer"
+              >
+                {vendorRewards.map((r) => (
+                  <option key={r.id || r.rewardDescription} value={r.id || ''}>
+                    {r.title ? `${r.title} — ` : ''}{r.rewardDescription} ({r.rewardLimit > 0 ? `Limit ${r.rewardLimit}` : 'Unlimited'})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {selectedRewardData && (
+            <div className="rounded-xl p-3.5 bg-black/[0.02] dark:bg-white/[0.02] border border-line space-y-1">
+              <p className="text-[10.5px] font-bold text-muted uppercase tracking-wider">Featured Reward Preview</p>
+              {selectedRewardData.title && (
+                <p className="text-[14px] font-black text-ink">{selectedRewardData.title}</p>
+              )}
+              <p className="text-[13px] font-bold text-ink leading-relaxed">{selectedRewardData.rewardDescription}</p>
+              <p className="text-[11.5px] text-muted font-medium mt-1">
+                Limit: {selectedRewardData.rewardLimit > 0 ? `${selectedRewardData.rewardLimit}/day` : 'Unlimited'} · Location: {selectedRewardData.vendorTown || '—'}
               </p>
             </div>
           )}
@@ -936,7 +1018,7 @@ function SchedulerTab({
                   </div>
 
                   <p className="text-[13px] text-muted font-medium truncate">
-                    Reward: <span className="text-ink font-semibold">{s.rewardDescription || 'Special Perk'}</span>
+                    Reward: <span className="text-ink font-semibold">{s.rewardTitle ? `${s.rewardTitle} — ` : ''}{s.rewardDescription || 'Special Perk'}</span>
                     {' '}(Goal: {s.goal || 5} stops)
                   </p>
                 </div>

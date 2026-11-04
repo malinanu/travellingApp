@@ -518,8 +518,11 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	var req struct {
-		ShareLocation  *bool `json:"shareLocation"`
-		UsageAnalytics *bool `json:"usageAnalytics"`
+		ShareLocation      *bool `json:"shareLocation"`
+		UsageAnalytics     *bool `json:"usageAnalytics"`
+		VisibleToGroup     *bool `json:"visibleToGroup"`
+		CountVibeVotes     *bool `json:"countVibeVotes"`
+		PersonalisedOffers *bool `json:"personalisedOffers"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -536,12 +539,36 @@ func (s *Server) handleUpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.VisibleToGroup != nil {
+		if err := s.Store.SetVisibleToGroup(r.Context(), c.Subject, *req.VisibleToGroup); err != nil {
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
+			return
+		}
+	}
+	if req.CountVibeVotes != nil {
+		if err := s.Store.SetCountVibeVotes(r.Context(), c.Subject, *req.CountVibeVotes); err != nil {
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
+			return
+		}
+	}
+	if req.PersonalisedOffers != nil {
+		if err := s.Store.SetPersonalisedOffers(r.Context(), c.Subject, *req.PersonalisedOffers); err != nil {
+			writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
+			return
+		}
+	}
 	u, err := s.Store.UserByID(r.Context(), c.Subject)
 	if err != nil {
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"shareLocation": u.ShareLocation, "usageAnalytics": u.UsageAnalytics})
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"shareLocation":      u.ShareLocation,
+		"usageAnalytics":     u.UsageAnalytics,
+		"visibleToGroup":     u.VisibleToGroup,
+		"countVibeVotes":     u.CountVibeVotes,
+		"personalisedOffers": u.PersonalisedOffers,
+	})
 }
 
 // handleUpdateMyContact updates the account page's editable identity
@@ -811,16 +838,82 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 
 // handleExportData returns an archive of user profile data and activity.
 func (s *Server) handleExportData(w http.ResponseWriter, r *http.Request) {
-	c := auth.FromContext(r.Context())
-	u, err := s.Store.UserByID(r.Context(), c.Subject)
+	ctx := r.Context()
+	c := auth.FromContext(ctx)
+	u, err := s.Store.UserByID(ctx, c.Subject)
 	if err != nil {
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"user":        u,
-		"exported_at": time.Now().UTC(),
-	})
+	u.PasswordHash = ""
+	u.TOTPSecret = ""
+	u.TOTPPendingSecret = ""
+
+	savedPlaces, err := s.Store.SavedPlaces(ctx, c.Subject)
+	if err != nil {
+		savedPlaces = []domain.SavedPlace{}
+	}
+	inspirationLinks, err := s.Store.InspirationLinks(ctx, c.Subject)
+	if err != nil {
+		inspirationLinks = []domain.InspirationLink{}
+	}
+	trips, err := s.Store.TripsByOwner(ctx, c.Subject)
+	if err != nil {
+		trips = []domain.Trip{}
+	}
+	reviews, err := s.Store.ReviewsByTraveller(ctx, c.Subject)
+	if err != nil {
+		reviews = []domain.Review{}
+	}
+	checkins, err := s.Store.CheckinsByTraveller(ctx, c.Subject)
+	if err != nil {
+		checkins = []domain.Checkin{}
+	}
+	vibeCheckins, err := s.Store.VibeCheckinsByTraveller(ctx, c.Subject)
+	if err != nil {
+		vibeCheckins = []domain.VibeCheckin{}
+	}
+	questCompletions, err := s.Store.ListQuestCompletions(ctx, domain.QuestCompletionFilter{TravellerID: c.Subject, Limit: 1000})
+	if err != nil {
+		questCompletions = []domain.QuestCompletion{}
+	}
+	claims, err := s.Store.ClaimsByTraveller(ctx, c.Subject)
+	if err != nil {
+		claims = []domain.Claim{}
+	}
+	guideConversations, err := s.Store.GuideConversationsByTraveller(ctx, c.Subject)
+	if err != nil {
+		guideConversations = []domain.GuideConversation{}
+	}
+	userSessions, err := s.Store.AllUserSessions(ctx, c.Subject)
+	if err != nil {
+		userSessions = []domain.Session{}
+	}
+
+	now := time.Now().UTC()
+	export := map[string]any{
+		"version":             "1.0",
+		"exported_at":         now,
+		"exportedAt":          now,
+		"user":                u,
+		"saved_places":        savedPlaces,
+		"savedPlaces":         savedPlaces,
+		"inspiration_links":   inspirationLinks,
+		"inspirationLinks":    inspirationLinks,
+		"trips":               trips,
+		"reviews":             reviews,
+		"checkins":            checkins,
+		"vibe_checkins":       vibeCheckins,
+		"vibeCheckins":        vibeCheckins,
+		"quest_completions":   questCompletions,
+		"questCompletions":    questCompletions,
+		"claims":              claims,
+		"guide_conversations": guideConversations,
+		"guideConversations":  guideConversations,
+		"user_sessions":       userSessions,
+		"userSessions":        userSessions,
+	}
+	writeJSON(w, http.StatusOK, export)
 }
 
 // handleAppleAuth handles Sign in with Apple logins & registrations.

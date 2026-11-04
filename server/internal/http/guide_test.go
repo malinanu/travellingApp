@@ -141,5 +141,82 @@ func TestSearchCatalogPlaces_MirissaAndArugamBay(t *testing.T) {
 	if !strings.Contains(resPersonalized[0].Summary, "[Saved in your bookmarks]") {
 		t.Errorf("expected summary to indicate bookmark, got: %s", resPersonalized[0].Summary)
 	}
+
+	// AvoidIDs exclusion test: when p_mirissa_1 is avoided, search must not return it
+	turnWithAvoid := &guideTurn{
+		avoidIDs: []string{"p_mirissa_1"},
+	}
+	resAvoided := s.searchCatalogPlaces(ctx, "places in Mirissa", 6, userLoc, turnWithAvoid)
+	for _, p := range resAvoided {
+		if p.Ref == "p:p_mirissa_1" || p.Name == "Coconut Tree Hill" {
+			t.Errorf("expected p_mirissa_1 to be excluded, but got: %+v", p)
+		}
+	}
+}
+
+func TestIsRequestingAlternativesOrMore(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{"give me more place", true},
+		{"I don't like these places, give me more place", true},
+		{"dont like these spots", true},
+		{"give me more options", true},
+		{"other places to visit", true},
+		{"different spots in Mirissa", true},
+		{"can you swap places", true},
+		{"show me something else", true},
+		{"🔄 Give me more options", true},
+		{"🔄 More recommendations", true},
+		{"give me other suggestions", true},
+		{"any alternatives?", true},
+		{"can you replace this stop", true},
+		{"dont want these places", true},
+		{"show me something different", true},
+		{"Where can I get coffee in Galle?", false},
+		{"Plan a trip to Mirissa", false},
+		{"What is the weather today?", false},
+		{"Best cafes nearby", false},
+	}
+
+	for _, c := range cases {
+		got := isRequestingAlternativesOrMore(c.input)
+		if got != c.want {
+			t.Errorf("isRequestingAlternativesOrMore(%q) = %v, want %v", c.input, got, c.want)
+		}
+	}
+}
+
+func TestGuideSuggestionsForReply(t *testing.T) {
+	// 1. Trip plan reply
+	planRes := guideChatResult{
+		Reply:   "Here is your trip",
+		Payload: &guidePayload{Type: guidePayloadPlan, Plan: &guidePlan{ID: "gp_1", Title: "Trip"}},
+	}
+	planSuggestions := guideSuggestionsForReply(planRes, nil)
+	if len(planSuggestions) == 0 || !strings.Contains(planSuggestions[0], "more options") {
+		t.Errorf("expected plan suggestions, got: %v", planSuggestions)
+	}
+
+	// 2. Place cards reply
+	placeRes := guideChatResult{
+		Reply:    "Check these out",
+		PlaceIDs: []string{"p1", "p2"},
+	}
+	cards := []guidePlaceCard{{ID: "p1", Name: "Spot 1"}}
+	placeSuggestions := guideSuggestionsForReply(placeRes, cards)
+	if len(placeSuggestions) == 0 || !strings.Contains(placeSuggestions[1], "Plan a trip") {
+		t.Errorf("expected place suggestions, got: %v", placeSuggestions)
+	}
+
+	// 3. Advice / Q&A reply
+	adviceRes := guideChatResult{
+		Reply: "Mirissa is great for surfing from November to April.",
+	}
+	adviceSuggestions := guideSuggestionsForReply(adviceRes, nil)
+	if len(adviceSuggestions) == 0 || !strings.Contains(adviceSuggestions[0], "Plan a trip") {
+		t.Errorf("expected advice suggestions, got: %v", adviceSuggestions)
+	}
 }
 

@@ -6,6 +6,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_client.dart';
@@ -16,6 +17,8 @@ import '../../../core/widgets/spotto_icons.dart';
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import '../place_detail/business_drawer.dart';
+import 'guide_cards.dart';
+import 'guide_payload.dart';
 
 /// Most cards shown under one reply.
 const kGuideMaxCards = 4;
@@ -152,6 +155,7 @@ class GuidePlaceCard extends ConsumerStatefulWidget {
 
 class _GuidePlaceCardState extends ConsumerState<GuidePlaceCard> {
   bool _opening = false;
+  bool _adding = false;
 
   /// Opens the place drawer — straight from the cached places list, or
   /// after fetching the place if the guide found one the app hasn't loaded.
@@ -174,24 +178,68 @@ class _GuidePlaceCardState extends ConsumerState<GuidePlaceCard> {
     }
   }
 
+  Future<void> _addToTrip() async {
+    final p = widget.place;
+    setState(() => _adding = true);
+    try {
+      final isGeo = p.id.startsWith('gp_') || p.id.startsWith('g:');
+      final cleanId = p.id.replaceFirst(RegExp(r'^(p:|g:)'), '');
+      final action = GuideCalendarAction(
+        title: p.name,
+        dayCount: 1,
+        stops: [
+          GuideCalendarStop(
+            dayIndex: 0,
+            place: GuidePlanPlace(
+              ref: isGeo ? 'g:$cleanId' : 'p:$cleanId',
+              placeId: isGeo ? null : cleanId,
+              geoPlaceId: isGeo ? cleanId : null,
+              name: p.name,
+              kind: p.category,
+              rating: p.rating > 0 ? p.rating : null,
+              lat: p.lat,
+              lng: p.lng,
+              photoUrl: p.coverThumb.isNotEmpty ? p.coverThumb : null,
+            ),
+          ),
+        ],
+      );
+      final name = await applyGuideCalendar(context, ref, action, 'ask');
+      if (name != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Added ${p.name} to $name'),
+            action: SnackBarAction(label: 'Open', onPressed: () => context.go('/t/trip')),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
+      }
+    } finally {
+      if (mounted) setState(() => _adding = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = widget.place;
     final onSurface = Theme.of(context).colorScheme.onSurface;
-    final meta = p.metaLine;
     final directions = p.directionsUrl;
     return PressScale(
       scale: 0.98,
-      onTap: _opening ? null : _open,
+      onTap: (_opening || _adding) ? null : _open,
       child: Container(
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.84),
-        padding: const EdgeInsets.all(8),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.86),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
           boxShadow: const [BoxShadow(color: Color(0x2E103D3A), blurRadius: 12, offset: Offset(0, 2))],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
@@ -219,6 +267,7 @@ class _GuidePlaceCardState extends ConsumerState<GuidePlaceCard> {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     p.name,
@@ -226,34 +275,142 @@ class _GuidePlaceCardState extends ConsumerState<GuidePlaceCard> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: onSurface),
                   ),
-                  if (p.category.isNotEmpty)
-                    Text(
-                      p.category,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: SpottoColors.muted),
-                    ),
-                  if (meta.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        meta,
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: onSurface),
-                      ),
-                    ),
+                  const SizedBox(height: 3),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (p.category.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: SpottoColors.accentTint,
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(
+                            p.category,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: SpottoColors.accent,
+                            ),
+                          ),
+                        ),
+                      if (p.rating > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.star_rounded, size: 11, color: Color(0xFFD97706)),
+                              const SizedBox(width: 1.5),
+                              Text(
+                                p.rating.toStringAsFixed(1),
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF92400E),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (p.distanceKm != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: SpottoColors.line.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(
+                            p.distanceKm! < 1.0
+                                ? '${(p.distanceKm! * 1000).round()}m'
+                                : '${p.distanceKm! < 10 ? p.distanceKm!.toStringAsFixed(1) : p.distanceKm!.round()}km',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: SpottoColors.muted,
+                            ),
+                          ),
+                        ),
+                      if (p.priceLevel.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: SpottoColors.line.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(
+                            p.priceLevel,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: SpottoColors.muted,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
-            if (_opening)
+            const SizedBox(width: 6),
+            if (_opening || _adding)
               const Padding(
-                padding: EdgeInsets.all(10),
-                child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                padding: EdgeInsets.all(8),
+                child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
               )
-            else if (directions != null)
-              IconButton(
-                tooltip: 'Directions',
-                onPressed: () => launchUrl(directions, mode: LaunchMode.externalApplication),
-                icon: const Icon(Icons.directions, color: SpottoColors.accent),
+            else
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PressScale(
+                    scale: 0.92,
+                    onTap: _addToTrip,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: SpottoColors.accentTint,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.add_rounded, size: 14, color: SpottoColors.accent),
+                          SizedBox(width: 1),
+                          Text(
+                            'Trip',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: SpottoColors.accent,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (directions != null) ...[
+                    const SizedBox(width: 4),
+                    PressScale(
+                      scale: 0.92,
+                      onTap: () => launchUrl(directions, mode: LaunchMode.externalApplication),
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: SpottoColors.line.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.directions_outlined, size: 16, color: SpottoColors.accent),
+                      ),
+                    ),
+                  ],
+                ],
               ),
           ],
         ),

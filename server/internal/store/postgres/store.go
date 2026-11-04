@@ -133,7 +133,8 @@ func scanUser(row pgx.Row) (domain.User, error) {
 		&u.TOTPSecret, &u.TOTPPendingSecret, &u.TOTPEnabled, &u.TokenVersion,
 		&u.ShareLocation, &u.Lat, &u.Lng, &u.LocationUpdatedAt,
 		&u.Phone, &u.VendorRole, &u.NotifyRedemptions, &u.NotifyReviews, &u.NotifyPayouts, &u.NotifyGrowthTips,
-		&u.GoogleID, &u.AvatarURL, &u.PhoneVerified, &u.UsageAnalytics, &u.Publisher)
+		&u.GoogleID, &u.AvatarURL, &u.PhoneVerified, &u.UsageAnalytics, &u.Publisher,
+		&u.VisibleToGroup, &u.CountVibeVotes, &u.PersonalisedOffers)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -145,7 +146,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url, phone_verified_at IS NOT NULL, usage_analytics, publisher`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url, phone_verified_at IS NOT NULL, usage_analytics, publisher, visible_to_group, count_vibe_votes, personalised_offers`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -335,6 +336,24 @@ func (s *Store) SetUsageAnalytics(ctx context.Context, id string, on bool) error
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// SetVisibleToGroup toggles whether the traveller appears in group member lists.
+func (s *Store) SetVisibleToGroup(ctx context.Context, id string, visible bool) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE users SET visible_to_group=$2 WHERE id=$1`, id, visible)
+	return err
+}
+
+// SetCountVibeVotes toggles whether the traveller's vibe votes count in public stats.
+func (s *Store) SetCountVibeVotes(ctx context.Context, id string, count bool) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE users SET count_vibe_votes=$2 WHERE id=$1`, id, count)
+	return err
+}
+
+// SetPersonalisedOffers toggles personalised offers/marketing.
+func (s *Store) SetPersonalisedOffers(ctx context.Context, id string, personalised bool) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE users SET personalised_offers=$2 WHERE id=$1`, id, personalised)
+	return err
 }
 
 // RecordTravellerPresence notes the rough area (a cell of degrees x 100,
@@ -2496,6 +2515,50 @@ func (s *Store) MyLatestVibeCheckin(ctx context.Context, placeID, travellerID st
 	return c, err
 }
 
+// VibeCheckinsByTraveller returns all vibe checkins for a traveller, newest first.
+func (s *Store) VibeCheckinsByTraveller(ctx context.Context, travellerID string) ([]domain.VibeCheckin, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT place_id, traveller_id, productive, loud, crowded, created_at
+		FROM vibe_checkins
+		WHERE traveller_id=$1
+		ORDER BY created_at DESC`, travellerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.VibeCheckin{}
+	for rows.Next() {
+		var c domain.VibeCheckin
+		if err := rows.Scan(&c.PlaceID, &c.TravellerID, &c.Productive, &c.Loud, &c.Crowded, &c.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// GuideConversationsByTraveller returns all guide conversations for a traveller, newest first.
+func (s *Store) GuideConversationsByTraveller(ctx context.Context, travellerID string) ([]domain.GuideConversation, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT id, created_at, updated_at
+		FROM guide_conversations
+		WHERE traveller_id=$1
+		ORDER BY updated_at DESC`, travellerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.GuideConversation{}
+	for rows.Next() {
+		var c domain.GuideConversation
+		if err := rows.Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // ---- Local Guide chat (see internal/http/guide.go) ----
 
 // CreateGuideConversation starts a new conversation with the given id
@@ -2745,6 +2808,28 @@ func (s *Store) AddCheckin(ctx context.Context, placeID, travellerID string) err
 	_, err := s.Pool.Exec(ctx,
 		`INSERT INTO checkins (place_id, traveller_id) VALUES ($1,$2)`, placeID, travellerID)
 	return err
+}
+
+// CheckinsByTraveller returns all checkins for a traveller, newest first.
+func (s *Store) CheckinsByTraveller(ctx context.Context, travellerID string) ([]domain.Checkin, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT id, place_id, traveller_id, created_at
+		FROM checkins
+		WHERE traveller_id=$1
+		ORDER BY created_at DESC`, travellerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.Checkin{}
+	for rows.Next() {
+		var c domain.Checkin
+		if err := rows.Scan(&c.ID, &c.PlaceID, &c.TravellerID, &c.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 // GetDailyQuestProgress counts the distinct places a traveller has checked
@@ -3227,15 +3312,17 @@ func (s *Store) CreatePaymentTransaction(ctx context.Context, tx domain.PaymentT
 	return err
 }
 
-func (s *Store) GetVendorSponsorship(ctx context.Context, vendorID string) (domain.VendorSponsorship, error) {
+func (s *Store) GetVendorSponsorship(ctx context.Context, idOrVendorID string) (domain.VendorSponsorship, error) {
 	var v domain.VendorSponsorship
 	err := s.Pool.QueryRow(ctx, `
-		SELECT vs.vendor_id, vs.reward_description, vs.reward_limit, vs.is_active, vs.status, vs.created_at,
+		SELECT vs.id, vs.vendor_id, COALESCE(vs.title, ''), vs.reward_description, vs.reward_limit, vs.is_active, vs.status, vs.created_at, vs.updated_at,
 		       COALESCE(vn.name, ''), COALESCE(vn.category, ''), COALESCE(vn.town, '')
 		FROM vendor_sponsorships vs
 		LEFT JOIN vendors vn ON vn.id = vs.vendor_id
-		WHERE vs.vendor_id = $1`, vendorID).
-		Scan(&v.VendorID, &v.RewardDescription, &v.RewardLimit, &v.IsActive, &v.Status, &v.CreatedAt,
+		WHERE vs.id = $1 OR vs.vendor_id = $1
+		ORDER BY CASE WHEN vs.id = $1 THEN 0 WHEN vs.status = 'approved' AND vs.is_active THEN 1 WHEN vs.status = 'approved' THEN 2 ELSE 3 END, vs.created_at DESC
+		LIMIT 1`, idOrVendorID).
+		Scan(&v.ID, &v.VendorID, &v.Title, &v.RewardDescription, &v.RewardLimit, &v.IsActive, &v.Status, &v.CreatedAt, &v.UpdatedAt,
 			&v.VendorName, &v.VendorCategory, &v.VendorTown)
 	if err == pgx.ErrNoRows {
 		return domain.VendorSponsorship{}, ErrNotFound
@@ -3243,20 +3330,89 @@ func (s *Store) GetVendorSponsorship(ctx context.Context, vendorID string) (doma
 	return v, err
 }
 
-func (s *Store) UpsertVendorSponsorship(ctx context.Context, v domain.VendorSponsorship) error {
+func (s *Store) ListVendorSponsorships(ctx context.Context, vendorID string) ([]domain.VendorSponsorship, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT vs.id, vs.vendor_id, COALESCE(vs.title, ''), vs.reward_description, vs.reward_limit, vs.is_active, vs.status, vs.created_at, vs.updated_at,
+		       COALESCE(vn.name, ''), COALESCE(vn.category, ''), COALESCE(vn.town, '')
+		FROM vendor_sponsorships vs
+		LEFT JOIN vendors vn ON vn.id = vs.vendor_id
+		WHERE vs.vendor_id = $1
+		ORDER BY vs.created_at DESC`, vendorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var res []domain.VendorSponsorship
+	for rows.Next() {
+		var v domain.VendorSponsorship
+		if err := rows.Scan(&v.ID, &v.VendorID, &v.Title, &v.RewardDescription, &v.RewardLimit, &v.IsActive, &v.Status, &v.CreatedAt, &v.UpdatedAt,
+			&v.VendorName, &v.VendorCategory, &v.VendorTown); err != nil {
+			return nil, err
+		}
+		res = append(res, v)
+	}
+	return res, rows.Err()
+}
+
+func (s *Store) CreateVendorSponsorship(ctx context.Context, v domain.VendorSponsorship) error {
+	if v.ID == "" {
+		v.ID = fmt.Sprintf("spon_%d", time.Now().UnixNano())
+	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO vendor_sponsorships (vendor_id, reward_description, reward_limit, is_active, status, created_at)
-		VALUES ($1, $2, $3, $4, 'pending', now())
-		ON CONFLICT (vendor_id) DO UPDATE SET
-			status = CASE
-				WHEN vendor_sponsorships.status = 'rejected' OR vendor_sponsorships.reward_description != EXCLUDED.reward_description THEN 'pending'
-				ELSE vendor_sponsorships.status
-			END,
-			reward_description = EXCLUDED.reward_description,
-			reward_limit = EXCLUDED.reward_limit,
-			is_active = EXCLUDED.is_active`,
-		v.VendorID, v.RewardDescription, v.RewardLimit, v.IsActive)
+		INSERT INTO vendor_sponsorships (id, vendor_id, title, reward_description, reward_limit, is_active, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, 'pending', now(), now())`,
+		v.ID, v.VendorID, v.Title, v.RewardDescription, v.RewardLimit, v.IsActive)
 	return err
+}
+
+func (s *Store) UpdateVendorSponsorship(ctx context.Context, v domain.VendorSponsorship) error {
+	_, err := s.Pool.Exec(ctx, `
+		UPDATE vendor_sponsorships SET
+			title = $2,
+			reward_limit = $4,
+			is_active = $5,
+			status = CASE
+				WHEN status = 'rejected' THEN 'pending'
+				WHEN reward_description != $3 OR title != $2 THEN 'pending'
+				ELSE status
+			END,
+			reward_description = $3,
+			updated_at = now()
+		WHERE id = $1 AND vendor_id = $6`,
+		v.ID, v.Title, v.RewardDescription, v.RewardLimit, v.IsActive, v.VendorID)
+	return err
+}
+
+func (s *Store) DeleteVendorSponsorship(ctx context.Context, id, vendorID string) error {
+	var count int
+	today := time.Now().UTC().Format("2006-01-02")
+	_ = s.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM daily_quests WHERE sponsorship_id = $1 AND date >= $2`, id, today).Scan(&count)
+	if count > 0 {
+		return fmt.Errorf("reward is scheduled for an upcoming daily quest")
+	}
+	_, err := s.Pool.Exec(ctx, `DELETE FROM vendor_sponsorships WHERE id = $1 AND vendor_id = $2`, id, vendorID)
+	return err
+}
+
+func (s *Store) UpsertVendorSponsorship(ctx context.Context, v *domain.VendorSponsorship) error {
+	if v.ID == "" {
+		// Look for an existing pending or rejected sponsorship for this vendor to update.
+		// NEVER overwrite an approved quest reward.
+		var existingID string
+		err := s.Pool.QueryRow(ctx, `
+			SELECT id FROM vendor_sponsorships
+			WHERE vendor_id = $1 AND status IN ('pending', 'rejected')
+			ORDER BY CASE WHEN status = 'pending' THEN 1 ELSE 2 END, created_at DESC
+			LIMIT 1`, v.VendorID).Scan(&existingID)
+		if err == nil {
+			v.ID = existingID
+		}
+	}
+	if v.ID != "" {
+		return s.UpdateVendorSponsorship(ctx, *v)
+	}
+	v.ID = fmt.Sprintf("spon_%d", time.Now().UnixNano())
+	return s.CreateVendorSponsorship(ctx, *v)
 }
 
 func (s *Store) CreateQuestClaim(ctx context.Context, claim domain.QuestClaim) error {
@@ -3277,7 +3433,7 @@ func (s *Store) GetQuestClaimsCount(ctx context.Context, vendorID, date string) 
 
 func (s *Store) ListVendorSponsorshipsByStatus(ctx context.Context, status string) ([]domain.VendorSponsorship, error) {
 	query := `
-		SELECT vs.vendor_id, vs.reward_description, vs.reward_limit, vs.is_active, vs.status, vs.created_at,
+		SELECT vs.id, vs.vendor_id, COALESCE(vs.title, ''), vs.reward_description, vs.reward_limit, vs.is_active, vs.status, vs.created_at, vs.updated_at,
 		       COALESCE(v.name, ''), COALESCE(v.category, ''), COALESCE(v.town, '')
 		FROM vendor_sponsorships vs
 		LEFT JOIN vendors v ON v.id = vs.vendor_id`
@@ -3297,7 +3453,7 @@ func (s *Store) ListVendorSponsorshipsByStatus(ctx context.Context, status strin
 	var res []domain.VendorSponsorship
 	for rows.Next() {
 		var v domain.VendorSponsorship
-		if err := rows.Scan(&v.VendorID, &v.RewardDescription, &v.RewardLimit, &v.IsActive, &v.Status, &v.CreatedAt,
+		if err := rows.Scan(&v.ID, &v.VendorID, &v.Title, &v.RewardDescription, &v.RewardLimit, &v.IsActive, &v.Status, &v.CreatedAt, &v.UpdatedAt,
 			&v.VendorName, &v.VendorCategory, &v.VendorTown); err != nil {
 			return nil, err
 		}
@@ -3306,22 +3462,41 @@ func (s *Store) ListVendorSponsorshipsByStatus(ctx context.Context, status strin
 	return res, rows.Err()
 }
 
-func (s *Store) UpdateVendorSponsorshipStatus(ctx context.Context, vendorID, status string) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE vendor_sponsorships SET status = $1 WHERE vendor_id = $2`, status, vendorID)
+func (s *Store) UpdateVendorSponsorshipStatus(ctx context.Context, idOrVendorID, status string) error {
+	tag, err := s.Pool.Exec(ctx, `UPDATE vendor_sponsorships SET status = $1, updated_at = now() WHERE id = $2`, status, idOrVendorID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		_, err = s.Pool.Exec(ctx, `
+			UPDATE vendor_sponsorships SET status = $1, updated_at = now()
+			WHERE id = (
+				SELECT id FROM vendor_sponsorships
+				WHERE vendor_id = $2
+				ORDER BY CASE WHEN status = 'pending' THEN 1 ELSE 2 END, created_at DESC
+				LIMIT 1
+			)`, status, idOrVendorID)
+	}
 	return err
 }
 
 func (s *Store) GetQuestSchedule(ctx context.Context, date string) (domain.QuestSchedule, error) {
 	var q domain.QuestSchedule
 	err := s.Pool.QueryRow(ctx, `
-		SELECT d.date, d.vendor_id, d.goal, COALESCE(v.name, d.vendor_id), COALESCE(vs.reward_description, ''),
+		SELECT d.date, d.vendor_id, COALESCE(d.sponsorship_id, ''), d.goal,
+		       COALESCE(v.name, d.vendor_id),
+		       COALESCE(vs.title, ''),
+		       COALESCE(vs.reward_description, ''),
 		       COALESCE(v.category, ''), COALESCE(v.town, '')
 		FROM daily_quests d
 		LEFT JOIN vendors v ON v.id = d.vendor_id
-		LEFT JOIN vendor_sponsorships vs ON vs.vendor_id = d.vendor_id
+		LEFT JOIN vendor_sponsorships vs ON vs.id = COALESCE(d.sponsorship_id, (
+			SELECT id FROM vendor_sponsorships WHERE vendor_id = d.vendor_id
+			ORDER BY CASE WHEN status = 'approved' THEN 1 ELSE 2 END, created_at DESC LIMIT 1
+		))
 		WHERE d.date = $1`, date).
-		Scan(&q.Date, &q.VendorID, &q.Goal, &q.SponsorName, &q.RewardDescription,
-			&q.VendorCategory, &q.VendorTown)
+		Scan(&q.Date, &q.VendorID, &q.SponsorshipID, &q.Goal, &q.SponsorName,
+			&q.RewardTitle, &q.RewardDescription, &q.VendorCategory, &q.VendorTown)
 	if err == pgx.ErrNoRows {
 		return domain.QuestSchedule{}, ErrNotFound
 	}
@@ -3329,11 +3504,20 @@ func (s *Store) GetQuestSchedule(ctx context.Context, date string) (domain.Quest
 }
 
 func (s *Store) SetQuestSchedule(ctx context.Context, q domain.QuestSchedule) error {
+	if q.SponsorshipID == "" {
+		_ = s.Pool.QueryRow(ctx, `
+			SELECT id FROM vendor_sponsorships
+			WHERE vendor_id = $1 AND status = 'approved' AND is_active = true
+			ORDER BY created_at DESC LIMIT 1`, q.VendorID).Scan(&q.SponsorshipID)
+	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO daily_quests (date, vendor_id, goal, created_at)
-		VALUES ($1, $2, $3, now())
-		ON CONFLICT (date) DO UPDATE SET vendor_id = EXCLUDED.vendor_id, goal = EXCLUDED.goal`,
-		q.Date, q.VendorID, q.Goal)
+		INSERT INTO daily_quests (date, vendor_id, sponsorship_id, goal, created_at)
+		VALUES ($1, $2, NULLIF($3, ''), $4, now())
+		ON CONFLICT (date) DO UPDATE SET
+			vendor_id = EXCLUDED.vendor_id,
+			sponsorship_id = EXCLUDED.sponsorship_id,
+			goal = EXCLUDED.goal`,
+		q.Date, q.VendorID, q.SponsorshipID, q.Goal)
 	return err
 }
 
@@ -3344,13 +3528,19 @@ func (s *Store) DeleteQuestSchedule(ctx context.Context, date string) error {
 
 func (s *Store) ListQuestSchedules(ctx context.Context) ([]domain.QuestSchedule, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT d.date, d.vendor_id, d.goal, COALESCE(v.name, d.vendor_id), COALESCE(vs.reward_description, ''),
+		SELECT d.date, d.vendor_id, COALESCE(d.sponsorship_id, ''), d.goal,
+		       COALESCE(v.name, d.vendor_id),
+		       COALESCE(vs.title, ''),
+		       COALESCE(vs.reward_description, ''),
 		       COALESCE(v.category, ''), COALESCE(v.town, ''),
 		       (SELECT COUNT(*) FROM quest_completions qc WHERE qc.date = d.date),
 		       (SELECT COUNT(*) FROM quest_claims cl WHERE cl.date = d.date)
 		FROM daily_quests d
 		LEFT JOIN vendors v ON v.id = d.vendor_id
-		LEFT JOIN vendor_sponsorships vs ON vs.vendor_id = d.vendor_id
+		LEFT JOIN vendor_sponsorships vs ON vs.id = COALESCE(d.sponsorship_id, (
+			SELECT id FROM vendor_sponsorships WHERE vendor_id = d.vendor_id
+			ORDER BY CASE WHEN status = 'approved' THEN 1 ELSE 2 END, created_at DESC LIMIT 1
+		))
 		ORDER BY d.date DESC LIMIT 50`)
 	if err != nil {
 		return nil, err
@@ -3359,8 +3549,8 @@ func (s *Store) ListQuestSchedules(ctx context.Context) ([]domain.QuestSchedule,
 	var res []domain.QuestSchedule
 	for rows.Next() {
 		var q domain.QuestSchedule
-		if err := rows.Scan(&q.Date, &q.VendorID, &q.Goal, &q.SponsorName, &q.RewardDescription,
-			&q.VendorCategory, &q.VendorTown, &q.Completions, &q.Redemptions); err != nil {
+		if err := rows.Scan(&q.Date, &q.VendorID, &q.SponsorshipID, &q.Goal, &q.SponsorName,
+			&q.RewardTitle, &q.RewardDescription, &q.VendorCategory, &q.VendorTown, &q.Completions, &q.Redemptions); err != nil {
 			return nil, err
 		}
 		res = append(res, q)
@@ -3370,13 +3560,19 @@ func (s *Store) ListQuestSchedules(ctx context.Context) ([]domain.QuestSchedule,
 
 func (s *Store) ListVendorQuestSchedules(ctx context.Context, vendorID string) ([]domain.QuestSchedule, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT d.date, d.vendor_id, d.goal, COALESCE(v.name, d.vendor_id), COALESCE(vs.reward_description, ''),
+		SELECT d.date, d.vendor_id, COALESCE(d.sponsorship_id, ''), d.goal,
+		       COALESCE(v.name, d.vendor_id),
+		       COALESCE(vs.title, ''),
+		       COALESCE(vs.reward_description, ''),
 		       COALESCE(v.category, ''), COALESCE(v.town, ''),
 		       (SELECT COUNT(*) FROM quest_completions qc WHERE qc.date = d.date),
 		       (SELECT COUNT(*) FROM quest_claims cl WHERE cl.date = d.date)
 		FROM daily_quests d
 		LEFT JOIN vendors v ON v.id = d.vendor_id
-		LEFT JOIN vendor_sponsorships vs ON vs.vendor_id = d.vendor_id
+		LEFT JOIN vendor_sponsorships vs ON vs.id = COALESCE(d.sponsorship_id, (
+			SELECT id FROM vendor_sponsorships WHERE vendor_id = d.vendor_id
+			ORDER BY CASE WHEN status = 'approved' THEN 1 ELSE 2 END, created_at DESC LIMIT 1
+		))
 		WHERE d.vendor_id = $1
 		ORDER BY d.date DESC LIMIT 50`, vendorID)
 	if err != nil {
@@ -3386,8 +3582,8 @@ func (s *Store) ListVendorQuestSchedules(ctx context.Context, vendorID string) (
 	var res []domain.QuestSchedule
 	for rows.Next() {
 		var q domain.QuestSchedule
-		if err := rows.Scan(&q.Date, &q.VendorID, &q.Goal, &q.SponsorName, &q.RewardDescription,
-			&q.VendorCategory, &q.VendorTown, &q.Completions, &q.Redemptions); err != nil {
+		if err := rows.Scan(&q.Date, &q.VendorID, &q.SponsorshipID, &q.Goal, &q.SponsorName,
+			&q.RewardTitle, &q.RewardDescription, &q.VendorCategory, &q.VendorTown, &q.Completions, &q.Redemptions); err != nil {
 			return nil, err
 		}
 		res = append(res, q)

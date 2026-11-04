@@ -47,7 +47,14 @@ func (s *Server) handleAdminListApprovedSponsorships(w http.ResponseWriter, r *h
 }
 
 func (s *Server) handleAdminUpdateSponsorshipStatus(w http.ResponseWriter, r *http.Request) {
-	vendorID := chi.URLParam(r, "vendor_id")
+	targetID := chi.URLParam(r, "id")
+	if targetID == "" {
+		targetID = chi.URLParam(r, "vendor_id")
+	}
+	if targetID == "" {
+		writeErr(w, http.StatusBadRequest, "id or vendor_id is required")
+		return
+	}
 	var req struct {
 		Status string `json:"status"`
 	}
@@ -59,7 +66,7 @@ func (s *Server) handleAdminUpdateSponsorshipStatus(w http.ResponseWriter, r *ht
 		return
 	}
 	
-	if err := s.Store.UpdateVendorSponsorshipStatus(r.Context(), vendorID, req.Status); err != nil {
+	if err := s.Store.UpdateVendorSponsorshipStatus(r.Context(), targetID, req.Status); err != nil {
 		storeErr(w, err)
 		return
 	}

@@ -509,8 +509,9 @@ func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query stri
 		limit = 6
 	}
 
-	// Cache key includes rough location so distance calculations remain accurate
-	key := fmt.Sprintf("%s|%d|%.2f|%.2f", strings.ToLower(query), limit, turn.loc.Lat, turn.loc.Lng)
+	// Cache key includes rough location and avoidIDs so distance calculations remain accurate
+	// and requests for more/different places never return previously avoided cached results.
+	key := fmt.Sprintf("%s|%d|%.2f|%.2f|avoid:%s", strings.ToLower(query), limit, turn.loc.Lat, turn.loc.Lng, strings.Join(turn.avoidIDs, ","))
 	if cached, ok := findPlacesCache.get(key); ok {
 		return cached
 	}
@@ -545,8 +546,19 @@ func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query stri
 	}
 
 	if len(found) > 0 {
+		avoidMap := make(map[string]bool, len(turn.avoidIDs))
+		for _, id := range turn.avoidIDs {
+			avoidMap[id] = true
+		}
 		out := make([]result, 0, len(found))
 		for _, p := range found {
+			var catalogID string
+			if catID := s.matchCatalogPlace(ctx, p.Name, p.Lat, p.Lng); catID != "" {
+				if avoidMap[catID] {
+					continue
+				}
+				catalogID = catID
+			}
 			geoID, err := s.Store.UpsertGeoPlace(ctx, domain.GeoPlace{
 				ID: newID("gp"), GooglePlaceID: p.ID, Name: p.Name, Lat: p.Lat, Lng: p.Lng,
 				Address: p.Address, City: p.City, CountryCode: p.CountryCode, Kind: googleplaces.Kind(p.PrimaryType, p.Types),
@@ -556,8 +568,11 @@ func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query stri
 				log.Printf("guide: save geo place: %v", err)
 				continue
 			}
+			if avoidMap[geoID] {
+				continue
+			}
 			ref := "g:" + geoID
-			if catalogID := s.matchCatalogPlace(ctx, p.Name, p.Lat, p.Lng); catalogID != "" {
+			if catalogID != "" {
 				ref = "p:" + catalogID
 			}
 

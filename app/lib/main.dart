@@ -12,10 +12,12 @@ import 'core/theme/theme.dart';
 import 'core/utils/analytics_service.dart';
 import 'data/repositories/inspiration_repository.dart';
 import 'data/repositories/nearby_alerts_repository.dart';
+import 'core/api/api_client.dart';
 import 'data/repositories/repositories.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiClient.detectDevice();
   AnalyticsService.instance.initialize();
   final LocalStore store;
   try {

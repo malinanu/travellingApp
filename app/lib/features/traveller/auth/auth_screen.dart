@@ -12,7 +12,7 @@ import '../../../core/theme/palette.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../data/repositories/repositories.dart';
 
-enum _Mode { login, register, forgot }
+enum _Mode { login, register, forgot, twoFactor }
 
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
@@ -26,6 +26,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
+  final _totpCode = TextEditingController();
   bool _agreeTos = false;
   bool _busy = false;
   bool _forgotSent = false;
@@ -36,6 +37,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     _name.dispose();
     _email.dispose();
     _password.dispose();
+    _totpCode.dispose();
     super.dispose();
   }
 
@@ -46,6 +48,29 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       _error = null;
     });
     final auth = ref.read(authProvider.notifier);
+    if (mode == _Mode.twoFactor) {
+      final code = _totpCode.text.replaceAll(RegExp(r'\s+|-'), '');
+      if (code.length != 6 || int.tryParse(code) == null) {
+        setState(() {
+          _busy = false;
+          _error = 'Please enter a 6-digit code';
+        });
+        return;
+      }
+      final err = await auth.verifyTwoFactorLogin(code);
+      if (!mounted) return;
+      if (err != null) {
+        setState(() {
+          _busy = false;
+          _error = err;
+        });
+        return;
+      }
+      final hasPrefs = ref.read(prefsProvider) != null;
+      context.go(hasPrefs ? '/t' : '/t/onboarding');
+      return;
+    }
+
     if (mode == _Mode.forgot) {
       final err = await auth.forgotPassword(_email.text.trim());
       if (!mounted) return;
@@ -71,6 +96,15 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       setState(() {
         _busy = false;
         _error = err;
+      });
+      return;
+    }
+    if (mode == _Mode.login && auth.pendingTwoFactorToken != null) {
+      setState(() {
+        _busy = false;
+        mode = _Mode.twoFactor;
+        _error = null;
+        _totpCode.clear();
       });
       return;
     }
@@ -210,6 +244,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     final text = Theme.of(context).textTheme;
     final isLogin = mode == _Mode.login;
     final isForgot = mode == _Mode.forgot;
+    final isTwoFactor = mode == _Mode.twoFactor;
 
     return Scaffold(
       body: Column(
@@ -247,9 +282,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   Text(
                     isForgot
                         ? 'Reset password'
-                        : isLogin
-                            ? 'Welcome back'
-                            : 'Create your account',
+                        : isTwoFactor
+                            ? 'Two-factor authentication'
+                            : isLogin
+                                ? 'Welcome back'
+                                : 'Create your account',
                     style: text.headlineSmall,
                   ),
                   const SizedBox(height: 8),
@@ -257,10 +294,28 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     Text(
                       'We will email you instructions to reset your password.',
                       style: text.bodyMedium?.copyWith(color: SpottoColors.muted),
+                    )
+                  else if (isTwoFactor)
+                    Text(
+                      'Enter the 6-digit code from your authenticator app to complete sign-in.',
+                      style: text.bodyMedium?.copyWith(color: SpottoColors.muted),
                     ),
                   const SizedBox(height: 16),
 
-                  if (_forgotSent && isForgot) ...[
+                  if (isTwoFactor) ...[
+                    TextField(
+                      controller: _totpCode,
+                      keyboardType: TextInputType.number,
+                      autocorrect: false,
+                      maxLength: 6,
+                      onSubmitted: (_) => _submit(),
+                      decoration: const InputDecoration(
+                        hintText: '6-digit code',
+                        prefixIcon: Icon(Icons.pin_outlined),
+                        counterText: '',
+                      ),
+                    ),
+                  ] else if (_forgotSent && isForgot) ...[
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -346,7 +401,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   const SizedBox(height: 20),
                   if (!_forgotSent || !isForgot) ...[
                     FilledButton(
-                      onPressed: (_busy || (!isLogin && !isForgot && !_agreeTos)) ? null : _submit,
+                      onPressed: (_busy || (!isLogin && !isForgot && !isTwoFactor && !_agreeTos)) ? null : _submit,
                       child: _busy
                           ? const SizedBox(
                               width: 18,
@@ -354,11 +409,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2))
                           : Text(isForgot
                               ? 'Send reset link'
-                              : isLogin
-                                  ? 'Sign in'
-                                  : 'Create account'),
+                              : isTwoFactor
+                                  ? 'Verify and sign in'
+                                  : isLogin
+                                      ? 'Sign in'
+                                      : 'Create account'),
                     ),
-                    if (!isForgot && _googleSignInAvailable) ...[
+                    if (!isForgot && !isTwoFactor && _googleSignInAvailable) ...[
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
                         onPressed: _busy ? null : _signInWithGoogle,
@@ -371,7 +428,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         ),
                       ),
                     ],
-                    if (!isForgot && _appleSignInAvailable) ...[
+                    if (!isForgot && !isTwoFactor && _appleSignInAvailable) ...[
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
                         onPressed: _busy ? null : _signInWithApple,
@@ -391,16 +448,20 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       onPressed: _busy
                           ? null
                           : () => setState(() {
-                                mode = isForgot
+                                if (isTwoFactor) {
+                                  ref.read(authProvider.notifier).clearTwoFactor();
+                                }
+                                mode = (isForgot || isTwoFactor)
                                     ? _Mode.login
                                     : isLogin
                                         ? _Mode.register
                                         : _Mode.login;
                                 _error = null;
                                 _forgotSent = false;
+                                _totpCode.clear();
                               }),
                       child: Text(
-                          isForgot
+                          isForgot || isTwoFactor
                               ? '← Back to sign in'
                               : isLogin
                                   ? 'New here? Create an account'

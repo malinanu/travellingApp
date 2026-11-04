@@ -342,6 +342,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/me/export", s.handleExportData)
 		r.Put("/me", s.handleUpdateMe)
 		r.Put("/me/privacy", s.handleUpdatePrivacy)
+		r.Get("/me/sessions", s.handleGetMySessions)
+		r.Delete("/me/sessions/{id}", s.handleDeleteMySession)
 		r.Put("/me/contact", s.handleUpdateMyContact)
 		// Only the vendor portal verifies numbers; keeping travellers (open
 		// sign-up) out also keeps them off a paid SMS endpoint.
@@ -428,6 +430,10 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Patch("/vendor/business/category", s.handleUpdateVendorCategory)
 		r.Patch("/vendor/business/identity", s.handleUpdateVendorIdentity)
 		r.Patch("/vendor/business/br-cert-number", s.handleUpdateVendorBRCertNumber)
+		r.Get("/vendor/sponsorships", s.handleListSponsorships)
+		r.Post("/vendor/sponsorships", s.handleCreateSponsorship)
+		r.Put("/vendor/sponsorships/{id}", s.handleUpdateSponsorship)
+		r.Delete("/vendor/sponsorships/{id}", s.handleDeleteSponsorship)
 		r.Get("/vendor/sponsorship", s.handleGetSponsorship)
 		r.Get("/vendor/quest/schedules", s.handleVendorQuestSchedules)
 		r.Get("/vendor/quest/completions", s.handleVendorQuestCompletions)

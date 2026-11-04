@@ -42,6 +42,12 @@ type User struct {
 	// traveller turns it off): while on, the rough ~1 km area they use the
 	// map from is recorded for the admin geo page (traveller_presence).
 	UsageAnalytics bool `json:"usageAnalytics"`
+	// VisibleToGroup is whether the traveller appears in the group member list.
+	VisibleToGroup bool `json:"visibleToGroup"`
+	// CountVibeVotes is whether to include traveller's votes in public vibe stats.
+	CountVibeVotes bool `json:"countVibeVotes"`
+	// PersonalisedOffers is opt-in consent for marketing/deals matched to travel style.
+	PersonalisedOffers bool `json:"personalisedOffers"`
 	// Publisher lets the account write travel content in the Command
 	// Center (set by an admin); admins can always write.
 	Publisher bool `json:"publisher"`
@@ -273,22 +279,27 @@ type QuestCompletionFilter struct {
 }
 
 type VendorSponsorship struct {
+	ID                string    `json:"id"`
 	VendorID          string    `json:"vendorId"`
 	VendorName        string    `json:"vendorName,omitempty"`
 	VendorCategory    string    `json:"vendorCategory,omitempty"`
 	VendorTown        string    `json:"vendorTown,omitempty"`
+	Title             string    `json:"title,omitempty"`
 	RewardDescription string    `json:"rewardDescription"`
 	RewardLimit       int       `json:"rewardLimit"`
 	IsActive          bool      `json:"isActive"`
 	Status            string    `json:"status"` // pending, approved, rejected
 	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
 type QuestSchedule struct {
 	Date              string `json:"date"`
 	VendorID          string `json:"vendorId"`
+	SponsorshipID     string `json:"sponsorshipId,omitempty"`
 	Goal              int    `json:"goal"`
 	SponsorName       string `json:"sponsorName,omitempty"`
+	RewardTitle       string `json:"rewardTitle,omitempty"`
 	RewardDescription string `json:"rewardDescription,omitempty"`
 	VendorCategory    string `json:"vendorCategory,omitempty"`
 	VendorTown        string `json:"vendorTown,omitempty"`
@@ -444,6 +455,13 @@ type VibeCheckin struct {
 	Productive  int       `json:"productive"`
 	Loud        int       `json:"loud"`
 	Crowded     int       `json:"crowded"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type Checkin struct {
+	ID          int64     `json:"id"`
+	PlaceID     string    `json:"placeId"`
+	TravellerID string    `json:"travellerId"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
 

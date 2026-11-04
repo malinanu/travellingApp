@@ -79,7 +79,10 @@ TRIP PLANNING ("plan a trip to…", "I'm planning to go to Mirissa", "I'm visiti
 3. When dates are provided or implied ("next week", "next Friday", "in two weeks"), turn them into real dates using today's date, and pass startDate as YYYY-MM-DD. Call find_places with specific queries (e.g. "sights in Mirissa, Sri Lanka", "surf spots and cafes in Mirissa"), then call propose_trip_plan. Use only refs from the tools. Put each day's stops in a sensible order with realistic times (e.g. climb rocks early, sunset spots late), 3-5 stops a day including a meal. Every note is 1-2 sentences: why it's worth it plus one practical tip.
 4. The message for a card tool is 1-2 short sentences. Never repeat the questions or the plan as text — the app shows them as cards. NEVER output bullet point lists in text when planning a trip — always use propose_trip_plan.
 5. When they ask to add the plan, or some places, to their calendar or trip ("add this to my calendar", "put Pidurangala on day 2"), call add_to_calendar. Use mode "ask" unless they said whether it's a new trip or their current one. For only some places, pass just those as stops (refs from the plan or find_places). To add a place that isn't in the plan yet, find it with find_places first.
-6. If they ask to change the plan (more relaxed, swap a place, add a day), call propose_trip_plan again with the updated plan.
+6. CONTINUITY & MODIFICATIONS: When a trip plan has already been proposed ([Shown trip plan...] exists in history) and the traveller asks for "more places", "more options", "give me more place", "swap places", "change places", "other places", "different spots", "more relaxed", "add a day", or says "I don't like these places":
+   - NEVER output bulleted plain text asking "Would you like me to swap any of these into your trip plan?".
+   - ALWAYS search for fresh places with find_places / search_places (avoiding previously suggested spots) and immediately call propose_trip_plan with the updated itinerary (swapping or adding the fresh places into the plan).
+7. If they ask to add or adjust specific individual stops, find the places and call propose_trip_plan again with the updated plan.
 
 ALWAYS:
 - Keep replies short, warm and conversational — like a knowledgeable local friend, not a search engine.
@@ -227,12 +230,15 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 		log.Printf("guide: save assistant message: %v", err)
 	}
 
+	suggestions := guideSuggestionsForReply(res, cards)
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"conversationId": convID,
 		"reply":          reply,
 		"placeIds":       placeIDs, // kept for app builds older than "places"
 		"places":         cards,
 		"payload":        payload,
+		"suggestions":    suggestions,
 	})
 }
 
@@ -335,10 +341,30 @@ func (s *Server) handleGuideLatestConversation(w http.ResponseWriter, r *http.Re
 	for i := range messages {
 		messages[i].Payload = s.resignPayload(messages[i].Payload)
 	}
+
+	var latestSuggestions []string
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" {
+			var p guidePayload
+			var payloadPtr *guidePayload
+			if len(messages[i].Payload) > 0 && json.Unmarshal(messages[i].Payload, &p) == nil {
+				payloadPtr = &p
+			}
+			res := guideChatResult{
+				Reply:    messages[i].Content,
+				PlaceIDs: messages[i].PlaceIDs,
+				Payload:  payloadPtr,
+			}
+			latestSuggestions = guideSuggestionsForReply(res, nil)
+			break
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"conversationId": conv.ID,
 		"messages":       messages,
 		"places":         cards,
+		"suggestions":    latestSuggestions,
 	})
 }
 
@@ -369,6 +395,50 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 	var meta guideRequestMeta
 	weatherCondition := s.guideWeatherCondition(ctx, loc.Lat, loc.Lng)
 	stylesText, interestsText, bookmarksText, reviewsText, bookmarkedIDs, favoriteIDs, avoidIDs := s.guideTravellerProfileData(ctx, travellerID)
+
+	// Collect place IDs already surfaced in earlier conversation messages (from placeIDs, plan payloads, and calendar actions)
+	var convPlaceIDs []string
+	addPlace := func(pl guidePlanPlace) {
+		if pl.PlaceID != "" {
+			convPlaceIDs = append(convPlaceIDs, pl.PlaceID)
+		}
+		if pl.GeoPlaceID != "" {
+			convPlaceIDs = append(convPlaceIDs, pl.GeoPlaceID)
+		}
+		if strings.HasPrefix(pl.Ref, "p:") {
+			convPlaceIDs = append(convPlaceIDs, strings.TrimPrefix(pl.Ref, "p:"))
+		}
+		if strings.HasPrefix(pl.Ref, "g:") {
+			convPlaceIDs = append(convPlaceIDs, strings.TrimPrefix(pl.Ref, "g:"))
+		}
+	}
+	for _, m := range history {
+		convPlaceIDs = append(convPlaceIDs, m.PlaceIDs...)
+		if len(m.Payload) > 0 {
+			var p guidePayload
+			if json.Unmarshal(m.Payload, &p) == nil {
+				if p.Plan != nil {
+					for _, d := range p.Plan.Days {
+						for _, st := range d.Stops {
+							addPlace(st.Place)
+						}
+					}
+				}
+				if p.Calendar != nil {
+					for _, st := range p.Calendar.Stops {
+						addPlace(st.Place)
+					}
+				}
+			}
+		}
+	}
+	convPlaceIDs = dedupe(convPlaceIDs)
+
+	// If traveller asks for more places, more options, alternatives, or dislikes/rejects current places,
+	// guarantee that previously surfaced places are excluded from recommendations and search tools.
+	if isRequestingAlternativesOrMore(userMessage) && len(convPlaceIDs) > 0 {
+		avoidIDs = dedupe(append(avoidIDs, convPlaceIDs...))
+	}
 
 	messages := []gemini.Message{
 		{Role: "system", Content: guideSystemPrompt(time.Now(), loc, stylesText, weatherCondition, guidePromptProfile{
@@ -421,7 +491,7 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 			// The card tools stay available, so a trip plan that took every
 			// round still arrives as a plan card rather than a wall of text.
 			note := "Results from the tools you already called:\n" + strings.Join(toolResults, "\n") +
-				"\nAnswer the traveller now using only these results — don't search again. If they asked for a trip plan, " +
+				"\nAnswer the traveller now using only these results — don't search again. If they asked for a trip plan or to update an existing plan, " +
 				"call propose_trip_plan with these places; otherwise reply in text."
 			roundMessages = append(base[:len(base):len(base)], gemini.Message{Role: "system", Content: note})
 			roundTools = plannerCardTools()
@@ -1037,3 +1107,58 @@ Keep it concise, clear, and actionable. Do not use generic filler.`
 		"places":  placeList,
 	})
 }
+
+func isRequestingAlternativesOrMore(msg string) bool {
+	lower := strings.ToLower(msg)
+	triggers := []string{
+		// More / additional
+		"more place", "more spot", "more option", "more choice", "more suggestion", "more recommendation",
+		"give me more", "give more", "show more",
+		// Other / alternatives
+		"other place", "other spot", "other option", "other choice", "other suggestion", "other recommendation",
+		"give other", "show other", "another place", "another spot", "another option", "another choice",
+		"alternative", "something else", "anything else", "something different", "somewhere else",
+		// Different / fresh / new
+		"different place", "different spot", "different option", "different choice", "different suggestion", "different recommendation",
+		"new place", "new spot", "new option", "new choice", "fresh place", "fresh spot",
+		// Rejection / dislike
+		"dont like", "don't like", "dislike", "not these", "not this", "hate these", "dont want", "don't want",
+		// Swapping / changing / replacing
+		"swap place", "swap spot", "swap these", "swap this", "swap stop",
+		"change place", "change spot", "change these", "change this", "change stop",
+		"replace",
+	}
+	for _, t := range triggers {
+		if strings.Contains(lower, t) {
+			return true
+		}
+	}
+	return false
+}
+
+func guideSuggestionsForReply(res guideChatResult, cards []guidePlaceCard) []string {
+	if res.Payload != nil && res.Payload.Plan != nil {
+		return []string{
+			"🔄 Give me more options",
+			"🏖️ Beach vibe stops",
+			"☕ Cafes & chill spots",
+			"📅 Add to trip calendar",
+		}
+	}
+	if len(cards) > 0 || len(res.PlaceIDs) > 0 {
+		return []string{
+			"🔄 Give me more options",
+			"📅 Plan a trip with these",
+			"☕ Cafes & chill",
+			"🏖️ Beach vibe",
+			"📍 Closer spots",
+		}
+	}
+	return []string{
+		"📅 Plan a trip here",
+		"☕ Best cafes nearby",
+		"🏖️ Fun things to do",
+		"🔄 More recommendations",
+	}
+}
+

@@ -62,6 +62,18 @@ func (s *Store) RevokeSession(ctx context.Context, id string) error {
 	return err
 }
 
+// RevokeUserSession ends one session owned by userID.
+func (s *Store) RevokeUserSession(ctx context.Context, userID, id string) error {
+	tag, err := s.Pool.Exec(ctx, `UPDATE user_sessions SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`, id, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // RevokeOtherUserSessions ends every live session of userID except keepID
 // (pass "" to end them all). Returns how many were ended.
 func (s *Store) RevokeOtherUserSessions(ctx context.Context, userID, keepID string) (int64, error) {
@@ -107,6 +119,27 @@ func (s *Store) ActiveUserSessions(ctx context.Context, userID string) ([]domain
 		SELECT `+sessionCols+` FROM user_sessions
 		WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
 		ORDER BY last_used_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.Session{}
+	for rows.Next() {
+		sess, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sess)
+	}
+	return out, rows.Err()
+}
+
+// AllUserSessions lists all signed-in devices of userID (active and past), newest first.
+func (s *Store) AllUserSessions(ctx context.Context, userID string) ([]domain.Session, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+sessionCols+` FROM user_sessions
+		WHERE user_id = $1
+		ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}

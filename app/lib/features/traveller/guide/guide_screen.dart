@@ -8,9 +8,11 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
@@ -50,7 +52,15 @@ class _Msg {
   // which fall back to placeIds (see guideCardsFor).
   final List<GuidePlace> cards;
   final GuidePayload? payload;
-  const _Msg(this.mine, this.content, {this.placeIds = const [], this.cards = const [], this.payload});
+  final List<String> suggestions;
+  const _Msg(
+    this.mine,
+    this.content, {
+    this.placeIds = const [],
+    this.cards = const [],
+    this.payload,
+    this.suggestions = const [],
+  });
 
   String get text => content;
 }
@@ -73,6 +83,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
   final _scroll = ScrollController();
   bool _busy = false;
   String? _conversationId;
+  List<String> _activeSuggestions = const [];
   // Trip name each calendar card's places were added to, by message index.
   final _addedTo = <int, String>{};
 
@@ -102,8 +113,40 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
       };
       if (msgs.isNotEmpty) {
         if (!mounted) return;
+        final lastAssistant = msgs.reversed.where((m) => m['role'] == 'assistant').firstOrNull;
+        List<String> activeSuggestions = const [];
+        if (body['suggestions'] is List && (body['suggestions'] as List).isNotEmpty) {
+          activeSuggestions = (body['suggestions'] as List).cast<String>();
+        } else if (lastAssistant != null) {
+          final p = GuidePayload.tryParse(lastAssistant['payload']);
+          final pIds = (lastAssistant['placeIds'] as List? ?? const []).cast<String>();
+          if (p?.plan != null) {
+            activeSuggestions = const [
+              '🔄 Give me more options',
+              '🏖️ Beach vibe stops',
+              '☕ Cafes & chill spots',
+              '📅 Add to trip calendar',
+            ];
+          } else if (pIds.isNotEmpty) {
+            activeSuggestions = const [
+              '🔄 Give me more options',
+              '📅 Plan a trip with these',
+              '☕ Cafes & chill',
+              '🏖️ Beach vibe',
+              '📍 Closer spots',
+            ];
+          } else {
+            activeSuggestions = const [
+              '📅 Plan a trip here',
+              '☕ Best cafes nearby',
+              '🏖️ Fun things to do',
+              '🔄 More recommendations',
+            ];
+          }
+        }
         setState(() {
           _conversationId = body['conversationId'] as String?;
+          _activeSuggestions = activeSuggestions;
           _messages.addAll([
             for (final m in msgs)
               _Msg(
@@ -126,8 +169,12 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
       // fresh greeting below is the right fallback, not an error state.
     }
     if (mounted) {
-      setState(() =>
-          _messages.add(_Msg(false, _guideGreeting(_styleLabel, ref.read(weatherConditionProvider)))));
+      final rainy = ref.read(weatherConditionProvider) == 'rainy';
+      final initialSuggestions = rainy ? _guideSuggestionsRainy : _guideSuggestions;
+      setState(() {
+        _messages.add(_Msg(false, _guideGreeting(_styleLabel, ref.read(weatherConditionProvider))));
+        _activeSuggestions = initialSuggestions;
+      });
     }
   }
 
@@ -200,12 +247,44 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
       final body = (res.data as Map).cast<String, dynamic>();
       if (!mounted) return;
       final payload = GuidePayload.tryParse(body['payload']);
+      final cards = _parseCards(body['places']);
+      final placeIds = (body['placeIds'] as List? ?? const []).cast<String>();
+      final serverSuggestions = (body['suggestions'] as List? ?? const []).cast<String>();
+      final suggestions = serverSuggestions.isNotEmpty
+          ? serverSuggestions
+          : (payload?.plan != null
+              ? const [
+                  '🔄 Give me more options',
+                  '🏖️ Beach vibe stops',
+                  '☕ Cafes & chill spots',
+                  '📅 Add to trip calendar',
+                ]
+              : (cards.isNotEmpty || placeIds.isNotEmpty
+                  ? const [
+                      '🔄 Give me more options',
+                      '📅 Plan a trip with these',
+                      '☕ Cafes & chill',
+                      '🏖️ Beach vibe',
+                      '📍 Closer spots',
+                    ]
+                  : const [
+                      '📅 Plan a trip here',
+                      '☕ Best cafes nearby',
+                      '🏖️ Fun things to do',
+                      '🔄 More recommendations',
+                    ]));
+
       setState(() {
         _conversationId = body['conversationId'] as String?;
-        _messages.add(_Msg(false, body['reply'] as String? ?? '',
-            placeIds: (body['placeIds'] as List? ?? const []).cast<String>(),
-            cards: _parseCards(body['places']),
-            payload: payload));
+        _messages.add(_Msg(
+          false,
+          body['reply'] as String? ?? '',
+          placeIds: placeIds,
+          cards: cards,
+          payload: payload,
+          suggestions: suggestions,
+        ));
+        _activeSuggestions = suggestions;
         _busy = false;
       });
       // "Add it to a new trip" / "…to my current trip": the traveller already
@@ -267,10 +346,13 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
       });
     } catch (_) {}
     if (!mounted) return;
+    final rainy = ref.read(weatherConditionProvider) == 'rainy';
+    final initialSuggestions = rainy ? _guideSuggestionsRainy : _guideSuggestions;
     setState(() {
       _conversationId = null;
       _messages.clear();
       _messages.add(_Msg(false, _guideGreeting(_styleLabel, ref.read(weatherConditionProvider))));
+      _activeSuggestions = initialSuggestions;
     });
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text('Chat history cleared'),
@@ -568,8 +650,6 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final rainy = ref.watch(weatherConditionProvider) == 'rainy';
-    final suggestions = rainy ? _guideSuggestionsRainy : _guideSuggestions;
     final places = ref.watch(placesProvider);
     final locationResult = ref.watch(devicePositionProvider).value?.$2;
 
@@ -692,15 +772,52 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                                     offset: Offset(0, 2))
                               ],
                             ),
-                            child: Text(
-                              m.content,
-                              style: TextStyle(
-                                fontSize: 14.5,
-                                height: 1.5,
-                                fontWeight: FontWeight.w500,
-                                color: m.mine ? Colors.white : Theme.of(context).colorScheme.onSurface,
-                              ),
-                            ),
+                            child: m.mine
+                                ? Text(
+                                    m.content,
+                                    style: const TextStyle(
+                                      fontSize: 14.5,
+                                      height: 1.5,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : MarkdownBody(
+                                    data: m.content,
+                                    selectable: true,
+                                    onTapLink: (text, href, title) {
+                                      if (href != null && href.isNotEmpty) {
+                                        launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
+                                      }
+                                    },
+                                    styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                                      p: TextStyle(
+                                        fontSize: 14.5,
+                                        height: 1.5,
+                                        fontWeight: FontWeight.w500,
+                                        color: Theme.of(context).colorScheme.onSurface,
+                                      ),
+                                      strong: TextStyle(
+                                        fontSize: 14.5,
+                                        height: 1.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: Theme.of(context).colorScheme.onSurface,
+                                      ),
+                                      em: TextStyle(
+                                        fontSize: 14.5,
+                                        height: 1.5,
+                                        fontStyle: FontStyle.italic,
+                                        color: Theme.of(context).colorScheme.onSurface,
+                                      ),
+                                      listBullet: const TextStyle(
+                                        fontSize: 14.5,
+                                        height: 1.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: SpottoColors.accent,
+                                      ),
+                                      blockSpacing: 8.0,
+                                    ),
+                                  ),
                           ),
                         ),
                         for (final place in msgPlaces)
@@ -730,34 +847,45 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                   }
                 },
               ),
-            // suggestion chips (only after just the greeting)
-            if (_messages.length <= 1)
+            // suggestion chips throughout conversation
+            if (!_busy && _activeSuggestions.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final s in suggestions)
-                      PressScale(
-                        scale: 0.95,
-                        onTap: () => _send(s),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: SpottoColors.line, width: 1.5),
-                          ),
-                          child: Text(s,
-                              style: TextStyle(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: [
+                      for (final s in _activeSuggestions)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: PressScale(
+                            scale: 0.95,
+                            onTap: () => _send(s),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 13, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surface,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: SpottoColors.line, width: 1.5),
+                                boxShadow: const [
+                                  BoxShadow(color: Color(0x14103D3A), blurRadius: 8, offset: Offset(0, 2)),
+                                ],
+                              ),
+                              child: Text(
+                                s,
+                                style: TextStyle(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w700,
-                                  color: Theme.of(context).colorScheme.onSurface)),
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             // composer

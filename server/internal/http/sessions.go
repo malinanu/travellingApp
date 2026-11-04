@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/store/postgres"
@@ -200,4 +201,44 @@ func (s *Server) keepOnlyThisSession(r *http.Request, u domain.User) (string, er
 		return s.Tokens.IssueLegacy(u, c.SessionID) // see startSession
 	}
 	return s.Tokens.IssueForSession(u, c.SessionID)
+}
+
+// handleGetMySessions lists the caller's active sessions, marking their current session.
+func (s *Server) handleGetMySessions(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	sessions, err := s.Store.ActiveUserSessions(r.Context(), c.Subject)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	type sessionItem struct {
+		domain.Session
+		IsCurrent      bool `json:"isCurrent"`
+		IsCurrentSnake bool `json:"is_current"`
+	}
+	out := make([]sessionItem, 0, len(sessions))
+	for _, sess := range sessions {
+		cur := sess.ID == c.SessionID
+		out = append(out, sessionItem{
+			Session:        sess,
+			IsCurrent:      cur,
+			IsCurrentSnake: cur,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleDeleteMySession revokes one of the caller's active sessions by id.
+func (s *Server) handleDeleteMySession(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeErr(w, http.StatusBadRequest, "session id required")
+		return
+	}
+	if err := s.Store.RevokeUserSession(r.Context(), c.Subject, id); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

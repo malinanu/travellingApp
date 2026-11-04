@@ -1,7 +1,6 @@
-// Local Guide place cards: the server's summaries become cards with a
-// "0.8 km · $$ · ★ 4.6" line and a directions link; a reply that only
-// carries ids (older servers, older history) falls back to cached places.
-
+import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:spotto/data/models/models.dart';
 import 'package:spotto/features/traveller/guide/guide_place.dart';
@@ -19,7 +18,7 @@ void main() {
       'lng': 80.21,
       'coverThumb': '/media/raw/a.jpg?token=x',
     });
-    expect(card.metaLine, r'0.8 km · $$ · ★ 4.6');
+    expect(card.metaLine, r'800 m · $$ · ★ 4.6');
     expect(card.directionsUrl.toString(), 'https://www.google.com/maps/dir/?api=1&destination=6.03,80.21');
   });
 
@@ -40,4 +39,55 @@ void main() {
     final cards = guideCardsFor(const [], ['p1', 'missing', 'p0', 'p2', 'p3', 'p4'], cached);
     expect(cards.map((c) => c.id), ['p1', 'p0', 'p2', 'p3']);
   });
+
+  testWidgets('GuidePlaceCard renders name, badges, and action buttons', (tester) async {
+    const place = GuidePlace(
+      id: 'plc_1',
+      name: 'Coconut Tree Hill',
+      category: 'Attraction',
+      priceLevel: r'$$',
+      rating: 4.8,
+      distanceKm: 1.2,
+      lat: 5.9431,
+      lng: 80.4608,
+    );
+
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: GuidePlaceCard(place: place),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Coconut Tree Hill'), findsOneWidget);
+    expect(find.text('Attraction'), findsOneWidget);
+    expect(find.text('4.8'), findsOneWidget);
+    expect(find.text('1.2km'), findsOneWidget);
+    expect(find.text(r'$$'), findsOneWidget);
+    expect(find.text('Trip'), findsOneWidget);
+    expect(find.byIcon(Icons.directions_outlined), findsOneWidget);
+  });
+
+  testWidgets('MarkdownBody renders formatted text without raw markdown asterisks', (tester) async {
+    const rawText = '* **Tuana Mirissa**: Great beach cafe.\n* **Secret Beach**: Cozy cove.';
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MarkdownBody(
+            data: rawText,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Tuana Mirissa'), findsOneWidget);
+    expect(find.textContaining('**Tuana Mirissa**'), findsNothing);
+    expect(find.textContaining('Secret Beach'), findsOneWidget);
+    expect(find.textContaining('**Secret Beach**'), findsNothing);
+  });
 }
+
