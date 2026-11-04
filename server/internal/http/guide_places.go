@@ -102,7 +102,8 @@ type guideSearchPlace struct {
 	Rating     float64  `json:"rating,omitempty"`
 	DistanceKm *float64 `json:"distanceKm,omitempty"`
 	OpenNow    *bool    `json:"openNow,omitempty"`
-	Reasons    []string `json:"reasons"`
+	Reasons     []string `json:"reasons"`
+	VibeSummary string   `json:"vibeSummary,omitempty"`
 }
 
 func guideSearchResults(ranked []recommend.Scored, loc guideLocation) []guideSearchPlace {
@@ -113,6 +114,7 @@ func guideSearchResults(ranked []recommend.Scored, loc guideLocation) []guideSea
 			ID: sc.Place.ID, Name: sc.Place.Name, Category: f.category(), Region: f.Region,
 			PriceLevel: f.PriceLevel, Rating: f.Rating, DistanceKm: f.distanceFrom(loc),
 			OpenNow: f.OpenNow, Reasons: sc.Reasons,
+			VibeSummary: sc.VibeSummary,
 		})
 	}
 	return out
@@ -131,23 +133,196 @@ type guidePlaceCard struct {
 	DistanceKm *float64 `json:"distanceKm,omitempty"`
 	Lat        float64  `json:"lat,omitempty"`
 	Lng        float64  `json:"lng,omitempty"`
-	CoverThumb string   `json:"coverThumb,omitempty"`
-	CoverMicro string   `json:"coverMicro,omitempty"`
+	CoverThumb  string   `json:"coverThumb,omitempty"`
+	CoverMicro  string   `json:"coverMicro,omitempty"`
+	Description      string   `json:"description,omitempty"`
+	VibeMatchPercent int      `json:"vibeMatchPercent,omitempty"`
+	VibeBadge        string   `json:"vibeBadge,omitempty"`
+}
+
+// extractPlaceDescription parses a reply text to extract the 1-2 sentence recommendation
+func normalizeApostrophes(s string) string {
+	s = strings.ReplaceAll(s, "’", "'")
+	s = strings.ReplaceAll(s, "‘", "'")
+	s = strings.ReplaceAll(s, "`", "'")
+	s = strings.ReplaceAll(s, "´", "'")
+	return s
+}
+
+// extractPlaceDescription parses the guide reply to find the 1-2 sentence recommendation
+// or description associated with a specific place.
+func extractPlaceDescription(reply, name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" || reply == "" {
+		return ""
+	}
+
+	normReply := normalizeApostrophes(reply)
+	normName := normalizeApostrophes(name)
+	lines := strings.Split(reply, "\n")
+	normLines := strings.Split(normReply, "\n")
+	lowerName := strings.ToLower(normName)
+	altName := ""
+	if strings.HasPrefix(lowerName, "the ") {
+		altName = strings.TrimSpace(lowerName[4:])
+	}
+
+	// First pass: look for list items / bullets mentioning the place name
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || !isListItemOrHeader(trimmed) {
+			continue
+		}
+		lowerLine := strings.ToLower(normLines[i])
+		idx := strings.Index(lowerLine, lowerName)
+		matchedLen := len(normName)
+		if idx == -1 && altName != "" {
+			idx = strings.Index(lowerLine, altName)
+			matchedLen = len(altName)
+		}
+		if idx == -1 {
+			continue
+		}
+
+		desc := cleanPlaceDescriptionLine(trimmed[idx+matchedLen:])
+		desc = appendContinuationLines(lines, i+1, desc)
+		if len(desc) >= 6 {
+			return desc
+		}
+	}
+
+	// Second pass: any line mentioning the place name
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		lowerLine := strings.ToLower(normLines[i])
+		idx := strings.Index(lowerLine, lowerName)
+		matchedLen := len(normName)
+		if idx == -1 && altName != "" {
+			idx = strings.Index(lowerLine, altName)
+			matchedLen = len(altName)
+		}
+		if idx == -1 {
+			continue
+		}
+
+		desc := cleanPlaceDescriptionLine(trimmed[idx+matchedLen:])
+		desc = appendContinuationLines(lines, i+1, desc)
+		if len(desc) >= 6 {
+			return desc
+		}
+	}
+
+	return ""
+}
+
+func appendContinuationLines(lines []string, startIdx int, initialDesc string) string {
+	desc := initialDesc
+	if startIdx >= len(lines) {
+		return desc
+	}
+	rawNext := lines[startIdx]
+	nextTrimmed := strings.TrimSpace(rawNext)
+	if nextTrimmed == "" || isListItemOrHeader(nextTrimmed) {
+		return desc
+	}
+
+	if desc == "" {
+		return cleanPlaceDescriptionLine(nextTrimmed)
+	}
+
+	trimmedDesc := strings.TrimSpace(desc)
+	lastChar := trimmedDesc[len(trimmedDesc)-1]
+	isIndented := strings.HasPrefix(rawNext, "  ") || strings.HasPrefix(rawNext, "\t")
+	if (lastChar == '.' || lastChar == '!' || lastChar == '?') && !isIndented {
+		return desc
+	}
+
+	return desc + " " + nextTrimmed
+}
+
+func cleanPlaceDescriptionLine(s string) string {
+	s = strings.TrimSpace(s)
+	// Strip trailing bold/italic markers closing the place name: **, *, __, _
+	s = strings.TrimLeft(s, "*_`'\"")
+	s = strings.TrimSpace(s)
+
+	// Strip markdown link URL if name was inside [Name](url)
+	if strings.HasPrefix(s, "](") {
+		if closeIdx := strings.Index(s, ")"); closeIdx != -1 && closeIdx < 200 {
+			s = strings.TrimSpace(s[closeIdx+1:])
+		}
+	}
+
+	// Strip parentheses with metadata right after name, e.g. "(0.8 km · $$): "
+	if strings.HasPrefix(s, "(") {
+		if closeIdx := strings.Index(s, ")"); closeIdx != -1 && closeIdx < 80 {
+			s = strings.TrimSpace(s[closeIdx+1:])
+		}
+	}
+
+	// Strip separators
+	s = strings.TrimLeft(s, " \t:-–—·,")
+	s = strings.TrimLeft(s, "*_`'\"")
+	s = strings.TrimSpace(s)
+
+	// Strip closing markdown quotes
+	s = strings.TrimRight(s, "*_`'\"")
+	return strings.TrimSpace(s)
+}
+
+func isListItemOrHeader(s string) bool {
+	if strings.HasPrefix(s, "#") || strings.HasPrefix(s, "-") || strings.HasPrefix(s, "*") || strings.HasPrefix(s, "+") {
+		return true
+	}
+	// Check numbered lists like "1. ", "2) "
+	for i := 0; i < len(s) && i < 4; i++ {
+		if s[i] >= '0' && s[i] <= '9' {
+			continue
+		}
+		if (s[i] == '.' || s[i] == ')') && i > 0 && i+1 < len(s) && s[i+1] == ' ' {
+			return true
+		}
+		break
+	}
+	return false
 }
 
 // guidePlaceCardFor builds a card; placeData is the place's signed
 // placeJSON map (for the media URLs).
-func guidePlaceCardFor(p domain.Place, placeData map[string]any, loc guideLocation) guidePlaceCard {
+type guideUserVibePrefs struct {
+	TravelStyles []string
+	Interests    []string
+}
+
+func guidePlaceCardFor(p domain.Place, placeData map[string]any, loc guideLocation, userPrefs ...guideUserVibePrefs) guidePlaceCard {
 	f := parseGuideFacts(p)
 	str := func(k string) string { s, _ := placeData[k].(string); return s }
 	thumb := str("coverThumb")
 	if thumb == "" {
 		thumb = str("cover")
 	}
+	var styles, interests []string
+	if len(userPrefs) > 0 {
+		styles = userPrefs[0].TravelStyles
+		interests = userPrefs[0].Interests
+	}
+	vibePercent := 0
+	vibeBadge := ""
+	if len(styles) > 0 || len(interests) > 0 {
+		vm := recommend.CalculateVibeMatch(p, styles, interests)
+		if vm.Percentage >= 65 {
+			vibePercent = vm.Percentage
+			vibeBadge = vm.BadgeLabel
+		}
+	}
 	return guidePlaceCard{
 		ID: p.ID, Name: p.Name, Category: f.category(), Region: f.Region,
 		PriceLevel: f.PriceLevel, Rating: f.Rating, DistanceKm: f.distanceFrom(loc),
 		Lat: f.Lat, Lng: f.Lng, CoverThumb: thumb, CoverMicro: str("coverMicro"),
+		VibeMatchPercent: vibePercent, VibeBadge: vibeBadge,
 	}
 }
 

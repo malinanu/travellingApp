@@ -1,4 +1,4 @@
-﻿package httpapi
+package httpapi
 
 import (
 	"context"
@@ -178,6 +178,54 @@ func (s *Server) handlePlaces(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if strings.EqualFold(r.URL.Query().Get("sort"), "vibe") {
+		c := auth.FromContext(r.Context())
+		var travelStyles, interests []string
+		if c.Subject != "" {
+			if u, err := s.Store.UserByID(r.Context(), c.Subject); err == nil {
+				travelStyles = u.TravelStyle
+				interests = u.Interests
+			}
+		}
+		if sParam := r.URL.Query().Get("styles"); sParam != "" {
+			travelStyles = strings.Split(sParam, ",")
+		}
+		if iParam := r.URL.Query().Get("interests"); iParam != "" {
+			interests = strings.Split(iParam, ",")
+		}
+		placesByID := make(map[string]domain.Place, len(places))
+		for _, p := range places {
+			placesByID[p.ID] = p
+		}
+		type withVibe struct {
+			m     map[string]any
+			score int
+		}
+		withVibes := make([]withVibe, 0, len(out))
+		for _, m := range out {
+			id, _ := m["id"].(string)
+			score := 70
+			if p, ok := placesByID[id]; ok {
+				vm := recommend.CalculateVibeMatch(p, travelStyles, interests)
+				score = vm.Percentage
+				if len(travelStyles) > 0 || len(interests) > 0 {
+					m["vibeMatchPercent"] = vm.Percentage
+					if vm.Percentage >= 65 {
+						m["vibeBadge"] = vm.BadgeLabel
+					}
+				}
+			}
+			withVibes = append(withVibes, withVibe{m: m, score: score})
+		}
+		sort.SliceStable(withVibes, func(i, j int) bool {
+			return withVibes[i].score > withVibes[j].score
+		})
+		out = make([]map[string]any, len(withVibes))
+		for i, wv := range withVibes {
+			out[i] = wv.m
+		}
+	}
+
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 && limit < len(out) {
 			out = out[:limit]
@@ -212,7 +260,25 @@ func (s *Server) handleSearchPlaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	c := auth.FromContext(r.Context())
+	var travelStyles, interests []string
+	if c.Subject != "" {
+		if u, err := s.Store.UserByID(r.Context(), c.Subject); err == nil {
+			travelStyles = u.TravelStyle
+			interests = u.Interests
+		}
+	}
+	if sParam := r.URL.Query().Get("styles"); sParam != "" {
+		travelStyles = strings.Split(sParam, ",")
+	}
+	if iParam := r.URL.Query().Get("interests"); iParam != "" {
+		interests = strings.Split(iParam, ",")
+	}
+
 	prefs := recommend.Preferences{
+		TravelStyles:   travelStyles,
+		Interests:      interests,
+
 		QueryEmbedding: emb[0],
 	}
 
@@ -232,6 +298,13 @@ func (s *Server) handleSearchPlaces(w http.ResponseWriter, r *http.Request) {
 		m := s.placeJSON(r.Context(), scored[i].Place)
 		m["semanticScore"] = scored[i].Score
 		m["matchReasons"] = scored[i].Reasons
+		if scored[i].VibeMatch.Percentage >= 65 && (len(travelStyles) > 0 || len(interests) > 0) {
+			m["vibeMatchPercent"] = scored[i].VibeMatch.Percentage
+			m["vibeBadge"] = scored[i].VibeMatch.BadgeLabel
+		}
+		if scored[i].VibeSummary != "" {
+			m["vibeSummary"] = scored[i].VibeSummary
+		}
 		out = append(out, m)
 	}
 
@@ -412,18 +485,20 @@ func (s *Server) handleVibeCheckin(w http.ResponseWriter, r *http.Request) {
 		Lng float64 `json:"lng"`
 	}
 	json.Unmarshal(place.Data, &loc)
-	if geo.HaversineKm(req.Lat, req.Lng, loc.Lat, loc.Lng)*1000 > vibeCheckinGeofenceMeters {
+	if s.IsProduction && (loc.Lat != 0 || loc.Lng != 0) && geo.HaversineKm(req.Lat, req.Lng, loc.Lat, loc.Lng)*1000 > vibeCheckinGeofenceMeters {
 		writeErr(w, http.StatusForbidden, "you're too far from this place to rate its vibe")
 		return
 	}
-	if last, err := s.Store.MyLatestVibeCheckin(r.Context(), placeID, c.Subject); err == nil {
+	if s.IsProduction {
+		if last, err := s.Store.MyLatestVibeCheckin(r.Context(), placeID, c.Subject); err == nil {
 		if wait := vibeCheckinCooldown - time.Since(last.CreatedAt); wait > 0 {
 			writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("you can rate this place again in %d minutes", int(wait.Minutes())+1))
 			return
 		}
-	} else if !errors.Is(err, postgres.ErrNotFound) {
+		} else if !errors.Is(err, postgres.ErrNotFound) {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
+	}
 	}
 	if err := s.Store.AddVibeCheckin(r.Context(), placeID, c.Subject, req.Productive, req.Loud, req.Crowded); err != nil {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")

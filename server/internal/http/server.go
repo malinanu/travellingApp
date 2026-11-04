@@ -34,6 +34,7 @@ type Server struct {
 	Store   *postgres.Store
 	Tokens  *auth.Tokens
 	TOTPKey []byte // AES-256 key for encrypting TOTP secrets at rest
+	IsProduction bool
 
 	Mail *mail.Mailer
 	// Jobs runs slow side effects (email sends) off the request goroutine â€”
@@ -135,7 +136,8 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 	s := &Server{
 		Store:   store,
 		Tokens:  tokens,
-		TOTPKey: cfg.TOTPEncryptionKey,
+		TOTPKey:              cfg.TOTPEncryptionKey,
+		IsProduction:         cfg.IsProduction(),
 		Mail: mail.New(mail.Config{
 			Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.EmailFrom,
 		}),

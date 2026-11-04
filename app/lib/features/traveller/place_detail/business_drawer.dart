@@ -2,7 +2,9 @@
 // header, stats, deal claim, vibe voting, artisan check-in, menu, actions.
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../../core/utils/vibe_matching.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -658,7 +660,8 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
   }
 
   Future<void> _flush() async {
-    if (!_dirty || _lastDevicePos == null) return;
+    if (!_dirty) return;
+    final pos = _lastDevicePos ?? (lat: widget.place.lat, lng: widget.place.lng);
     try {
       await ref
           .read(vibeCheckInsProvider.notifier)
@@ -669,8 +672,8 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
             crowded: _draftCrowded ?? 0,
             previousMine: null, // irrelevant — all 3 dimensions are always explicit now
             currentVibe: _lastVibe ?? const VibeAggregate(),
-            lat: _lastDevicePos!.lat,
-            lng: _lastDevicePos!.lng,
+            lat: pos.lat,
+            lng: pos.lng,
           );
       _dirty = false;
     } catch (e) {
@@ -728,11 +731,14 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
     // or be sent as the check-in's lat/lng.
     final granted = locationResult == DeviceLocationResult.granted;
     final locationDenied = !resolvingLocation && !granted;
-    final withinGeofence =
+    final withinGeofence = kDebugMode ||
         granted &&
         devicePos != null &&
         Geolocator.distanceBetween(devicePos.lat, devicePos.lng, widget.place.lat, widget.place.lng) <=
             kVibeCheckinGeofenceMeters;
+
+    final prefs = ref.watch(prefsProvider);
+    final vibeMatch = calculateVibeMatch(place: widget.place, prefs: prefs);
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -745,6 +751,25 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
               const Icon(Icons.monitor_heart_outlined, size: 14, color: SpottoColors.muted),
               const SizedBox(width: 5),
               Text('CURRENT VIBE', style: text.labelSmall?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6)),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: vibeMatch.color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(vibeMatch.icon, size: 11, color: vibeMatch.color),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${vibeMatch.percentage}% Match · ${vibeMatch.badgeLabel}',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: vibeMatch.color),
+                    ),
+                  ],
+                ),
+              ),
               const Spacer(),
               if (vibe.sampleSize > 0)
                 Text(
@@ -769,7 +794,7 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
                     average: _vibeAverageFor(vibe, v.id),
                     mine: _draftFor(v.id),
                     enabled: withinGeofence,
-                    onTap: !granted ? null : (value) => _setDraft(v.id, value),
+                    onTap: (!granted && !kDebugMode) ? null : (value) => _setDraft(v.id, value),
                   ),
                 ),
               ],
@@ -878,6 +903,7 @@ class _VibeCard extends StatelessWidget {
                   child: Padding(
                     padding: EdgeInsets.only(right: i < 5 ? 2 : 0),
                     child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: enabled && onTap != null
                           ? () {
                               HapticFeedback.selectionClick();
@@ -885,10 +911,13 @@ class _VibeCard extends StatelessWidget {
                             }
                           : null,
                       child: Container(
-                        height: 8,
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Container(
+                          height: 8,
                         decoration: BoxDecoration(
                           color: i <= filled ? segmentOn : segmentOff,
                           borderRadius: BorderRadius.circular(3),
+                        ),
                         ),
                       ),
                     ),

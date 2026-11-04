@@ -7,9 +7,10 @@
 // (see server's syncVendorPlace / claims.offer_id), and the activity feed
 // is that offer's actual claim/redemption history — not placeholders.
 
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  ArrowLeft, Calendar, Check, Eye, Percent, Ticket, Trash2, Zap, LucideIcon,
+  ArrowLeft, Calendar, Check, Eye, Percent, PowerOff, RotateCcw, Ticket, Trash2, X, Zap, LucideIcon,
 } from 'lucide-react';
 
 import { Donut } from '@spotto/charts';
@@ -65,6 +66,14 @@ export default function OfferDetailDrawer({
     enabled: !!offer,
   });
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   if (!offer) return null;
   const Icon: LucideIcon = TYPE_ICON[offer.type] ?? Percent;
   const redemptionRate = offer.claimed > 0 ? Math.round((offer.redeemed / offer.claimed) * 100) : 0;
@@ -76,36 +85,46 @@ export default function OfferDetailDrawer({
         <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
           <button onClick={onClose}
             className="flex items-center gap-1.5 text-[13px] font-extrabold text-muted hover:text-ink transition-colors -ml-2 px-2 py-1.5 rounded-lg hover:bg-sand">
-            <ArrowLeft size={16} /> Back to offers
+            <ArrowLeft size={16} /> Back
           </button>
-          {(onSetStatus || onDelete) && (
-            <div className="flex items-center gap-2">
-              {onSetStatus && offer.status === 'draft' && (
-                <button onClick={() => onSetStatus('live')}
-                  className="rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-extrabold flex items-center gap-1.5 hover:border-accent hover:text-accent transition-colors">
-                  <Zap size={13} /> Publish
-                </button>
-              )}
-              {onSetStatus && (offer.status === 'live' || offer.status === 'ending') && (
-                <button onClick={() => onSetStatus('ended')}
-                  className="rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-extrabold flex items-center gap-1.5 hover:border-accent hover:text-accent transition-colors">
-                  <Check size={13} /> End offer
-                </button>
-              )}
-              {onSetStatus && offer.status === 'ended' && (
-                <button onClick={() => onSetStatus('live')}
-                  className="rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-extrabold flex items-center gap-1.5 hover:border-accent hover:text-accent transition-colors">
-                  <Zap size={13} /> Relaunch
-                </button>
-              )}
-              {onDelete && (
-                <button onClick={onDelete}
-                  className="rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-extrabold text-coral flex items-center gap-1.5 hover:bg-[#fde4d8] hover:border-coral/40 transition-colors">
-                  <Trash2 size={13} /> Delete
-                </button>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {(onSetStatus || onDelete) && (
+              <>
+                {onSetStatus && offer.status === 'draft' && (
+                  <button onClick={() => onSetStatus('live')}
+                    className="btn btn-secondary px-3 py-1.5 text-[12.5px] font-extrabold">
+                    <Zap size={13} /> Publish
+                  </button>
+                )}
+                {onSetStatus && (offer.status === 'live' || offer.status === 'ending') && (
+                  <button onClick={() => onSetStatus('ended')}
+                    className="btn btn-secondary px-3 py-1.5 text-[12.5px] font-extrabold text-[#d9534f] hover:text-[#c9302c]">
+                    <PowerOff size={13} /> Close offer
+                  </button>
+                )}
+                {onSetStatus && offer.status === 'ended' && (
+                  <button onClick={() => onSetStatus('live')}
+                    className="btn btn-secondary px-3 py-1.5 text-[12.5px] font-extrabold text-accent">
+                    <RotateCcw size={13} /> Reopen offer
+                  </button>
+                )}
+                {onDelete && (
+                  <button onClick={onDelete}
+                    className="btn btn-danger-outline px-3 py-1.5 text-[12.5px] font-extrabold">
+                    <Trash2 size={13} /> Delete
+                  </button>
+                )}
+              </>
+            )}
+            <button
+              onClick={onClose}
+              title="Close (Esc)"
+              className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-sand transition-colors ml-1"
+              aria-label="Close drawer"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
       </header>
 

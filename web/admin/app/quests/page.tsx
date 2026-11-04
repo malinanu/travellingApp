@@ -433,7 +433,7 @@ function ApprovalQueueTab({
                       </Link>
 
                       {s.vendorCategory && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-accent/10 text-accent border border-accent/20">
+                        <span className="badge bg-accent/10 text-accent border border-accent/20">
                           <Tag size={10} /> {s.vendorCategory}
                         </span>
                       )}
@@ -456,13 +456,13 @@ function ApprovalQueueTab({
                     )}
                   </div>
 
-                  {/* Prominent Status Pill */}
+                  {/* Prominent Status Pill (Strictly Informational Badge) */}
                   {isItemRejected ? (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-extrabold bg-rose-500/10 text-rose-500 border border-rose-500/20 shrink-0">
+                    <span className="badge bg-rose-500/10 text-rose-500 border border-rose-500/20 shrink-0">
                       <XCircle size={12} /> Edits Requested
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-extrabold bg-amber-500/15 text-amber-600 border border-amber-500/25 shrink-0">
+                    <span className="badge bg-amber-500/15 text-amber-600 border border-amber-500/25 shrink-0">
                       <Clock size={12} /> Pending Admin Review
                     </span>
                   )}
@@ -506,14 +506,14 @@ function ApprovalQueueTab({
                   </div>
                 </div>
 
-                {/* Clear, Prominent Action Strip */}
+                {/* Clear, Prominent Action Strip with Unmistakable Buttons */}
                 <div className="flex items-center justify-end gap-3 pt-2 border-t border-line">
                   {isItemRejected ? (
                     <>
                       <button
                         onClick={() => onResetPending(actionId)}
                         disabled={isPending}
-                        className="btn text-amber-500 hover:border-amber-500/50 hover:bg-amber-500/10 flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold rounded-xl transition-all"
+                        className="btn btn-secondary text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700/60 hover:bg-amber-500/10 hover:border-amber-400 flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold rounded-xl"
                         title="Restore to Pending Review status"
                       >
                         <Undo2 size={15} />
@@ -523,7 +523,7 @@ function ApprovalQueueTab({
                       <button
                         onClick={() => onApprove(actionId)}
                         disabled={isPending}
-                        className="btn bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-600 flex items-center gap-2 px-5 py-2 text-[13px] shadow-sm font-extrabold rounded-xl transition-all"
+                        className="btn btn-primary bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-600 flex items-center gap-2 px-5 py-2 text-[13px] shadow-sm font-extrabold rounded-xl"
                         title="Reconsider and approve proposal"
                       >
                         <CheckCircle2 size={16} />
@@ -535,7 +535,7 @@ function ApprovalQueueTab({
                       <button
                         onClick={() => onReject(actionId)}
                         disabled={isPending}
-                        className="btn border-rose-300 dark:border-rose-900/60 text-rose-600 hover:bg-rose-500/10 hover:border-rose-400 flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold rounded-xl transition-all"
+                        className="btn btn-danger-outline flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold rounded-xl"
                         title="Reject or request edits for this perk"
                       >
                         <XCircle size={15} />
@@ -545,7 +545,7 @@ function ApprovalQueueTab({
                       <button
                         onClick={() => onApprove(actionId)}
                         disabled={isPending}
-                        className="btn bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-600 flex items-center gap-2 px-5 py-2 text-[13px] shadow-sm font-extrabold rounded-xl transition-all"
+                        className="btn btn-primary bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-600 flex items-center gap-2 px-5 py-2 text-[13px] shadow-sm font-extrabold rounded-xl"
                         title="Approve for scheduling"
                       >
                         <CheckCircle2 size={16} />
@@ -650,7 +650,7 @@ function ApprovedSponsorsTab({
                   </div>
                 </div>
 
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0">
+                <span className="badge bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0">
                   <Check size={11} /> Approved
                 </span>
               </div>
@@ -677,9 +677,11 @@ function ApprovedSponsorsTab({
                 <button
                   onClick={() => onRevoke(s.id || s.vendorId)}
                   disabled={isPending}
-                  className="text-[12px] font-bold text-rose-500 hover:underline px-2 py-1"
+                  className="btn btn-danger-outline text-[12px] py-1.5 px-3 font-bold"
+                  title="Revoke approval for this reward"
                 >
-                  Revoke
+                  <X size={13} />
+                  <span>Revoke</span>
                 </button>
                 <button
                   onClick={() => onSchedule(s.vendorId, s.id)}
@@ -838,7 +840,7 @@ function SchedulerTab({
               <button
                 type="button"
                 onClick={() => setSelectedDate(todayStr)}
-                className="text-[11px] font-bold px-2 py-0.5 rounded bg-black/5 dark:bg-white/5 text-muted hover:text-ink"
+                className="btn btn-secondary text-[11px] py-1 px-2.5 rounded-lg font-bold"
               >
                 Today
               </button>
@@ -849,7 +851,7 @@ function SchedulerTab({
                   d.setDate(d.getDate() + 1);
                   setSelectedDate(d.toISOString().slice(0, 10));
                 }}
-                className="text-[11px] font-bold px-2 py-0.5 rounded bg-black/5 dark:bg-white/5 text-muted hover:text-ink"
+                className="btn btn-secondary text-[11px] py-1 px-2.5 rounded-lg font-bold"
               >
                 Tomorrow
               </button>
@@ -1006,7 +1008,7 @@ function SchedulerTab({
                       <ExternalLink size={11} className="opacity-0 group-hover:opacity-100 transition-opacity text-accent shrink-0" />
                     </Link>
                     {isToday && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-accent text-white">
+                      <span className="badge bg-accent text-white shadow-xs text-[10px] font-bold">
                         TODAY
                       </span>
                     )}
@@ -1044,7 +1046,7 @@ function SchedulerTab({
                           deleteScheduleMutation.mutate(s.date);
                         }
                       }}
-                      className="text-[11px] font-bold text-rose-500 hover:underline pt-0.5 block ml-auto"
+                      className="btn btn-danger-outline text-[11px] py-1 px-2.5 font-bold block ml-auto mt-1"
                     >
                       Cancel Schedule
                     </button>
@@ -1102,7 +1104,7 @@ function CompletionsTab() {
           {date && (
             <button
               onClick={() => setDate('')}
-              className="text-[12px] font-bold text-accent hover:underline"
+              className="btn btn-secondary text-[11.5px] py-1 px-2.5 rounded-lg font-bold"
             >
               Show all days
             </button>
@@ -1159,13 +1161,13 @@ function CompletionsTab() {
                   <td className="px-4 py-3 text-right">
                     {c.redeemedAt ? (
                       <span
-                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                        className="badge bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
                         title={new Date(c.redeemedAt).toLocaleString()}
                       >
                         <CheckCircle2 size={12} /> Claimed at Vendor
                       </span>
                     ) : (
-                      <span className="inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold bg-black/5 dark:bg-white/5 text-muted border border-line">
+                      <span className="badge bg-black/5 dark:bg-white/5 text-muted border border-line">
                         Reward Unclaimed
                       </span>
                     )}

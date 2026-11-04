@@ -418,8 +418,12 @@ final meProvider = NotifierProvider<MeNotifier, Map<String, dynamic>?>(MeNotifie
 class PrefsNotifier extends Notifier<UserPrefs?> {
   @override
   UserPrefs? build() {
-    final json = ref.read(localStoreProvider).getJson(StoreKeys.prefs);
-    return json == null ? null : UserPrefs.fromJson(json);
+    try {
+      final json = ref.read(localStoreProvider).getJson(StoreKeys.prefs);
+      return json == null ? null : UserPrefs.fromJson(json);
+    } catch (_) {
+      return null;
+    }
   }
 
   void saveLocal(UserPrefs prefs) {

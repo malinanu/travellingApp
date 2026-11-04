@@ -2,6 +2,7 @@ package recommend
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/spotto/server/internal/domain"
@@ -190,5 +191,66 @@ func TestParseFactsDerivesCategoryID(t *testing.T) {
 	}
 	if f.Region != "Mirissa" {
 		t.Errorf("expected Region to be Mirissa, got %s", f.Region)
+	}
+}
+
+func TestRankPrefersTravelStyleVibe(t *testing.T) {
+	coworking := place("nomad-spot", map[string]any{
+		"type": "coffee", "lat": 5.9724, "lng": 80.4292, "openNow": true,
+		"vibe": map[string]any{"productive": 4.8, "loud": 1.5, "crowded": 2.0},
+	})
+	noisyBar := place("noisy-bar", map[string]any{
+		"type": "coffee", "lat": 5.9724, "lng": 80.4292, "openNow": true,
+		"vibe": map[string]any{"productive": 1.2, "loud": 4.8, "crowded": 4.8},
+	})
+
+	prefs := Preferences{
+		TravelStyles: []string{"nomad"},
+		Interests:    []string{"quiet", "wifi"},
+		Lat:          5.9724,
+		Lng:          80.4292,
+	}
+	ranked := Rank([]domain.Place{noisyBar, coworking}, prefs, "sunny")
+	if len(ranked) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(ranked))
+	}
+	if ranked[0].Place.ID != "nomad-spot" {
+		t.Fatalf("expected nomad-spot to rank first for Digital Nomad, got %s", ranked[0].Place.ID)
+	}
+}
+
+func TestCalculateVibeMatchAndReasons(t *testing.T) {
+	coworking := place("nomad-spot", map[string]any{
+		"categoryId": "coffee", "type": "coffee", "lat": 5.9724, "lng": 80.4292, "openNow": true,
+		"vibe": map[string]any{"productive": 4.8, "loud": 1.5, "crowded": 2.0, "sampleSize": 12},
+	})
+
+	vm := CalculateVibeMatch(coworking, []string{"nomad"}, []string{"quiet", "coworking"})
+	if vm.Percentage < 85 {
+		t.Errorf("expected nomad vibe match >= 85%%, got %d%%", vm.Percentage)
+	}
+	if !strings.Contains(vm.BadgeLabel, "Digital Nomad") {
+		t.Errorf("expected badge to mention Digital Nomad, got %s", vm.BadgeLabel)
+	}
+	if !strings.Contains(vm.Summary, "match for digital nomad") {
+		t.Errorf("expected summary to mention digital nomad, got %s", vm.Summary)
+	}
+
+	ranked := Rank([]domain.Place{coworking}, Preferences{
+		TravelStyles: []string{"nomad"},
+		Interests:    []string{"quiet"},
+	}, "sunny")
+	if len(ranked) == 0 {
+		t.Fatal("expected at least 1 result")
+	}
+	hasNomadReason := false
+	for _, r := range ranked[0].Reasons {
+		if strings.Contains(r, "nomad") {
+			hasNomadReason = true
+			break
+		}
+	}
+	if !hasNomadReason {
+		t.Errorf("expected reasons to include nomad-specific vibe reason, got %v", ranked[0].Reasons)
 	}
 }

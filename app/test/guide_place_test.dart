@@ -89,5 +89,142 @@ void main() {
     expect(find.textContaining('Secret Beach'), findsOneWidget);
     expect(find.textContaining('**Secret Beach**'), findsNothing);
   });
+
+  test('parses and serializes description field', () {
+    final place = GuidePlace.fromJson({
+      'id': 'p1',
+      'name': 'Doctor\'s House',
+      'description': 'A historic Dutch colonial property with woodfired pizza.',
+    });
+    expect(place.description, 'A historic Dutch colonial property with woodfired pizza.');
+    expect(place.toJson()['description'], 'A historic Dutch colonial property with woodfired pizza.');
+  });
+
+  test('extracts place description and backfills guideCardsFor', () {
+    const reply = '''Here are some spots:
+- **Doctor's House**: Historic property with great pizza and garden vibe.
+- **Dots Bay House** (0.8 km): Beachfront surf lodge with acoustic sessions.''';
+
+    final cards = guideCardsFor(
+      [const GuidePlace(id: 'p1', name: 'Doctor\'s House')],
+      const [],
+      const [],
+      reply,
+    );
+    expect(cards.first.description, 'Historic property with great pizza and garden vibe.');
+  });
+
+  test('parsePlaceTurnContent cleanly separates intro, place descriptions, and outro', () {
+    const rawText = '''Since it's rainy out today, here are some great cozy spots to check out:
+
+- **Doctor's House**: A historic Dutch colonial property with woodfired pizza and craft beer.
+- **Dots Bay House**: Beachfront surf hangout with healthy smoothie bowls.
+
+Would you prefer something right on the beach or a quieter spot inland?''';
+
+    final places = [
+      const GuidePlace(id: 'p1', name: 'Doctor\'s House'),
+      const GuidePlace(id: 'p2', name: 'Dots Bay House'),
+    ];
+
+    final turn = parsePlaceTurnContent(rawText, places);
+    expect(turn.intro, 'Since it\'s rainy out today, here are some great cozy spots to check out:');
+    expect(turn.placeDescriptions['Doctor\'s House'], 'A historic Dutch colonial property with woodfired pizza and craft beer.');
+    expect(turn.placeDescriptions['Dots Bay House'], 'Beachfront surf hangout with healthy smoothie bowls.');
+    expect(turn.outro, 'Would you prefer something right on the beach or a quieter spot inland?');
+  });
+
+  test('parsePlaceTurnContent preserves outro statement without question mark and without blank line', () {
+    const rawText = '''Here are a couple recommendations:
+- **Doctor's House**: Woodfired pizza and beach garden.
+- **Dots Bay House**: Surf lodge right on the beach.
+Hope you have a wonderful time in Mirissa!''';
+
+    final places = [
+      const GuidePlace(id: 'p1', name: 'Doctor\'s House'),
+      const GuidePlace(id: 'p2', name: 'Dots Bay House'),
+    ];
+
+    final turn = parsePlaceTurnContent(rawText, places);
+    expect(turn.intro, 'Here are a couple recommendations:');
+    expect(turn.placeDescriptions['Doctor\'s House'], 'Woodfired pizza and beach garden.');
+    expect(turn.placeDescriptions['Dots Bay House'], 'Surf lodge right on the beach.');
+    expect(turn.outro, 'Hope you have a wonderful time in Mirissa!');
+  });
+
+  test('extractPlaceDescriptionFromText handles curly apostrophes and markdown links', () {
+    const text = '''Recommendations:
+- **Doctor’s House**: Vibrant beachfront bar.
+- [Sea Breeze](https://example.com): Cozy terrace.''';
+
+    expect(extractPlaceDescriptionFromText(text, 'Doctor\'s House'), 'Vibrant beachfront bar.');
+    expect(extractPlaceDescriptionFromText(text, 'Sea Breeze'), 'Cozy terrace.');
+  });
+
+  testWidgets('GuidePlaceCard renders description and location region badge inside unified card', (tester) async {
+    const place = GuidePlace(
+      id: 'plc_1',
+      name: 'Doctor\'s House',
+      category: 'Restaurant',
+      region: 'Mirissa',
+      description: 'A **historic** Dutch colonial property with woodfired pizzas.',
+      rating: 4.8,
+    );
+
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: GuidePlaceCard(place: place),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Doctor\'s House'), findsOneWidget);
+    // Verifies location region badge is displayed
+    expect(find.text('Mirissa'), findsOneWidget);
+    expect(find.byIcon(Icons.place_outlined), findsOneWidget);
+    // Verifies inline markdown bold is cleaned up cleanly
+    expect(find.text('A historic Dutch colonial property with woodfired pizzas.'), findsOneWidget);
+    expect(find.byIcon(Icons.format_quote_rounded), findsOneWidget);
+  });
+
+  testWidgets('GuidePlaceCard renders vibe suitability badge when present', (tester) async {
+    const place = GuidePlace(
+      id: 'plc_vibe',
+      name: 'Nomad Oasis',
+      category: 'Cafe',
+      vibeMatchPercent: 92,
+      vibeBadge: '92% Vibe',
+    );
+
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: GuidePlaceCard(place: place),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('92% Vibe'), findsOneWidget);
+    expect(find.byIcon(Icons.bolt_rounded), findsOneWidget);
+  });
+
+  test('GuidePlace parses vibeMatchPercent and vibeBadge from JSON', () {
+    final card = GuidePlace.fromJson({
+      'id': 'plc_1',
+      'name': 'Nomad Hub',
+      'vibeMatchPercent': 88,
+      'vibeBadge': '88% Vibe',
+    });
+    expect(card.vibeMatchPercent, 88);
+    expect(card.vibeBadge, '88% Vibe');
+    expect(card.toJson()['vibeMatchPercent'], 88);
+    expect(card.toJson()['vibeBadge'], '88% Vibe');
+  });
 }
+
 

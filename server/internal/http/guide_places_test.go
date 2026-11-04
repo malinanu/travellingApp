@@ -57,6 +57,15 @@ func TestGuideSearchResultsCarryFacts(t *testing.T) {
 	if noLoc := guideSearchResults([]recommend.Scored{{Place: p}}, guideLocation{}); noLoc[0].DistanceKm != nil {
 		t.Fatal("no distance without a known location")
 	}
+	scVibe := recommend.Scored{
+		Place:       p,
+		Reasons:     []string{"matches your vibe"},
+		VibeSummary: "92% match for digital nomad: productive (4.6/5)",
+	}
+	outVibe := guideSearchResults([]recommend.Scored{scVibe}, guideLocation{Known: true, Lat: 6.03, Lng: 80.21})
+	if outVibe[0].VibeSummary != "92% match for digital nomad: productive (4.6/5)" {
+		t.Fatalf("VibeSummary missing or incorrect: %s", outVibe[0].VibeSummary)
+	}
 }
 
 func TestGuideCardOrder(t *testing.T) {
@@ -68,5 +77,117 @@ func TestGuideCardOrder(t *testing.T) {
 	got = guideCardOrder("What budget are you thinking?", []string{"a", "b", "c", "d"}, names)
 	if strings.Join(got, ",") != "a,b,c" {
 		t.Fatalf("no mentions should fall back to the first three, got %v", got)
+	}
+}
+
+func TestExtractPlaceDescription(t *testing.T) {
+	reply := `Here are a few great spots to relax by the ocean:
+
+- **Doctor's House**: A historic Dutch colonial property converted into a vibrant beach bar and restaurant with woodfired pizzas.
+- **Dots Bay House** (0.8 km · $$): Surf lodge right on the sand with live music sessions.
+1. Sea Breeze Cafe — Cozy beachfront terrace famous for iced coconut coffee and sunset views.
+* **Secret Beach**:
+Tucked away cove with crystal clear waters and a rustic beach shack.
+
+Which one sounds best to you?`
+
+	cases := []struct {
+		name      string
+		placeName string
+		wantSub   string
+	}{
+		{
+			name:      "bullet with colon and bold",
+			placeName: "Doctor's House",
+			wantSub:   "A historic Dutch colonial property",
+		},
+		{
+			name:      "bullet with parentheses meta",
+			placeName: "Dots Bay House",
+			wantSub:   "Surf lodge right on the sand",
+		},
+		{
+			name:      "numbered item with em-dash",
+			placeName: "Sea Breeze Cafe",
+			wantSub:   "Cozy beachfront terrace famous for iced coconut coffee",
+		},
+		{
+			name:      "item with description on continuation line",
+			placeName: "Secret Beach",
+			wantSub:   "Tucked away cove with crystal clear waters",
+		},
+		{
+			name:      "unmentioned place returns empty",
+			placeName: "Nonexistent Spot",
+			wantSub:   "",
+		},
+		{
+			name:      "curly apostrophe matching",
+			placeName: "Doctor's House",
+			wantSub:   "A historic Dutch colonial property",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := extractPlaceDescription(reply, c.placeName)
+			if c.wantSub == "" {
+				if got != "" {
+					t.Fatalf("expected empty description for %q, got %q", c.placeName, got)
+				}
+			} else {
+				if !strings.Contains(got, c.wantSub) {
+					t.Fatalf("extractPlaceDescription(%q) = %q, want substring %q", c.placeName, got, c.wantSub)
+				}
+			}
+		})
+	}
+
+	// Test curly apostrophe in reply when place has straight apostrophe
+	curlyReply := `Here are some recommendations:
+- **Doctor’s House**: Vibrant oceanfront venue famous for lively music and seafood.
+Hope you enjoy it!`
+	gotCurly := extractPlaceDescription(curlyReply, "Doctor's House")
+	if !strings.Contains(gotCurly, "Vibrant oceanfront venue") {
+		t.Fatalf("expected curly quote to match straight quote, got %q", gotCurly)
+	}
+	if strings.Contains(gotCurly, "Hope you enjoy") {
+		t.Fatalf("outro text was incorrectly appended to place description, got %q", gotCurly)
+	}
+
+	// Test markdown link in bullet
+	linkReply := `Here are recommendations:
+- [Doctor's House](https://spotto.app/p/123): Rustic beach garden bar.
+Have fun!`
+	gotLink := extractPlaceDescription(linkReply, "Doctor's House")
+	if !strings.Contains(gotLink, "Rustic beach garden bar") {
+		t.Fatalf("expected markdown link to be stripped, got %q", gotLink)
+	}
+	if strings.Contains(gotLink, "Have fun") {
+		t.Fatalf("outro text was incorrectly appended to place description, got %q", gotLink)
+	}
+}
+
+func TestGuidePlaceCardVibeBadge(t *testing.T) {
+	p := domain.Place{
+		ID:   "p_nomad",
+		Name: "Nomad Cafe",
+		Data: []byte(`{"categoryId":"coffee","type":"cafe","rating":4.8,"vibe":{"productive":4.8,"loud":1.5,"crowded":2.0,"sampleSize":10}}`),
+	}
+	card := guidePlaceCardFor(p, map[string]any{"coverThumb": "thumb.jpg"}, guideLocation{}, guideUserVibePrefs{
+		TravelStyles: []string{"nomad"},
+		Interests:    []string{"quiet"},
+	})
+	if card.VibeMatchPercent < 80 {
+		t.Errorf("expected high vibe match percent, got %d", card.VibeMatchPercent)
+	}
+	if !strings.Contains(card.VibeBadge, "Digital Nomad") {
+		t.Errorf("expected badge to mention Digital Nomad, got %s", card.VibeBadge)
+	}
+
+	// User without travel styles or interests configured must not receive a vibe badge
+	cardNoPrefs := guidePlaceCardFor(p, map[string]any{"coverThumb": "thumb.jpg"}, guideLocation{}, guideUserVibePrefs{})
+	if cardNoPrefs.VibeMatchPercent != 0 || cardNoPrefs.VibeBadge != "" {
+		t.Errorf("expected no vibe badge when user has no travel styles set, got %d %q", cardNoPrefs.VibeMatchPercent, cardNoPrefs.VibeBadge)
 	}
 }

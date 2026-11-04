@@ -138,6 +138,7 @@ type guideTurn struct {
 	favoriteIDs   []string
 	avoidIDs      []string
 	interests     []string
+	travelStyles  []string
 }
 
 func newGuideTurn(history []domain.GuideMessage, loc guideLocation) *guideTurn {

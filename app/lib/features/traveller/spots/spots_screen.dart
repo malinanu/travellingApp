@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
+import '../../../core/utils/vibe_matching.dart';
 import '../../../core/widgets/category_icons.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../core/widgets/press_scale.dart';
@@ -38,6 +39,13 @@ class _CategoryCircleItem {
 }
 
 const _circleCategories = [
+  _CategoryCircleItem(
+    key: 'vibe',
+    label: 'My Vibe',
+    icon: Icons.auto_awesome_rounded,
+    tintColor: Color(0xFFE0F2F1),
+    iconColor: Color(0xFF00796B),
+  ),
   _CategoryCircleItem(
     key: 'food',
     label: 'Food & Dining',
@@ -108,17 +116,34 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
     super.dispose();
   }
 
-  List<Place> _applyFilters(List<Place> places) {
+  List<Place> _applyFilters(List<Place> places, [UserPrefs? prefs]) {
     final q = _query.trim().toLowerCase();
-    return places.where((p) {
+    final res = places.where((p) {
       if (_regionId != null && p.regionId != _regionId) return false;
-      if (_category != null && !_matchesCategory(p, _category!)) return false;
+      if (_category != null) {
+        if (_category == 'vibe') {
+          if (prefs != null && (prefs.styles.isNotEmpty || prefs.interests.isNotEmpty)) {
+            final vm = calculateVibeMatch(place: p, prefs: prefs);
+            if (vm.percentage < 65) return false;
+          }
+        } else if (!_matchesCategory(p, _category!)) {
+          return false;
+        }
+      }
       if (q.isEmpty) return true;
       return p.name.toLowerCase().contains(q) ||
           p.type.toLowerCase().contains(q) ||
           p.region.toLowerCase().contains(q) ||
           p.tags.any((t) => t.toLowerCase().contains(q));
     }).toList();
+    if (_category == 'vibe' && prefs != null && (prefs.styles.isNotEmpty || prefs.interests.isNotEmpty)) {
+      res.sort((a, b) {
+        final sa = calculateVibeMatch(place: a, prefs: prefs).percentage;
+        final sb = calculateVibeMatch(place: b, prefs: prefs).percentage;
+        return sb.compareTo(sa);
+      });
+    }
+    return res;
   }
 
   Future<void> _pickRegion(List<Place> allPlaces) async {
@@ -219,7 +244,7 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
     final locationStatus = ref.watch(placesLocationStatusProvider);
     final userPrefs = ref.watch(prefsProvider);
 
-    final filtered = _applyFilters(places);
+    final filtered = _applyFilters(places, userPrefs);
     final sorted = locationStatus == PlacesLocationStatus.sorted &&
         filtered.any((p) => p.distanceKm != null) &&
         filtered.length >= 4;
@@ -413,6 +438,7 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
                 selectedRegionName: regionName,
                 places: filtered,
                 totalPlacesCount: places.length,
+                userPrefs: userPrefs,
                 onSelectCategory: (catKey) => setState(() => _category = _category == catKey ? null : catKey),
                 onPickRegion: () => _pickRegion(places),
               ),
@@ -470,9 +496,9 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const _SpotSectionHeader(
-                title: 'Matched to Your Style',
-                pill: 'For you',
-                leadIcon: Icons.favorite_rounded,
+                title: 'Matched to Your Vibe',
+                pill: 'Top fit for your style',
+                leadIcon: Icons.auto_awesome_rounded,
               ),
               const SizedBox(height: 12),
               RepaintBoundary(child: _QuadTileCarousel(places: matchedPlaces)),
@@ -769,6 +795,7 @@ class _CategoryCircleCarousel extends StatelessWidget {
     required this.selectedRegionName,
     required this.places,
     required this.totalPlacesCount,
+    this.userPrefs,
     required this.onSelectCategory,
     required this.onPickRegion,
   });
@@ -777,6 +804,7 @@ class _CategoryCircleCarousel extends StatelessWidget {
   final String? selectedRegionName;
   final List<Place> places;
   final int totalPlacesCount;
+  final UserPrefs? userPrefs;
   final ValueChanged<String> onSelectCategory;
   final VoidCallback onPickRegion;
 
@@ -860,7 +888,14 @@ class _CategoryCircleCarousel extends StatelessWidget {
           // ── Items 0..N-1: Curated Category Circles ─────────────────────────
           final cat = _circleCategories[i];
           final isSelected = selectedCategory == cat.key;
-          final count = places.where((p) => _matchesCategory(p, cat.key)).length;
+          final int count;
+          if (cat.key == 'vibe') {
+            count = (userPrefs != null && (userPrefs!.styles.isNotEmpty || userPrefs!.interests.isNotEmpty))
+                ? places.where((p) => calculateVibeMatch(place: p, prefs: userPrefs).percentage >= 65).length
+                : places.length;
+          } else {
+            count = places.where((p) => _matchesCategory(p, cat.key)).length;
+          }
 
           return PressScale(
             onTap: () => onSelectCategory(cat.key),
@@ -924,7 +959,7 @@ class _CategoryCircleCarousel extends StatelessWidget {
 }
 
 /// Compact Modern Spot Tile Card with support for Sponsored Ads, Deals, and Distance
-class _SpotTileCard extends StatelessWidget {
+class _SpotTileCard extends ConsumerWidget {
   const _SpotTileCard({
     required this.place,
     this.width,
@@ -934,8 +969,12 @@ class _SpotTileCard extends StatelessWidget {
   final double? width;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
+    final userPrefs = ref.watch(prefsProvider);
+    final hasPrefs = userPrefs != null && (userPrefs.styles.isNotEmpty || userPrefs.interests.isNotEmpty);
+    final vibeMatch = hasPrefs ? calculateVibeMatch(place: place, prefs: userPrefs) : null;
+    final showVibeBadge = vibeMatch != null && vibeMatch.percentage >= 70;
 
     return PressScale(
       onTap: () => showBusinessDrawer(context, place),
@@ -1055,6 +1094,40 @@ class _SpotTileCard extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                               fontSize: 10,
                             ),
+                          ),
+                        ),
+                      ),
+
+                    // Bottom-Left: Vibe Suitability Badge
+                    if (showVibeBadge)
+                      Positioned(
+                        left: 8,
+                        bottom: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xE60B4A54),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 0.8),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 1)),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.bolt_rounded, size: 11, color: Color(0xFF4EE0B5)),
+                              const SizedBox(width: 2),
+                              Text(
+                                '${vibeMatch.percentage}% Vibe',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 10,
+                                  letterSpacing: 0.1,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -1286,18 +1359,14 @@ List<Place> _matchedPlacesForUser(List<Place> places, UserPrefs? prefs) {
   if (prefs == null || (prefs.styles.isEmpty && prefs.interests.isEmpty)) {
     return const [];
   }
-  final targetStyles = prefs.styles.map((s) => s.toLowerCase()).toSet();
-  final targetInterests = prefs.interests.map((i) => i.toLowerCase()).toSet();
+  final scored = <({Place place, int percentage})>[];
+  for (final p in places) {
+    final match = calculateVibeMatch(place: p, prefs: prefs);
+    if (match.percentage >= 60) {
+      scored.add((place: p, percentage: match.percentage));
+    }
+  }
+  scored.sort((a, b) => b.percentage.compareTo(a.percentage));
+  return scored.take(8).map((e) => e.place).toList();
 
-  return places.where((p) {
-    for (final s in p.styles) {
-      if (targetStyles.contains(s.toLowerCase())) return true;
-    }
-    for (final t in p.tags) {
-      final tl = t.toLowerCase();
-      if (targetInterests.contains(tl) || targetStyles.contains(tl)) return true;
-    }
-    if (targetInterests.contains(p.type.toLowerCase())) return true;
-    return false;
-  }).take(8).toList();
 }

@@ -16,20 +16,20 @@ export const TYPE_ICON: Record<string, LucideIcon> = {
 export function StatusPill({ status }: { status: OfferStatus }) {
   if (status === 'live') {
     return (
-      <span className="text-[11px] font-extrabold uppercase flex items-center gap-1 text-[#16803c]">
+      <span className="badge uppercase text-[#16803c] bg-emerald-500/10 border border-emerald-500/20">
         <span className="w-1.5 h-1.5 rounded-full bg-[#16803c]" /> Live
       </span>
     );
   }
   if (status === 'ending') {
-    return <span className="text-[11px] font-extrabold uppercase rounded-full px-2 py-0.5 bg-[#fdf0cd] text-[#a97b00]">Ending soon</span>;
+    return <span className="badge uppercase bg-[#fdf0cd] text-[#a97b00] border border-amber-300/40">Ending soon</span>;
   }
   if (status === 'draft') {
     return (
-      <span className="text-[11px] font-extrabold uppercase rounded-full px-2 py-0.5 bg-sand text-muted flex items-center gap-1">
+      <span className="badge uppercase bg-sand text-muted border border-line">
         <Pencil size={9} /> Draft
       </span>
     );
   }
-  return <span className="text-[11px] font-extrabold uppercase text-muted">Ended</span>;
+  return <span className="badge uppercase bg-black/5 dark:bg-white/5 text-muted border border-line">Ended</span>;
 }

@@ -632,6 +632,78 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     ));
   }
 
+  Widget _buildBubble(BuildContext context, String content, {required bool isMine}) {
+    return Align(
+      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.84),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isMine ? SpottoColors.accent : Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(20),
+            topRight: const Radius.circular(20),
+            bottomLeft: Radius.circular(isMine ? 20 : 6),
+            bottomRight: Radius.circular(isMine ? 6 : 20),
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1F103D3A),
+              blurRadius: 12,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: isMine
+            ? Text(
+                content,
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  height: 1.5,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
+              )
+            : MarkdownBody(
+                data: content,
+                selectable: true,
+                onTapLink: (text, href, title) {
+                  if (href != null && href.isNotEmpty) {
+                    launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
+                  }
+                },
+                styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                  p: TextStyle(
+                    fontSize: 14.5,
+                    height: 1.5,
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  strong: TextStyle(
+                    fontSize: 14.5,
+                    height: 1.5,
+                    fontWeight: FontWeight.w800,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  em: TextStyle(
+                    fontSize: 14.5,
+                    height: 1.5,
+                    fontStyle: FontStyle.italic,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  listBullet: const TextStyle(
+                    fontSize: 14.5,
+                    height: 1.5,
+                    fontWeight: FontWeight.w700,
+                    color: SpottoColors.accent,
+                  ),
+                  blockSpacing: 8.0,
+                ),
+              ),
+      ),
+    );
+  }
+
   Widget? _payloadCard(int i, GuidePayload p) => switch (p.type) {
         'questions' => GuideQuestionsCard(
             questions: p.questions,
@@ -651,6 +723,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final places = ref.watch(placesProvider);
+    final userPrefs = ref.watch(prefsProvider);
     final locationResult = ref.watch(devicePositionProvider).value?.$2;
 
     return Scaffold(
@@ -741,90 +814,70 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                   final m = _messages[i];
                   final msgPlaces = m.mine || m.payload != null
                       ? const <GuidePlace>[]
-                      : guideCardsFor(m.cards, m.placeIds, places, m.content);
+                      : guideCardsFor(m.cards, m.placeIds, places, m.content, userPrefs);
                   final card = m.payload == null ? null : _payloadCard(i, m.payload!);
+                  if (m.mine) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          _buildBubble(context, m.content, isMine: true),
+                        ],
+                      ),
+                    );
+                  }
+
+                  // Assistant turn with recommended places: separate into intro bubble, unified place cards, outro bubble
+                  if (msgPlaces.isNotEmpty) {
+                    final turn = parsePlaceTurnContent(m.content, msgPlaces);
+                    final hasIntro = turn.intro.trim().isNotEmpty;
+                    final hasOutro = turn.outro.trim().isNotEmpty;
+
+                    // Fallback: if no intro, outro, or place descriptions were parsed, show full content
+                    final fallbackToFull = !hasIntro && !hasOutro && turn.placeDescriptions.isEmpty;
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (fallbackToFull)
+                            _buildBubble(context, m.content, isMine: false)
+                          else if (hasIntro)
+                            _buildBubble(context, turn.intro, isMine: false),
+                          for (final place in msgPlaces)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: GuidePlaceCard(
+                                place: place,
+                                description: place.description.isNotEmpty
+                                    ? place.description
+                                    : (turn.placeDescriptions[place.id] ?? turn.placeDescriptions[place.name]),
+                              ),
+                            ),
+                          if (!fallbackToFull && hasOutro)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: _buildBubble(context, turn.outro, isMine: false),
+                            ),
+                          if (card != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: card,
+                            ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  // Normal assistant turn (Q&A, itinerary, questions)
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Column(
-                      crossAxisAlignment:
-                          m.mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Align(
-                          alignment:
-                              m.mine ? Alignment.centerRight : Alignment.centerLeft,
-                          child: Container(
-                            constraints: BoxConstraints(
-                                maxWidth: MediaQuery.of(context).size.width * 0.84),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: m.mine ? SpottoColors.accent : Theme.of(context).colorScheme.surface,
-                              borderRadius: BorderRadius.only(
-                                topLeft: const Radius.circular(20),
-                                topRight: const Radius.circular(20),
-                                bottomLeft: Radius.circular(m.mine ? 20 : 6),
-                                bottomRight: Radius.circular(m.mine ? 6 : 20),
-                              ),
-                              boxShadow: const [
-                                BoxShadow(
-                                    color: Color(0x1F103D3A),
-                                    blurRadius: 12,
-                                    offset: Offset(0, 2))
-                              ],
-                            ),
-                            child: m.mine
-                                ? Text(
-                                    m.content,
-                                    style: const TextStyle(
-                                      fontSize: 14.5,
-                                      height: 1.5,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : MarkdownBody(
-                                    data: m.content,
-                                    selectable: true,
-                                    onTapLink: (text, href, title) {
-                                      if (href != null && href.isNotEmpty) {
-                                        launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
-                                      }
-                                    },
-                                    styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                                      p: TextStyle(
-                                        fontSize: 14.5,
-                                        height: 1.5,
-                                        fontWeight: FontWeight.w500,
-                                        color: Theme.of(context).colorScheme.onSurface,
-                                      ),
-                                      strong: TextStyle(
-                                        fontSize: 14.5,
-                                        height: 1.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: Theme.of(context).colorScheme.onSurface,
-                                      ),
-                                      em: TextStyle(
-                                        fontSize: 14.5,
-                                        height: 1.5,
-                                        fontStyle: FontStyle.italic,
-                                        color: Theme.of(context).colorScheme.onSurface,
-                                      ),
-                                      listBullet: const TextStyle(
-                                        fontSize: 14.5,
-                                        height: 1.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: SpottoColors.accent,
-                                      ),
-                                      blockSpacing: 8.0,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                        for (final place in msgPlaces)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: GuidePlaceCard(place: place),
-                          ),
+                        _buildBubble(context, m.content, isMine: false),
                         if (card != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 8),

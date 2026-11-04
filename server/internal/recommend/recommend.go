@@ -8,6 +8,7 @@ package recommend
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -51,6 +52,16 @@ type Preferences struct {
 	AvoidIDs      []string
 	TargetRegion  string
 	QueryText     string
+	TravelStyles  []string
+	Interests     []string
+}
+
+// VibeMatch contains computed vibe compatibility metrics for a place.
+type VibeMatch struct {
+	Percentage int    `json:"percentage"`
+	BadgeLabel string `json:"badgeLabel"`
+	Headline   string `json:"headline"`
+	Summary    string `json:"summary"`
 }
 
 // Scored is one ranked result — Reasons is handed back to the LLM so it
@@ -58,7 +69,9 @@ type Preferences struct {
 type Scored struct {
 	Place   domain.Place
 	Score   float64
-	Reasons []string
+	Reasons     []string
+	VibeMatch   VibeMatch
+	VibeSummary string
 }
 
 // facts is what this package actually needs out of a Place's opaque JSONB
@@ -202,7 +215,14 @@ func Rank(places []domain.Place, prefs Preferences, weather string) []Scored {
 	scored := make([]Scored, 0, len(candidates))
 	for _, c := range candidates {
 		s, reasons := score(c.place.ID, c.facts, c.dist, prefs, weather)
-		scored = append(scored, Scored{Place: c.place, Score: s, Reasons: reasons})
+		vm := CalculateVibeMatchFromFacts(c.facts, prefs.TravelStyles, prefs.Interests)
+		scored = append(scored, Scored{
+			Place:       c.place,
+			Score:       s,
+			Reasons:     reasons,
+			VibeMatch:   vm,
+			VibeSummary: vm.Summary,
+		})
 	}
 
 	sort.Slice(scored, func(i, j int) bool { return scored[i].Score > scored[j].Score })
@@ -321,7 +341,51 @@ func score(placeID string, f facts, distKm float64, prefs Preferences, weather s
 
 	vibe, hasVibePref := vibeScore(f, prefs)
 	if hasVibePref {
-		reasons = append(reasons, "matches the vibe you're after")
+		if vibe >= 0.75 {
+			addedStyleReason := false
+			for _, s := range prefs.TravelStyles {
+				switch strings.ToLower(strings.TrimSpace(s)) {
+				case "nomad", "digital nomad":
+					reasons = append(reasons, "great vibe for nomads (productive & quiet)")
+					addedStyleReason = true
+				case "surf", "surf traveler":
+					reasons = append(reasons, "relaxed surf vibe")
+					addedStyleReason = true
+				case "luxury":
+					reasons = append(reasons, "exclusive & quiet atmosphere")
+					addedStyleReason = true
+				case "backpacker":
+					reasons = append(reasons, "social backpacker atmosphere")
+					addedStyleReason = true
+				}
+				if addedStyleReason {
+					break
+				}
+			}
+			if !addedStyleReason {
+				for _, in := range prefs.Interests {
+					switch strings.ToLower(strings.TrimSpace(in)) {
+					case "coworking", "wifi", "fast wi-fi":
+						reasons = append(reasons, "productive coworking vibe")
+						addedStyleReason = true
+					case "quiet", "quiet zone":
+						reasons = append(reasons, "calm and quiet vibe")
+						addedStyleReason = true
+					case "nightlife", "live music":
+						reasons = append(reasons, "vibrant social atmosphere")
+						addedStyleReason = true
+					}
+					if addedStyleReason {
+						break
+					}
+				}
+			}
+			if !addedStyleReason {
+				reasons = append(reasons, "great vibe match for your style")
+			}
+		} else {
+			reasons = append(reasons, "matches the vibe you're after")
+		}
 	}
 
 	dist := 0.5
@@ -438,29 +502,127 @@ func cosineSimilarity(a, b []float64) float64 {
 // — e.g. "productive" doesn't mean anything for a beach bar, so a
 // traveller's productivity preference is excluded from that candidate's
 // score entirely rather than compared against a meaningless average.
+// InferDesiredVibes maps traveller styles and interests to desired 1-5 vibe ratings.
+func InferDesiredVibes(travelStyles, interests []string) (desiredProd, desiredLoud, desiredCrowd *float64) {
+	if len(travelStyles) == 0 && len(interests) == 0 {
+		return nil, nil, nil
+	}
+	var prodSum, loudSum, crowdSum float64
+	var prodWeight, loudWeight, crowdWeight float64
+
+	add := func(p, l, c, w float64) {
+		prodSum += p * w
+		loudSum += l * w
+		crowdSum += c * w
+		prodWeight += w
+		loudWeight += w
+		crowdWeight += w
+	}
+
+	for _, s := range travelStyles {
+		switch strings.ToLower(strings.TrimSpace(s)) {
+		case "nomad", "digital nomad":
+			add(4.5, 1.8, 2.5, 1.5)
+		case "surf", "surf traveler":
+			add(2.0, 3.0, 3.0, 1.0)
+		case "luxury":
+			add(3.0, 1.5, 1.8, 1.2)
+		case "backpacker":
+			add(2.5, 3.8, 4.0, 1.2)
+		}
+	}
+
+	for _, in := range interests {
+		switch strings.ToLower(strings.TrimSpace(in)) {
+		case "quiet", "quiet zone":
+			loudSum += 1.0 * 1.5
+			loudWeight += 1.5
+		case "coworking":
+			prodSum += 5.0 * 1.5
+			prodWeight += 1.5
+		case "wifi", "fast wi-fi":
+			prodSum += 4.5 * 1.2
+			prodWeight += 1.2
+		case "nightlife", "live music":
+			loudSum += 4.5 * 1.5
+			crowdSum += 4.5 * 1.5
+			loudWeight += 1.5
+			crowdWeight += 1.5
+		}
+	}
+
+	if prodWeight > 0 {
+		p := math.Round((prodSum/prodWeight)*10) / 10
+		desiredProd = &p
+	}
+	if loudWeight > 0 {
+		l := math.Round((loudSum/loudWeight)*10) / 10
+		desiredLoud = &l
+	}
+	if crowdWeight > 0 {
+		c := math.Round((crowdSum/crowdWeight)*10) / 10
+		desiredCrowd = &c
+	}
+	return
+}
+
+func categoryVibePriors(categoryID string) (p, l, c float64) {
+	switch strings.ToLower(categoryID) {
+	case "coffee", "coworking":
+		return 4.2, 2.0, 2.5
+	case "restaurants":
+		return 2.5, 3.0, 3.2
+	case "nightlife", "bars":
+		return 1.5, 4.2, 4.2
+	case "surf", "beaches":
+		return 2.0, 2.8, 2.8
+	case "hotels", "stays":
+		return 3.2, 1.8, 2.0
+	default:
+		return 2.5, 2.5, 2.5
+	}
+}
+
 func vibeScore(f facts, prefs Preferences) (float64, bool) {
 	relevant := map[string]bool{}
 	for _, d := range domain.RelevantVibeDimensions(f.CategoryID) {
 		relevant[d] = true
 	}
 	v := f.Vibe
+	unrated := v.Productive == 0 && v.Loud == 0 && v.Crowded == 0 && v.SampleSize <= 0
+	if unrated {
+		p, l, c := categoryVibePriors(f.CategoryID)
+		v.Productive, v.Loud, v.Crowded = p, l, c
+	}
+
+	desiredProd := prefs.DesiredProductive
+	desiredLoud := prefs.DesiredLoud
+	desiredCrowd := prefs.DesiredCrowded
+
+	if desiredProd == nil && desiredLoud == nil && desiredCrowd == nil {
+		desiredProd, desiredLoud, desiredCrowd = InferDesiredVibes(prefs.TravelStyles, prefs.Interests)
+	}
 	total, dims := 0.0, 0
-	if prefs.DesiredProductive != nil && relevant["productive"] {
-		total += 1 - abs(*prefs.DesiredProductive-v.Productive)/4
+	if desiredProd != nil && relevant["productive"] {
+		total += 1 - abs(*desiredProd-v.Productive)/4
 		dims++
 	}
-	if prefs.DesiredLoud != nil && relevant["loud"] {
-		total += 1 - abs(*prefs.DesiredLoud-v.Loud)/4
+	if desiredLoud != nil && relevant["loud"] {
+		total += 1 - abs(*desiredLoud-v.Loud)/4
 		dims++
 	}
-	if prefs.DesiredCrowded != nil && relevant["crowded"] {
-		total += 1 - abs(*prefs.DesiredCrowded-v.Crowded)/4
+	if desiredCrowd != nil && relevant["crowded"] {
+		total += 1 - abs(*desiredCrowd-v.Crowded)/4
 		dims++
 	}
 	if dims == 0 {
 		return 0.5, false
 	}
-	return total / float64(dims), true
+	score := total / float64(dims)
+	if unrated {
+		score = 0.65 + (score-0.5)*0.5
+	}
+	return score, true
 }
 
 // tagScore is |userTags ∩ (place.tags ∪ place.styles)| / |userTags| — the
@@ -536,4 +698,129 @@ func min1(x float64) float64 {
 		return 1
 	}
 	return x
+}
+
+// CalculateVibeMatch computes the vibe compatibility metrics and summary for a place.
+func CalculateVibeMatch(p domain.Place, travelStyles, interests []string) VibeMatch {
+	return CalculateVibeMatchFromFacts(parseFacts(p), travelStyles, interests)
+}
+
+// CalculateVibeMatchFromFacts computes vibe match metrics given parsed facts.
+func CalculateVibeMatchFromFacts(f facts, travelStyles, interests []string) VibeMatch {
+	primaryStyleLabel := "your vibe"
+	for _, s := range travelStyles {
+		switch strings.ToLower(strings.TrimSpace(s)) {
+		case "nomad", "digital nomad":
+			primaryStyleLabel = "Digital Nomad"
+		case "surf", "surf traveler":
+			if primaryStyleLabel == "your vibe" {
+				primaryStyleLabel = "Surf Traveler"
+			}
+		case "luxury":
+			if primaryStyleLabel == "your vibe" {
+				primaryStyleLabel = "Luxury Traveler"
+			}
+		case "backpacker":
+			if primaryStyleLabel == "your vibe" {
+				primaryStyleLabel = "Backpacker"
+			}
+		}
+	}
+
+	desiredProd, desiredLoud, desiredCrowd := InferDesiredVibes(travelStyles, interests)
+	v := f.Vibe
+	isEstimated := v.SampleSize <= 0
+	if isEstimated {
+		v.Productive, v.Loud, v.Crowded = categoryVibePriors(f.CategoryID)
+	}
+
+	relevant := map[string]bool{}
+	for _, d := range domain.RelevantVibeDimensions(f.CategoryID) {
+		relevant[d] = true
+	}
+
+	totalScore := 0.0
+	dims := 0
+	if relevant["productive"] {
+		dp := 3.0
+		if desiredProd != nil {
+			dp = *desiredProd
+		}
+		totalScore += 1.0 - math.Abs(dp-v.Productive)/4.0
+		dims++
+	}
+	if relevant["loud"] {
+		dl := 2.5
+		if desiredLoud != nil {
+			dl = *desiredLoud
+		}
+		totalScore += 1.0 - math.Abs(dl-v.Loud)/4.0
+		dims++
+	}
+	if relevant["crowded"] {
+		dc := 2.5
+		if desiredCrowd != nil {
+			dc = *desiredCrowd
+		}
+		totalScore += 1.0 - math.Abs(dc-v.Crowded)/4.0
+		dims++
+	}
+
+	score := 0.75
+	if dims > 0 {
+		score = totalScore / float64(dims)
+	}
+	if isEstimated {
+		score = 0.70 + (score-0.5)*0.4
+	}
+
+	percent := int(math.Round(score * 100))
+	if percent < 10 {
+		percent = 10
+	}
+	if percent > 99 {
+		percent = 99
+	}
+
+	badgeLabel := "Ideal for " + primaryStyleLabel
+	headline := fmt.Sprintf("%d%% Vibe Match", percent)
+	if percent < 82 {
+		badgeLabel = "Good fit for " + primaryStyleLabel
+		headline = fmt.Sprintf("%d%% Good Fit", percent)
+	}
+
+	var dimFacts []string
+	if relevant["productive"] {
+		dimFacts = append(dimFacts, fmt.Sprintf("productive (%.1f/5)", v.Productive))
+	}
+	if relevant["loud"] {
+		if v.Loud <= 2.2 {
+			dimFacts = append(dimFacts, fmt.Sprintf("quiet (%.1f/5)", v.Loud))
+		} else if v.Loud >= 3.8 {
+			dimFacts = append(dimFacts, fmt.Sprintf("lively (%.1f/5)", v.Loud))
+		} else {
+			dimFacts = append(dimFacts, fmt.Sprintf("noise %.1f/5", v.Loud))
+		}
+	}
+	if relevant["crowded"] {
+		if v.Crowded <= 2.2 {
+			dimFacts = append(dimFacts, fmt.Sprintf("uncrowded (%.1f/5)", v.Crowded))
+		} else if v.Crowded >= 3.8 {
+			dimFacts = append(dimFacts, fmt.Sprintf("buzzing (%.1f/5)", v.Crowded))
+		} else {
+			dimFacts = append(dimFacts, fmt.Sprintf("crowd %.1f/5", v.Crowded))
+		}
+	}
+
+	summary := fmt.Sprintf("%d%% match for %s", percent, strings.ToLower(primaryStyleLabel))
+	if len(dimFacts) > 0 {
+		summary += ": " + strings.Join(dimFacts, ", ")
+	}
+
+	return VibeMatch{
+		Percentage: percent,
+		BadgeLabel: badgeLabel,
+		Headline:   headline,
+		Summary:    summary,
+	}
 }

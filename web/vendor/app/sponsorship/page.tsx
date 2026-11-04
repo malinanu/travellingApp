@@ -14,6 +14,8 @@ import {
   HelpCircle,
   Info,
   MapPin,
+  Pause,
+  Play,
   Plus,
   Power,
   RotateCcw,
@@ -183,7 +185,7 @@ export default function SponsorshipPage() {
 
           <button
             onClick={openCreateModal}
-            className="btn-accent px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-sm font-extrabold text-[13.5px] shrink-0 self-start md:self-auto"
+            className="btn btn-accent px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-sm font-extrabold text-[13.5px] shrink-0 self-start md:self-auto"
           >
             <Plus size={16} />
             <span>Propose New Reward</span>
@@ -324,7 +326,7 @@ export default function SponsorshipPage() {
               </div>
               <button
                 onClick={openCreateModal}
-                className="btn-accent px-4 py-2 rounded-xl text-[13px] font-extrabold inline-flex items-center gap-2 shadow-sm"
+                className="btn btn-accent px-4 py-2 text-[13px] font-extrabold inline-flex items-center gap-2 shadow-sm"
               >
                 <Plus size={15} />
                 <span>Propose Your First Reward</span>
@@ -365,25 +367,21 @@ export default function SponsorshipPage() {
                           </div>
                         </div>
 
-                        {/* Status Badges */}
-                        {isPaused ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-sand text-muted border border-line shrink-0">
-                            <Power size={11} /> Paused
-                          </span>
-                        ) : isScheduledUpcoming ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-accent text-white shadow-xs shrink-0">
+                        {/* Status Badges (Strictly Informational Labels) */}
+                        {isScheduledUpcoming ? (
+                          <span className="badge bg-accent text-white shadow-xs shrink-0">
                             <Calendar size={11} /> Scheduled
                           </span>
                         ) : isApproved ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-500/15 text-emerald-700 border border-emerald-500/20 shrink-0">
+                          <span className="badge bg-emerald-500/15 text-emerald-700 border border-emerald-500/20 shrink-0">
                             <CheckCircle2 size={11} /> Approved
                           </span>
                         ) : isPending ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-500/15 text-amber-600 border border-amber-500/20 shrink-0">
+                          <span className="badge bg-amber-500/15 text-amber-600 border border-amber-500/20 shrink-0">
                             <Clock size={11} /> Pending Review
                           </span>
                         ) : isRejected ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-coral/15 text-coral border border-coral/20 shrink-0">
+                          <span className="badge bg-coral/15 text-coral border border-coral/20 shrink-0">
                             <XCircle size={11} /> Edits Requested
                           </span>
                         ) : null}
@@ -399,14 +397,14 @@ export default function SponsorshipPage() {
                         </p>
                       </div>
 
-                      {/* Badges strip: Daily limit & Active state */}
-                      <div className="flex items-center gap-3 text-[12px] font-semibold text-muted">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-sand/70 text-ink border border-line/60">
+                      {/* Badges strip: Daily limit & Active state indicator */}
+                      <div className="flex items-center gap-2.5 text-[12px] font-semibold text-muted flex-wrap">
+                        <span className="badge bg-sand/70 text-ink border border-line/60">
                           Limit: <strong className="font-extrabold">{s.rewardLimit > 0 ? `${s.rewardLimit}/day` : 'Unlimited'}</strong>
                         </span>
 
-                        <span className="inline-flex items-center gap-1">
-                          <span className={`w-2 h-2 rounded-full ${s.isActive ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                        <span className={`badge ${s.isActive ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-500/20' : 'bg-sand text-muted border border-line'}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${s.isActive ? 'bg-emerald-500' : 'bg-gray-400'}`} />
                           <span>{s.isActive ? 'Active for scheduling' : 'Paused by you'}</span>
                         </span>
                       </div>
@@ -420,47 +418,60 @@ export default function SponsorshipPage() {
                       )}
                     </div>
 
-                    {/* Bottom Action Bar */}
+                    {/* Bottom Action Bar — Unmistakable Buttons */}
                     <div className="flex items-center justify-between pt-3 border-t border-line mt-1">
-                      {/* Active Toggle Switch */}
+                      {/* Explicit Interactive Control for Active/Pause State */}
                       <button
                         type="button"
                         onClick={() => toggleActiveMutation.mutate(s)}
                         disabled={toggleActiveMutation.isPending}
-                        className={`text-[12px] font-extrabold flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors ${
+                        className={`btn btn-secondary text-[12px] py-1.5 px-3 font-extrabold ${
                           s.isActive
-                            ? 'text-emerald-700 bg-emerald-500/10 hover:bg-emerald-500/20'
-                            : 'text-muted bg-sand hover:bg-sand/80'
+                            ? 'text-amber-800 hover:text-amber-900 border-amber-300 hover:border-amber-400 bg-amber-50/50'
+                            : 'text-emerald-700 hover:text-emerald-800 border-emerald-300 hover:border-emerald-400 bg-emerald-50/50'
                         }`}
-                        title={s.isActive ? 'Pause this reward' : 'Activate this reward'}
+                        title={s.isActive ? 'Pause reward from scheduling' : 'Activate reward for scheduling'}
                       >
-                        <Power size={13} />
-                        <span>{s.isActive ? 'Active' : 'Paused'}</span>
+                        {s.isActive ? (
+                          <>
+                            <Pause size={13} className="text-amber-600" />
+                            <span>Pause Reward</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play size={13} className="text-emerald-600" />
+                            <span>Activate Reward</span>
+                          </>
+                        )}
                       </button>
 
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(s)}
+                          className="btn btn-secondary text-[12px] py-1.5 px-3 font-bold"
+                          title="Edit reward details"
+                        >
+                          <Edit2 size={13} />
+                          <span>Edit</span>
+                        </button>
+
                         {s.id && (
                           <button
+                            type="button"
                             onClick={() => {
                               if (confirm('Are you sure you want to delete this quest reward proposal?')) {
                                 deleteMutation.mutate(s.id!);
                               }
                             }}
                             disabled={deleteMutation.isPending}
-                            className="p-1.5 text-muted hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"
+                            className="btn btn-danger-outline text-[12px] py-1.5 px-3 font-bold"
                             title="Delete this reward proposal"
                           >
-                            <Trash2 size={15} />
+                            <Trash2 size={13} />
+                            <span>Delete</span>
                           </button>
                         )}
-
-                        <button
-                          onClick={() => openEditModal(s)}
-                          className="btn text-[12px] py-1 px-3 flex items-center gap-1 font-bold text-ink hover:text-accent"
-                        >
-                          <Edit2 size={13} />
-                          <span>Edit</span>
-                        </button>
                       </div>
                     </div>
                   </div>
@@ -533,15 +544,15 @@ export default function SponsorshipPage() {
                         <div className="flex items-center gap-2">
                           <span className="font-extrabold text-[14px] text-ink">{s.date}</span>
                           {isToday ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-accent text-white shadow-sm">
+                            <span className="badge bg-accent text-white shadow-xs text-[10px] font-black">
                               TODAY
                             </span>
                           ) : isUpcoming ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10.5px] font-extrabold bg-accent/15 text-accent">
+                            <span className="badge bg-accent/15 text-accent border border-accent/20">
                               Upcoming
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10.5px] font-extrabold bg-sand text-muted">
+                            <span className="badge bg-sand text-muted border border-line">
                               Completed Day
                             </span>
                           )}
@@ -676,7 +687,7 @@ export default function SponsorshipPage() {
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="btn text-[13px] px-4 py-2 font-bold"
+                  className="btn btn-secondary text-[13px] px-4 py-2 font-bold"
                 >
                   Cancel
                 </button>
@@ -684,7 +695,7 @@ export default function SponsorshipPage() {
                   type="button"
                   onClick={() => saveMutation.mutate()}
                   disabled={saveMutation.isPending || !formDesc.trim()}
-                  className="btn-accent text-[13px] px-5 py-2 rounded-xl flex items-center gap-2 font-extrabold shadow-sm"
+                  className="btn btn-accent text-[13px] px-5 py-2 rounded-xl flex items-center gap-2 font-extrabold shadow-sm"
                 >
                   <Save size={15} />
                   <span>{saveMutation.isPending ? 'Saving...' : editingItem ? 'Save Changes' : 'Submit Proposal'}</span>

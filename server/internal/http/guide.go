@@ -60,11 +60,12 @@ PERSONALIZATION & SAVED DATA:
 - When planning a trip or suggesting places in an area where they have bookmarks or high ratings, ALWAYS prioritize including those spots (e.g., "I noticed you saved Coconut Tree Hill, so I added it to your sunset stop!").
 - Align recommendations with their stated interests (e.g. if they love surfing and cafes, feature top surf breaks and specialty coffee).
 - If they gave a place a low rating, never suggest it.
+- When suggesting spots, explain why each place fits their travel style and vibe (productivity, noise level, crowd level, atmosphere) using the vibe ratings and match facts provided by search_places (e.g. "Rated 4.6/5 for productivity with low noise, ideal for remote work").
 
 QUICK ASKS ("any good restaurants near me?", "where can I get coffee?", "give places in Galle", "something fun to do now", "places to visit in Mirissa"):
 - Call search_places straight away — don't ask anything first.
 - If they ask about somewhere else by name (e.g. "give places in Galle", "cafes in Mirissa", "places to visit in Arugam Bay"), call search_places with location set to that town (e.g. location="Galle", location="Mirissa", location="Arugam Bay"), or call find_places with the town name in the query.
-- ALWAYS recommend 2-4 of the places the tools returned, by their exact name, each with one short reason. Mention distance (distanceKm / distanceText), price level or rating when it helps.
+- ALWAYS recommend 2-4 of the places the tools returned, by their exact name, each with one short reason highlighting why it suits their vibe (productivity, atmosphere, noise/crowd level). Mention distance (distanceKm / distanceText), price level or rating when it helps.
 - Spotto has live listings across Sri Lanka and worldwide. NEVER claim that your search tool has a temporary roadblock or glitch.
 - The app attaches interactive photo cards for places returned by the tools.
 - Then end with ONE short follow-up offering to narrow it down (budget, a different vibe, somewhere closer). Only one question.
@@ -208,7 +209,12 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	// A card (questions, plan, calendar) shows its own places.
 	var cards []guidePlaceCard
 	if res.Payload == nil {
-		cards = s.guideCardsForReply(ctx, reply, res.PlaceIDs, loc)
+		var uPrefs guideUserVibePrefs
+		if u, err := s.Store.UserByID(ctx, c.Subject); err == nil {
+			uPrefs.TravelStyles = u.TravelStyle
+			uPrefs.Interests = u.Interests
+		}
+		cards = s.guideCardsForReply(ctx, reply, res.PlaceIDs, loc, uPrefs)
 	}
 	placeIDs := make([]string, 0, len(cards))
 	for _, card := range cards {
@@ -244,7 +250,7 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 
 // guideCardsForReply turns every place the tools surfaced into the cards
 // shown under the reply — the ones it names, in the order it names them.
-func (s *Server) guideCardsForReply(ctx context.Context, reply string, surfacedIDs []string, loc guideLocation) []guidePlaceCard {
+func (s *Server) guideCardsForReply(ctx context.Context, reply string, surfacedIDs []string, loc guideLocation, userPrefs ...guideUserVibePrefs) []guidePlaceCard {
 	byID := s.guidePlacesByID(ctx, surfacedIDs)
 	names := make(map[string]string, len(byID))
 	for id, p := range byID {
@@ -253,7 +259,9 @@ func (s *Server) guideCardsForReply(ctx context.Context, reply string, surfacedI
 	var cards []guidePlaceCard
 	for _, id := range guideCardOrder(reply, surfacedIDs, names) {
 		if p, ok := byID[id]; ok {
-			cards = append(cards, guidePlaceCardFor(p, s.placeJSON(ctx, p), loc))
+			card := guidePlaceCardFor(p, s.placeJSON(ctx, p), loc, userPrefs...)
+			card.Description = extractPlaceDescription(reply, p.Name)
+			cards = append(cards, card)
 		}
 	}
 	// Safety net: if no cards were generated from surfacedIDs, scan the reply for mentions of curated catalog places
@@ -263,7 +271,9 @@ func (s *Server) guideCardsForReply(ctx context.Context, reply string, surfacedI
 			for _, p := range allPlaces {
 				name := strings.TrimSpace(p.Name)
 				if len(name) >= 4 && strings.Contains(lowerReply, strings.ToLower(name)) {
-					cards = append(cards, guidePlaceCardFor(p, s.placeJSON(ctx, p), loc))
+					card := guidePlaceCardFor(p, s.placeJSON(ctx, p), loc, userPrefs...)
+					card.Description = extractPlaceDescription(reply, p.Name)
+					cards = append(cards, card)
 					if len(cards) >= guideMaxPlaceCards {
 						break
 					}
@@ -333,9 +343,14 @@ func (s *Server) handleGuideLatestConversation(w http.ResponseWriter, r *http.Re
 	if len(ids) > 60 {
 		ids = ids[len(ids)-60:]
 	}
+	var uPrefs guideUserVibePrefs
+	if u, err := s.Store.UserByID(r.Context(), c.Subject); err == nil {
+		uPrefs.TravelStyles = u.TravelStyle
+		uPrefs.Interests = u.Interests
+	}
 	cards := map[string]guidePlaceCard{}
 	for id, p := range s.guidePlacesByID(r.Context(), ids) {
-		cards[id] = guidePlaceCardFor(p, s.placeJSON(r.Context(), p), guideLocation{})
+		cards[id] = guidePlaceCardFor(p, s.placeJSON(r.Context(), p), guideLocation{}, uPrefs)
 	}
 	// Spotto photo links in stored cards carry short-lived tokens.
 	for i := range messages {
@@ -461,6 +476,14 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 			}
 		}
 	}
+	if stylesText != "" && stylesText != "none stated" {
+		for _, st := range strings.Split(stylesText, ",") {
+			st = strings.TrimSpace(st)
+			if st != "" {
+				turn.travelStyles = append(turn.travelStyles, st)
+			}
+		}
+	}
 	fullHistory := history
 	if len(history) > guideMaxHistoryMessages {
 		history = history[len(history)-guideMaxHistoryMessages:]
@@ -527,6 +550,7 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 				FavoriteIDs:   favoriteIDs,
 				AvoidIDs:      avoidIDs,
 				Interests:     turn.interests,
+				TravelStyles:  turn.travelStyles,
 			})
 			placeIDs = append(placeIDs, ids...)
 			meta.ToolsUsed = append(meta.ToolsUsed, tc.Function.Name)
@@ -754,12 +778,13 @@ type guideToolContext struct {
 	FavoriteIDs   []string
 	AvoidIDs      []string
 	Interests     []string
+	TravelStyles  []string
 }
 
 func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guideLocation, weather string, opt ...guideToolContext) (result string, placeIDs []string, usedSemanticQuery bool) {
 	var userMessage string
 	var history []domain.GuideMessage
-	var bookmarkedIDs, favoriteIDs, avoidIDs, interests []string
+	var bookmarkedIDs, favoriteIDs, avoidIDs, interests, travelStyles []string
 	if len(opt) > 0 {
 		userMessage = opt[0].UserMessage
 		history = opt[0].History
@@ -767,6 +792,7 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guide
 		favoriteIDs = opt[0].FavoriteIDs
 		avoidIDs = opt[0].AvoidIDs
 		interests = opt[0].Interests
+		travelStyles = opt[0].TravelStyles
 	}
 	switch tc.Function.Name {
 	case "save_user_vibe":
@@ -856,6 +882,7 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guide
 			WantsDeals: args.WantsDeals, Lat: effectiveLoc.Lat, Lng: effectiveLoc.Lng, QueryEmbedding: queryEmbedding,
 			BookmarkedIDs: bookmarkedIDs, FavoritedIDs: favoriteIDs, AvoidIDs: avoidIDs,
 			TargetRegion: targetRegionName, QueryText: args.Query,
+			TravelStyles: travelStyles, Interests: interests,
 		}, weather)
 
 		// Fallback safety net: if fewer than 2 results found and we have a target region or query,
@@ -1098,6 +1125,9 @@ Keep it concise, clear, and actionable. Do not use generic filler.`
 
 	placeList := make([]guidePlaceCard, 0, len(cards))
 	for _, card := range cards {
+		if card.Description == "" {
+			card.Description = extractPlaceDescription(summaryText, card.Name)
+		}
 		placeList = append(placeList, card)
 	}
 

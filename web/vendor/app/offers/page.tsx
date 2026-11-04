@@ -6,7 +6,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BadgeDollarSign, Calendar, Check, Coffee, EyeOff, Gift, Infinity as InfinityIcon,
-  Package, Pencil, Percent, Rocket, Tag, Trash2, Zap, LucideIcon,
+  Package, Pencil, Percent, PowerOff, Rocket, RotateCcw, Tag, Trash2, X, Zap, LucideIcon,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
@@ -255,6 +255,21 @@ function OffersPageInner() {
       {!isStaff && (
       <div className="grid lg:grid-cols-[1fr_320px] gap-5 items-start mb-8">
         <div className="card p-6">
+          {editingId && (
+            <div className="flex items-center justify-between p-3 mb-4 rounded-xl bg-accent-tint/60 border border-accent/20">
+              <div className="flex items-center gap-2">
+                <Pencil size={15} className="text-accent" />
+                <span className="text-[13px] font-extrabold text-accent">Editing offer: {title || 'Untitled'}</span>
+              </div>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="text-[12px] font-bold px-2.5 py-1 rounded-md text-muted hover:text-ink hover:bg-sand transition-colors flex items-center gap-1"
+              >
+                <X size={13} /> Cancel edit
+              </button>
+            </div>
+          )}
           <label className="block text-[13px] font-extrabold mb-2">Discount type</label>
           <div className="grid grid-cols-4 gap-2 mb-5">
             {DISCOUNT_TYPES.map((t) => {
@@ -380,11 +395,11 @@ function OffersPageInner() {
 
           {error && <p className="text-[13px] font-bold text-coral mb-3">{error}</p>}
 
-          <button className="btn-accent w-full py-3 flex items-center justify-center gap-2 mb-2.5"
+          <button className="btn btn-accent w-full py-3 flex items-center justify-center gap-2 mb-2.5"
             disabled={!title || save.isPending} onClick={() => save.mutate({ status: 'live', resetAfter: true })}>
             <Rocket size={16} /> {save.isPending ? 'Publishing…' : 'Publish offer'}
           </button>
-          <button className="rounded-xl border border-line bg-white w-full py-3 font-extrabold text-[14px] flex items-center justify-center gap-2"
+          <button className="btn btn-secondary w-full py-3 font-extrabold text-[14px] flex items-center justify-center gap-2"
             disabled={!title || save.isPending} onClick={() => save.mutate({ status: 'draft', resetAfter: true })}>
             <Pencil size={15} /> Save as draft
           </button>
@@ -454,7 +469,7 @@ function OfferCard({
         <div className="flex-1 min-w-0">
           <p className="font-extrabold text-[14.5px] truncate">{offer.title}</p>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <span className="text-[11px] font-extrabold rounded-full px-2 py-0.5 bg-sand flex items-center gap-1">
+            <span className="badge bg-sand text-ink border border-line/60">
               <Tag size={10} /> {offer.value}
             </span>
             <StatusPill status={offer.status} />
@@ -486,25 +501,25 @@ function OfferCard({
 
       {!readOnly && (
       <div className="grid grid-cols-3 gap-1.5" onClick={(e) => e.stopPropagation()}>
-        <button className="rounded-lg border border-line py-1.5 text-[12px] font-extrabold flex items-center justify-center gap-1 hover:border-accent hover:text-accent transition-colors" onClick={onEdit}>
+        <button className="btn btn-secondary py-1.5 text-[12px] font-extrabold" onClick={onEdit}>
           <Pencil size={13} /> Edit
         </button>
         {offer.status === 'draft' && (
-          <button className="rounded-lg border border-line py-1.5 text-[12px] font-extrabold flex items-center justify-center gap-1 hover:border-accent hover:text-accent transition-colors" onClick={() => onSetStatus('live')}>
+          <button className="btn btn-secondary py-1.5 text-[12px] font-extrabold" onClick={() => onSetStatus('live')}>
             <Zap size={13} /> Publish
           </button>
         )}
         {(offer.status === 'live' || offer.status === 'ending') && (
-          <button className="rounded-lg border border-line py-1.5 text-[12px] font-extrabold flex items-center justify-center gap-1 hover:border-accent hover:text-accent transition-colors" onClick={() => onSetStatus('ended')}>
-            <Check size={13} /> End
+          <button className="btn btn-secondary py-1.5 text-[12px] font-extrabold text-[#d9534f] hover:text-[#c9302c]" onClick={() => onSetStatus('ended')}>
+            <PowerOff size={13} /> Close
           </button>
         )}
         {offer.status === 'ended' && (
-          <button className="rounded-lg border border-line py-1.5 text-[12px] font-extrabold flex items-center justify-center gap-1 hover:border-accent hover:text-accent transition-colors" onClick={() => onSetStatus('live')}>
-            <Zap size={13} /> Relaunch
+          <button className="btn btn-secondary py-1.5 text-[12px] font-extrabold text-accent" onClick={() => onSetStatus('live')}>
+            <RotateCcw size={13} /> Reopen
           </button>
         )}
-        <button className="rounded-lg border border-line py-1.5 text-[12px] font-extrabold text-coral flex items-center justify-center gap-1 hover:bg-[#fde4d8] transition-colors" onClick={onDelete}>
+        <button className="btn btn-danger-outline py-1.5 text-[12px] font-extrabold" onClick={onDelete}>
           <Trash2 size={13} /> Delete
         </button>
       </div>
