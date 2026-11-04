@@ -7,6 +7,7 @@
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
@@ -150,6 +151,20 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
   Future<void> _send([String? preset]) async {
     final q = (preset ?? _input.text).trim();
     if (q.isEmpty || _busy) return;
+    final lowerQ = q.toLowerCase();
+    if (lowerQ == 'clear' ||
+        lowerQ == 'clear chat' ||
+        lowerQ == 'clear the chat' ||
+        lowerQ == 'clear chat history' ||
+        lowerQ == 'clear history' ||
+        lowerQ == 'reset chat' ||
+        lowerQ == 'reset conversation' ||
+        lowerQ.startsWith('clear chat') ||
+        lowerQ.startsWith('clear the chat')) {
+      _input.clear();
+      await _confirmClearChat();
+      return;
+    }
     setState(() {
       _messages.add(_Msg(true, q));
       _busy = true;
@@ -218,6 +233,312 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
       });
     }
     _scrollDown();
+  }
+
+  Future<void> _confirmClearChat() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).colorScheme.surface,
+        title: const Text('Clear chat history?', style: TextStyle(fontWeight: FontWeight.w800)),
+        content: const Text('This will delete your current conversation with Local Guide and start fresh.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: SpottoColors.coral),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _clearChat();
+    }
+  }
+
+  Future<void> _clearChat() async {
+    try {
+      await ref.read(apiProvider).dio.post('/guide/conversations/clear', data: {
+        if (_conversationId != null) 'conversationId': _conversationId,
+      });
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _conversationId = null;
+      _messages.clear();
+      _messages.add(_Msg(false, _guideGreeting(_styleLabel, ref.read(weatherConditionProvider))));
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Chat history cleared'),
+      duration: Duration(seconds: 2),
+    ));
+  }
+
+  Future<void> _summarizeChat() async {
+    final localStore = ref.read(localStoreProvider);
+    final savedSummaries = (localStore.getJsonList('spotto_saved_chat_summaries') ?? []).cast<Map>();
+    if (_messages.length <= 1) {
+      if (savedSummaries.isNotEmpty) {
+        _showSavedSummariesSheet(savedSummaries);
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Chat with Local Guide first to generate a summary!'),
+      ));
+      return;
+    }
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: SpottoColors.accent)),
+    );
+    try {
+      final res = await ref.read(apiProvider).dio.post('/guide/conversations/summarize');
+      if (mounted) Navigator.pop(context);
+      if (!mounted) return;
+      final body = (res.data as Map).cast<String, dynamic>();
+      final title = body['title'] as String? ?? 'Trip Summary & Recommendations';
+      final summary = body['summary'] as String? ?? '';
+      final places = _parseCards(body['places']);
+
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        builder: (sheet) => DraggableScrollableSheet(
+          initialChildSize: 0.75,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, scroll) => Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: ListView(
+              controller: scroll,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: SpottoColors.line, borderRadius: BorderRadius.circular(2)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: SpottoColors.accentTint, borderRadius: BorderRadius.circular(12)),
+                      child: const Icon(Icons.auto_stories, color: SpottoColors.accent, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    ),
+                    if (savedSummaries.isNotEmpty)
+                      IconButton(
+                        tooltip: 'View all saved summaries',
+                        icon: const Icon(Icons.folder_special_outlined, color: SpottoColors.accent),
+                        onPressed: () {
+                          Navigator.pop(sheet);
+                          _showSavedSummariesSheet(savedSummaries);
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: SpottoColors.line),
+                  ),
+                  child: SelectableText(
+                    summary,
+                    style: const TextStyle(fontSize: 14, height: 1.55, fontWeight: FontWeight.w500),
+                  ),
+                ),
+                if (places.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text('Recommended Places', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 8),
+                  for (final p in places)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: GuidePlaceCard(place: p),
+                    ),
+                ],
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: '$title\n\n$summary'));
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Summary copied to clipboard!')));
+                        },
+                        icon: const Icon(Icons.copy_rounded, size: 18),
+                        label: const Text('Copy'),
+                        style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () async {
+                          final currentList = (localStore.getJsonList('spotto_saved_chat_summaries') ?? []).toList();
+                          currentList.insert(0, {
+                            'title': title,
+                            'summary': summary,
+                            'savedAt': DateTime.now().toIso8601String(),
+                            'places': [for (final p in places) p.toJson()],
+                          });
+                          await localStore.setJsonList('spotto_saved_chat_summaries', currentList);
+                          if (mounted) {
+                            Navigator.pop(sheet);
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text('Summary saved for later use!'),
+                              duration: Duration(seconds: 2),
+                            ));
+                          }
+                        },
+                        icon: const Icon(Icons.bookmark_added_rounded, size: 18),
+                        label: const Text('Save for Later'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: SpottoColors.accent,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
+    }
+  }
+
+  void _showSavedSummariesSheet(List<dynamic> list) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheet) => DraggableScrollableSheet(
+        initialChildSize: 0.75,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, scroll) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: ListView(
+            controller: scroll,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(color: SpottoColors.line, borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Row(
+                children: [
+                  Icon(Icons.folder_special, color: SpottoColors.accent, size: 24),
+                  SizedBox(width: 10),
+                  Text('Saved Trip Summaries', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              for (var idx = 0; idx < list.length; idx++) ...[
+                Builder(builder: (ctx) {
+                  final item = (list[idx] as Map).cast<String, dynamic>();
+                  final itemTitle = item['title'] as String? ?? 'Trip Summary';
+                  final itemSummary = item['summary'] as String? ?? '';
+                  final itemPlaces = _parseCards(item['places']);
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).scaffoldBackgroundColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: SpottoColors.line),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(itemTitle, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.copy_rounded, size: 18),
+                              tooltip: 'Copy',
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: '$itemTitle\n\n$itemSummary'));
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Summary copied to clipboard!')));
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18, color: SpottoColors.coral),
+                              tooltip: 'Delete',
+                              onPressed: () async {
+                                final currentList = (ref.read(localStoreProvider).getJsonList('spotto_saved_chat_summaries') ?? []).toList();
+                                if (idx < currentList.length) {
+                                  currentList.removeAt(idx);
+                                  await ref.read(localStoreProvider).setJsonList('spotto_saved_chat_summaries', currentList);
+                                  if (context.mounted) {
+                                    Navigator.pop(sheet);
+                                    if (currentList.isNotEmpty) {
+                                      _showSavedSummariesSheet(currentList);
+                                    }
+                                  }
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          itemSummary,
+                          style: const TextStyle(fontSize: 13, height: 1.5),
+                        ),
+                        if (itemPlaces.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final p in itemPlaces)
+                                Chip(
+                                  label: Text(p.name, style: const TextStyle(fontSize: 11.5)),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _addToCalendar(GuideCalendarAction action, String mode, int? messageIndex) async {
@@ -306,6 +627,17 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                       ],
                     ),
                   ),
+                  IconButton(
+                    tooltip: 'Summarize & save for later',
+                    icon: const Icon(Icons.bookmark_add_outlined, size: 21, color: SpottoColors.accent),
+                    onPressed: _summarizeChat,
+                  ),
+                  IconButton(
+                    tooltip: 'Clear chat history',
+                    icon: Icon(Icons.delete_outline_rounded, size: 21, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+                    onPressed: _confirmClearChat,
+                  ),
+                  const SizedBox(width: 4),
                   PressScale(
                     scale: 0.9,
                     onTap: () => context.pop(),

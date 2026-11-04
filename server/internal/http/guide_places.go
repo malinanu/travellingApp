@@ -62,6 +62,15 @@ type guidePlaceFacts struct {
 func parseGuideFacts(p domain.Place) guidePlaceFacts {
 	var f guidePlaceFacts
 	_ = json.Unmarshal(p.Data, &f)
+	if f.CategoryID == "" && len(p.Data) > 0 {
+		var m map[string]any
+		if json.Unmarshal(p.Data, &m) == nil {
+			f.CategoryID = domain.CategoryForPlaceData(m)
+		}
+	}
+	if f.Region == "" && (f.Lat != 0 || f.Lng != 0) {
+		f.Region = geo.NearestRegion(f.Lat, f.Lng).Name
+	}
 	return f
 }
 

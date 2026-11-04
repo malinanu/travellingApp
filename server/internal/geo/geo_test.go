@@ -10,6 +10,9 @@ func TestFindRegion(t *testing.T) {
 	}{
 		{"mirissa", "mirissa", "Mirissa"},
 		{"Mirissa Beach", "mirissa", "Mirissa"},
+		{"I'm planning to go mirissa next week, give me places", "mirissa", "Mirissa"},
+		{"arugambay", "arugam", "Arugam Bay"},
+		{"next month I'm planning to visit arugambay. give me the places to visit", "arugam", "Arugam Bay"},
 		{"galle", "galle", "Galle"},
 		{"places in Galle, Sri Lanka", "galle", "Galle"},
 		{"top sights in Weligama", "weligama", "Weligama"},

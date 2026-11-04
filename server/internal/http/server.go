@@ -402,6 +402,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/travellers/nearby", s.handleNearbyTravellers)
 		r.Post("/guide/chat", s.handleGuideChat)
 		r.Get("/guide/conversations/latest", s.handleGuideLatestConversation)
+		r.Post("/guide/conversations/clear", s.handleGuideClearConversation)
+		r.Post("/guide/conversations/summarize", s.handleGuideSummarizeConversation)
 		r.Post("/trip/inspiration/extract-places", s.handleExtractPlacesFromLink)
 		r.Get("/me/inspirations", s.handleListInspirations)
 		r.Post("/me/inspirations", s.handleAddInspiration)

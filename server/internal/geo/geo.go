@@ -26,22 +26,65 @@ func NearestRegion(lat, lng float64) domain.Region {
 	return best
 }
 
-// FindRegion searches seeded regions by name or ID (case-insensitive match).
+// FindRegion searches seeded regions by name or ID (case-insensitive, space/punctuation-tolerant).
 func FindRegion(query string) *domain.Region {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
 		return nil
 	}
-	// First check exact match or if query contains the region name/id
+	clean := func(s string) string {
+		var b strings.Builder
+		for _, r := range strings.ToLower(s) {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}
+	qClean := clean(q)
+	if qClean == "" {
+		return nil
+	}
+
+	// 1. Exact match on raw or clean name/id
 	for i := range seed.Regions {
 		r := &seed.Regions[i]
 		rName := strings.ToLower(r.Name)
 		rID := strings.ToLower(r.ID)
-		if q == rName || q == rID || strings.Contains(q, rName) || strings.Contains(q, rID) {
+		if q == rName || q == rID || qClean == clean(rName) || qClean == clean(rID) {
 			return r
 		}
 	}
-	return nil
+
+	// 2. Query contains region name or region clean name (prefer longest match to avoid sub-word false positives)
+	var bestMatch *domain.Region
+	bestLen := 0
+	for i := range seed.Regions {
+		r := &seed.Regions[i]
+		rName := strings.ToLower(r.Name)
+		rID := strings.ToLower(r.ID)
+		rClean := clean(rName)
+		idClean := clean(rID)
+
+		matched := false
+		matchLen := 0
+		if strings.Contains(q, rName) {
+			matched = true
+			matchLen = len(rName)
+		} else if len(rClean) >= 4 && strings.Contains(qClean, rClean) {
+			matched = true
+			matchLen = len(rClean)
+		} else if len(rID) >= 4 && (strings.Contains(q, rID) || strings.Contains(qClean, idClean)) {
+			matched = true
+			matchLen = len(rID)
+		}
+
+		if matched && matchLen > bestLen {
+			bestMatch = r
+			bestLen = matchLen
+		}
+	}
+	return bestMatch
 }
 
 // HaversineKm is the great-circle distance in km between two lat/lng

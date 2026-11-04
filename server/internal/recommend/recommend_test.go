@@ -129,3 +129,66 @@ func TestRankWeatherFitIndoorWhenRainy(t *testing.T) {
 		t.Fatalf("expected the indoor place to rank first when rainy, got %v", ranked)
 	}
 }
+
+func TestRankMatchesGenericAndPluralCategories(t *testing.T) {
+	beach := place("mirissa-beach", map[string]any{"type": "landmark", "tags": []any{"tourist attraction"}})
+	cafe := place("shady-lane", map[string]any{"type": "cafe", "tags": []any{"coffee shop"}})
+	resto := place("dewmini-roti", map[string]any{"type": "food", "tags": []any{"restaurant"}})
+
+	allPlaces := []domain.Place{beach, cafe, resto}
+
+	// 1. Generic queries like "places to visit", "things to do" should match all
+	for _, genCat := range []string{"places", "places to visit", "things to do", "sights", "spots", "attractions"} {
+		ranked := Rank(allPlaces, Preferences{Categories: []string{genCat}}, "sunny")
+		if len(ranked) == 0 {
+			t.Errorf("expected places to match generic category %q, got 0", genCat)
+		}
+	}
+
+	// 2. Plural "cafes" should match "cafe"
+	rankedCafes := Rank(allPlaces, Preferences{Categories: []string{"cafes"}}, "sunny")
+	if len(rankedCafes) == 0 || rankedCafes[0].Place.ID != "shady-lane" {
+		t.Errorf("expected cafe to match 'cafes', got %v", rankedCafes)
+	}
+
+	// 3. Plural "restaurants" should match "restaurant"
+	rankedRestos := Rank(allPlaces, Preferences{Categories: []string{"restaurants"}}, "sunny")
+	if len(rankedRestos) == 0 || rankedRestos[0].Place.ID != "dewmini-roti" {
+		t.Errorf("expected resto to match 'restaurants', got %v", rankedRestos)
+	}
+}
+
+func TestRankPersonalizationBookmarksAndRatings(t *testing.T) {
+	p1 := place("p1", map[string]any{"type": "cafe"})
+	p2 := place("p2", map[string]any{"type": "cafe"})
+	p3 := place("p3", map[string]any{"type": "cafe"})
+
+	// p2 is bookmarked, p3 is in avoid list
+	prefs := Preferences{
+		BookmarkedIDs: []string{"p2"},
+		AvoidIDs:      []string{"p3"},
+	}
+	ranked := Rank([]domain.Place{p1, p2, p3}, prefs, "sunny")
+	if len(ranked) != 2 {
+		t.Fatalf("expected 2 places (p3 excluded), got %d", len(ranked))
+	}
+	if ranked[0].Place.ID != "p2" {
+		t.Errorf("expected bookmarked place p2 to rank first, got %s", ranked[0].Place.ID)
+	}
+}
+
+func TestParseFactsDerivesCategoryID(t *testing.T) {
+	p := place("p_test", map[string]any{
+		"type": "landmark",
+		"tags": []any{"tourist attraction"},
+		"lat":  5.9448,
+		"lng":  80.4578,
+	})
+	f := parseFacts(p)
+	if f.CategoryID == "" {
+		t.Error("expected CategoryID to be derived from CategoryForPlaceData, got empty")
+	}
+	if f.Region != "Mirissa" {
+		t.Errorf("expected Region to be Mirissa, got %s", f.Region)
+	}
+}

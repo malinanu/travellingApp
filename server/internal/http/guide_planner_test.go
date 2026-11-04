@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -101,7 +102,8 @@ func TestPlannerToolsRegistered(t *testing.T) {
 	for _, tool := range guideTools() {
 		names[tool.Function.Name] = true
 		if tool.Function.Name == "search_places" {
-			props, _ := tool.Function.Parameters["properties"].(map[string]any)
+			params, _ := tool.Function.Parameters.(map[string]any)
+			props, _ := params["properties"].(map[string]any)
 			if props["location"] == nil {
 				t.Error("search_places should declare location parameter")
 			}

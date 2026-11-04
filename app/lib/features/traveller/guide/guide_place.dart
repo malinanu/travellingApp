@@ -92,6 +92,21 @@ class GuidePlace {
   Uri? get directionsUrl => lat == 0 && lng == 0
       ? null
       : Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'category': category,
+    'region': region,
+    'priceLevel': priceLevel,
+    'rating': rating,
+    if (distanceKm != null) 'distanceKm': distanceKm,
+    'lat': lat,
+    'lng': lng,
+    'coverThumb': coverThumb,
+    'coverMicro': coverMicro,
+    'icon': icon,
+  };
 }
 
 /// Cards for one reply: the server's summaries when it sent them, otherwise

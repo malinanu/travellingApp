@@ -45,6 +45,12 @@ type Preferences struct {
 	// openrouter.Embed — nil means no free-text query was given, same "no
 	// opinion" convention as every other optional field here.
 	QueryEmbedding []float64
+	// Personalization: traveller's bookmarks and ratings
+	BookmarkedIDs []string
+	FavoritedIDs  []string
+	AvoidIDs      []string
+	TargetRegion  string
+	QueryText     string
 }
 
 // Scored is one ranked result — Reasons is handed back to the LLM so it
@@ -91,6 +97,15 @@ func parseFacts(p domain.Place) facts {
 	// Best-effort: a place with malformed/missing Data still gets scored
 	// (against zero-value facts) rather than dropped from the app entirely.
 	_ = json.Unmarshal(p.Data, &f)
+	if f.CategoryID == "" && len(p.Data) > 0 {
+		var m map[string]any
+		if json.Unmarshal(p.Data, &m) == nil {
+			f.CategoryID = domain.CategoryForPlaceData(m)
+		}
+	}
+	if f.Region == "" && (f.Lat != 0 || f.Lng != 0) {
+		f.Region = geo.NearestRegion(f.Lat, f.Lng).Name
+	}
 	f.Embedding = p.Embedding
 	return f
 }
@@ -144,7 +159,15 @@ func Rank(places []domain.Place, prefs Preferences, weather string) []Scored {
 	}
 
 	candidates := make([]candidate, 0, len(places))
+	avoidMap := make(map[string]bool, len(prefs.AvoidIDs))
+	for _, id := range prefs.AvoidIDs {
+		avoidMap[id] = true
+	}
+
 	for _, p := range places {
+		if avoidMap[p.ID] {
+			continue
+		}
 		f := parseFacts(p)
 
 		if len(prefs.Categories) > 0 && !matchesCategory(f, prefs.Categories) {
@@ -178,7 +201,7 @@ func Rank(places []domain.Place, prefs Preferences, weather string) []Scored {
 
 	scored := make([]Scored, 0, len(candidates))
 	for _, c := range candidates {
-		s, reasons := score(c.facts, c.dist, prefs, weather)
+		s, reasons := score(c.place.ID, c.facts, c.dist, prefs, weather)
 		scored = append(scored, Scored{Place: c.place, Score: s, Reasons: reasons})
 	}
 
@@ -192,14 +215,86 @@ func matchesCategory(f facts, categories []string) bool {
 		if want == "" {
 			continue
 		}
-		if strings.EqualFold(f.CategoryID, want) {
+		// Generic or catch-all categories should never exclude places
+		if want == "places" || want == "spots" || want == "sights" || want == "all" || want == "any" ||
+			want == "things to do" || want == "things to see" || want == "recommendations" ||
+			want == "destinations" || want == "explore" || want == "visit" || want == "must visit" ||
+			want == "highlights" || want == "top sights" || want == "places to visit" ||
+			want == "places to see" || want == "activities" || want == "attractions" ||
+			strings.Contains(want, "place") || strings.Contains(want, "spot") ||
+			strings.Contains(want, "sight") || strings.Contains(want, "visit") ||
+			strings.Contains(want, "thing") || strings.Contains(want, "destinat") {
 			return true
 		}
-		if strings.Contains(strings.ToLower(f.Type), want) {
+
+		cat := strings.ToLower(f.CategoryID)
+		typ := strings.ToLower(f.Type)
+
+		// Coffee / Cafes
+		if strings.Contains(want, "cafe") || strings.Contains(want, "coffee") || strings.Contains(want, "tea") || strings.Contains(want, "bakery") {
+			if cat == "coffee" || strings.Contains(typ, "cafe") || strings.Contains(typ, "coffee") {
+				return true
+			}
+			for _, tag := range f.Tags {
+				tLower := strings.ToLower(tag)
+				if strings.Contains(tLower, "cafe") || strings.Contains(tLower, "coffee") || strings.Contains(tLower, "bakery") {
+					return true
+				}
+			}
+		}
+
+		// Food / Restaurants
+		if strings.Contains(want, "restaurant") || strings.Contains(want, "food") || strings.Contains(want, "eat") || strings.Contains(want, "dining") {
+			if cat == "restaurants" || cat == "takeout" || cat == "delivery" || strings.Contains(typ, "food") || strings.Contains(typ, "restaurant") {
+				return true
+			}
+			for _, tag := range f.Tags {
+				tLower := strings.ToLower(tag)
+				if strings.Contains(tLower, "restaurant") || strings.Contains(tLower, "food") {
+					return true
+				}
+			}
+		}
+
+		// Bars / Nightlife
+		if strings.Contains(want, "bar") || strings.Contains(want, "pub") || strings.Contains(want, "nightlife") || strings.Contains(want, "drinks") {
+			if cat == "bars" || cat == "nightlife" || strings.Contains(typ, "bar") {
+				return true
+			}
+		}
+
+		// Hotels / Stays
+		if strings.Contains(want, "hotel") || strings.Contains(want, "stay") || strings.Contains(want, "resort") || strings.Contains(want, "hostel") || strings.Contains(want, "lodging") {
+			if cat == "hotels" || strings.Contains(typ, "lodging") || strings.Contains(typ, "hotel") {
+				return true
+			}
+		}
+
+		// Beach / Coastal / Surf
+		if strings.Contains(want, "beach") || strings.Contains(want, "surf") || strings.Contains(want, "coast") {
+			if strings.Contains(typ, "beach") || strings.Contains(typ, "surf") {
+				return true
+			}
+			for _, tag := range f.Tags {
+				tLower := strings.ToLower(tag)
+				if strings.Contains(tLower, "beach") || strings.Contains(tLower, "surf") {
+					return true
+				}
+			}
+		}
+
+		// Direct matches & singular/plural variations
+		wantTrimmed := strings.TrimSuffix(strings.TrimSuffix(want, "es"), "s")
+		catTrimmed := strings.TrimSuffix(strings.TrimSuffix(cat, "es"), "s")
+		if cat != "" && (cat == want || catTrimmed == wantTrimmed || strings.Contains(cat, wantTrimmed) || strings.Contains(want, catTrimmed)) {
+			return true
+		}
+		if typ != "" && (typ == want || strings.Contains(typ, wantTrimmed) || strings.Contains(want, typ)) {
 			return true
 		}
 		for _, tag := range f.Tags {
-			if strings.Contains(strings.ToLower(tag), want) {
+			tLower := strings.ToLower(tag)
+			if tLower == want || strings.Contains(tLower, wantTrimmed) || strings.Contains(want, tLower) {
 				return true
 			}
 		}
@@ -221,7 +316,7 @@ const (
 // because the traveller's location hasn't resolved yet.
 const unknownDistance float64 = -1
 
-func score(f facts, distKm float64, prefs Preferences, weather string) (float64, []string) {
+func score(placeID string, f facts, distKm float64, prefs Preferences, weather string) (float64, []string) {
 	var reasons []string
 
 	vibe, hasVibePref := vibeScore(f, prefs)
@@ -234,6 +329,8 @@ func score(f facts, distKm float64, prefs Preferences, weather string) (float64,
 		dist = 1 / (1 + distKm/3)
 		if distKm < 1 {
 			reasons = append(reasons, "very close by")
+		} else if distKm <= 5 {
+			reasons = append(reasons, "nearby in the area")
 		}
 	}
 
@@ -265,6 +362,39 @@ func score(f facts, distKm float64, prefs Preferences, weather string) (float64,
 
 	total := wVibe*vibe + wDistance*dist + wRating*rating + wTags*tags +
 		wWeather*weatherFit + wDeal*deal + wSemantic*semantic
+
+	// Personalization bonuses:
+	for _, id := range prefs.BookmarkedIDs {
+		if id == placeID {
+			total += 0.35
+			reasons = append(reasons, "saved in your bookmarks")
+			break
+		}
+	}
+	for _, id := range prefs.FavoritedIDs {
+		if id == placeID {
+			total += 0.30
+			reasons = append(reasons, "one of your top rated places")
+			break
+		}
+	}
+
+	// Target region boost:
+	if prefs.TargetRegion != "" && f.Region != "" {
+		if strings.EqualFold(f.Region, prefs.TargetRegion) || strings.Contains(strings.ToLower(f.Region), strings.ToLower(prefs.TargetRegion)) {
+			total += 0.25
+			reasons = append(reasons, "in "+f.Region)
+		}
+	}
+
+	// Keyword match boost from free text query:
+	if prefs.QueryText != "" {
+		q := strings.ToLower(prefs.QueryText)
+		if strings.Contains(strings.ToLower(f.Blurb), q) || strings.Contains(strings.ToLower(f.Type), q) {
+			total += 0.15
+		}
+	}
+
 	return total, reasons
 }
 

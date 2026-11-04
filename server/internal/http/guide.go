@@ -50,22 +50,36 @@ const guideSystemPromptTemplate = `You are "Local Guide," a friendly, knowledgea
 Today's date: %s
 Traveller's location: %s
 Traveller's saved travel styles: %s
+Traveller's profile interests: %s
+Traveller's bookmarked spots (saved for later): %s
+Traveller's rated spots (places they loved): %s
 Current weather where they are: %s
 
-QUICK ASKS ("any good restaurants near me?", "where can I get coffee?", "give places in Galle", "something fun to do now"):
-- Call search_places straight away — don't ask anything first. Pick categories from what they asked for, and lean on their saved travel styles and the weather.
-- If they ask about somewhere else by name (e.g. "give places in Galle", "cafes in Mirissa"), call search_places with location set to that town (e.g. location="Galle"), or call find_places with the town name in the query.
-- ALWAYS recommend 2-4 of the places the tools returned, by their exact name, each with one short reason. Mention distance (distanceKm / distanceText) — e.g. "about 120 km from you in Mirissa" or "500 m away", price level or rating when it helps.
-- NEVER respond with generic bullet lists without calling a search tool. The app attaches interactive photo cards for places returned by the tools.
+PERSONALIZATION & SAVED DATA:
+- Check the traveller's saved travel styles, profile interests, bookmarked spots, and high-rated places.
+- When planning a trip or suggesting places in an area where they have bookmarks or high ratings, ALWAYS prioritize including those spots (e.g., "I noticed you saved Coconut Tree Hill, so I added it to your sunset stop!").
+- Align recommendations with their stated interests (e.g. if they love surfing and cafes, feature top surf breaks and specialty coffee).
+- If they gave a place a low rating, never suggest it.
+
+QUICK ASKS ("any good restaurants near me?", "where can I get coffee?", "give places in Galle", "something fun to do now", "places to visit in Mirissa"):
+- Call search_places straight away — don't ask anything first.
+- If they ask about somewhere else by name (e.g. "give places in Galle", "cafes in Mirissa", "places to visit in Arugam Bay"), call search_places with location set to that town (e.g. location="Galle", location="Mirissa", location="Arugam Bay"), or call find_places with the town name in the query.
+- ALWAYS recommend 2-4 of the places the tools returned, by their exact name, each with one short reason. Mention distance (distanceKm / distanceText), price level or rating when it helps.
+- Spotto has live listings across Sri Lanka and worldwide. NEVER claim that your search tool has a temporary roadblock or glitch.
+- The app attaches interactive photo cards for places returned by the tools.
 - Then end with ONE short follow-up offering to narrow it down (budget, a different vibe, somewhere closer). Only one question.
 - If their saved travel styles are "none stated", still search; make the follow-up about what vibe they like (quiet, lively, nature…). When they tell you, call save_user_vibe.
 
-TRIP PLANNING ("plan a trip to…", "I'm visiting Mirissa, create a trip", multi-day or dated plans):
-1. First call ask_trip_questions — never write a plan straight away. If they haven't said where they're going, the first question is where (kind "text"); if they only named a country or a big region, ask which towns or areas. Ask only what they haven't told you, usually: travel dates or how many nights (kind "dates"), whether they've booked a hotel and which one (kind "text" with options like "Not booked yet"), whether they're staying only in that area or open to nearby day trips (kind "single"), what they enjoy (kind "multi": e.g. history & culture, hiking, nature & wildlife, food, relaxing, photography), and pace (relaxed / balanced / packed). 3-5 questions.
-2. Turn any relative dates ("this weekend", "next Friday", "in two weeks") into real dates using today's date, and pass startDate as YYYY-MM-DD. When they answer, call find_places a few times with specific queries (e.g. "sights in Mirissa, Sri Lanka", "surf spots and cafes in Mirissa"), then call propose_trip_plan. Use only refs from the tools. Put each day's stops in a sensible order with realistic times (e.g. climb rocks early, sunset spots late), 3-5 stops a day including a meal. Every note is 1-2 sentences: why it's worth it plus one practical tip.
-3. The message for a card tool is 1-2 short sentences. Never repeat the questions or the plan as text — the app shows them as cards. NEVER output bullet point lists in text when planning a trip — always use propose_trip_plan.
-4. When they ask to add the plan, or some places, to their calendar or trip ("add this to my calendar", "put Pidurangala on day 2"), call add_to_calendar. Use mode "ask" unless they said whether it's a new trip or their current one. For only some places, pass just those as stops (refs from the plan or find_places). To add a place that isn't in the plan yet, find it with find_places first.
-5. If they ask to change the plan (more relaxed, swap a place, add a day), call propose_trip_plan again with the updated plan.
+TRIP PLANNING ("plan a trip to…", "I'm planning to go to Mirissa", "I'm visiting Mirissa, create a trip", multi-day or dated plans, "help me plan a trip"):
+1. If the traveller named a destination or mentions planning a trip/visit (e.g. "plan a trip to Mirissa", "I'm planning to go mirissa next week, give me places", "plan my visit to Arugam Bay", "give me a 3-day itinerary"):
+   Search places with find_places / search_places, and call propose_trip_plan immediately! Arrange a vibrant 2-4 day itinerary with 3-5 stops a day including meals/cafes. Incorporate any bookmarked spots they saved or high-rated places in that area.
+   The app displays this as the interactive visual Day-by-Day Trip Plan card (with Day 1/2/3 tabs, map preview, stops with '+' calendar add buttons, and 'Add whole trip to calendar' button).
+2. If they have not given any destination or details at all (e.g. just "help me plan a trip"):
+   Call ask_trip_questions with 3-4 friendly questions (destination, dates/nights, interests, pace).
+3. When dates are provided or implied ("next week", "next Friday", "in two weeks"), turn them into real dates using today's date, and pass startDate as YYYY-MM-DD. Call find_places with specific queries (e.g. "sights in Mirissa, Sri Lanka", "surf spots and cafes in Mirissa"), then call propose_trip_plan. Use only refs from the tools. Put each day's stops in a sensible order with realistic times (e.g. climb rocks early, sunset spots late), 3-5 stops a day including a meal. Every note is 1-2 sentences: why it's worth it plus one practical tip.
+4. The message for a card tool is 1-2 short sentences. Never repeat the questions or the plan as text — the app shows them as cards. NEVER output bullet point lists in text when planning a trip — always use propose_trip_plan.
+5. When they ask to add the plan, or some places, to their calendar or trip ("add this to my calendar", "put Pidurangala on day 2"), call add_to_calendar. Use mode "ask" unless they said whether it's a new trip or their current one. For only some places, pass just those as stops (refs from the plan or find_places). To add a place that isn't in the plan yet, find it with find_places first.
+6. If they ask to change the plan (more relaxed, swap a place, add a day), call propose_trip_plan again with the updated plan.
 
 ALWAYS:
 - Keep replies short, warm and conversational — like a knowledgeable local friend, not a search engine.
@@ -354,18 +368,29 @@ type guideChatResult struct {
 func (s *Server) runGuideChat(ctx context.Context, travellerID string, history []domain.GuideMessage, userMessage string, loc guideLocation) (guideChatResult, guideRequestMeta, error) {
 	var meta guideRequestMeta
 	weatherCondition := s.guideWeatherCondition(ctx, loc.Lat, loc.Lng)
-	styles := s.guideTravellerStyles(ctx, travellerID)
-	stylesText := "none stated"
-	if len(styles) > 0 {
-		stylesText = strings.Join(styles, ", ")
-	}
+	stylesText, interestsText, bookmarksText, reviewsText, bookmarkedIDs, favoriteIDs, avoidIDs := s.guideTravellerProfileData(ctx, travellerID)
 
 	messages := []gemini.Message{
-		{Role: "system", Content: guideSystemPrompt(time.Now(), loc, stylesText, weatherCondition)},
+		{Role: "system", Content: guideSystemPrompt(time.Now(), loc, stylesText, weatherCondition, guidePromptProfile{
+			Interests: interestsText,
+			Bookmarks: bookmarksText,
+			Reviews:   reviewsText,
+		})},
 	}
 	// Plans from the whole conversation stay addable to the calendar; only
 	// the turns replayed to the model are capped.
 	turn := newGuideTurn(history, loc)
+	turn.bookmarkedIDs = bookmarkedIDs
+	turn.favoriteIDs = favoriteIDs
+	turn.avoidIDs = avoidIDs
+	if interestsText != "" && interestsText != "none stated" {
+		for _, it := range strings.Split(interestsText, ",") {
+			it = strings.TrimSpace(it)
+			if it != "" {
+				turn.interests = append(turn.interests, it)
+			}
+		}
+	}
 	fullHistory := history
 	if len(history) > guideMaxHistoryMessages {
 		history = history[len(history)-guideMaxHistoryMessages:]
@@ -425,7 +450,14 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 				toolResults = append(toolResults, tc.Function.Name+": "+result)
 				continue
 			}
-			result, ids, usedSemantic := s.runGuideTool(ctx, tc, loc, weatherCondition)
+			result, ids, usedSemantic := s.runGuideTool(ctx, tc, loc, weatherCondition, guideToolContext{
+				UserMessage:   userMessage,
+				History:       fullHistory,
+				BookmarkedIDs: bookmarkedIDs,
+				FavoriteIDs:   favoriteIDs,
+				AvoidIDs:      avoidIDs,
+				Interests:     turn.interests,
+			})
 			placeIDs = append(placeIDs, ids...)
 			meta.ToolsUsed = append(meta.ToolsUsed, tc.Function.Name)
 			if usedSemantic {
@@ -443,8 +475,86 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 	return guideChatResult{}, meta, fmt.Errorf("guide: model kept calling tools after %d rounds", guideMaxToolRounds)
 }
 
-func guideSystemPrompt(now time.Time, loc guideLocation, stylesText, weatherCondition string) string {
-	return fmt.Sprintf(guideSystemPromptTemplate, now.Format("Monday 2 January 2006"), loc.promptLine(), stylesText, weatherCondition)
+type guidePromptProfile struct {
+	Interests string
+	Bookmarks string
+	Reviews   string
+}
+
+func guideSystemPrompt(now time.Time, loc guideLocation, stylesText, weatherCondition string, profile ...guidePromptProfile) string {
+	interests := "none stated"
+	bookmarks := "none"
+	reviews := "none"
+	if len(profile) > 0 {
+		if profile[0].Interests != "" {
+			interests = profile[0].Interests
+		}
+		if profile[0].Bookmarks != "" {
+			bookmarks = profile[0].Bookmarks
+		}
+		if profile[0].Reviews != "" {
+			reviews = profile[0].Reviews
+		}
+	}
+	return fmt.Sprintf(guideSystemPromptTemplate, now.Format("Monday 2 January 2006"), loc.promptLine(), stylesText, interests, bookmarks, reviews, weatherCondition)
+}
+
+func (s *Server) guideTravellerProfileData(ctx context.Context, travellerID string) (stylesText, interestsText, bookmarksText, reviewsText string, bookmarkedIDs, favoriteIDs, avoidIDs []string) {
+	stylesText = "none stated"
+	interestsText = "none stated"
+	bookmarksText = "none"
+	reviewsText = "none"
+
+	if travellerID == "" {
+		return
+	}
+
+	if u, err := s.Store.UserByID(ctx, travellerID); err == nil {
+		if len(u.TravelStyle) > 0 {
+			stylesText = strings.Join(u.TravelStyle, ", ")
+		}
+		if len(u.Interests) > 0 {
+			interestsText = strings.Join(u.Interests, ", ")
+		}
+	}
+
+	if saved, err := s.Store.SavedPlaces(ctx, travellerID); err == nil && len(saved) > 0 {
+		var bNames []string
+		for _, sp := range saved {
+			if sp.PlaceID != "" {
+				bookmarkedIDs = append(bookmarkedIDs, sp.PlaceID)
+				if pl, err := s.Store.PlaceByID(ctx, sp.PlaceID); err == nil {
+					bNames = append(bNames, pl.Name)
+				}
+			} else if sp.GeoPlaceID != "" {
+				if gp, err := s.Store.GeoPlaceByID(ctx, sp.GeoPlaceID); err == nil {
+					bNames = append(bNames, gp.Name)
+				}
+			}
+		}
+		if len(bNames) > 0 {
+			bookmarksText = strings.Join(dedupe(bNames), ", ")
+		}
+	}
+
+	if revs, err := s.Store.ReviewsByTraveller(ctx, travellerID); err == nil && len(revs) > 0 {
+		var revList []string
+		for _, rv := range revs {
+			if rv.Rating >= 4 {
+				favoriteIDs = append(favoriteIDs, rv.PlaceID)
+				if pl, err := s.Store.PlaceByID(ctx, rv.PlaceID); err == nil {
+					revList = append(revList, fmt.Sprintf("%s (★%d)", pl.Name, rv.Rating))
+				}
+			} else if rv.Rating <= 2 {
+				avoidIDs = append(avoidIDs, rv.PlaceID)
+			}
+		}
+		if len(revList) > 0 {
+			reviewsText = strings.Join(dedupe(revList), ", ")
+		}
+	}
+
+	return
 }
 
 func (s *Server) guideWeatherCondition(ctx context.Context, lat, lng float64) string {
@@ -567,7 +677,27 @@ func guideTools() []gemini.Tool {
 // runGuideTool executes one tool call and returns its JSON result (fed
 // back to the model as a "tool" message), any place ids it surfaced, and
 // whether it used a free-text semantic query (search_places only).
-func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guideLocation, weather string) (result string, placeIDs []string, usedSemanticQuery bool) {
+type guideToolContext struct {
+	UserMessage   string
+	History       []domain.GuideMessage
+	BookmarkedIDs []string
+	FavoriteIDs   []string
+	AvoidIDs      []string
+	Interests     []string
+}
+
+func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guideLocation, weather string, opt ...guideToolContext) (result string, placeIDs []string, usedSemanticQuery bool) {
+	var userMessage string
+	var history []domain.GuideMessage
+	var bookmarkedIDs, favoriteIDs, avoidIDs, interests []string
+	if len(opt) > 0 {
+		userMessage = opt[0].UserMessage
+		history = opt[0].History
+		bookmarkedIDs = opt[0].BookmarkedIDs
+		favoriteIDs = opt[0].FavoriteIDs
+		avoidIDs = opt[0].AvoidIDs
+		interests = opt[0].Interests
+	}
 	switch tc.Function.Name {
 	case "save_user_vibe":
 		var args struct {
@@ -601,14 +731,25 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guide
 		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
 
 		effectiveLoc := loc
-		if locName := strings.TrimSpace(args.Location); locName != "" {
-			if r := geo.FindRegion(locName); r != nil {
-				effectiveLoc = guideLocation{Known: true, Lat: r.Lat, Lng: r.Lng, Area: r.Name}
+		targetRegion := geo.FindRegion(args.Location)
+		if targetRegion == nil && args.Query != "" {
+			targetRegion = geo.FindRegion(args.Query)
+		}
+		if targetRegion == nil && userMessage != "" {
+			targetRegion = geo.FindRegion(userMessage)
+		}
+		if targetRegion == nil {
+			for i := len(history) - 1; i >= 0; i-- {
+				if history[i].Role == "user" {
+					if r := geo.FindRegion(history[i].Content); r != nil {
+						targetRegion = r
+						break
+					}
+				}
 			}
-		} else if !loc.Known && args.Query != "" {
-			if r := geo.FindRegion(args.Query); r != nil {
-				effectiveLoc = guideLocation{Known: true, Lat: r.Lat, Lng: r.Lng, Area: r.Name}
-			}
+		}
+		if targetRegion != nil {
+			effectiveLoc = guideLocation{Known: true, Lat: targetRegion.Lat, Lng: targetRegion.Lng, Area: targetRegion.Name}
 		}
 
 		if args.MaxPriceLevel != "$" && args.MaxPriceLevel != "$$" && args.MaxPriceLevel != "$$$" {
@@ -623,9 +764,6 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guide
 			return `{"error":"could not load places"}`, nil, false
 		}
 
-		// Best-effort: a failed/unconfigured embed call just drops the
-		// semantic factor back to neutral (see recommend.semanticScore),
-		// same graceful-degradation convention as guideWeatherCondition.
 		var queryEmbedding []float64
 		if q := strings.TrimSpace(args.Query); q != "" {
 			if vecs, err := s.aiEmbed(ctx, aiFeatureGuideEmbed, []string{q}); err != nil {
@@ -635,18 +773,68 @@ func (s *Server) runGuideTool(ctx context.Context, tc gemini.ToolCall, loc guide
 			}
 		}
 
+		targetRegionName := ""
+		if targetRegion != nil {
+			targetRegionName = targetRegion.Name
+		}
+
 		ranked := recommend.Rank(places, recommend.Preferences{
 			Categories: args.Categories, Tags: args.Tags,
 			DesiredProductive: args.DesiredProductive, DesiredLoud: args.DesiredLoud, DesiredCrowded: args.DesiredCrowded,
 			MaxDistanceKm: args.MaxDistanceKm, MaxPriceLevel: args.MaxPriceLevel,
 			RequireIndoor: args.RequireIndoor, RequireOpenNow: args.RequireOpenNow, RequireSeaView: args.RequireSeaView,
 			WantsDeals: args.WantsDeals, Lat: effectiveLoc.Lat, Lng: effectiveLoc.Lng, QueryEmbedding: queryEmbedding,
+			BookmarkedIDs: bookmarkedIDs, FavoritedIDs: favoriteIDs, AvoidIDs: avoidIDs,
+			TargetRegion: targetRegionName, QueryText: args.Query,
 		}, weather)
+
+		// Fallback safety net: if fewer than 2 results found and we have a target region or query,
+		// pull matching places directly from Spotto catalog so Mirissa, Arugam Bay, etc. never return empty!
+		if len(ranked) < 2 {
+			searchQ := args.Query
+			if targetRegion != nil {
+				targetName := targetRegion.Name
+				if searchQ == "" {
+					searchQ = targetName
+				} else if !strings.Contains(strings.ToLower(searchQ), strings.ToLower(targetName)) {
+					searchQ = targetName + " " + searchQ
+				}
+			}
+			tMock := &guideTurn{
+				loc:           effectiveLoc,
+				bookmarkedIDs: bookmarkedIDs,
+				favoriteIDs:   favoriteIDs,
+				avoidIDs:      avoidIDs,
+				interests:     interests,
+			}
+			catalog := s.searchCatalogPlaces(ctx, searchQ, 8, effectiveLoc, tMock)
+			for _, cp := range catalog {
+				already := false
+				for _, r := range ranked {
+					if r.Place.ID == strings.TrimPrefix(cp.Ref, "p:") || ("p:"+r.Place.ID) == cp.Ref {
+						already = true
+						break
+					}
+				}
+				if already {
+					continue
+				}
+				rawID := strings.TrimPrefix(cp.Ref, "p:")
+				if p, err := s.Store.PlaceByID(ctx, rawID); err == nil {
+					ranked = append(ranked, recommend.Scored{
+						Place: p,
+						Score: 1.0,
+						Reasons: []string{"in " + effectiveLoc.Area},
+					})
+				}
+			}
+		}
+
 		if len(ranked) > 8 {
 			ranked = ranked[:8]
 		}
 
-		out := guideSearchResults(ranked, loc)
+		out := guideSearchResults(ranked, effectiveLoc)
 		for _, p := range out {
 			placeIDs = append(placeIDs, p.ID)
 		}
@@ -740,4 +928,112 @@ func dedupe(ids []string) []string {
 		}
 	}
 	return out
+}
+
+// handleGuideClearConversation clears the active or specified Local Guide chat history.
+func (s *Server) handleGuideClearConversation(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	var req struct {
+		ConversationID string `json:"conversationId"`
+	}
+	_ = readJSON(w, r, &req)
+	if req.ConversationID != "" {
+		_ = s.Store.ClearGuideConversation(r.Context(), req.ConversationID, c.Subject)
+	} else {
+		_ = s.Store.ClearLatestGuideConversation(r.Context(), c.Subject)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"message": "Chat history cleared",
+	})
+}
+
+// handleGuideSummarizeConversation creates a compact, actionable summary of the traveller's conversation.
+func (s *Server) handleGuideSummarizeConversation(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	conv, err := s.Store.LatestGuideConversation(r.Context(), c.Subject)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"title":   "Travel Summary",
+			"summary": "No conversation history to summarize yet. Chat with Local Guide to explore places and plan trips!",
+			"places":  []any{},
+		})
+		return
+	}
+	messages, err := s.Store.GuideMessagesByConversation(r.Context(), conv.ID)
+	if err != nil || len(messages) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"title":   "Travel Summary",
+			"summary": "No conversation history to summarize yet. Chat with Local Guide to explore places and plan trips!",
+			"places":  []any{},
+		})
+		return
+	}
+
+	var placeIDs []string
+	for _, m := range messages {
+		placeIDs = append(placeIDs, m.PlaceIDs...)
+		var p guidePayload
+		if len(m.Payload) > 0 && json.Unmarshal(m.Payload, &p) == nil && p.Plan != nil {
+			for _, d := range p.Plan.Days {
+				for _, st := range d.Stops {
+					if st.Place.PlaceID != "" {
+						placeIDs = append(placeIDs, st.Place.PlaceID)
+					}
+				}
+			}
+		}
+	}
+	cards := map[string]guidePlaceCard{}
+	for id, pl := range s.guidePlacesByID(r.Context(), dedupe(placeIDs)) {
+		cards[id] = guidePlaceCardFor(pl, s.placeJSON(r.Context(), pl), guideLocation{})
+	}
+
+	var transcript strings.Builder
+	for _, m := range messages {
+		transcript.WriteString(strings.ToUpper(m.Role) + ": " + m.Content + "\n")
+	}
+
+	prompt := `Summarize this Local Guide travel conversation into a compact, clean travel plan and brief.
+Format with:
+- Title: A catchy 3-6 word title (e.g. "Mirissa & Weligama Coastal Getaway")
+- Overview: 1-2 concise sentences
+- Key Spots & Highlights: Bullets of top places discussed with why visit and quick tip
+- Practical Tips: 2-3 essential tips (best time, transport, booking)
+
+Keep it concise, clear, and actionable. Do not use generic filler.`
+
+	summaryText := ""
+	title := "Trip Summary & Recommendations"
+	aiMessages := []gemini.Message{
+		{Role: "system", Content: prompt},
+		{Role: "user", Content: transcript.String()},
+	}
+	if resp, _, err := s.aiComplete(r.Context(), aiFeatureGuideChat, aiMessages, nil); err == nil && resp.Content != "" {
+		summaryText = resp.Content
+		lines := strings.Split(summaryText, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "#"))
+			if strings.HasPrefix(strings.ToLower(line), "title:") {
+				title = strings.TrimSpace(line[6:])
+				break
+			} else if len(line) > 5 && len(line) < 50 && !strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "*") {
+				title = line
+				break
+			}
+		}
+	} else {
+		summaryText = "Saved highlights from your conversation with Local Guide."
+	}
+
+	placeList := make([]guidePlaceCard, 0, len(cards))
+	for _, card := range cards {
+		placeList = append(placeList, card)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"title":   title,
+		"summary": summaryText,
+		"places":  placeList,
+	})
 }

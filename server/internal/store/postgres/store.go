@@ -2401,6 +2401,25 @@ func (s *Store) ReviewsByVendor(ctx context.Context, vendorID string) ([]domain.
 }
 
 // VoidClaim deletes or voids a claim record by ID for admin correction.
+// ReviewsByTraveller lists reviews written by a traveller, newest first.
+func (s *Store) ReviewsByTraveller(ctx context.Context, travellerID string) ([]domain.Review, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT `+reviewCols+reviewFrom+`WHERE r.traveller_id=$1 ORDER BY r.created_at DESC LIMIT 50`, travellerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Review
+	for rows.Next() {
+		rv, err := scanReview(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rv)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) VoidClaim(ctx context.Context, claimID string) error {
 	res, err := s.Pool.Exec(ctx, `DELETE FROM claims WHERE id=$1`, claimID)
 	if err != nil {
@@ -2515,6 +2534,20 @@ func (s *Store) GuideConversationOwner(ctx context.Context, conversationID strin
 
 // InsertGuideMessage appends one turn and bumps the conversation's
 // updated_at (so LatestGuideConversation reflects real recency).
+// ClearGuideConversation deletes a conversation and its messages.
+func (s *Store) ClearGuideConversation(ctx context.Context, conversationID, travellerID string) error {
+	_, err := s.Pool.Exec(ctx,
+		`DELETE FROM guide_conversations WHERE id=$1 AND traveller_id=$2`, conversationID, travellerID)
+	return err
+}
+
+// ClearLatestGuideConversation deletes all guide conversations for a traveller.
+func (s *Store) ClearLatestGuideConversation(ctx context.Context, travellerID string) error {
+	_, err := s.Pool.Exec(ctx,
+		`DELETE FROM guide_conversations WHERE traveller_id=$1`, travellerID)
+	return err
+}
+
 func (s *Store) InsertGuideMessage(ctx context.Context, m domain.GuideMessage) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {

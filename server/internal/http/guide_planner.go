@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/url"
 	"regexp"
 	"sort"
@@ -128,11 +129,15 @@ type guideCalendarStop struct {
 // add_to_calendar), the Places search budget, and the card, once a card
 // tool has been called.
 type guideTurn struct {
-	plans     map[string]guidePlan
-	findCalls int
-	payload   *guidePayload
-	message   string
-	loc       guideLocation
+	plans         map[string]guidePlan
+	findCalls     int
+	payload       *guidePayload
+	message       string
+	loc           guideLocation
+	bookmarkedIDs []string
+	favoriteIDs   []string
+	avoidIDs      []string
+	interests     []string
 }
 
 func newGuideTurn(history []domain.GuideMessage, loc guideLocation) *guideTurn {
@@ -511,7 +516,7 @@ func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query stri
 	}
 
 	// 1. DATABASE FIRST: Search Spotto's 1,082 curated places
-	catalogResults := s.searchCatalogPlaces(ctx, query, limit, turn.loc)
+	catalogResults := s.searchCatalogPlaces(ctx, query, limit, turn.loc, turn)
 	if len(catalogResults) >= 2 {
 		b, _ := json.Marshal(map[string]any{"places": catalogResults})
 		findPlacesCache.put(key, string(b))
@@ -604,7 +609,7 @@ func (s *Server) findPlacesTool(ctx context.Context, turn *guideTurn, query stri
 
 // searchCatalogPlaces searches Spotto's curated catalog and calculates approximate
 // distance from the user's location using Haversine math.
-func (s *Server) searchCatalogPlaces(ctx context.Context, query string, limit int, userLoc guideLocation) []guidePlanSearchResult {
+func (s *Server) searchCatalogPlaces(ctx context.Context, query string, limit int, userLoc guideLocation, turn ...*guideTurn) []guidePlanSearchResult {
 	places, err := s.getCachedCatalogPlaces(ctx)
 	if err != nil || len(places) == 0 {
 		return nil
@@ -612,6 +617,35 @@ func (s *Server) searchCatalogPlaces(ctx context.Context, query string, limit in
 
 	qLower := strings.ToLower(query)
 	targetRegion := geo.FindRegion(query)
+	if targetRegion == nil && userLoc.Known && (userLoc.Lat != 0 || userLoc.Lng != 0) {
+		reg := geo.NearestRegion(userLoc.Lat, userLoc.Lng)
+		targetRegion = &reg
+	}
+
+	var bookmarkedMap, favoriteMap, avoidMap map[string]bool
+	var userInterests []string
+	if len(turn) > 0 && turn[0] != nil {
+		t := turn[0]
+		if len(t.bookmarkedIDs) > 0 {
+			bookmarkedMap = make(map[string]bool, len(t.bookmarkedIDs))
+			for _, id := range t.bookmarkedIDs {
+				bookmarkedMap[id] = true
+			}
+		}
+		if len(t.favoriteIDs) > 0 {
+			favoriteMap = make(map[string]bool, len(t.favoriteIDs))
+			for _, id := range t.favoriteIDs {
+				favoriteMap[id] = true
+			}
+		}
+		if len(t.avoidIDs) > 0 {
+			avoidMap = make(map[string]bool, len(t.avoidIDs))
+			for _, id := range t.avoidIDs {
+				avoidMap[id] = true
+			}
+		}
+		userInterests = t.interests
+	}
 
 	stopWords := map[string]bool{
 		"in": true, "near": true, "sri": true, "lanka": true, "top": true, "sights": true,
@@ -621,7 +655,7 @@ func (s *Server) searchCatalogPlaces(ctx context.Context, query string, limit in
 	words := strings.Fields(qLower)
 	var tokens []string
 	for _, w := range words {
-		w = strings.Trim(w, ",.?!:;"'")
+		w = strings.Trim(w, ",.?!:;\"'")
 		if len(w) > 2 && !stopWords[w] {
 			tokens = append(tokens, w)
 		}
@@ -634,6 +668,9 @@ func (s *Server) searchCatalogPlaces(ctx context.Context, query string, limit in
 	var scored []scoredPlace
 
 	for _, p := range places {
+		if avoidMap != nil && avoidMap[p.ID] {
+			continue
+		}
 		f := parseGuideFacts(p)
 		nameLower := strings.ToLower(p.Name)
 		regionLower := strings.ToLower(f.Region)
@@ -679,6 +716,23 @@ func (s *Server) searchCatalogPlaces(ctx context.Context, query string, limit in
 			sc += f.Rating * 2.0
 		}
 
+		// Personalization boosts
+		if bookmarkedMap != nil && bookmarkedMap[p.ID] {
+			sc += 45.0
+		}
+		if favoriteMap != nil && favoriteMap[p.ID] {
+			sc += 35.0
+		}
+		for _, interest := range userInterests {
+			interest = strings.TrimSpace(strings.ToLower(interest))
+			if len(interest) > 2 {
+				if strings.Contains(nameLower, interest) || strings.Contains(typeLower, interest) || strings.Contains(regionLower, interest) {
+					sc += 15.0
+					break
+				}
+			}
+		}
+
 		if sc > 0 {
 			scored = append(scored, scoredPlace{place: p, score: sc})
 		}
@@ -687,14 +741,24 @@ func (s *Server) searchCatalogPlaces(ctx context.Context, query string, limit in
 	if len(scored) == 0 && targetRegion != nil {
 		targetName := strings.ToLower(targetRegion.Name)
 		for _, p := range places {
+			if avoidMap != nil && avoidMap[p.ID] {
+				continue
+			}
 			f := parseGuideFacts(p)
 			regionLower := strings.ToLower(f.Region)
 			dist := 999.0
 			if f.Lat != 0 && f.Lng != 0 {
 				dist = geo.HaversineKm(targetRegion.Lat, targetRegion.Lng, f.Lat, f.Lng)
 			}
-			if strings.Contains(regionLower, targetName) || dist <= 15.0 {
-				scored = append(scored, scoredPlace{place: p, score: f.Rating*10.0 - dist})
+			if strings.Contains(regionLower, targetName) || dist <= 20.0 {
+				sc := f.Rating*10.0 + math.Max(0, 30.0-dist)
+				if bookmarkedMap != nil && bookmarkedMap[p.ID] {
+					sc += 45.0
+				}
+				if favoriteMap != nil && favoriteMap[p.ID] {
+					sc += 35.0
+				}
+				scored = append(scored, scoredPlace{place: p, score: sc})
 			}
 		}
 	}
@@ -751,6 +815,11 @@ func (s *Server) searchCatalogPlaces(ctx context.Context, query string, limit in
 		}
 		if f.Region != "" {
 			summary += " in " + f.Region
+		}
+		if bookmarkedMap != nil && bookmarkedMap[p.ID] {
+			summary += " [Saved in your bookmarks]"
+		} else if favoriteMap != nil && favoriteMap[p.ID] {
+			summary += " [Rated highly by you]"
 		}
 		if distText != "" {
 			summary += " (" + distText + ")"
@@ -883,7 +952,11 @@ func (s *Server) resolvePlanRef(ctx context.Context, ref string) (guidePlanPlace
 	case ref == "":
 		return guidePlanPlace{}, errUnknownRef
 	default:
-		p, err := s.Store.PlaceByID(ctx, strings.TrimPrefix(ref, "p:"))
+		cleanID := strings.TrimPrefix(ref, "p:")
+		p, err := s.Store.PlaceByID(ctx, cleanID)
+		if err != nil {
+			p, err = s.Store.PlaceByName(ctx, cleanID)
+		}
 		if err != nil {
 			return guidePlanPlace{}, errUnknownRef
 		}
