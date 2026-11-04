@@ -451,10 +451,10 @@ const vibeCheckinGeofenceMeters = 150.0
 // aggregate at will.
 const vibeCheckinCooldown = 15 * time.Minute
 
-// handleVibeCheckin records one traveller's full vibe snapshot for a place â€”
-// always a new row (see Store.AddVibeCheckin), never an edit of a previous
-// check-in, so a traveller can re-rate a place on a later visit. Gated by
-// vibeCheckinCooldown so the same traveller can't resubmit indefinitely.
+// handleVibeCheckin records one traveller's vibe snapshot for a place.
+// Within vibeCheckinCooldown (15 minutes), subsequent ratings update the active
+// check-in row so travellers can refine ratings across dimensions without 429 lockouts.
+// Outside the cooldown window, a new check-in row is inserted for the new visit.
 func (s *Server) handleVibeCheckin(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	placeID := chi.URLParam(r, "id")
@@ -468,7 +468,7 @@ func (s *Server) handleVibeCheckin(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	// 0 stays valid â€” the "not yet rated" sentinel for whichever dimension
+	// 0 stays valid — the "not yet rated" sentinel for whichever dimension
 	// wasn't part of this particular tap (see VibeCheckInsNotifier.rate());
 	// 1-5 are the real ratings.
 	if req.Productive < 0 || req.Productive > 5 || req.Loud < 0 || req.Loud > 5 || req.Crowded < 0 || req.Crowded > 5 {
@@ -489,18 +489,8 @@ func (s *Server) handleVibeCheckin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "you're too far from this place to rate its vibe")
 		return
 	}
-	if s.IsProduction {
-		if last, err := s.Store.MyLatestVibeCheckin(r.Context(), placeID, c.Subject); err == nil {
-		if wait := vibeCheckinCooldown - time.Since(last.CreatedAt); wait > 0 {
-			writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("you can rate this place again in %d minutes", int(wait.Minutes())+1))
-			return
-		}
-		} else if !errors.Is(err, postgres.ErrNotFound) {
-		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
-		return
-	}
-	}
-	if err := s.Store.AddVibeCheckin(r.Context(), placeID, c.Subject, req.Productive, req.Loud, req.Crowded); err != nil {
+	vibeCheckin, err := s.Store.UpsertVibeCheckin(r.Context(), placeID, c.Subject, req.Productive, req.Loud, req.Crowded, vibeCheckinCooldown)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
 		return
 	}
@@ -512,10 +502,7 @@ func (s *Server) handleVibeCheckin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"placeId": placeID,
 		"vibe":    vibe,
-		"myVibe": domain.VibeCheckin{
-			PlaceID: placeID, TravellerID: c.Subject,
-			Productive: req.Productive, Loud: req.Loud, Crowded: req.Crowded, CreatedAt: time.Now(),
-		},
+		"myVibe":  vibeCheckin,
 	})
 }
 
@@ -785,10 +772,36 @@ func (s *Server) handleMyClaims(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	if claims == nil {
-		claims = []domain.Claim{}
+	active := make([]domain.Claim, 0, len(claims))
+	for _, clm := range claims {
+		if clm.Status == domain.ClaimClaimed {
+			active = append(active, clm)
+		}
 	}
-	writeJSON(w, http.StatusOK, claims)
+	writeJSON(w, http.StatusOK, active)
+}
+
+func (s *Server) handleClaimStatus(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == "" {
+		writeErr(w, http.StatusBadRequest, "code required")
+		return
+	}
+	claim, err := s.Store.ClaimByCode(r.Context(), code)
+	if errors.Is(err, postgres.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "claim not found")
+		return
+	}
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"code":       claim.Code,
+		"status":     claim.Status,
+		"redeemedAt": claim.RedeemedAt,
+	})
 }
 
 func (s *Server) handleGetTrip(w http.ResponseWriter, r *http.Request) {

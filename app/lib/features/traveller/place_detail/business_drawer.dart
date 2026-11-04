@@ -1,6 +1,7 @@
 // Spot detail bottom sheet — port of BusinessDrawer.jsx: illustration
 // header, stats, deal claim, vibe voting, artisan check-in, menu, actions.
 
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -287,7 +288,10 @@ class BusinessDrawerBody extends ConsumerWidget {
               ],
 
               // deal claim
-              if (place.deal.active) ...[_DealCard(place: place, claimedCode: claimedCode), const SizedBox(height: 14)],
+              if (place.deal.active && !ref.watch(redeemedDealsProvider).contains(place.id)) ...[
+                _DealCard(place: place, claimedCode: claimedCode),
+                const SizedBox(height: 14),
+              ],
 
               // real booking (session/table/stay — see placeServicesProvider)
               _BookingSection(place: place),
@@ -590,6 +594,8 @@ class _VibeCheck extends ConsumerStatefulWidget {
   ConsumerState<_VibeCheck> createState() => _VibeCheckState();
 }
 
+typedef VibeCheck = _VibeCheck;
+
 class _VibeCheckState extends ConsumerState<_VibeCheck> {
   // Tapping a vibe segment used to fire an immediate network POST per tap —
   // three dimensions rated in one visit meant three separate round-trips,
@@ -614,7 +620,7 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
   @override
   void initState() {
     super.initState();
-    _saver = DebouncedSaver(save: _flush);
+    _saver = DebouncedSaver(save: _flush, delay: const Duration(milliseconds: 1500));
     // devicePositionProvider is cached for the whole app session, not
     // re-checked on its own — without this, a traveller who was out of
     // range (or had location denied) when they last resolved a position
@@ -752,23 +758,29 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
               const SizedBox(width: 5),
               Text('CURRENT VIBE', style: text.labelSmall?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6)),
               const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: vibeMatch.color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
-                ),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: vibeMatch.color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(vibeMatch.icon, size: 11, color: vibeMatch.color),
                     const SizedBox(width: 4),
-                    Text(
-                      '${vibeMatch.percentage}% Match · ${vibeMatch.badgeLabel}',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: vibeMatch.color),
+                    Flexible(
+                      child: Text(
+                        '${vibeMatch.percentage}% Match · ${vibeMatch.badgeLabel}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: vibeMatch.color),
+                      ),
                     ),
                   ],
                 ),
+              ),
               ),
               const Spacer(),
               if (vibe.sampleSize > 0)
@@ -896,34 +908,45 @@ class _VibeCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Row(
-            children: [
-              for (var i = 1; i <= 5; i++)
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(right: i < 5 ? 2 : 0),
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: enabled && onTap != null
-                          ? () {
-                              HapticFeedback.selectionClick();
-                              onTap!(i);
-                            }
-                          : null,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Container(
-                          height: 8,
-                        decoration: BoxDecoration(
-                          color: i <= filled ? segmentOn : segmentOff,
-                          borderRadius: BorderRadius.circular(3),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              void handleTouch(double localX) {
+                if (!enabled || onTap == null) return;
+                final width = constraints.maxWidth;
+                if (width <= 0) return;
+                final rating = (localX / width * 5).ceil().clamp(1, 5);
+                if (rating != mine) {
+                  HapticFeedback.selectionClick();
+                  onTap!(rating);
+                }
+              }
+
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (details) => handleTouch(details.localPosition.dx),
+                onHorizontalDragUpdate: (details) => handleTouch(details.localPosition.dx),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      for (var i = 1; i <= 5; i++)
+                        Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(right: i < 5 ? 2 : 0),
+                            child: Container(
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: i <= filled ? segmentOn : segmentOff,
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                            ),
+                          ),
                         ),
-                        ),
-                      ),
-                    ),
+                    ],
                   ),
                 ),
-            ],
+              );
+            },
           ),
           if (isMine) ...[
             const SizedBox(height: 6),
@@ -980,24 +1003,141 @@ class _CheckInButton extends ConsumerWidget {
   }
 }
 
-class _DealCard extends ConsumerStatefulWidget {
+class DealCard extends ConsumerStatefulWidget {
   final Place place;
   final String? claimedCode;
-  const _DealCard({required this.place, required this.claimedCode});
+  const DealCard({super.key, required this.place, required this.claimedCode});
 
   @override
-  ConsumerState<_DealCard> createState() => _DealCardState();
+  ConsumerState<DealCard> createState() => _DealCardState();
 }
 
-class _DealCardState extends ConsumerState<_DealCard> {
+typedef _DealCard = DealCard;
+
+class _DealCardState extends ConsumerState<DealCard> {
+  bool _expanded = true;
+  Timer? _pollTimer;
+  bool _polling = false;
+
   @override
   void initState() {
     super.initState();
-    // Real traveller impression, once per time this card is actually shown
-    // (initState runs once per widget instance, not on every rebuild) —
-    // lets the vendor portal show a genuine "Views" count per offer.
     final offerId = widget.place.deal.id;
     if (offerId != null) _trackView(offerId);
+    if (widget.claimedCode != null) {
+      _startPolling(widget.claimedCode!);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant DealCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.claimedCode != widget.claimedCode) {
+      _stopPolling();
+      if (widget.claimedCode != null) {
+        _expanded = true;
+        _startPolling(widget.claimedCode!);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopPolling();
+    super.dispose();
+  }
+
+  void _startPolling(String code) {
+    _stopPolling();
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkStatus(code));
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  Future<void> _checkStatus(String code) async {
+    if (!mounted || _polling) return;
+    _polling = true;
+    try {
+      final res = await ref.read(apiProvider).dio.get('/claims/$code/status');
+      if (!mounted) return;
+      final status = (res.data as Map?)?['status'] as String?;
+      if (status == 'redeemed') {
+        _stopPolling();
+        _handleRedeemed();
+      }
+    } catch (_) {
+      // Background poll silently retries next interval
+    } finally {
+      _polling = false;
+    }
+  }
+
+  void _handleRedeemed() {
+    if (!mounted) return;
+    HapticFeedback.mediumImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('🎉 Offer used! Enjoy your discount.'),
+        duration: Duration(seconds: 4),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    ref.read(redeemedDealsProvider.notifier).markRedeemed(widget.place.id);
+    ref.read(claimsProvider.notifier).removeClaim(widget.place.id);
+  }
+
+  Future<void> _handleDismiss() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Dismiss Offer?'),
+        content: const Text('Dismiss this claimed offer code? You can reclaim it later if still available.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: SpottoColors.ink),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Dismiss'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      _stopPolling();
+      ref.read(claimsProvider.notifier).removeClaim(widget.place.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Offer dismissed'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleManualUsed() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mark as Used?'),
+        content: const Text('Have you used this offer at the counter? The offer card will disappear from your app.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: SpottoColors.sun, foregroundColor: SpottoColors.ink),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Yes, Mark as Used'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      _stopPolling();
+      _handleRedeemed();
+    }
   }
 
   Future<void> _trackView(String offerId) async {
@@ -1015,42 +1155,209 @@ class _DealCardState extends ConsumerState<_DealCard> {
     final text = Theme.of(context).textTheme;
     final claimed = claimedCode != null;
 
+    if (ref.watch(redeemedDealsProvider).contains(place.id)) {
+      return const SizedBox.shrink();
+    }
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
-      padding: const EdgeInsets.all(14),
+      curve: Curves.easeInOut,
+      padding: EdgeInsets.all(claimed ? (_expanded ? 14 : 10) : 14),
       decoration: BoxDecoration(
         color: claimed ? SpottoColors.ink : const Color(0xFFFDF3D7),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: claimed ? SpottoColors.ink : const Color(0xFFF2DCA0), width: 1.5),
+        boxShadow: claimed
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
       ),
       child: claimed
-          ? Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // White backing is required for the QR to actually scan —
-                // this card's background is SpottoColors.ink (dark), and a
-                // QR rendered directly on a dark background has no contrast.
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
-                  child: QrImageView(data: claimedCode, size: 64, gapless: false),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+          ? (_expanded
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Top header with deal tag & collapse button
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: SpottoColors.sun,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            place.deal.tag ?? 'ACTIVE OFFER',
+                            style: text.labelSmall?.copyWith(
+                              color: SpottoColors.ink,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            place.deal.label ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.bodySmall?.copyWith(color: SpottoColors.paleTeal),
+                          ),
+                        ),
+                        InkWell(
+                          key: const Key('deal_card_collapse_button'),
+                          onTap: () => setState(() => _expanded = false),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('Hide QR', style: text.labelSmall?.copyWith(color: SpottoColors.paleTeal)),
+                                const SizedBox(width: 2),
+                                const Icon(Icons.keyboard_arrow_up_rounded, size: 18, color: SpottoColors.paleTeal),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // Middle QR & code block
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: QrImageView(data: claimedCode, size: 76, gapless: false),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Show at counter', style: text.labelMedium?.copyWith(color: SpottoColors.paleTeal)),
+                              const SizedBox(height: 4),
+                              Text(
+                                claimedCode,
+                                style: text.headlineSmall?.copyWith(
+                                  color: Colors.white,
+                                  letterSpacing: 2,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Vendor scans this to apply discount',
+                                style: text.bodySmall?.copyWith(color: Colors.white60, fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // Bottom action row: "Mark as used" manual fallback & Dismiss
+                    Row(
+                      children: [
+                        TextButton.icon(
+                          key: const Key('deal_card_mark_used_button'),
+                          onPressed: _handleManualUsed,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          icon: const Icon(Icons.check_circle_outline_rounded, size: 14, color: SpottoColors.sun),
+                          label: Text(
+                            "Mark as used",
+                            style: text.labelSmall?.copyWith(color: SpottoColors.sun),
+                          ),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          key: const Key('deal_card_dismiss_button'),
+                          onPressed: _handleDismiss,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          child: Text(
+                            'Dismiss',
+                            style: text.labelSmall?.copyWith(color: Colors.white60),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                )
+              : InkWell(
+                  key: const Key('deal_card_expand_button'),
+                  onTap: () => setState(() => _expanded = true),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Row(
                     children: [
-                      Text('Show at counter', style: text.labelMedium?.copyWith(color: SpottoColors.paleTeal)),
-                      const SizedBox(height: 4),
-                      Text(claimedCode, style: text.headlineSmall?.copyWith(color: Colors.white, letterSpacing: 2)),
-                      const SizedBox(height: 4),
-                      Text(place.deal.label ?? '', style: text.bodySmall?.copyWith(color: SpottoColors.paleTeal)),
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: SpottoColors.sun.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.qr_code_2_rounded, size: 20, color: SpottoColors.sun),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              place.deal.label ?? 'Offer Claimed',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: text.bodyMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Tap to show QR code',
+                              style: text.labelSmall?.copyWith(color: SpottoColors.paleTeal),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          claimedCode,
+                          style: text.labelSmall?.copyWith(
+                            color: SpottoColors.sun,
+                            letterSpacing: 1,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.keyboard_arrow_down_rounded, color: SpottoColors.paleTeal, size: 20),
                     ],
                   ),
-                ),
-              ],
-            )
+                ))
           : Row(
               children: [
                 Container(
@@ -1061,6 +1368,7 @@ class _DealCardState extends ConsumerState<_DealCard> {
                 const SizedBox(width: 10),
                 Expanded(child: Text(place.deal.label ?? '', style: text.bodyMedium)),
                 FilledButton(
+                  key: const Key('deal_card_claim_button'),
                   style: FilledButton.styleFrom(
                     backgroundColor: SpottoColors.sun,
                     foregroundColor: SpottoColors.ink,

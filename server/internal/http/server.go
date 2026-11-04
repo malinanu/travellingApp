@@ -316,6 +316,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Get("/healthz", s.handleHealthz)
 	r.Get("/categories", s.handleAdminCategories)
 	r.Get("/readyz", s.handleReadyz)
+	r.Get("/claims/{code}/status", s.handleClaimStatus)
 
 	r.Post("/auth/register", s.handleRegister)
 	r.Post("/auth/register/check", s.handleRegisterCheck)

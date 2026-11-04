@@ -2483,6 +2483,47 @@ func (s *Store) AddVibeCheckin(ctx context.Context, placeID, travellerID string,
 	return err
 }
 
+// UpsertVibeCheckin updates the traveller's check-in for placeID if one was created
+// within cooldownWindow, updating created_at to now() and updating any dimensions with
+// values > 0 (or keeping existing values when the dimension is 0). If no check-in exists
+// within cooldownWindow, a new row is inserted.
+func (s *Store) UpsertVibeCheckin(ctx context.Context, placeID, travellerID string, productive, loud, crowded int, cooldownWindow time.Duration) (domain.VibeCheckin, error) {
+	var c domain.VibeCheckin
+	if cooldownWindow > 0 {
+		err := s.Pool.QueryRow(ctx, `
+			WITH latest AS (
+				SELECT id
+				FROM vibe_checkins
+				WHERE place_id = $1 AND traveller_id = $2 AND created_at > now() - make_interval(secs => $6)
+				ORDER BY created_at DESC
+				LIMIT 1
+			)
+			UPDATE vibe_checkins
+			SET productive = CASE WHEN $3 > 0 THEN $3 ELSE productive END,
+			    loud = CASE WHEN $4 > 0 THEN $4 ELSE loud END,
+			    crowded = CASE WHEN $5 > 0 THEN $5 ELSE crowded END,
+			    created_at = now()
+			WHERE id = (SELECT id FROM latest)
+			RETURNING place_id, traveller_id, productive, loud, crowded, created_at`,
+			placeID, travellerID, productive, loud, crowded, cooldownWindow.Seconds(),
+		).Scan(&c.PlaceID, &c.TravellerID, &c.Productive, &c.Loud, &c.Crowded, &c.CreatedAt)
+		if err == nil {
+			return c, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return c, err
+		}
+	}
+
+	err := s.Pool.QueryRow(ctx, `
+		INSERT INTO vibe_checkins (place_id, traveller_id, productive, loud, crowded)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING place_id, traveller_id, productive, loud, crowded, created_at`,
+		placeID, travellerID, productive, loud, crowded,
+	).Scan(&c.PlaceID, &c.TravellerID, &c.Productive, &c.Loud, &c.Crowded, &c.CreatedAt)
+	return c, err
+}
+
 // VibeAggregate averages each traveller's most recent check-in at placeID
 // from the last 30 days — a rolling "current vibe" reading, not an all-time
 // blend that would never reflect a place's vibe actually changing.

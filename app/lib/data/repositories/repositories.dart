@@ -338,6 +338,7 @@ class AuthNotifier extends Notifier<bool> {
     store.setBool(StoreKeys.auth, false);
     store.remove(StoreKeys.prefs);
     store.remove(StoreKeys.claims);
+    store.remove(StoreKeys.redeemedDeals);
     store.remove(StoreKeys.trip);
     store.remove(StoreKeys.group);
     store.remove(StoreKeys.me);
@@ -351,6 +352,7 @@ class AuthNotifier extends Notifier<bool> {
     ref.invalidate(favoritesProvider);
     ref.invalidate(prefsProvider);
     ref.invalidate(claimsProvider);
+    ref.invalidate(redeemedDealsProvider);
     ref.invalidate(tripProvider);
     ref.invalidate(groupProvider);
     ref.invalidate(meProvider);
@@ -1097,14 +1099,21 @@ class ClaimsNotifier extends Notifier<Map<String, String>> {
     if (!ref.read(authProvider)) return;
     try {
       final res = await ref.read(apiProvider).dio.get('/me/claims');
-      final map = <String, String>{
-        for (final c in (res.data as List)) (c as Map)['placeId'] as String: c['code'] as String,
+      final active = <String, String>{
+        for (final c in (res.data as List))
+          if ((c as Map)['status'] == null || c['status'] == 'claimed')
+            (c['placeId'] as String): (c['code'] as String),
       };
-      if (map.isNotEmpty) {
-        state = {...map, ...state};
-        await ref.read(localStoreProvider).setJson(StoreKeys.claims, state);
-      }
+      state = active;
+      await ref.read(localStoreProvider).setJson(StoreKeys.claims, state);
     } catch (_) {}
+  }
+
+  void removeClaim(String placeId) {
+    if (!state.containsKey(placeId)) return;
+    final updated = Map<String, String>.from(state)..remove(placeId);
+    state = updated;
+    ref.read(localStoreProvider).setJson(StoreKeys.claims, state);
   }
 
   /// Claims a place's deal on the server → unique single-use code.
@@ -1131,6 +1140,24 @@ class ClaimsNotifier extends Notifier<Map<String, String>> {
 }
 
 final claimsProvider = NotifierProvider<ClaimsNotifier, Map<String, String>>(ClaimsNotifier.new);
+
+class RedeemedDealsNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() {
+    final list = ref.read(localStoreProvider).getJsonList(StoreKeys.redeemedDeals);
+    return list != null ? list.cast<String>().toSet() : <String>{};
+  }
+
+  void markRedeemed(String placeId) {
+    if (state.contains(placeId)) return;
+    state = {...state, placeId};
+    ref.read(localStoreProvider).setJsonList(StoreKeys.redeemedDeals, state.toList());
+  }
+
+  bool isRedeemed(String placeId) => state.contains(placeId);
+}
+
+final redeemedDealsProvider = NotifierProvider<RedeemedDealsNotifier, Set<String>>(RedeemedDealsNotifier.new);
 
 // ── bookings (real, auto-confirmed commitments — see server's booking.go) ─
 

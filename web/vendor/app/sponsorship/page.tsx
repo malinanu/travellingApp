@@ -197,8 +197,8 @@ export default function SponsorshipPage() {
           <div
             className={`p-3.5 rounded-xl text-[13px] font-bold flex items-center gap-2.5 border transition-all ${
               statusMsg.type === 'success'
-                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400'
-                : 'bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-400'
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-800'
+                : 'bg-rose-500/10 border-rose-500/20 text-rose-800'
             }`}
           >
             {statusMsg.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
@@ -256,7 +256,7 @@ export default function SponsorshipPage() {
             <h3 className="font-extrabold text-[14.5px] text-ink">How Daily Quest Sponsorship Works</h3>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div className="bg-white dark:bg-black/20 p-3.5 rounded-xl border border-line/70">
+            <div className="bg-white p-3.5 rounded-xl border border-line/70">
               <span className="w-6 h-6 rounded-full bg-accent/15 text-accent text-[12px] font-black flex items-center justify-center mb-2">1</span>
               <p className="font-extrabold text-[13px] text-ink">Propose Your Perk</p>
               <p className="text-[11.5px] text-muted font-medium mt-0.5 leading-snug">
@@ -264,7 +264,7 @@ export default function SponsorshipPage() {
               </p>
             </div>
 
-            <div className="bg-white dark:bg-black/20 p-3.5 rounded-xl border border-line/70">
+            <div className="bg-white p-3.5 rounded-xl border border-line/70">
               <span className="w-6 h-6 rounded-full bg-accent/15 text-accent text-[12px] font-black flex items-center justify-center mb-2">2</span>
               <p className="font-extrabold text-[13px] text-ink">Spotto Approval</p>
               <p className="text-[11.5px] text-muted font-medium mt-0.5 leading-snug">
@@ -272,7 +272,7 @@ export default function SponsorshipPage() {
               </p>
             </div>
 
-            <div className="bg-white dark:bg-black/20 p-3.5 rounded-xl border border-line/70">
+            <div className="bg-white p-3.5 rounded-xl border border-line/70">
               <span className="w-6 h-6 rounded-full bg-accent/15 text-accent text-[12px] font-black flex items-center justify-center mb-2">3</span>
               <p className="font-extrabold text-[13px] text-ink">Featured Day</p>
               <p className="text-[11.5px] text-muted font-medium mt-0.5 leading-snug">
@@ -280,7 +280,7 @@ export default function SponsorshipPage() {
               </p>
             </div>
 
-            <div className="bg-white dark:bg-black/20 p-3.5 rounded-xl border border-line/70">
+            <div className="bg-white p-3.5 rounded-xl border border-line/70">
               <span className="w-6 h-6 rounded-full bg-accent/15 text-accent text-[12px] font-black flex items-center justify-center mb-2">4</span>
               <p className="font-extrabold text-[13px] text-ink">Scan & Welcome</p>
               <p className="text-[11.5px] text-muted font-medium mt-0.5 leading-snug">
@@ -388,7 +388,7 @@ export default function SponsorshipPage() {
                       </div>
 
                       {/* Reward Description Block */}
-                      <div className="p-3.5 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-line">
+                      <div className="p-3.5 rounded-xl bg-sand/30 border border-line">
                         <p className="text-[11px] font-extrabold text-muted uppercase tracking-wider mb-1">
                           Offered Quest Reward
                         </p>
@@ -585,9 +585,9 @@ export default function SponsorshipPage() {
 
         {/* Create / Edit Reward Modal */}
         {modalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-            <div className="bg-white dark:bg-stone-900 border border-line rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in zoom-in-95 duration-150">
-              <div className="p-5 border-b border-line flex items-center justify-between">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40 backdrop-blur-xs animate-in fade-in duration-150">
+            <div className="bg-white border border-line rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+              <div className="p-5 bg-sand/20 border-b border-line flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center">
                     <Gift size={16} />
@@ -597,8 +597,10 @@ export default function SponsorshipPage() {
                   </h3>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setModalOpen(false)}
-                  className="p-1 rounded-lg text-muted hover:text-ink hover:bg-black/5 dark:hover:bg-white/5"
+                  className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-sand transition-colors"
+                  title="Close modal"
                 >
                   <X size={18} />
                 </button>
@@ -658,7 +660,7 @@ export default function SponsorshipPage() {
                 </div>
 
                 {/* Active for Scheduling Switch */}
-                <label className="flex items-center gap-3 p-3 rounded-xl bg-sand/60 border border-line cursor-pointer hover:bg-sand/80 transition-colors">
+                <label className="flex items-center gap-3 p-3.5 rounded-xl bg-sand/40 border border-line/80 cursor-pointer hover:bg-sand/60 transition-colors">
                   <input
                     type="checkbox"
                     checked={formActive}
@@ -674,8 +676,8 @@ export default function SponsorshipPage() {
                 </label>
 
                 {/* Review Notice */}
-                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-[12px] font-semibold flex items-start gap-2">
-                  <Clock size={14} className="shrink-0 mt-0.5 text-amber-500" />
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-800 text-[12px] font-semibold flex items-start gap-2">
+                  <Clock size={14} className="shrink-0 mt-0.5 text-amber-600" />
                   <span>
                     New proposals or changes to reward description are reviewed by the Spotto team to ensure guest safety and quality standards before going live.
                   </span>
