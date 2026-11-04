@@ -249,7 +249,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: SpottoColors.coral),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
             child: const Text('Clear'),
           ),
         ],
@@ -399,13 +399,12 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                             'places': [for (final p in places) p.toJson()],
                           });
                           await localStore.setJsonList('spotto_saved_chat_summaries', currentList);
-                          if (mounted) {
-                            Navigator.pop(sheet);
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                              content: Text('Summary saved for later use!'),
-                              duration: Duration(seconds: 2),
-                            ));
-                          }
+                          if (!mounted) return;
+                          if (sheet.mounted) Navigator.pop(sheet);
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                            content: Text('Summary saved for later use!'),
+                            duration: Duration(seconds: 2),
+                          ));
                         },
                         icon: const Icon(Icons.bookmark_added_rounded, size: 18),
                         label: const Text('Save for Later'),
@@ -492,18 +491,17 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                               },
                             ),
                             IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 18, color: SpottoColors.coral),
+                              icon: Icon(Icons.delete_outline, size: 18, color: Theme.of(context).colorScheme.error),
                               tooltip: 'Delete',
                               onPressed: () async {
                                 final currentList = (ref.read(localStoreProvider).getJsonList('spotto_saved_chat_summaries') ?? []).toList();
                                 if (idx < currentList.length) {
                                   currentList.removeAt(idx);
                                   await ref.read(localStoreProvider).setJsonList('spotto_saved_chat_summaries', currentList);
-                                  if (context.mounted) {
-                                    Navigator.pop(sheet);
-                                    if (currentList.isNotEmpty) {
-                                      _showSavedSummariesSheet(currentList);
-                                    }
+                                  if (sheet.mounted) Navigator.pop(sheet);
+                                  if (!mounted) return;
+                                  if (currentList.isNotEmpty) {
+                                    _showSavedSummariesSheet(currentList);
                                   }
                                 }
                               },

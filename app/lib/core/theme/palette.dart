@@ -15,6 +15,7 @@ abstract final class SpottoColors {
   static const deepTeal = Color(0xFF0B4A54);
   static const clay = Color(0xFF0A5F6E);
   static const paleTeal = Color(0xFFBDE4E0);
+  static const coral = Color(0xFFE5534B); // alert / delete / error
 
   /// Soft ink shadow used across cards and sheets.
   static const inkShadow = Color(0x2E103D3A); // rgba(16,61,58,0.18)

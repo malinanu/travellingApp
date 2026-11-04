@@ -385,7 +385,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           markerId: MarkerId('place_${p.id}'),
           position: LatLng(p.lat, p.lng),
           icon: icon_,
-          zIndex: isSponsoredMatch ? 100.0 : (isSelected ? 50.0 : (showBanner ? 10.0 : 1.0)),
+          zIndexInt: isSponsoredMatch ? 100 : (isSelected ? 50 : (showBanner ? 10 : 1)),
           anchor: const Offset(0.5, 0.5),
           onTap: () {
             setState(() => _selectedPlaceId = p.id);
