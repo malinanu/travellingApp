@@ -303,6 +303,10 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.With(publicCORS).Get("/content/{key}", s.handleContentDetail)
 	r.Post("/content/{id}/play", s.handleContentPlay)
 
+	// Vendor subscription packages — public endpoint for the marketing website pricing page.
+	r.With(publicCORS).Get("/packages", s.handlePublicPackages)
+	r.With(publicCORS).Get("/api/v1/packages", s.handlePublicPackages)
+
 	// The transcriber service (transcriber/) claims audio guides to
 	// transcribe and posts the transcripts back — token-protected, and
 	// absent when TRANSCRIBER_TOKEN isn't set. See transcripts.go.
@@ -544,6 +548,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/geo/area", s.handleAdminGeoArea)
 		r.Get("/admin/subscriptions", s.handleAdminSubscriptions)
 		r.Post("/admin/subscriptions/{id}/upgrade", s.handleUpgradeSubscription)
+		r.Get("/admin/packages", s.handleAdminGetPackages)
+		r.Put("/admin/packages", s.handleAdminSavePackages)
 		r.Get("/admin/content/review-count", s.handleAdminContentReviewCount)
 		r.Post("/admin/content/{id}/publish", s.handleAdminContentPublish)
 		r.Post("/admin/content/{id}/reject", s.handleAdminContentReject)

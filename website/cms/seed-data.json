@@ -1,0 +1,446 @@
+{
+  "features": [
+    {
+      "id": "feat_map_pin",
+      "name": "Verified Map Pin & Listing",
+      "description": "Standard business pin and profile visible to all nearby travellers on the map.",
+      "category": "discovery",
+      "icon": "MapPin"
+    },
+    {
+      "id": "feat_br_badge",
+      "name": "Official BR Verification Badge",
+      "description": "Authenticity checkmark confirming verified Sri Lankan business registration.",
+      "category": "trust",
+      "icon": "ShieldCheck"
+    },
+    {
+      "id": "feat_active_offers",
+      "name": "Always-On Deals & Offers",
+      "description": "Post redeemable discounts, bundles, and seasonal offers.",
+      "category": "marketing",
+      "icon": "Tag"
+    },
+    {
+      "id": "feat_qr_scanner",
+      "name": "Single-Use QR Scanner Tool",
+      "description": "Staff scan traveller voucher codes directly on mobile without special hardware.",
+      "category": "operations",
+      "icon": "QrCode"
+    },
+    {
+      "id": "feat_staff_seats",
+      "name": "Staff Scanner Seats",
+      "description": "Mobile app logins for floor staff to scan codes without admin access.",
+      "category": "operations",
+      "icon": "Users"
+    },
+    {
+      "id": "feat_stamp_cards",
+      "name": "Digital Stamp Cards",
+      "description": "Loyalty tracker for recurring traveller visits (e.g. 5 smoothies, 1 free).",
+      "category": "loyalty",
+      "icon": "Award"
+    },
+    {
+      "id": "feat_flash_sales",
+      "name": "Geofenced 3km Flash Sales",
+      "description": "Instant broadcast notifications to travellers within 3km during slow afternoons.",
+      "category": "marketing",
+      "icon": "Zap"
+    },
+    {
+      "id": "feat_reservations",
+      "name": "Table & Session Reservations",
+      "description": "Direct chat and reservation requests without third-party commission.",
+      "category": "operations",
+      "icon": "CalendarCheck"
+    },
+    {
+      "id": "feat_promo_reel",
+      "name": "Discovery Promo Reel",
+      "description": "Short video showcase featured inside the app's Stories tab.",
+      "category": "marketing",
+      "icon": "Film"
+    },
+    {
+      "id": "feat_priority_ranking",
+      "name": "Priority Category Ranking",
+      "description": "Appear first in your town's category filters (cafes, surf schools, safaris).",
+      "category": "discovery",
+      "icon": "TrendingUp"
+    },
+    {
+      "id": "feat_vip_golden_pin",
+      "name": "VIP Golden Halo Map Pin",
+      "description": "Highlighted golden pin styling standing out on the 3D island map.",
+      "category": "discovery",
+      "icon": "Crown"
+    },
+    {
+      "id": "feat_quest_sponsor",
+      "name": "Town Daily Quest Sponsorship",
+      "description": "Featured checkpoint on gamified regional explorer quests.",
+      "category": "marketing",
+      "icon": "Compass"
+    },
+    {
+      "id": "feat_geo_heatmap",
+      "name": "Geo Demand Heatmap Analytics",
+      "description": "Live footfall and traveller density maps showing when tourists roam nearby.",
+      "category": "insights",
+      "icon": "Activity"
+    },
+    {
+      "id": "feat_whatsapp_concierge",
+      "name": "Priority WhatsApp Concierge",
+      "description": "Dedicated Sri Lankan partner success support on WhatsApp within 1 hour.",
+      "category": "trust",
+      "icon": "MessageSquare"
+    },
+    {
+      "id": "feat_multi_venue",
+      "name": "Multi-Venue Dashboard",
+      "description": "Manage multiple outlets across different beaches from a single Command Center.",
+      "category": "operations",
+      "icon": "Building2"
+    }
+  ],
+  "pricingPlans": [
+    {
+      "id": "pkg_starter",
+      "name": "Starter",
+      "slug": "starter",
+      "tagline": "For getting verified and visible on the map",
+      "monthlyPriceUsd": 3.99,
+      "yearlyPriceUsd": 39.9,
+      "badge": "",
+      "highlighted": false,
+      "activeOffers": 1,
+      "flashSalesPerMonth": 0,
+      "teamSeats": 1,
+      "ctaText": "Get Started",
+      "ctaLink": "businesses.html#get-started",
+      "sortOrder": 1,
+      "features": [
+        "feat_map_pin",
+        "feat_br_badge",
+        "feat_active_offers",
+        "feat_qr_scanner",
+        "feat_staff_seats"
+      ],
+      "excludedFeatures": [
+        "feat_stamp_cards",
+        "feat_flash_sales",
+        "feat_reservations",
+        "feat_geo_heatmap"
+      ]
+    },
+    {
+      "id": "pkg_growth",
+      "name": "Growth",
+      "slug": "growth",
+      "tagline": "For busy spots driving recurring footfall",
+      "monthlyPriceUsd": 11.99,
+      "yearlyPriceUsd": 119.9,
+      "badge": "Most Popular",
+      "highlighted": true,
+      "activeOffers": 5,
+      "flashSalesPerMonth": 2,
+      "teamSeats": 3,
+      "ctaText": "Start 14-day trial",
+      "ctaLink": "businesses.html#get-started",
+      "sortOrder": 2,
+      "features": [
+        "feat_map_pin",
+        "feat_br_badge",
+        "feat_active_offers",
+        "feat_qr_scanner",
+        "feat_staff_seats",
+        "feat_stamp_cards",
+        "feat_flash_sales",
+        "feat_reservations",
+        "feat_promo_reel",
+        "feat_priority_ranking"
+      ],
+      "excludedFeatures": [
+        "feat_vip_golden_pin",
+        "feat_geo_heatmap"
+      ]
+    },
+    {
+      "id": "pkg_pro",
+      "name": "Pro",
+      "slug": "pro",
+      "tagline": "For premier destinations leading their region",
+      "monthlyPriceUsd": 22.99,
+      "yearlyPriceUsd": 229.9,
+      "badge": "Best Value",
+      "highlighted": false,
+      "activeOffers": -1,
+      "flashSalesPerMonth": -1,
+      "teamSeats": 10,
+      "ctaText": "Upgrade to Pro",
+      "ctaLink": "businesses.html#get-started",
+      "sortOrder": 3,
+      "features": [
+        "feat_map_pin",
+        "feat_br_badge",
+        "feat_active_offers",
+        "feat_qr_scanner",
+        "feat_staff_seats",
+        "feat_stamp_cards",
+        "feat_flash_sales",
+        "feat_reservations",
+        "feat_promo_reel",
+        "feat_priority_ranking",
+        "feat_vip_golden_pin",
+        "feat_quest_sponsor",
+        "feat_geo_heatmap",
+        "feat_whatsapp_concierge",
+        "feat_multi_venue"
+      ],
+      "excludedFeatures": []
+    }
+  ],
+  "faqs": [
+    {
+      "question": "Do travellers ever pay for Spotto?",
+      "answer": "No. The traveller app is free forever, with no premium tier. Vendor subscriptions fund the whole thing, which keeps our recommendations honest: we only win when travellers actually show up at your counter.",
+      "category": "pricing",
+      "sortOrder": 1
+    },
+    {
+      "question": "What happens when my Premium trial ends?",
+      "answer": "You drop back to Starter automatically. Your listing, photos and review history stay exactly as they are; you just lose the Premium tools until you subscribe.",
+      "category": "pricing",
+      "sortOrder": 2
+    },
+    {
+      "question": "Can I switch between monthly and yearly billing?",
+      "answer": "Anytime. Switching to yearly applies the two-free-months rate at your next renewal, and switching back to monthly takes effect when the paid year runs out.",
+      "category": "pricing",
+      "sortOrder": 3
+    },
+    {
+      "question": "How does Spotto keep listings honest?",
+      "answer": "Paying never buys a better rating or a fake review. Boosts change where you appear, clearly labelled, but every spot on the map got there because a local reviewer rated it worth a traveller's time.",
+      "category": "pricing",
+      "sortOrder": 4
+    },
+    {
+      "question": "My business is seasonal. Can I pause?",
+      "answer": "Yes. Premium can be paused for up to four months a year. Your listing stays live on Starter while you're closed, and your stamp cards pick up where they left off.",
+      "category": "pricing",
+      "sortOrder": 5
+    },
+    {
+      "question": "How fast does my listing go live?",
+      "answer": "Once you submit your business details and BR certificate, our local curation team verifies your listing within 24 hours.",
+      "category": "businesses",
+      "sortOrder": 6
+    }
+  ],
+  "testimonials": [
+    {
+      "author": "L\u00e9a Fontaine",
+      "quote": "A local in the app told me to skip the famous place and try the kottu shack two streets over. Best meal of the whole trip.",
+      "highlightQuote": "Best meal of the whole trip.",
+      "venue": "Backpacker, Lyon",
+      "town": "Galle",
+      "avatarInitials": "LF",
+      "page": "home",
+      "isPrimary": true,
+      "rating": 5,
+      "sortOrder": 1
+    },
+    {
+      "author": "Dan Whitmore",
+      "quote": "The surf alert woke me at 5:40 and Main Point was pumping with six people out. I owe this app a beer.",
+      "highlightQuote": "I owe this app a beer.",
+      "venue": "Surfer, Cornwall",
+      "town": "Arugam Bay",
+      "avatarInitials": "DW",
+      "page": "home",
+      "isPrimary": false,
+      "rating": 5,
+      "sortOrder": 2
+    },
+    {
+      "author": "Yuki Tanaka",
+      "quote": "We did the Ella quest as a family and the kids still talk about the stamp book. Sneaky way to make them love hiking.",
+      "highlightQuote": "Sneaky way to make them love hiking.",
+      "venue": "Photographer, Osaka",
+      "town": "Ella",
+      "avatarInitials": "YT",
+      "page": "home",
+      "isPrimary": false,
+      "rating": 5,
+      "sortOrder": 3
+    },
+    {
+      "author": "Nuwan Perera",
+      "quote": "I posted a rainy-day flash sale at 2pm. By 3 the shack was full of surfers eating kottu. That button prints money.",
+      "highlightQuote": "That button prints money.",
+      "venue": "Owner, Nana's Kottu Shack",
+      "town": "Ahangama",
+      "avatarInitials": "NP",
+      "page": "businesses",
+      "isPrimary": true,
+      "rating": 5,
+      "sortOrder": 1
+    },
+    {
+      "author": "Ishara Fernando",
+      "quote": "The stamp card brought the same faces back four, five times in a week. Travellers treat it like a game.",
+      "highlightQuote": "Travellers treat it like a game.",
+      "venue": "Ceylon Sliders Cafe",
+      "town": "Southern Province",
+      "avatarInitials": "IF",
+      "page": "businesses",
+      "isPrimary": false,
+      "rating": 5,
+      "sortOrder": 2
+    },
+    {
+      "author": "Kasun Jayasuriya",
+      "quote": "Half our jeep bookings now start as a Spotto claim. The dashboard tells me which mornings to add a second jeep.",
+      "highlightQuote": "The dashboard tells me which mornings to add a second jeep.",
+      "venue": "Lagoon Safari Co.",
+      "town": "Tissamaharama",
+      "avatarInitials": "KJ",
+      "page": "businesses",
+      "isPrimary": false,
+      "rating": 5,
+      "sortOrder": 3
+    }
+  ],
+  "pages": [
+    {
+      "slug": "home",
+      "title": "Spotto \u00b7 Travel like you know a local",
+      "metaDescription": "Spotto is the free travel app for Sri Lanka. Curated local spots, real deals and AI-guided tips, made by people who live here.",
+      "hero": {
+        "eyebrow": "Made in Sri Lanka",
+        "headline": "Travel like you know a local.",
+        "highlightText": "know a local",
+        "lead": "Curated spots, real deals and AI-guided tips for Sri Lanka, picked by people who actually live here.",
+        "primaryCtaText": "Get the app",
+        "primaryCtaLink": "features.html#get",
+        "secondaryCtaText": "See how it works",
+        "secondaryCtaLink": "#how"
+      },
+      "sections": [
+        {
+          "blockType": "statsRow",
+          "stats": [
+            { "value": "120+", "label": "Curated spots" },
+            { "value": "8,400", "label": "Deals claimed" },
+            { "value": "260", "label": "Local partners" },
+            { "value": "4.9", "label": "App store rating" }
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "features",
+      "title": "Features \u00b7 Spotto",
+      "metaDescription": "Everything the free Spotto app does for travellers in Sri Lanka: curated maps, AI guidance, real deals, surf alerts and trip planning.",
+      "hero": {
+        "eyebrow": "Traveller Experience",
+        "headline": "One app, the whole island.",
+        "highlightText": "whole island",
+        "lead": "Everything below ships free in the Spotto app. No premium traveller tier, no ads pretending to be recommendations.",
+        "primaryCtaText": "Get the app",
+        "primaryCtaLink": "#get"
+      }
+    },
+    {
+      "slug": "businesses",
+      "title": "For businesses \u00b7 Spotto",
+      "metaDescription": "Put your Sri Lankan cafe, surf school or tour in front of thousands of travellers. Flash sales, stamp cards, QR validation and live analytics.",
+      "hero": {
+        "eyebrow": "For businesses",
+        "headline": "The travellers are already nearby.",
+        "highlightText": "already nearby",
+        "lead": "Spotto puts your spot on the map thousands of travellers open every day, and gives you the tools to turn a quiet Tuesday into a full house.",
+        "primaryCtaText": "Start free",
+        "primaryCtaLink": "pricing.html"
+      },
+      "sections": [
+        {
+          "blockType": "statsRow",
+          "stats": [
+            { "value": "6,800+", "label": "Active travellers" },
+            { "value": "248", "label": "Redemptions per week" },
+            { "value": "<60s", "label": "To launch a flash sale" },
+            { "value": "$0", "label": "To get started" }
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "pricing",
+      "title": "Pricing \u00b7 Spotto for businesses",
+      "metaDescription": "Spotto vendor plans: Starter ($3.99), Growth ($11.99), and Pro ($22.99). Free for travellers, honest for businesses.",
+      "hero": {
+        "eyebrow": "Transparent Subscriptions",
+        "headline": "Start free, grow when it works.",
+        "highlightText": "when it works",
+        "lead": "The app is always free for travellers. Businesses pick how loud they want to be."
+      }
+    },
+    {
+      "slug": "about",
+      "title": "About \u00b7 Spotto",
+      "metaDescription": "Spotto is built in Sri Lanka by people who surf before work. Here's why we made a travel app where locals write the map.",
+      "hero": {
+        "eyebrow": "Our Story",
+        "headline": "Made by the people you'd ask for directions.",
+        "highlightText": "ask for directions",
+        "lead": "Spotto started in a south-coast surf house with a simple gripe: the internet kept sending our friends to the wrong places."
+      }
+    },
+    {
+      "slug": "contact",
+      "title": "Contact \u00b7 Spotto",
+      "metaDescription": "Talk to the Spotto team: traveller questions, partner applications and everything in between.",
+      "hero": {
+        "eyebrow": "Get In Touch",
+        "headline": "We read everything.",
+        "highlightText": "read everything",
+        "lead": "Questions, spot suggestions, partnership ideas or a strong opinion about kottu. All welcome."
+      }
+    }
+  ],
+  "stories": [
+    {
+      "title": "How to Ride the Ella Odyssey Train Without Losing Your Mind",
+      "slug": "ella-odyssey-train-guide",
+      "summary": "Where to stand, when to buy tickets, and how to spot the Nine Arches bridge without 400 selfie sticks in your frame.",
+      "category": "Guide",
+      "authorName": "Kavindu Senanayake",
+      "regionName": "Ella \u00b7 Hill Country",
+      "coverUrl": "assets/img/blog-train.jpg",
+      "tags": ["trains", "ella", "hiking"],
+      "featured": true,
+      "status": "published",
+      "publishedAt": "2026-10-15T08:00:00.000Z",
+      "body": "The Kandy-to-Ella train is consistently voted one of the most scenic rail journeys on earth. But doing it smoothly takes a few tricks only locals know.\n\n### 1. Board at Peradeniya, Not Kandy\nKandy station is packed. If you board at Peradeniya Junction (one stop earlier), you have five extra minutes to stow bags and grab window seats.\n\n### 2. Stand on the Right Side\nFrom Hatton to Haputale, the sheer valley views and tea waterfalls are almost exclusively on the right side of the carriage direction.\n\n### 3. Chai from the Platform Vendors\nWhen the train halts at Pattipola (the highest station at 1,898m), don't miss the ginger tea in clay cups from the track-side aunties."
+    },
+    {
+      "title": "The Golden Hour Kottu: A Southern Province Masterclass",
+      "slug": "southern-province-kottu-masterclass",
+      "summary": "Behind the steel blades at Nana's Shack: how chopped godamba roti, roast chicken gravy, and banana peppers become Sri Lanka's ultimate comfort.",
+      "category": "Food",
+      "authorName": "Dan Whitmore",
+      "regionName": "Ahangama \u00b7 South Coast",
+      "coverUrl": "assets/img/blog-food.jpg",
+      "tags": ["food", "kottu", "ahangama"],
+      "featured": false,
+      "status": "published",
+      "publishedAt": "2026-10-22T17:30:00.000Z",
+      "body": "At 6:30 PM along the Matara road, the rhythmic clang of steel blades hitting cast iron signals that dinner is ready.\n\nNana started grilling kottu in 1998. The secret isn't fancy spices—it's the fresh curry leaves fried at the very first second the griddle reaches peak heat."
+    }
+  ]
+}

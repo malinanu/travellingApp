@@ -8,10 +8,10 @@
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Mono:wght@400;500&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="site.css?v=4">
 </head>
-<body>
+<body data-cms-page="pricing">
 
 <nav class="nav">
   <div class="nav-inner">
@@ -52,54 +52,175 @@
 
 <section style="padding-top:40px">
   <div class="container">
-    <div class="plans">
+    <div class="plans" id="pricingPlansContainer" data-api="https://spottoapi.threelogiq.com">
 
-      <div class="plan rv">
+      <!-- Starter Tier ($3.99) -->
+      <div class="plan rv" data-tier="starter">
         <div class="plan-name">Starter</div>
-        <div class="plan-for">For getting on the map</div>
-        <div class="price">$0 <small>forever</small></div>
-        <div class="price-note">No card needed</div>
-        <ul>
-          <li>Full listing on the traveller map</li>
-          <li>Photos, opening hours and tags</li>
-          <li>1 live offer at a time</li>
-          <li>QR scanning for redemptions</li>
-          <li class="no">Flash sales to nearby travellers</li>
-          <li class="no">Stamp cards &amp; analytics</li>
+        <div class="plan-for">For getting verified and visible on the map</div>
+        <div class="price"><span data-monthly="$3.99" data-yearly="$3.33">$3.99 </span><small>/mo</small></div>
+        <div class="price-note" data-note-monthly="Billed monthly ($3.99/mo), cancel anytime" data-note-yearly="Billed yearly at $39.90 (2 months free)">Billed monthly ($3.99/mo), cancel anytime</div>
+        <ul class="plan-features">
+          <li>Verified map pin &amp; business profile</li>
+          <li>Official BR verification badge</li>
+          <li>1 active always-on deal / offer</li>
+          <li>Single-use QR scanner tool</li>
+          <li>1 staff scanner seat</li>
+          <li class="no">Digital stamp cards &amp; loyalty</li>
+          <li class="no">Geofenced 3km flash sales</li>
+          <li class="no">Table &amp; session reservations</li>
+          <li class="no">Geo demand heatmap analytics</li>
         </ul>
-        <a class="btn btn--ghost" href="contact.html">Create your listing</a>
+        <a class="btn btn--ghost" href="businesses.html#get-started">Get Started</a>
       </div>
 
-      <div class="plan plan--hot rv d1">
+      <!-- Growth Tier ($11.99) - Most Popular -->
+      <div class="plan plan--hot rv d1" data-tier="growth">
         <span class="badge-pop">Most popular</span>
-        <div class="plan-name">Premium</div>
-        <div class="plan-for">For spots that want the crowd</div>
-        <div class="price"><span data-monthly="$49" data-yearly="$41">$49 </span><small>/mo</small></div>
-        <div class="price-note" data-note-monthly="Billed monthly, cancel anytime" data-note-yearly="Billed yearly, 2 months free">Billed monthly, cancel anytime</div>
-        <ul>
-          <li>Everything in Starter, unlimited offers</li>
-          <li>Flash sales to travellers within 3 km</li>
-          <li>Digital stamp cards</li>
-          <li>Live analytics dashboard</li>
-          <li>Priority placement in your category</li>
+        <div class="plan-name">Growth</div>
+        <div class="plan-for">For busy spots driving recurring footfall</div>
+        <div class="price"><span data-monthly="$11.99" data-yearly="$9.99">$11.99 </span><small>/mo</small></div>
+        <div class="price-note" data-note-monthly="Billed monthly ($11.99/mo), cancel anytime" data-note-yearly="Billed yearly at $119.90 (2 months free)">Billed monthly ($11.99/mo), cancel anytime</div>
+        <ul class="plan-features">
+          <li>Everything in Starter</li>
+          <li>Up to 5 active offers &amp; menus</li>
+          <li>Digital stamp cards (loyalty tracking)</li>
+          <li>2 geofenced 3km flash sales / month</li>
+          <li>Table &amp; session reservations</li>
+          <li>Behind-the-scenes discovery promo reel</li>
+          <li>3 team seats (1 manager + 2 scanners)</li>
+          <li>Priority category ranking in town</li>
+          <li class="no">VIP top-spot map pin &amp; heatmaps</li>
         </ul>
-        <a class="btn btn--amber" href="contact.html">Start 14-day trial</a>
+        <a class="btn btn--amber" href="businesses.html#get-started">Start 14-day trial</a>
       </div>
 
-      <div class="plan rv d2">
-        <div class="plan-name">Collective</div>
-        <div class="plan-for">For hotel groups &amp; venue families</div>
-        <div class="price">Custom</div>
-        <div class="price-note">Priced per venue</div>
-        <ul>
-          <li>Multi-venue dashboard</li>
-          <li>Co-branded quests for your area</li>
-          <li>Dedicated partner manager</li>
-          <li>Quarterly performance reports</li>
+      <!-- Pro Tier ($22.99) -->
+      <div class="plan rv d2" data-tier="pro">
+        <div class="plan-name">Pro</div>
+        <div class="plan-for">For premier destinations leading their region</div>
+        <div class="price"><span data-monthly="$22.99" data-yearly="$19.16">$22.99 </span><small>/mo</small></div>
+        <div class="price-note" data-note-monthly="Billed monthly ($22.99/mo), cancel anytime" data-note-yearly="Billed yearly at $229.90 (2 months free)">Billed monthly ($22.99/mo), cancel anytime</div>
+        <ul class="plan-features">
+          <li>Everything in Growth</li>
+          <li>Unlimited active offers &amp; specials</li>
+          <li>Unlimited geofenced flash sales</li>
+          <li>Town daily quest sponsorship priority</li>
+          <li>VIP top-spot map pin with golden halo</li>
+          <li>Geo demand heatmap analytics</li>
+          <li>Up to 5 managers + unlimited staff seats</li>
+          <li>Priority WhatsApp concierge &amp; verification</li>
         </ul>
-        <a class="btn btn--ghost" href="contact.html">Talk to us</a>
+        <a class="btn btn--ghost" href="businesses.html#get-started">Upgrade to Pro</a>
       </div>
 
+    </div>
+
+    <!-- Feature Comparison Matrix -->
+    <div class="pricing-matrix-wrap rv" style="margin-top:60px">
+      <table class="pricing-matrix" id="pricingMatrixTable" aria-label="Feature comparison between Starter, Growth, and Pro tiers">
+        <thead>
+          <tr>
+            <th style="width:40%">Platform Capability</th>
+            <th style="width:20%" data-matrix-col="starter">Starter ($3.99)</th>
+            <th style="width:20%" class="matrix-th-hl" data-matrix-col="growth">Growth ($11.99)</th>
+            <th style="width:20%" data-matrix-col="pro">Pro ($22.99)</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr class="matrix-cat-row">
+            <td colspan="4">Discovery &amp; Trust</td>
+          </tr>
+          <tr>
+            <td>Verified Map Pin &amp; Listing</td>
+            <td><span class="matrix-check">✓</span> Standard</td>
+            <td class="matrix-td-hl"><span class="matrix-check">✓</span> Priority</td>
+            <td><span class="matrix-check">✓</span> VIP Golden Pin</td>
+          </tr>
+          <tr>
+            <td>Official BR Verification Badge</td>
+            <td><span class="matrix-check">✓</span> Included</td>
+            <td class="matrix-td-hl"><span class="matrix-check">✓</span> Included</td>
+            <td><span class="matrix-check">✓</span> Fast-track verification</td>
+          </tr>
+          <tr>
+            <td>Category Ranking</td>
+            <td>Standard</td>
+            <td class="matrix-td-hl">Priority in town</td>
+            <td>Top of Category island-wide</td>
+          </tr>
+          <tr>
+            <td>Discovery Promo Reel</td>
+            <td><span class="matrix-cross">—</span></td>
+            <td class="matrix-td-hl"><span class="matrix-check">✓</span> Included</td>
+            <td><span class="matrix-check">✓</span> Featured in reels</td>
+          </tr>
+          <tr class="matrix-cat-row">
+            <td colspan="4">Marketing &amp; Urgency</td>
+          </tr>
+          <tr>
+            <td>Active Deals &amp; Offers</td>
+            <td>1 live offer</td>
+            <td class="matrix-td-hl">Up to 5 active offers</td>
+            <td>Unlimited active offers</td>
+          </tr>
+          <tr>
+            <td>Geofenced 3km Flash Sales</td>
+            <td><span class="matrix-cross">—</span></td>
+            <td class="matrix-td-hl">2 per month</td>
+            <td>Unlimited push broadcasts</td>
+          </tr>
+          <tr>
+            <td>Town Daily Quest Sponsorship</td>
+            <td><span class="matrix-cross">—</span></td>
+            <td class="matrix-td-hl"><span class="matrix-cross">—</span></td>
+            <td><span class="matrix-check">✓</span> Priority checkpoint</td>
+          </tr>
+          <tr class="matrix-cat-row">
+            <td colspan="4">Loyalty &amp; Operations</td>
+          </tr>
+          <tr>
+            <td>Single-use Anti-fraud QR Scanner</td>
+            <td><span class="matrix-check">✓</span> Included</td>
+            <td class="matrix-td-hl"><span class="matrix-check">✓</span> Included</td>
+            <td><span class="matrix-check">✓</span> Included</td>
+          </tr>
+          <tr>
+            <td>Digital Stamp Cards (Repeat Visits)</td>
+            <td><span class="matrix-cross">—</span></td>
+            <td class="matrix-td-hl"><span class="matrix-check">✓</span> Automated stamps</td>
+            <td><span class="matrix-check">✓</span> Automated stamps</td>
+          </tr>
+          <tr>
+            <td>Table &amp; Session Reservations</td>
+            <td><span class="matrix-cross">—</span></td>
+            <td class="matrix-td-hl"><span class="matrix-check">✓</span> Real-time bookings</td>
+            <td><span class="matrix-check">✓</span> Real-time bookings</td>
+          </tr>
+          <tr>
+            <td>Team Accounts</td>
+            <td>1 staff scanner seat</td>
+            <td class="matrix-td-hl">3 seats (manager + scanners)</td>
+            <td>Up to 5 managers + unlimited staff</td>
+          </tr>
+          <tr class="matrix-cat-row">
+            <td colspan="4">Analytics &amp; Support</td>
+          </tr>
+          <tr>
+            <td>Geo Demand Heatmaps &amp; Footfall</td>
+            <td><span class="matrix-cross">—</span></td>
+            <td class="matrix-td-hl"><span class="matrix-cross">—</span></td>
+            <td><span class="matrix-check">✓</span> Live tourist density</td>
+          </tr>
+          <tr>
+            <td>Support Channel</td>
+            <td>Email support</td>
+            <td class="matrix-td-hl">Email &amp; in-app tickets</td>
+            <td>Dedicated WhatsApp concierge</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
@@ -131,7 +252,7 @@
 <section style="padding-top:0">
   <div class="container">
     <h2 class="rv">Fair questions</h2>
-    <div class="faq rv" style="margin-top:34px">
+    <div class="faq rv" id="pricingFaqs" data-category="pricing" style="margin-top:34px">
       <details>
         <summary>Do travellers ever pay for Spotto?</summary>
         <p>No. The traveller app is free forever, with no premium tier. Vendor subscriptions fund the whole thing, which keeps our recommendations honest: we only win when travellers actually show up at your counter.</p>

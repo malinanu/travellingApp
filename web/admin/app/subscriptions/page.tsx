@@ -11,6 +11,7 @@ import type { Subscription } from '@spotto/shared';
 import Shell from '../../components/shell';
 import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
+import PackageBuilder from '../../components/package-builder';
 
 const STATE_TABS = ['all', 'active', 'soon', 'overdue', 'trial', 'free'] as const;
 const STATE_STYLE: Record<string, string> = {
@@ -19,6 +20,7 @@ const STATE_STYLE: Record<string, string> = {
 
 export default function SubscriptionsPage() {
   const qc = useQueryClient();
+  const [viewMode, setViewMode] = useState<'subscribers' | 'builder'>('subscribers');
   const [tab, setTab] = useState<(typeof STATE_TABS)[number]>('all');
   const { data: subs = [], isError, isLoading } = useQuery<Subscription[]>({
     queryKey: ['admin-subs'],
@@ -39,7 +41,40 @@ export default function SubscriptionsPage() {
 
   return (
     <Shell>
-      {isError && <InlineErrorBanner message="Couldn't load subscriptions — try refreshing." />}
+      {/* Top Navigation Mode Tabs */}
+      <div className="flex items-center justify-between mb-5 pb-3 border-b border-line">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setViewMode('subscribers')}
+            className={`btn !py-2 !px-4 text-[13.5px] font-bold transition-all ${
+              viewMode === 'subscribers'
+                ? '!bg-ink text-white !border-ink shadow-sm'
+                : '!bg-surface text-muted hover:text-ink !border-line'
+            }`}
+          >
+            Vendor Subscribers
+          </button>
+          <button
+            onClick={() => setViewMode('builder')}
+            className={`btn !py-2 !px-4 text-[13.5px] font-bold transition-all flex items-center gap-2 ${
+              viewMode === 'builder'
+                ? '!bg-accent text-white !border-accent shadow-sm'
+                : '!bg-surface text-muted hover:text-ink !border-line'
+            }`}
+          >
+            <span>Package Builder</span>
+            <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.2 rounded bg-black/10 dark:bg-white/20">
+              $3.99 / $11.99 / $22.99
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {viewMode === 'builder' ? (
+        <PackageBuilder />
+      ) : (
+        <>
+          {isError && <InlineErrorBanner message="Couldn't load subscriptions — try refreshing." />}
       <div className="grid grid-cols-4 gap-4 mb-5">
         <Tile label="Platform MRR" value={`$${mrr.toLocaleString()}`} />
         <Tile label="Premium vendors" value={`${premium.length}`} />
@@ -95,6 +130,8 @@ export default function SubscriptionsPage() {
           </tbody>
         </table>
       </div>
+        </>
+      )}
     </Shell>
   );
 }

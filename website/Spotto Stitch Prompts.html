@@ -1,0 +1,548 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Spotto Stitch Prompts</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Mono:wght@400;500&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* Layout concept: a working document in Spotto's own sunny-postcard palette. Prompts are the product, so each one sits in its own card with a Copy button. */
+:root {
+  --bg: #FBF6ED;
+  --sand: #F3ECDD;
+  --surface: #FFFFFF;
+  --ink: #103D3A;
+  --ink-soft: #3A5A57;
+  --muted: #5F7A77;
+  --line: #E7E1D4;
+  --accent: #0B6F86;
+  --accent-ink: #FFFFFF;
+  --tint: #DDEDEF;
+  --sun: #F6B81E;
+  --warn-bg: #FFF1D0;
+  --warn-ink: #6B4A00;
+  --code-bg: #F7F2E6;
+  --font-display: 'Bricolage Grotesque', 'Nunito', system-ui, sans-serif;
+  --font-body: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B2320; --sand: #0F2C28; --surface: #10302C; --ink: #EAF2EF; --ink-soft: #C3D6D1;
+    --muted: #93ADA8; --line: #1F4540; --accent: #4FC3DC; --accent-ink: #062A31; --tint: #153C3F;
+    --warn-bg: #3A2F0C; --warn-ink: #F5D88A; --code-bg: #0C2623;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B2320; --sand: #0F2C28; --surface: #10302C; --ink: #EAF2EF; --ink-soft: #C3D6D1;
+  --muted: #93ADA8; --line: #1F4540; --accent: #4FC3DC; --accent-ink: #062A31; --tint: #153C3F;
+  --warn-bg: #3A2F0C; --warn-ink: #F5D88A; --code-bg: #0C2623;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.6;
+  padding-block: 0 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--bg); }
+.wrap { max-width: 980px; margin: 0 auto; }
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: -.02em; line-height: 1.08; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+a { color: var(--accent); }
+code { font-family: var(--font-mono); font-size: .86em; background: var(--tint); padding: 1px 6px; border-radius: 6px; }
+
+/* ---------- header ---------- */
+.hero { padding-block: 56px 28px; display: grid; gap: 18px; }
+.eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: 10px; }
+.eyebrow::before { content: ""; width: 22px; height: 11px; border-radius: 22px 22px 0 0; background: var(--sun); display: block; }
+h1 { font-size: clamp(2.2rem, 5.4vw, 3.6rem); font-weight: 800; }
+.lede { max-width: 62ch; color: var(--ink-soft); font-size: 1.1rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-size: .84rem; font-weight: 700; padding: 5px 12px; border-radius: 999px; background: var(--tint); color: var(--ink); }
+
+/* ---------- sticky bar ---------- */
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; margin-inline: -4px; padding: 10px 4px; background: var(--bg); border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; }
+.bar nav { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .9rem; font-weight: 700; }
+.bar nav a { color: var(--ink-soft); text-decoration: none; padding: 4px 0; }
+.bar nav a:hover { color: var(--accent); }
+.seg { display: inline-flex; background: var(--sand); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; align-items: center; }
+.seg-label { font-size: .78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 0 10px 0 12px; }
+.seg button { font: inherit; font-size: .88rem; font-weight: 800; border: 0; background: transparent; color: var(--ink-soft); padding: 7px 14px; min-height: 36px; border-radius: 999px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- sections ---------- */
+section { padding-top: 64px; scroll-margin-top: 72px; display: grid; gap: 22px; }
+section > header { display: grid; gap: 8px; max-width: 70ch; }
+h2 { font-size: clamp(1.6rem, 3.4vw, 2.3rem); font-weight: 800; }
+h3 { font-size: 1.25rem; font-weight: 800; }
+.sub { color: var(--ink-soft); }
+
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; counter-reset: s; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 34px 1fr; gap: 14px; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 18px; }
+.steps li::before { content: counter(s); width: 34px; height: 34px; border-radius: 50%; background: var(--sun); color: #103D3A; font-weight: 800; display: grid; place-items: center; font-family: var(--font-display); }
+
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.sw { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; display: grid; }
+.sw i { display: block; height: 64px; border-bottom: 1px solid var(--line); }
+.sw div { padding: 10px 12px 12px; display: grid; gap: 1px; }
+.sw b { font-size: .92rem; }
+.sw span { font-family: var(--font-mono); font-size: .78rem; color: var(--muted); }
+.sw small { font-size: .78rem; color: var(--muted); line-height: 1.35; }
+.note { background: var(--warn-bg); color: var(--warn-ink); border-radius: 14px; padding: 12px 16px; font-size: .95rem; }
+
+/* ---------- prompt cards ---------- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; overflow: hidden; }
+.card-head { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 14px 16px 14px 20px; border-bottom: 1px solid var(--line); background: var(--sand); }
+.card-head h3 { font-size: 1.05rem; }
+.card-head p { font-size: .86rem; color: var(--muted); margin-top: 2px; }
+.copy { font: inherit; font-weight: 800; font-size: .9rem; border: 0; background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 0 18px; min-height: 44px; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; }
+.copy:hover { filter: brightness(1.08); }
+.copy[data-done="true"] { background: #1C7C54; color: #fff; }
+.copy svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+pre.prompt { margin: 0; padding: 18px 20px 22px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: .84rem; line-height: 1.65; background: var(--code-bg); color: var(--ink); }
+.prompt .ph { color: var(--accent); font-weight: 500; }
+.stack { display: grid; gap: 18px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+.small-card { display: grid; grid-template-columns: 1fr auto; gap: 12px 16px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px 12px 18px; }
+.small-card p { font-family: var(--font-mono); font-size: .82rem; line-height: 1.55; }
+
+/* ---------- features ---------- */
+.cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px 20px 22px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.panel h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.panel h3 span { white-space: nowrap; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; font-weight: 800; background: var(--tint); color: var(--accent); padding: 3px 9px; border-radius: 999px; font-family: var(--font-body); }
+.panel dl { margin: 0; display: grid; gap: 10px; }
+.panel dt { font-weight: 800; font-size: .95rem; }
+.panel dd { margin: 0; font-size: .9rem; color: var(--ink-soft); line-height: 1.5; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+ul.tick, ul.cross { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+ul.tick li, ul.cross li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; font-size: .96rem; color: var(--ink-soft); }
+ul.tick li::before, ul.cross li::before { content: ""; width: 20px; height: 20px; border-radius: 50%; margin-top: 2px; background-position: center; background-repeat: no-repeat; background-size: 12px; }
+ul.tick li::before { background-color: #1C7C54; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E"); }
+ul.cross li::before { background-color: #B2472F; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.4' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E"); }
+ul.tick b, ul.cross b { color: var(--ink); }
+.decide { display: grid; gap: 10px; counter-reset: d; list-style: none; margin: 0; padding: 0; }
+.decide li { background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--sun); border-radius: 14px; padding: 12px 16px; }
+.decide b { display: block; }
+.decide span { color: var(--ink-soft); font-size: .94rem; }
+
+@media (max-width: 860px) {
+  .cols, .two, .pair { grid-template-columns: 1fr; }
+  .bar nav { display: none; }
+  .bar { justify-content: center; }
+}
+@media (max-width: 520px) {
+  body { font-size: 16px; }
+  .hero { padding-block: 40px 20px; }
+  .seg-label { display: none; }
+  .small-card { grid-template-columns: 1fr; }
+  .card-head { padding-left: 16px; }
+  pre.prompt { padding: 16px; font-size: .8rem; }
+}
+</style>
+
+<main class="wrap">
+
+  <header class="hero">
+    <p class="eyebrow">Google Stitch · Spotto website</p>
+    <h1>Prompts for the Spotto website</h1>
+    <p class="lede">Two modern directions and seven pages. Pick a concept, then copy any page prompt: the style block is attached for you. Every prompt avoids features that are not built yet.</p>
+    <div class="chips" aria-label="Decisions">
+      <span class="chip">Teal brand palette</span>
+      <span class="chip">Full 7-page site</span>
+      <span class="chip">Travellers and local businesses</span>
+      <span class="chip">Idea 2 dropped</span>
+    </div>
+  </header>
+
+  <div class="bar">
+    <nav aria-label="Sections">
+      <a href="#use">How to use</a><a href="#brand">Brand</a><a href="#style">Style blocks</a><a href="#pages">Pages</a><a href="#refine">Refine</a><a href="#features">Features</a><a href="#deliver">Deliver</a>
+    </nav>
+    <div class="seg" role="group" aria-label="Style block attached when copying page prompts">
+      <span class="seg-label">Copy with</span>
+      <button type="button" id="mode-a" aria-pressed="true">A · Pocket Local</button>
+      <button type="button" id="mode-b" aria-pressed="false">B · Eight Wonders</button>
+    </div>
+  </div>
+
+  <!-- ===================== HOW TO USE ===================== -->
+  <section id="use">
+    <header><h2>How to use these</h2><p class="sub">Stitch makes one screen per prompt and does not remember the style between screens, so every page prompt starts with the style block.</p></header>
+    <ol class="steps">
+      <li><span>Start a Stitch project in <b>web / desktop</b> mode.</span></li>
+      <li><span>Choose a concept in the bar above, then press <b>Copy</b> on a page prompt. The matching style block is added to the top automatically.</span></li>
+      <li><span>Attach reference images: <code>brand/logo/png/spotto-horizontal.png</code>, the three app screens in <code>website/assets/img</code> (<code>app-map.png</code>, <code>app-guide.png</code>, <code>app-deal.png</code>) and <code>hero-arugam.jpg</code>.</span></li>
+      <li><span>Generate Home first. When it looks right, generate the other six pages, then ask for the mobile version of each at 390 px wide.</span></li>
+      <li><span>Swap in the real logo and photos by hand, then export to Figma or code.</span></li>
+    </ol>
+  </section>
+
+  <!-- ===================== BRAND ===================== -->
+  <section id="brand">
+    <header><h2>Brand tokens the prompts use</h2><p class="sub">From the logo README, the traveller app palette and the vendor and admin portals. Concept B adds the admin dark theme.</p></header>
+    <div class="swatches">
+      <div class="sw"><i style="background:#FBF6ED"></i><div><b>Cream</b><span>#FBF6ED</span><small>Page background</small></div></div>
+      <div class="sw"><i style="background:#F3ECDD"></i><div><b>Sand</b><span>#F3ECDD</span><small>Alternate sections</small></div></div>
+      <div class="sw"><i style="background:#103D3A"></i><div><b>Ink</b><span>#103D3A</span><small>Text, dark sections</small></div></div>
+      <div class="sw"><i style="background:#0B6F86"></i><div><b>Ocean teal</b><span>#0B6F86</span><small>Primary buttons, links</small></div></div>
+      <div class="sw"><i style="background:#0E8C8A"></i><div><b>Lagoon</b><span>#0E8C8A</span><small>Secondary, hover</small></div></div>
+      <div class="sw"><i style="background:#DDEDEF"></i><div><b>Tint</b><span>#DDEDEF</span><small>Chips, soft fills (and #BDE4E0)</small></div></div>
+      <div class="sw"><i style="background:#0B4A54"></i><div><b>Deep teal</b><span>#0B4A54</span><small>One dark feature section</small></div></div>
+      <div class="sw"><i style="background:#F6B81E"></i><div><b>Sun gold</b><span>#F6B81E</span><small>Highlight only</small></div></div>
+      <div class="sw"><i style="background:#0B2320"></i><div><b>Night ink-teal</b><span>#0B2320</span><small>Concept B base, cards #10302C</small></div></div>
+      <div class="sw"><i style="background:#14A5C2"></i><div><b>Bright teal</b><span>#14A5C2</span><small>Concept B glows, active states</small></div></div>
+    </div>
+    <p class="note">Sun gold fails contrast as text on cream. Use it for fills and badges, or as text on ink. Signature motifs: a half sun rising over three rounded horizon lines (the logo) and a passport-stamp frame. Stitch cannot reproduce the custom logo lettering, so import the logo from <code>brand/logo/</code> by hand.</p>
+  </section>
+
+  <!-- ===================== STYLE BLOCKS ===================== -->
+  <section id="style">
+    <header><h2>Style blocks</h2><p class="sub">Concept A is the modern version of Idea 1. Concept B is Idea 3 rebuilt in the brand colours.</p></header>
+    <div class="stack">
+      <article class="card">
+        <div class="card-head"><div><h3>Style block A · Pocket Local</h3><p>Light, photographic, bento grid, frosted pill nav</p></div>
+          <button class="copy" type="button" data-target="style-a"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+<pre class="prompt" id="style-a">Design a modern, premium, fully responsive marketing website for Spotto, a free Sri Lanka travel app with a companion portal for local businesses. Mood: sunny holiday postcard, calm, premium, a little quirky.
+
+COLOURS (use exactly): page background cream #FBF6ED; cards white #FFFFFF; alternate sections sand #F3ECDD; headlines and dark sections ink #103D3A; body copy #3A5A57; primary buttons and links ocean teal #0B6F86; hover and secondary lagoon #0E8C8A; chips and soft fills #DDEDEF and #BDE4E0; one dark feature section in deep teal #0B4A54; sun gold #F6B81E only as a highlight (badges, stars, small fills, a hand-drawn underline swoosh, or text on dark ink, never gold text on cream); borders #E7E1D4. No purple, no neon, no default blue.
+
+TYPE: bold modern geometric sans for headlines (Plus Jakarta Sans or Bricolage Grotesque), very large and tightly tracked (hero 80 to 96px), Nunito 17 to 18px for body.
+
+STYLE: modern 2026 editorial. Oversized type, generous whitespace (120px between sections), full-bleed cinematic golden-hour photography with a soft ink overlay, bento-grid feature layouts with 24 to 32px rounded cards, a floating frosted-glass pill navigation bar, pill buttons, soft layered shadows tinted with ink (rgba 16,61,58,0.12), 1px borders, subtle film grain, large phone mockups overlapping section edges, a scrolling strip of place names, scroll-reveal motion.
+
+BRAND MOTIFS: a half sun rising over three rounded horizon lines (the Spotto logo) used as section dividers; a passport-stamp frame (double rounded rectangle) for badges. Logo: top-left placeholder "Spotto" beside a half-sun-over-waves icon.
+
+IMAGERY: warm golden-hour Sri Lanka photography (surfer at Arugam Bay, blue train at Ella, Sigiriya rock, tea hills, street food, local cafe owners) and real app screenshots inside iPhone frames.
+
+ACCESSIBILITY: WCAG AA contrast, 48px touch targets, visible focus rings. Tone: warm, concise, traveller to traveller.</pre>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div><h3>Style block B · Eight Wonders Atlas</h3><p>Dark, cinematic, brand colours, rising-sun hero</p></div>
+          <button class="copy" type="button" data-target="style-b"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+<pre class="prompt" id="style-b">Design a modern, immersive, fully responsive marketing website for Spotto, a free Sri Lanka travel app with a companion portal for local businesses. Concept: an atlas of Sri Lanka's eight wonders at golden hour, with the Spotto logo's rising half sun as the central image.
+
+COLOURS (use exactly): night ink-teal base #0B2320; card surfaces #10302C; cream #FBF6ED for text on dark and for occasional light "paper" sections; ocean teal #0B6F86 and bright teal #14A5C2 for links, glows and active states; lagoon #0E8C8A for secondary; sun gold #F6B81E as the single hero accent (a soft dawn glow rising from the horizon behind the hero, active states, and filled primary buttons with ink #103D3A text); muted text #9DB5B0; lines rgba(251,246,237,0.14). No purple, no indigo, no pink, no neon.
+
+TYPE: expressive modern display sans for headlines (Bricolage Grotesque or Syne at heavy weight, very large, tightly tracked), Nunito 17 to 18px for body.
+
+STYLE: cinematic dark editorial. Horizontal scroll-snap cards that expand on hover, an illustrated map of Sri Lanka with glowing gold pins, bento grids with 24 to 32px rounded corners, frosted-glass panels (cream at 8% with blur), thin hairlines, parallax photography with a teal-to-ink overlay, and a sun that rises as you scroll. Floating frosted pill navigation. Pill buttons. Subtle grain.
+
+BRAND MOTIFS: the half sun over three rounded horizon lines as the hero horizon and as section dividers; passport-stamp frames (double rounded rectangle) as badges and labels. Logo: top-left placeholder "Spotto" with the half-sun-over-waves icon.
+
+IMAGERY: moody golden-hour photography of the eight wonders: Arugam Bay surf, Mirissa whale tail, Sigiriya, Ella Nine Arches train, Yala leopard, Galle Fort lighthouse, Kandy Temple of the Tooth, Adam's Peak at dawn. Real app screenshots inside iPhone frames.
+
+ACCESSIBILITY: WCAG AA contrast, 48px touch targets, visible focus rings. Tone: calm, confident, curious.</pre>
+      </article>
+    </div>
+  </section>
+
+  <!-- ===================== PAGE PROMPTS ===================== -->
+  <section id="pages">
+    <header><h2>Page prompts</h2><p class="sub">Home has one prompt per concept. The other six work with either style block, and Copy attaches the one chosen in the bar above.</p></header>
+    <div class="stack">
+
+      <article class="card">
+        <div class="card-head"><div><h3>1A · Home, Concept A</h3><p>Copies with style block A</p></div>
+          <button class="copy" type="button" data-target="p-home-a" data-style="A"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+<pre class="prompt" id="p-home-a"><span class="ph">[Paste Style block A]</span>
+
+Home page. Sections in order:
+1. Floating pill nav: logo, Features, For businesses, Pricing, Stories, About, Contact, and a teal "Get the app" button.
+2. Full-bleed hero with a golden-hour surfer at Arugam Bay. Headline: "Travel like you know a local." Sub: "Spotto is the free app for Sri Lanka. Find places worth the detour, ask an AI guide like you'd ask a friend, and claim deals with a QR code." Buttons: "Get the free app" and "See how it works". A phone mockup overlaps the bottom edge.
+3. Proof strip with three passport-stamp badges: "Free for travellers", "Places with photos, hours and vibe ratings", "Every business reviewed before it goes live".
+4. Sticky scroll story, three steps with a phone mockup that changes per step: Find it (map with pins and a Galle Fort card), Ask it (AI guide recommending a courtyard dinner in Galle Fort), Claim it (QR code for 2-for-1 kottu).
+5. Bento grid of six cards: Paste a reel, get the places (Instagram, TikTok, YouTube links become pins); Audio guides with chapters and a live transcript; Trip planner (any itinerary becomes your trip); Weather scored for surf, hike or beach days; Travel as a group with a code and live pins; Daily quest with a QR reward.
+6. Dark deep-teal section "For local businesses": "Put your spot where travellers look." Three points: verified listing, offers and bookings, scan a QR to validate. Button "Apply to list your spot".
+7. Mission band, no testimonials: "Built in Sri Lanka, with sun and salt water."
+8. Final cream band with the half-sun divider: "Free for travellers. Always." and the Get the app button.
+9. Dark ink footer with link columns and "Your pocket local for Sri Lanka."</pre>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div><h3>1B · Home, Concept B</h3><p>Copies with style block B</p></div>
+          <button class="copy" type="button" data-target="p-home-b" data-style="B"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+<pre class="prompt" id="p-home-b"><span class="ph">[Paste Style block B]</span>
+
+Home page. Sections in order:
+1. Floating frosted nav: logo, Wonders, Features, For businesses, Stories, Pricing, About, and a gold "Get the app" button.
+2. Hero on dark ink with the logo's half sun rising over three wave lines and a gold dawn glow. Headline: "Pick a wonder. We'll plan the rest." Sub: "Every place on the Spotto map comes with spots to visit, a story to listen to, and an itinerary you can drop straight into a trip." Buttons: "Get the app" and "Browse stories".
+3. Interactive atlas: an illustrated Sri Lanka map with eight glowing gold pins, and beside it a horizontal row of eight tall photo cards (Arugam Bay, Mirissa, Sigiriya, Ella, Yala, Galle Fort, Kandy, Adam's Peak) where the hovered card expands to show a one-line description and the chips "Spots nearby", "Audio guide", "Itinerary".
+4. Bento grid "Beyond the pin": audio guide with chapters and transcript, travel guides and blogs, short local tips, itineraries that become trips, AI guide chat, a reel that turns into places.
+5. A light cream "paper" section with three phone screens: map, AI guide, claimed QR deal. Headline: "Then take it all with you."
+6. Dark teal section "For local businesses" with a stamp badge "Reviewed before it goes live" and the button "Apply to list your spot".
+7. Final band with the half sun rising: "Free for travellers. Always."
+8. Footer.</pre>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div><h3>2 · Features</h3><p>Either concept · <span class="style-tag">style A</span></p></div>
+          <button class="copy" type="button" data-target="p-features" data-style="pick"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+<pre class="prompt" id="p-features"><span class="ph">[Paste Style block A or B]</span>
+
+Features page. A centred hero: "Everything for the trip, in one app." Then five alternating feature rows, each with an eyebrow, a headline, a short paragraph, three check-mark bullets and a phone mockup:
+- Discover: map, search, category and time-of-day filters, live weather bar.
+- Ask: AI guide with place cards, day-by-day plans and add-to-calendar.
+- Listen: audio guides with chapters, a tap-to-seek transcript and background playback.
+- Plan: calendar and day timeline, walk or tuk-tuk legs between stops, invite friends to plan together, turn itineraries into trips.
+- Save: claim deals with a single-use QR, collect stamps on the daily quest, vibe check-ins within 150 m.
+Then a small grid of extras: paste a reel to find places, group code with live pins, activity weather score, nearby alerts, bookings. End with a CTA band: "Free for travellers. Always."</pre>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div><h3>3 · For Businesses</h3><p>Either concept · <span class="style-tag">style A</span></p></div>
+          <button class="copy" type="button" data-target="p-biz" data-style="pick"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+<pre class="prompt" id="p-biz"><span class="ph">[Paste Style block A or B]</span>
+
+For Businesses page. Hero: "Put your spot where travellers look." Sub: "List your cafe, shack, studio or stay on the map visitors use to decide where to go. Our team reviews every listing before it goes live." Buttons: "Apply to list your spot" and "See how it works".
+Then:
+- Six tool cards: Verified listing, Offers (percentage, amount, freebie, bundle, event), QR validation, Bookings (session, table, stay), Daily quest sponsorship, Reports (CSV export and print to PDF).
+- A four-step onboarding row: search your business, pin it on the map, upload your registration certificate, get approved. Note that you can build your profile while you wait.
+- A mock vendor portal screen showing the Validate page with a code and a "Valid, marked redeemed" result.
+- A trust band: team roles (owner, manager, staff), two-factor sign-in, every listing reviewed.
+- A short FAQ (native details style): What does it cost? Who approves my listing? How do customers redeem an offer? Can my team help?
+- CTA band: "List your spot."
+Do not show prices, flash sales, stamp cards or live analytics charts.</pre>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div><h3>4 · Pricing</h3><p>Either concept · <span class="style-tag">style A</span> · needs your pricing decision</p></div>
+          <button class="copy" type="button" data-target="p-pricing" data-style="pick"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+<pre class="prompt" id="p-pricing"><span class="ph">[Paste Style block A or B]</span>
+
+Pricing page for local businesses. Hero: "Start free. Grow when you're ready."
+One featured card: "Starter, free": verified listing, photos, hours and menu, offers, QR validation, bookings, team roles. Primary button "Apply to list your spot".
+Beside it, a soft "Growth plans" card marked "Coming soon" with a "Join the waitlist" email field.
+Below: a short FAQ (What is included? Do you take a commission? How long does approval take?) and a CTA band.
+Do not show dollar amounts for paid plans, a free trial or yearly billing.</pre>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div><h3>5 · About</h3><p>Either concept · <span class="style-tag">style A</span></p></div>
+          <button class="copy" type="button" data-target="p-about" data-style="pick"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+<pre class="prompt" id="p-about"><span class="ph">[Paste Style block A or B]</span>
+
+About page. Hero: "Made with sun and salt water." A story section with a golden-hour photograph, two short paragraphs on why Spotto exists (helping visitors find the real Sri Lanka and helping local businesses be found). Three value cards: Local first, Free for travellers, The island wins together. A "How it works behind the scenes" strip: every business reviewed by a person, travellers' locations kept private, content published by editors. A team section with three placeholder avatar cards (names to be added). Final CTA band.</pre>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div><h3>6 · Stories</h3><p>Either concept · <span class="style-tag">style A</span> · Concept B treats it as the Explore page</p></div>
+          <button class="copy" type="button" data-target="p-stories" data-style="pick"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+<pre class="prompt" id="p-stories"><span class="ph">[Paste Style block A or B]</span>
+
+Stories page. Hero: "Stories from the island." A filter bar with chips: All, Audio, Blog, Guide, Itinerary, Tip. A large featured audio guide card with a play button, chapter thumbnails and a waveform. Then a grid of nine cards (photo, kind badge, title, read or listen time). A highlighted "Itineraries that become trips" row with a sample two-day Ella itinerary and the button "Add to my trip". For Concept B also add the eight wonders as a filter row at the top. Newsletter band with an email field.</pre>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div><h3>7 · Contact</h3><p>Either concept · <span class="style-tag">style A</span></p></div>
+          <button class="copy" type="button" data-target="p-contact" data-style="pick"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+<pre class="prompt" id="p-contact"><span class="ph">[Paste Style block A or B]</span>
+
+Contact page. Two columns. Left: a form card with name, email, an "I am a" select (Traveller, Business, Press), message, and a teal submit button with a friendly success state. Right: three info cards: general email, a "For businesses" fast lane to the apply page, and "Based in Sri Lanka" with a small illustrated map. Use placeholder contact details. Add a soft CTA band to download the app.</pre>
+      </article>
+    </div>
+  </section>
+
+  <!-- ===================== REFINE ===================== -->
+  <section id="refine">
+    <header><h2>Refinement prompts</h2><p class="sub">Paste these into Stitch after a screen is generated.</p></header>
+    <div class="stack">
+      <div class="small-card"><p id="r1">Make the hero bolder and more cinematic: larger headline, deeper overlay, and a phone mockup that overlaps the next section.</p><button class="copy" type="button" data-target="r1"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+      <div class="small-card"><p id="r2">Convert this screen to a 390px mobile layout: single column, bottom-aligned CTA, collapsible nav.</p><button class="copy" type="button" data-target="r2"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+      <div class="small-card"><p id="r3">Tighten the colour usage: remove any colour not in the palette and use sun gold only as a highlight.</p><button class="copy" type="button" data-target="r3"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+      <div class="small-card"><p id="r4">Increase text contrast to WCAG AA and make all touch targets at least 48px.</p><button class="copy" type="button" data-target="r4"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+      <div class="small-card"><p id="r5">Replace stock-looking imagery with warm golden-hour Sri Lanka photography and real app screenshots in iPhone frames.</p><button class="copy" type="button" data-target="r5"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+      <div class="small-card"><p id="r6">Add a subtle scroll-reveal and hover motion to cards, and a marquee strip of place names.</p><button class="copy" type="button" data-target="r6"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></button></div>
+    </div>
+  </section>
+
+  <!-- ===================== FEATURES ===================== -->
+  <section id="features">
+    <header><h2>Key features of the system</h2><p class="sub">Checked against the code. Spotto is one Go API with a Flutter traveller app, a Next.js vendor portal and a Next.js admin command center.</p></header>
+    <div class="cols">
+      <div class="panel">
+        <h3>Traveller app <span>Free</span></h3>
+        <dl>
+          <div><dt>Discover map</dt><dd>Pins, search, category and time-of-day filters, live weather bar, live group pins.</dd></div>
+          <div><dt>Spots</dt><dd>Photos, hours, Wi-Fi, price level, menu, directions, reviews with photos.</dd></div>
+          <div><dt>Vibe check-ins</dt><dd>Rate Productive, Loud or Crowded, only within 150 m of the place.</dd></div>
+          <div><dt>Deals with QR</dt><dd>Claim an offer and show a single-use QR at the counter.</dd></div>
+          <div><dt>Daily quest</dt><dd>Collect stamps toward a sponsor's QR reward.</dd></div>
+          <div><dt>AI local guide</dt><dd>Place cards, day-by-day plans with maps, add-to-calendar.</dd></div>
+          <div><dt>Stories</dt><dd>Audio guides with chapters and a tap-to-seek transcript, plus blogs, guides, itineraries and tips.</dd></div>
+          <div><dt>Trip planner</dt><dd>Day timeline, walk or tuk-tuk legs, several trips, plan together. Itineraries become trips.</dd></div>
+          <div><dt>Inspiration board</dt><dd>Paste or share a reel from Instagram, TikTok, YouTube or Facebook and get the places in it.</dd></div>
+          <div><dt>Group travel</dt><dd>Group code, live member locations, nearby travellers.</dd></div>
+          <div><dt>Activity weather</dt><dd>Hourly 0 to 100 score for surf, hike or beach, with a best-window headline. Wind and rain only.</dd></div>
+          <div><dt>Bookings and alerts</dt><dd>Session, table and stay bookings with a QR. Nearby alerts for saved places.</dd></div>
+        </dl>
+      </div>
+      <div class="panel">
+        <h3>Business portal <span>Free to start</span></h3>
+        <dl>
+          <div><dt>Four-step join</dt><dd>Google Places search, map pin, auto-fill. Build your profile while approval is pending.</dd></div>
+          <div><dt>Profile and media</dt><dd>Hours, amenities, Wi-Fi, vibe, cover, gallery, promo video, holiday-closure prompts.</dd></div>
+          <div><dt>Verification</dt><dd>Registration certificate read by OCR and checked against the Sri Lanka registry. An admin approves every listing.</dd></div>
+          <div><dt>Menu</dt><dd>Several preset menus with per-day sections, for food categories.</dd></div>
+          <div><dt>Offers</dt><dd>Percentage, amount, freebie, bundle and event offers with schedules, limits and a live preview.</dd></div>
+          <div><dt>QR validation</dt><dd>Scan or type a code for deals, bookings and quest rewards. Each code works once. Live redemption feed.</dd></div>
+          <div><dt>Services and bookings</dt><dd>Session, table and stay types with availability. Confirm, cancel, mark no-shows. Email confirmations and reminders.</dd></div>
+          <div><dt>Quest sponsorship</dt><dd>Sponsor the daily reward and see completions and redemptions.</dd></div>
+          <div><dt>Team and security</dt><dd>Owner, manager and staff roles, two-factor sign-in, notification bell.</dd></div>
+          <div><dt>Reports</dt><dd>CSV export and print to PDF.</dd></div>
+        </dl>
+      </div>
+      <div class="panel">
+        <h3>Command center <span>Trust</span></h3>
+        <dl>
+          <div><dt>Approval queue</dt><dd>Approve, reject or request edits on every new business.</dd></div>
+          <div><dt>Moderation</dt><dd>Review moderation, emergency takedown with a mandatory reason, sign-out everywhere.</dd></div>
+          <div><dt>Geo heat-map</dt><dd>Where travellers go and where they want places that do not exist yet. Areas with fewer than 3 travellers are hidden.</dd></div>
+          <div><dt>Content hub</dt><dd>Editors publish audio guides, blogs, guides, itineraries and tips. Transcripts and chapters are generated.</dd></div>
+          <div><dt>AI controls</dt><dd>Usage, quotas and rate limits for the local guide.</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== DELIVER ===================== -->
+  <section id="deliver">
+    <header><h2>What we deliver to each customer</h2><p class="sub">These are the promises the website can make today.</p></header>
+    <div class="two">
+      <div class="panel">
+        <h3>To travellers</h3>
+        <ul class="tick">
+          <li><span><b>Find the real places fast.</b> One map with photos, hours and honest vibe ratings.</span></li>
+          <li><span><b>Plan without juggling apps.</b> Ask the AI guide, paste a reel, or tap an itinerary and it becomes a trip.</span></li>
+          <li><span><b>Save money and have fun.</b> Deals redeemed with a QR, and a daily quest.</span></li>
+          <li><span><b>Travel with confidence.</b> Weather scored for what they came to do, and alerts near saved places.</span></li>
+          <li><span><b>Travel together.</b> Group code and live locations.</span></li>
+          <li><span><b>Free.</b> The traveller app costs nothing.</span></li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>To local businesses</h3>
+        <ul class="tick">
+          <li><span><b>Get found by nearby travellers.</b> A verified listing on the map the app uses.</span></li>
+          <li><span><b>Turn visits into customers.</b> Offers, bookings and quest sponsorship.</span></li>
+          <li><span><b>Run it from a phone.</b> Scan a code and it validates in one tap.</span></li>
+          <li><span><b>Look trustworthy.</b> A person checks every listing before it goes live.</span></li>
+          <li><span><b>Stay in control.</b> Hours, menu, photos, team roles and reports in one place.</span></li>
+          <li><span><b>Start free.</b> The Starter listing is live and costs nothing.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="two">
+      <div class="panel">
+        <h3>Keep off the website for now</h3>
+        <ul class="cross">
+          <li><span><b>Paid billing, free trials, yearly pricing, boosts.</b> There is no payment processor.</span></li>
+          <li><span><b>Flash sales pushed to travellers, stamp cards, "Nudge all".</b> Not built.</span></li>
+          <li><span><b>Live analytics charts.</b> Dashboard numbers are demo data. Say "reports" instead.</span></li>
+          <li><span><b>Other languages, offline mode, phone sign-in.</b> Not built.</span></li>
+          <li><span><b>Joining a group by scanning a QR.</b> Group codes exist, joining from a code or link is unfinished.</span></li>
+          <li><span><b>Swell or tide surf forecasts.</b> Weather uses wind and rain only.</span></li>
+          <li><span><b>Testimonials and partner or traveller counts.</b> None are real yet.</span></li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Website assets still to deliver</h3>
+        <ul class="tick">
+          <li><span><b>Real photography</b> and clean app screenshots to replace the generated images.</span></li>
+          <li><span><b>A pricing decision.</b> Only the free Starter listing is real.</span></li>
+          <li><span><b>Store links</b>, contact email and phone, and a backend for the contact form.</span></li>
+          <li><span><b>Privacy and Terms pages.</b> The vendor portal already has them.</span></li>
+          <li><span><b>The real logo files</b> from <code>brand/logo/</code>, imported by hand.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 style="margin-top:12px">Decisions to make before launch</h3>
+    <ol class="decide">
+      <li><b>Pricing</b><span>The marketing page shows $49, the vendor portal shows $29 and $99, and the database has only Free and Premium. Pick one, or launch with free Starter only.</span></li>
+      <li><b>Photography</b><span>Commission or shoot real photos of the eight wonders and local businesses.</span></li>
+      <li><b>Contact and store links</b><span>Provide the support email, phone and app store URLs.</span></li>
+      <li><b>"1,000+ places"</b><span>The seed file has 1,081 entries. Confirm against production before using the number.</span></li>
+    </ol>
+  </section>
+</main>
+
+<script>
+(function () {
+  var mode = 'A';
+  var styleText = {
+    A: document.getElementById('style-a').textContent.trim(),
+    B: document.getElementById('style-b').textContent.trim()
+  };
+  var btnA = document.getElementById('mode-a');
+  var btnB = document.getElementById('mode-b');
+  var tags = document.querySelectorAll('.style-tag');
+
+  function setMode(m) {
+    mode = m;
+    btnA.setAttribute('aria-pressed', m === 'A' ? 'true' : 'false');
+    btnB.setAttribute('aria-pressed', m === 'B' ? 'true' : 'false');
+    for (var i = 0; i < tags.length; i++) tags[i].textContent = 'style ' + m;
+  }
+  btnA.addEventListener('click', function () { setMode('A'); });
+  btnB.addEventListener('click', function () { setMode('B'); });
+
+  function textFor(btn) {
+    var node = document.getElementById(btn.getAttribute('data-target'));
+    var text = node.textContent.trim();
+    var style = btn.getAttribute('data-style');
+    if (style) {
+      var use = style === 'pick' ? mode : style;
+      text = text.replace(/\[Paste Style block[^\]]*\]/, styleText[use]);
+    }
+    return text;
+  }
+
+  function selectNode(node) {
+    try {
+      var range = document.createRange();
+      range.selectNodeContents(node);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (e) {}
+  }
+
+  function flash(btn, label) {
+    var span = btn.querySelector('span');
+    var original = btn.getAttribute('data-label') || span.textContent;
+    btn.setAttribute('data-label', original);
+    span.textContent = label;
+    btn.setAttribute('data-done', 'true');
+    setTimeout(function () { span.textContent = original; btn.removeAttribute('data-done'); }, 1800);
+  }
+
+  var buttons = document.querySelectorAll('button.copy');
+  Array.prototype.forEach.call(buttons, function (btn) {
+    btn.addEventListener('click', function () {
+      var text = textFor(btn);
+      var node = document.getElementById(btn.getAttribute('data-target'));
+      var done = function () { flash(btn, 'Copied'); };
+      var fail = function () { selectNode(node); flash(btn, 'Selected, press Ctrl or Cmd + C'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fail);
+      } else {
+        fail();
+      }
+    });
+  });
+})();
+</script>
+
+</body></html>

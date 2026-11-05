@@ -3645,6 +3645,9 @@ func (s *Store) PlatformAnalytics(ctx context.Context) (domain.PlatformAnalytics
 }
 
 func (s *Store) GetRateLimitRPM(ctx context.Context) (int, error) {
+	if s == nil || s.Pool == nil {
+		return 200, nil
+	}
 	var val string
 	err := s.Pool.QueryRow(ctx, `SELECT value FROM platform_settings WHERE key = 'rate_limit_rpm'`).Scan(&val)
 	if err != nil {
@@ -3658,6 +3661,9 @@ func (s *Store) GetRateLimitRPM(ctx context.Context) (int, error) {
 }
 
 func (s *Store) SetRateLimitRPM(ctx context.Context, limit int) error {
+	if s == nil || s.Pool == nil {
+		return nil
+	}
 	b, _ := json.Marshal(limit)
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO platform_settings (key, value) VALUES ('rate_limit_rpm', $1)
@@ -3667,6 +3673,9 @@ func (s *Store) SetRateLimitRPM(ctx context.Context, limit int) error {
 }
 
 func (s *Store) GetGuideRateLimitRPM(ctx context.Context) (int, error) {
+	if s == nil || s.Pool == nil {
+		return 15, nil
+	}
 	var val string
 	err := s.Pool.QueryRow(ctx, `SELECT value FROM platform_settings WHERE key = 'guide_rate_limit_rpm'`).Scan(&val)
 	if err == pgx.ErrNoRows {

@@ -8,7 +8,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Bell, CreditCard, History, KeyRound, Map, Moon, Newspaper, Search, Smartphone, ShieldAlert, Shapes, Sparkles, Store, Sun, UserCheck, Users, LucideIcon,
+  Activity, Bell, CreditCard, History, KeyRound, Layers, Map, Moon, Newspaper, Search, Smartphone, ShieldAlert, Shapes, Sparkles, Store, Sun, UserCheck, Users, LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -25,6 +25,7 @@ const NAV: { href: string; label: string; icon: LucideIcon; superAdminOnly?: boo
   { href: '/quests', label: 'Quests', icon: Activity },
   { href: '/geo', label: 'Geo-analytics', icon: Map },
   { href: '/subscriptions', label: 'Subscriptions', icon: CreditCard },
+  { href: '/packages', label: 'Vendor Packages', icon: Layers },
   { href: '/content', label: 'Content', icon: Newspaper, forPublishers: true },
   { href: '/local-guide', label: 'Local Guide', icon: Sparkles },
   { href: '/categories', label: 'Categories', icon: Shapes },

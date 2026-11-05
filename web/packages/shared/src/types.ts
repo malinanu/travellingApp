@@ -553,6 +553,37 @@ export interface Subscription {
   since: string;
 }
 
+export interface PackageFeature {
+  id: string;
+  name: string;
+  description: string;
+  category: 'discovery' | 'marketing' | 'loyalty' | 'operations' | 'insights' | 'trust' | string;
+  icon: string;
+}
+
+export interface VendorPackage {
+  id: string;
+  slug: string;
+  name: string;
+  tagline: string;
+  monthlyPriceUsd: number;
+  yearlyPriceUsd: number;
+  badge?: string;
+  highlighted: boolean;
+  activeOffers: number;
+  flashSalesPerMonth: number;
+  teamSeats: number;
+  features: PackageFeature[];
+  excludedFeatures?: string[];
+  sortOrder: number;
+}
+
+export interface PackagesConfig {
+  packages: VendorPackage[];
+  featurePool: PackageFeature[];
+  updatedAt: string;
+}
+
 /** Travel content written in the Command Center (/studio/content) and read
  * by travellers (/content). */
 export type ContentType = 'audio' | 'blog' | 'guide' | 'itinerary' | 'tip';
