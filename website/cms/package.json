@@ -5,7 +5,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "dev": "next dev -p 3003",
-    "build": "payload generate:importmap && next build",
+    "build": "next build",
     "start": "next start",
     "generate:types": "payload generate:types",
     "generate:schema": "payload-graphql generate:schema",
