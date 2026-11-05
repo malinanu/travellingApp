@@ -18,7 +18,12 @@ export default buildConfig({
     user: 'users',
     meta: {
       titleSuffix: '— Spotto CMS',
-      favicon: '/assets/icon.svg',
+      icons: [
+        {
+          rel: 'icon',
+          url: '/assets/icon.svg',
+        },
+      ],
     },
   },
   cors: [
