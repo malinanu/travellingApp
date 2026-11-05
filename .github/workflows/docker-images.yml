@@ -13,6 +13,7 @@ on:
     paths:
       - 'server/**'
       - 'web/**'
+      - 'website/**'
       - 'transcriber/**'
       - 'docker-compose*.yml'
       - '.github/workflows/docker-images.yml'
@@ -36,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [api, vendor, admin, transcriber]
+        image: [api, vendor, admin, website, transcriber]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -52,6 +53,9 @@ jobs:
           - image: admin
             context: web
             dockerfile: web/admin/Dockerfile
+          - image: website
+            context: website
+            dockerfile: website/Dockerfile
           # Includes the Whisper model, downloaded from Hugging Face here.
           - image: transcriber
             context: transcriber
@@ -112,7 +116,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [api, vendor, admin, transcriber]
+        image: [api, vendor, admin, website, transcriber]
     steps:
       - uses: actions/download-artifact@v4
         with:

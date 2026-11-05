@@ -105,6 +105,14 @@ services:
     depends_on: [api]
     networks: [spotto]
 
+  website:
+    image: ghcr.io/malinanu/travellingapp-website:${SPOTTO_IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    networks: [spotto]
+
   # Writes transcripts of audio guides (transcriber/README.md). It idles at
   # a few tens of MB and asks the api for work every minute; the Whisper
   # model is only loaded, in a short-lived child process, while a recording
