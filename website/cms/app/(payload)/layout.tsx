@@ -1,5 +1,5 @@
 import React from 'react';
-import configPromise from '../../../payload.config';
+import configPromise from '@/payload.config';
 import '@payloadcms/next/css';
 import { RootLayout } from '@payloadcms/next/layouts';
 

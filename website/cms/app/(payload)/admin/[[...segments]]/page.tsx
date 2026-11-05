@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import config from '../../../payload.config';
+import config from '@/payload.config';
 import { RootPage, generatePageMetadata } from '@payloadcms/next/views';
 
 type Args = {
