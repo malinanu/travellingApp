@@ -14,6 +14,7 @@ import { Testimonials } from './collections/Testimonials';
 import { Stories } from './collections/Stories';
 
 export default buildConfig({
+  secret: process.env.PAYLOAD_SECRET || 'spotto-payload-build-secret-dummy-32-chars-min',
   admin: {
     user: 'users',
     meta: {
