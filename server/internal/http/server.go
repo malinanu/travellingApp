@@ -596,12 +596,16 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Put("/admin/categories/{id}", s.handleAdminUpdateCategory)
 		r.Delete("/admin/categories/{id}", s.handleAdminDeleteCategory)
 
-		// Cross-admin history of destructive actions â€” restricted further
-		// to super-admins, since it names which specific admin did what.
+		// Command Center User Access Controls
+		r.Get("/admin/access-control/catalog", s.handleAdminAccessControlCatalog)
+		r.Get("/admin/access-control/admins", s.handleAdminAccessControlAdmins)
+
+		// Cross-admin history of destructive actions
 		r.Group(func(r chi.Router) {
 			r.Use(s.RequireSuperAdmin)
 			r.Get("/admin/audit-log", s.handleAdminAuditLog)
 			r.Put("/admin/users/{id}/permissions", s.handleAdminSetUserPermissions)
+			r.Put("/admin/access-control/users/{id}", s.handleAdminAccessControlUpdate)
 			// Account surgery: change traveller <-> vendor, or delete a user or
 			// a business outright (see admin_superadmin.go).
 			r.Post("/admin/users/{id}/role", s.handleAdminChangeUserRole)

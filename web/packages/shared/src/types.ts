@@ -464,6 +464,37 @@ export interface AdminUserDetail {
   isSuperAdmin: boolean;
 }
 
+export type PermissionRisk = 'low' | 'medium' | 'high' | 'critical';
+
+export interface CommandCenterPermission {
+  id: string;
+  featureId: string;
+  name: string;
+  description: string;
+  risk: PermissionRisk;
+}
+
+export interface CommandCenterFeature {
+  id: string;
+  name: string;
+  description: string;
+  category: 'operations' | 'security' | 'monetization' | 'editorial' | 'intelligence';
+  icon: string;
+  subPermissions: CommandCenterPermission[];
+}
+
+export interface AdminAccessUser {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  isSuperAdmin: boolean;
+  adminPermissions: string[];
+  activeSessions: number;
+  lastActiveAt?: string;
+  createdAt: string;
+}
+
 /** POST /admin/users/{id}/role — super-admins move an account between
  * traveller and vendor (server/internal/http/admin_superadmin.go). */
 export interface AdminChangeRoleRequest {

@@ -1,4 +1,4 @@
-﻿package httpapi
+package httpapi
 
 import (
 	"context"
@@ -53,7 +53,10 @@ func (s *Server) RequireSuperAdmin(next http.Handler) http.Handler {
 const PermVendorLogins = "vendor_logins"
 
 // hasAdminPermission reports whether this admin may use perm: super-admins
-// always can, other admins only when a super-admin granted it.
+// always can, other admins only when a super-admin granted it. Supports
+// hierarchical matching where holding a parent feature (e.g. "queue") grants its
+// sub-permissions (e.g. "queue.view"), and holding a sub-permission (e.g.
+// "vendor_logins.transfer_email") satisfies general feature gates.
 func (s *Server) hasAdminPermission(ctx context.Context, userID, email, perm string) bool {
 	if s.isSuperAdmin(email) {
 		return true
@@ -63,7 +66,22 @@ func (s *Server) hasAdminPermission(ctx context.Context, userID, email, perm str
 		log.Printf("admin permissions user=%s: %v", userID, err)
 		return false
 	}
-	return slices.Contains(perms, perm)
+	if slices.Contains(perms, perm) {
+		return true
+	}
+	// Granular sub-permission check (e.g. "queue.view") satisfied if parent feature ("queue") is held.
+	if parts := strings.SplitN(perm, ".", 2); len(parts) == 2 {
+		if slices.Contains(perms, parts[0]) {
+			return true
+		}
+	}
+	// Feature gate check (e.g. "vendor_logins") satisfied if any sub-permission is held.
+	for _, p := range perms {
+		if strings.HasPrefix(p, perm+".") {
+			return true
+		}
+	}
+	return false
 }
 
 // RequireAdminPermission restricts an admin-role route to admins holding

@@ -464,6 +464,16 @@ function AdminPermissionsPanel({ userId, isSuperAdmin, permissions }: { userId: 
           {toggle.isError && <p className="text-[11.5px] font-semibold mt-2" style={{ color: RED }}>{(toggle.error as Error).message}</p>}
         </>
       )}
+
+      <div className="mt-3 pt-3 border-t border-line flex items-center justify-between">
+        <span className="text-[11.5px] text-muted font-medium">Granular Command Center features & drag-and-drop:</span>
+        <Link
+          href={`/access-control?admin=${encodeURIComponent(userId)}`}
+          className="btn btn-primary !py-1 !px-2.5 text-[11.5px] font-bold flex items-center gap-1"
+        >
+          Access Control Board →
+        </Link>
+      </div>
     </div>
   );
 }

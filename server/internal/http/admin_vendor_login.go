@@ -175,19 +175,20 @@ func (s *Server) handleAdminVendorMemberLogin(w http.ResponseWriter, r *http.Req
 }
 
 // handleAdminSetUserPermissions lets a super-admin grant or remove an
-// admin's extra permissions (currently only vendor-login hand-over).
+// admin's extra permissions (vendor-login hand-over and command center features).
 func (s *Server) handleAdminSetUserPermissions(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var req struct {
-		VendorLogins *bool  `json:"vendorLogins"`
-		Reason       string `json:"reason"`
+		VendorLogins *bool    `json:"vendorLogins"`
+		Permissions  []string `json:"permissions"`
+		Reason       string   `json:"reason"`
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
 	reason := sanitizeText(req.Reason, 500)
-	if req.VendorLogins == nil || reason == "" {
-		writeErr(w, http.StatusBadRequest, "vendorLogins and reason are required")
+	if (req.VendorLogins == nil && req.Permissions == nil) || reason == "" {
+		writeErr(w, http.StatusBadRequest, "vendorLogins or permissions, and reason are required")
 		return
 	}
 	u, err := s.Store.UserByID(r.Context(), id)
@@ -199,14 +200,25 @@ func (s *Server) handleAdminSetUserPermissions(w http.ResponseWriter, r *http.Re
 		writeErr(w, http.StatusBadRequest, "permissions can only be given to admin accounts")
 		return
 	}
-	if err := s.Store.SetAdminPermission(r.Context(), id, PermVendorLogins, *req.VendorLogins); err != nil {
-		log.Printf("set admin permission user=%s: %v", id, err)
-		writeErr(w, http.StatusInternalServerError, "Couldn't save that permission. Please try again.")
-		return
+	if req.Permissions != nil {
+		if err := s.Store.SetAdminPermissions(r.Context(), id, req.Permissions); err != nil {
+			log.Printf("set admin permissions user=%s: %v", id, err)
+			writeErr(w, http.StatusInternalServerError, "Couldn't save permissions. Please try again.")
+			return
+		}
+		s.logAdminAction(r.Context(), "user.permissions", "user", id, map[string]any{
+			"permissions": req.Permissions, "reason": reason,
+		})
+	} else if req.VendorLogins != nil {
+		if err := s.Store.SetAdminPermission(r.Context(), id, PermVendorLogins, *req.VendorLogins); err != nil {
+			log.Printf("set admin permission user=%s: %v", id, err)
+			writeErr(w, http.StatusInternalServerError, "Couldn't save that permission. Please try again.")
+			return
+		}
+		s.logAdminAction(r.Context(), "user.permissions", "user", id, map[string]any{
+			"permission": PermVendorLogins, "granted": *req.VendorLogins, "reason": reason,
+		})
 	}
-	s.logAdminAction(r.Context(), "user.permissions", "user", id, map[string]any{
-		"permission": PermVendorLogins, "granted": *req.VendorLogins, "reason": reason,
-	})
 	perms, err := s.Store.AdminPermissions(r.Context(), id)
 	if err != nil {
 		storeErr(w, err)

@@ -297,6 +297,49 @@ func (s *Store) SetAdminPermission(ctx context.Context, userID, perm string, on 
 	return err
 }
 
+// SetAdminPermissions replaces all permissions for an admin account.
+func (s *Store) SetAdminPermissions(ctx context.Context, userID string, perms []string) error {
+	if perms == nil {
+		perms = []string{}
+	}
+	tag, err := s.Pool.Exec(ctx, `UPDATE users SET admin_permissions=$2 WHERE id=$1 AND role='admin'`, userID, perms)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// ListAdminUsers returns all admin accounts, their permissions, and activity.
+func (s *Store) ListAdminUsers(ctx context.Context) ([]domain.AdminAccessUser, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT u.id, COALESCE(u.name, ''), u.email, u.role, COALESCE(u.admin_permissions, '{}'),
+		       (SELECT COUNT(*) FROM user_sessions us
+		        WHERE us.user_id = u.id AND us.revoked_at IS NULL AND us.expires_at > now()),
+		       (SELECT MAX(us.last_used_at) FROM user_sessions us WHERE us.user_id = u.id),
+		       u.created_at
+		FROM users u
+		WHERE u.role = 'admin'
+		ORDER BY u.created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.AdminAccessUser{}
+	for rows.Next() {
+		var u domain.AdminAccessUser
+		var perms []string
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &perms, &u.ActiveSessions, &u.LastActiveAt, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		if perms == nil {
+			perms = []string{}
+		}
+		u.AdminPermissions = perms
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 // SetUserPublisher lets the account write travel content in the Command
 // Center, or stops it. Their posts stay either way.
 func (s *Store) SetUserPublisher(ctx context.Context, userID string, on bool) error {

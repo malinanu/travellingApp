@@ -83,7 +83,7 @@ services:
     # yt-dlp saves refreshed cookies back into the file.
     volumes:
       - /opt/spotto/ytdlp:/app/ytdlp
-    networks: [spotto]
+    networks: [ spotto ]
 
   vendor:
     image: ghcr.io/malinanu/travellingapp-vendor:${SPOTTO_IMAGE_TAG:-latest}
@@ -91,8 +91,8 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    depends_on: [api]
-    networks: [spotto]
+    depends_on: [ api ]
+    networks: [ spotto ]
 
   admin:
     image: ghcr.io/malinanu/travellingapp-admin:${SPOTTO_IMAGE_TAG:-latest}
@@ -102,8 +102,8 @@ services:
       PORT: 3001
     ports:
       - "3001:3001"
-    depends_on: [api]
-    networks: [spotto]
+    depends_on: [ api ]
+    networks: [ spotto ]
 
   website:
     image: ghcr.io/malinanu/travellingapp-website:${SPOTTO_IMAGE_TAG:-latest}
@@ -111,7 +111,7 @@ services:
     restart: unless-stopped
     ports:
       - "${WEBSITE_PORT:-3002}:80"
-    networks: [spotto]
+    networks: [ spotto ]
 
   # Writes transcripts of audio guides (transcriber/README.md). It idles at
   # a few tens of MB and asks the api for work every minute; the Whisper
@@ -130,8 +130,8 @@ services:
       CPU_THREADS: 2
     mem_limit: 1536m
     cpu_shares: 256
-    depends_on: [api]
-    networks: [spotto]
+    depends_on: [ api ]
+    networks: [ spotto ]
 
 networks:
   spotto:
