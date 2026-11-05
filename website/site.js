@@ -21,22 +21,45 @@
   }
 
   /* ---------- Scroll reveal ---------- */
-  var revealEls = document.querySelectorAll('.rv');
-  if (revealEls.length) {
-    if (reduceMotion || !('IntersectionObserver' in window)) {
-      revealEls.forEach(function (el) { el.classList.add('in'); });
-    } else {
-      var io = new IntersectionObserver(function (entries) {
-        entries.forEach(function (entry) {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('in');
-            io.unobserve(entry.target);
-          }
-        });
-      }, { threshold: 0.15 });
-      revealEls.forEach(function (el) { io.observe(el); });
+  var io = null;
+  if (!reduceMotion && ('IntersectionObserver' in window)) {
+    io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('in');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.15 });
+  }
+
+  function observeReveal(el) {
+    if (!el) return;
+    if (reduceMotion || !io) {
+      el.classList.add('in');
+      return;
+    }
+    io.observe(el);
+    // If element is already in/near viewport, reveal immediately
+    try {
+      var rect = el.getBoundingClientRect();
+      var vh = window.innerHeight || document.documentElement.clientHeight || 800;
+      if (rect.top < vh + 80 && rect.bottom > -40) {
+        el.classList.add('in');
+      }
+    } catch (_) {
+      el.classList.add('in');
     }
   }
+
+  document.querySelectorAll('.rv').forEach(observeReveal);
+
+  // Safety fallback: reveal all elements so content is never trapped invisible
+  setTimeout(function () {
+    document.querySelectorAll('.rv:not(.in)').forEach(function (el) {
+      el.classList.add('in');
+    });
+  }, 1000);
 
   /* ---------- Photo hydration ----------
      Every .photo[data-img] names its real image file. If the file exists
@@ -520,12 +543,15 @@
         '<a class="' + btnClass + '" href="' + escapeHtml(ctaLink) + '">' + escapeHtml(ctaText) + '</a>';
 
       plansContainer.appendChild(card);
+      observeReveal(card);
     });
 
     // Synchronize and dynamically rebuild Feature Comparison Matrix table if present
     var matrixTable = document.getElementById('pricingMatrixTable');
     if (matrixTable) {
       rebuildPricingMatrix(matrixTable, packages, featurePool);
+      var matrixWrap = document.querySelector('.pricing-matrix-wrap');
+      if (matrixWrap) observeReveal(matrixWrap);
     }
 
     // Re-apply billing toggle styles to newly inserted dynamic cards
@@ -853,6 +879,7 @@
               miniCard.appendChild(pEl);
               miniCard.appendChild(whoWrap);
               minisContainer.appendChild(miniCard);
+              observeReveal(miniCard);
             });
           }
         })
