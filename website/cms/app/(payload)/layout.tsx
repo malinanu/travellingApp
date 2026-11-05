@@ -2,13 +2,14 @@ import React from 'react';
 import configPromise from '@/payload.config';
 import '@payloadcms/next/css';
 import { RootLayout } from '@payloadcms/next/layouts';
+import { importMap } from './admin/importMap';
 
 type Args = {
   children: React.ReactNode;
 };
 
 const Layout = ({ children }: Args) => (
-  <RootLayout config={configPromise}>
+  <RootLayout config={configPromise} importMap={importMap}>
     {children}
   </RootLayout>
 );
