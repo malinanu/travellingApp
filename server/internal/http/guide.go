@@ -167,7 +167,13 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	start := time.Now()
-	loc := newGuideLocation(req.Lat, req.Lng, req.LocationKnown, s.DefaultLocationMirissa)
+	userDemoPrivilege := false
+	if c.Subject != "" {
+		if u, err := s.Store.UserByID(r.Context(), c.Subject); err == nil && u.DemoPrivilege {
+			userDemoPrivilege = true
+		}
+	}
+	loc := newGuideLocation(req.Lat, req.Lng, req.LocationKnown, s.DefaultLocationMirissa || userDemoPrivilege)
 	res, meta, err := s.runGuideChat(ctx, c.Subject, history, req.Message, loc)
 	latencyMs := int(time.Since(start).Milliseconds())
 	if err != nil {

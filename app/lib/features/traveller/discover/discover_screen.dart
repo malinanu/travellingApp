@@ -123,6 +123,11 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
   void _startPositionStream() {
     _positionSub?.cancel();
+    final defaultLoc = serverDefaultLocation;
+    if (defaultLoc != null) {
+      _lastKnownLatLng = LatLng(defaultLoc.lat, defaultLoc.lng);
+      return;
+    }
     _positionSub =
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
@@ -487,6 +492,21 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       }
       _maybeCenterOnDevice();
       if (next.hasValue) ref.invalidate(locationPermissionProvider);
+    });
+
+    ref.listen<Map<String, dynamic>?>(meProvider, (prev, next) {
+      final wasDemo = prev?['demoPrivilege'] as bool? ?? false;
+      final isDemo = next?['demoPrivilege'] as bool? ?? false;
+      if (!wasDemo && isDemo) {
+        final loc = serverDefaultLocation;
+        if (loc != null) {
+          final mirissa = LatLng(loc.lat, loc.lng);
+          _lastKnownLatLng = mirissa;
+          _animateCamera(CameraUpdate.newLatLngZoom(mirissa, loc.zoom));
+        }
+      } else if (wasDemo && !isDemo) {
+        _startPositionStream();
+      }
     });
 
     final markers = _buildMapMarkers(

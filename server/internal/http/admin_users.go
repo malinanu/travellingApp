@@ -105,3 +105,43 @@ func (s *Server) handleAdminRevokeUserSessions(w http.ResponseWriter, r *http.Re
 	s.logAdminAction(r.Context(), "user.revoke_sessions", "user", id, map[string]any{"reason": reason, "sessionsEnded": ended})
 	writeJSON(w, http.StatusOK, map[string]any{"sessionsEnded": ended})
 }
+
+// handleAdminSetUserDemoPrivilege grants or revokes developer demo privilege (Mirissa override).
+// Any admin can; it's recorded in the audit log.
+func (s *Server) handleAdminSetUserDemoPrivilege(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		DemoPrivilege bool   `json:"demoPrivilege"`
+		Location      string `json:"location"`
+		Reason        string `json:"reason"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	reason := sanitizeText(req.Reason, 500)
+	if reason == "" {
+		writeErr(w, http.StatusBadRequest, "Add a short reason.")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	u, err := s.Store.UserByID(r.Context(), id)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	loc := strings.TrimSpace(req.Location)
+	if req.DemoPrivilege && loc == "" {
+		loc = "mirissa"
+	}
+	if !req.DemoPrivilege {
+		loc = ""
+	}
+	if err := s.Store.SetUserDemoPrivilege(r.Context(), id, req.DemoPrivilege, loc); err != nil {
+		storeErr(w, err)
+		return
+	}
+	s.logAdminAction(r.Context(), "user.demo_privilege", "user", id, map[string]any{
+		"email": u.Email, "demoPrivilege": req.DemoPrivilege, "location": loc, "reason": reason,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"demoPrivilege": req.DemoPrivilege, "location": loc})
+}
+

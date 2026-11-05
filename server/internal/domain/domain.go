@@ -51,6 +51,10 @@ type User struct {
 	// Publisher lets the account write travel content in the Command
 	// Center (set by an admin); admins can always write.
 	Publisher bool `json:"publisher"`
+	// DemoPrivilege lets developer and test accounts simulate location in Mirissa
+	// (or another demo spot) for staging presentations.
+	DemoPrivilege bool   `json:"demoPrivilege"`
+	DemoLocation  string `json:"demoLocation,omitempty"`
 	Lat               *float64   `json:"-"`
 	Lng               *float64   `json:"-"`
 	LocationUpdatedAt *time.Time `json:"-"`
@@ -763,6 +767,8 @@ type AdminUserSummary struct {
 	Role           Role       `json:"role"`
 	VendorName     string     `json:"vendorName,omitempty"`
 	Publisher      bool       `json:"publisher"`
+	DemoPrivilege  bool       `json:"demoPrivilege"`
+	DemoLocation   string     `json:"demoLocation,omitempty"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	ActiveSessions int        `json:"activeSessions"`
 	LastActiveAt   *time.Time `json:"lastActiveAt,omitempty"`

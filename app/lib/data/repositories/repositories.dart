@@ -57,6 +57,8 @@ void setServerDefaultLocation(DefaultLocationOverride? loc) {
   _serverDefaultLocation = loc;
 }
 
+DefaultLocationOverride? get serverDefaultLocation => _serverDefaultLocation;
+
 // bestEffortPosition has 4 independent callers (devicePositionProvider,
 // weatherLocationProvider, PlacesNotifier._currentPosition,
 // NearbyTravellersNotifier._tick) that can all fire within the same frame
@@ -139,7 +141,7 @@ Future<(Position?, DeviceLocationResult)> _resolvePosition() async {
 /// position for geofence math). Callers that just want map-centering/
 /// weather lat-lng and don't care why can ignore the second element.
 /// Public app configuration loaded from the backend GET /config.
-final appConfigProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
+final FutureProvider<Map<String, dynamic>?> appConfigProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
   try {
     final res = await ref.read(apiProvider).dio.get('/config');
     final data = res.data is Map ? (res.data as Map).cast<String, dynamic>() : null;
@@ -155,16 +157,30 @@ final appConfigProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
         ref.invalidate(devicePositionProvider);
         ref.invalidate(locationPermissionProvider);
       } else {
+        final hasDemo = (ref.read(meProvider)?['demoPrivilege'] as bool? ?? false) ||
+            (ref.read(localStoreProvider).getJson(StoreKeys.me)?['demoPrivilege'] as bool? ?? false);
+        if (!hasDemo) {
+          _serverDefaultLocation = null;
+          await ref.read(localStoreProvider).remove(StoreKeys.defaultLocation);
+          ref.invalidate(devicePositionProvider);
+          ref.invalidate(locationPermissionProvider);
+          ref.invalidate(weatherLocationProvider);
+          ref.invalidate(currentWeatherProvider);
+          ref.invalidate(placesProvider);
+        }
+      }
+    } else {
+      final hasDemo = (ref.read(meProvider)?['demoPrivilege'] as bool? ?? false) ||
+          (ref.read(localStoreProvider).getJson(StoreKeys.me)?['demoPrivilege'] as bool? ?? false);
+      if (!hasDemo) {
         _serverDefaultLocation = null;
         await ref.read(localStoreProvider).remove(StoreKeys.defaultLocation);
         ref.invalidate(devicePositionProvider);
         ref.invalidate(locationPermissionProvider);
+        ref.invalidate(weatherLocationProvider);
+        ref.invalidate(currentWeatherProvider);
+        ref.invalidate(placesProvider);
       }
-    } else {
-      _serverDefaultLocation = null;
-      await ref.read(localStoreProvider).remove(StoreKeys.defaultLocation);
-      ref.invalidate(devicePositionProvider);
-      ref.invalidate(locationPermissionProvider);
     }
     return data;
   } catch (e) {
@@ -173,8 +189,7 @@ final appConfigProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
   }
 });
 
-final devicePositionProvider = FutureProvider<(LatLngAt, DeviceLocationResult)>((ref) async {
-  ref.watch(appConfigProvider);
+final FutureProvider<(LatLngAt, DeviceLocationResult)> devicePositionProvider = FutureProvider<(LatLngAt, DeviceLocationResult)>((ref) async {
   final (pos, result) = await bestEffortPosition();
   if (pos == null) return ((lat: kFallbackLat, lng: kFallbackLng), result);
   return ((lat: pos.latitude, lng: pos.longitude), DeviceLocationResult.granted);
@@ -370,6 +385,7 @@ class AuthNotifier extends Notifier<bool> {
 
     // Adopt server-side prefs so a returning user skips onboarding.
     final user = data['user'] as Map<String, dynamic>? ?? const {};
+    await store.setJson(StoreKeys.me, user);
     final styles = parseStringList(user['travelStyle']);
     if (styles.isNotEmpty) {
       ref
@@ -381,6 +397,16 @@ class AuthNotifier extends Notifier<bool> {
             ),
           );
     }
+    final demoPrivilege = user['demoPrivilege'] as bool? ?? false;
+    if (demoPrivilege) {
+      setServerDefaultLocation((lat: 5.9483, lng: 80.4552, name: 'Mirissa', zoom: 14.5));
+    } else {
+      setServerDefaultLocation(null);
+    }
+    ref.invalidate(devicePositionProvider);
+    ref.invalidate(locationPermissionProvider);
+    ref.invalidate(weatherLocationProvider);
+    ref.invalidate(currentWeatherProvider);
     state = true;
     ref.invalidate(claimsProvider);
     ref.invalidate(tripProvider);
@@ -393,6 +419,12 @@ class AuthNotifier extends Notifier<bool> {
 
   void signOut() {
     state = false;
+    setServerDefaultLocation(null);
+    ref.invalidate(devicePositionProvider);
+    ref.invalidate(locationPermissionProvider);
+    ref.invalidate(weatherLocationProvider);
+    ref.invalidate(currentWeatherProvider);
+    ref.invalidate(placesProvider);
     final store = ref.read(localStoreProvider);
     // Before clearToken(): logout() needs the refresh token to end the
     // server-side session.
@@ -439,6 +471,10 @@ class MeNotifier extends Notifier<Map<String, dynamic>?> {
     if (!ref.read(authProvider)) return null;
     final cached = ref.read(localStoreProvider).getJson(StoreKeys.me);
     if (cached == null) return null;
+    final demoPrivilege = cached['demoPrivilege'] as bool? ?? false;
+    if (demoPrivilege) {
+      setServerDefaultLocation((lat: 5.9483, lng: 80.4552, name: 'Mirissa', zoom: 14.5));
+    }
     try {
       seed.me = Traveler.fromMe(cached);
     } catch (e) {
@@ -461,6 +497,23 @@ class MeNotifier extends Notifier<Map<String, dynamic>?> {
       state = data;
       seed.me = Traveler.fromMe(data);
       await store.setJson(StoreKeys.me, data);
+      final demoPrivilege = data['demoPrivilege'] as bool? ?? false;
+      final wasDemo = _serverDefaultLocation != null;
+      if (demoPrivilege) {
+        setServerDefaultLocation((lat: 5.9483, lng: 80.4552, name: 'Mirissa', zoom: 14.5));
+        ref.invalidate(devicePositionProvider);
+        ref.invalidate(locationPermissionProvider);
+        ref.invalidate(weatherLocationProvider);
+        ref.invalidate(currentWeatherProvider);
+        ref.invalidate(placesProvider);
+      } else if (wasDemo) {
+        setServerDefaultLocation(null);
+        ref.invalidate(devicePositionProvider);
+        ref.invalidate(locationPermissionProvider);
+        ref.invalidate(weatherLocationProvider);
+        ref.invalidate(currentWeatherProvider);
+        ref.invalidate(placesProvider);
+      }
       // prefsProvider is otherwise local-storage-only until the user
       // explicitly saves — hydrate it from the server's real values here so
       // a fresh install/login shows the traveller's actual saved

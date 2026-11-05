@@ -165,7 +165,8 @@ func (s *Store) SearchUsers(ctx context.Context, q string, limit int) ([]domain.
 		SELECT u.id, COALESCE(u.name, ''), u.email, u.role, COALESCE(v.name, ''), u.publisher, u.created_at,
 		       (SELECT COUNT(*) FROM user_sessions us
 		        WHERE us.user_id = u.id AND us.revoked_at IS NULL AND us.expires_at > now()),
-		       (SELECT MAX(us.last_used_at) FROM user_sessions us WHERE us.user_id = u.id)
+		       (SELECT MAX(us.last_used_at) FROM user_sessions us WHERE us.user_id = u.id),
+		       COALESCE(u.demo_privilege, false), COALESCE(u.demo_location, '')
 		FROM users u
 		LEFT JOIN vendors v ON v.id = u.vendor_id
 		WHERE $1 = '' OR u.id = $1 OR u.email ILIKE '%' || $1 || '%' OR u.name ILIKE '%' || $1 || '%'
@@ -178,7 +179,7 @@ func (s *Store) SearchUsers(ctx context.Context, q string, limit int) ([]domain.
 	out := []domain.AdminUserSummary{}
 	for rows.Next() {
 		var u domain.AdminUserSummary
-		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &u.VendorName, &u.Publisher, &u.CreatedAt, &u.ActiveSessions, &u.LastActiveAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &u.VendorName, &u.Publisher, &u.CreatedAt, &u.ActiveSessions, &u.LastActiveAt, &u.DemoPrivilege, &u.DemoLocation); err != nil {
 			return nil, err
 		}
 		out = append(out, u)

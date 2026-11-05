@@ -588,6 +588,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/admin/users/{id}", s.handleAdminUserDetail)
 		r.Post("/admin/users/{id}/revoke-sessions", s.handleAdminRevokeUserSessions)
 		r.Put("/admin/users/{id}/publisher", s.handleAdminSetUserPublisher)
+		r.Put("/admin/users/{id}/demo-privilege", s.handleAdminSetUserDemoPrivilege)
 
 		// Categories
 		r.Get("/admin/categories", s.handleAdminCategories)

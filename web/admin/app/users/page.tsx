@@ -8,7 +8,7 @@
 // delete it.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRightLeft, CheckCircle2, KeyRound, LogOut, MonitorSmartphone, PenLine, Search, ShieldAlert, Trash2, Trophy } from 'lucide-react';
+import { ArrowRightLeft, CheckCircle2, Compass, KeyRound, LogOut, MonitorSmartphone, PenLine, Search, ShieldAlert, Trash2, Trophy } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
@@ -88,6 +88,7 @@ function Users() {
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-bold text-[13.5px] truncate">{u.name || u.email}</p>
                   <span className="flex items-center gap-1 shrink-0">
+                    {u.demoPrivilege && <DemoPill />}
                     {u.publisher && <PublisherPill />}
                     <RolePill role={u.role} />
                   </span>
@@ -146,7 +147,8 @@ function UserDetail({ id }: { id: string }) {
         <AdminPermissionsPanel userId={user.id} isSuperAdmin={data.isSuperAdmin} permissions={data.adminPermissions} />
       )}
 
-      {user.role !== 'admin' && <PublisherPanel user={user} />}
+      {user.role !== 'admin' && <PublisherPanel key={user.id} user={user} />}
+      <DemoPrivilegePanel key={user.id} user={user} />
 
       <div className="panel p-5">
         <CardTitle icon={MonitorSmartphone}>Signed-in devices · {sessions.length}</CardTitle>
@@ -232,7 +234,16 @@ const USER_ACTION_LABEL: Record<string, string> = {
   'user.permissions': 'Permissions changed',
   'user.role_change': 'Account type changed',
   'user.publisher': 'Publisher access changed',
+  'user.demo_privilege': 'Developer demo privilege changed',
 };
+
+function DemoPill() {
+  return (
+    <span className="text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 bg-amber-500/15 text-amber-700">
+      Demo Mode
+    </span>
+  );
+}
 
 function PublisherPill() {
   return (
@@ -297,6 +308,109 @@ function PublisherPanel({ user }: { user: User }) {
         </button>
       )}
       {toggle.isError && <p className="text-[11.5px] font-semibold mt-2" style={{ color: RED }}>{(toggle.error as Error).message}</p>}
+    </div>
+  );
+}
+
+// Admins can grant developer/test accounts Demo Privilege to force their
+// location to Mirissa for staging investor presentations.
+function DemoPrivilegePanel({ user }: { user: User }) {
+  const qc = useQueryClient();
+  const on = !!user.demoPrivilege;
+  const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState('');
+  const [location, setLocation] = useState(user.demoLocation || 'mirissa');
+
+  const toggle = useMutation({
+    mutationFn: () =>
+      api.put(`/admin/users/${encodeURIComponent(user.id)}/demo-privilege`, {
+        demoPrivilege: !on,
+        location: !on ? location.trim() || 'mirissa' : '',
+        reason: reason.trim(),
+      }),
+    onSuccess: () => {
+      setConfirming(false);
+      setReason('');
+      qc.invalidateQueries({ queryKey: ['admin-user', user.id] });
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+  });
+
+  return (
+    <div className="panel p-5">
+      <CardTitle icon={Compass}>Developer Demo Privilege</CardTitle>
+      <div className="flex items-center gap-2 text-[12.5px] font-semibold">
+        <span>Staging location override:</span>
+        <span className={`font-bold ${on ? 'text-amber-700' : 'text-muted'}`}>
+          {on ? `Active (${user.demoLocation || 'Mirissa'})` : 'Inactive (Real GPS)'}
+        </span>
+      </div>
+      <p className="text-[11.5px] text-muted font-semibold mt-1">
+        When enabled, the mobile app automatically sets this developer&apos;s location to Mirissa Beach (5.9483, 80.4552) for staging demos and investor pitches without GPS spoofing.
+      </p>
+      {confirming ? (
+        <form
+          className="space-y-3 mt-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            toggle.mutate();
+          }}
+        >
+          {!on && (
+            <label className="block">
+              <span className="text-[12px] font-bold block mb-1">Target Demo Location</span>
+              <input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                className="input w-full py-1.5"
+                placeholder="mirissa"
+              />
+            </label>
+          )}
+          <label className="block">
+            <span className="text-[12px] font-bold block mb-1">Reason (saved in the audit log)</span>
+            <input
+              autoFocus
+              required
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="input w-full py-1.5"
+              placeholder={on ? 'e.g. Investor demo completed' : 'e.g. Staging pitch to investors'}
+            />
+          </label>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="btn py-1 px-3 text-[12px]"
+              onClick={() => setConfirming(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className={`btn ${on ? 'btn-danger' : 'btn-primary'} py-1 px-3 text-[12px]`}
+              disabled={toggle.isPending || !reason.trim()}
+            >
+              {toggle.isPending ? 'Saving…' : on ? 'Revoke demo privilege' : 'Grant demo privilege'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button
+          className="btn py-1.5 px-3 text-[12px] mt-3"
+          onClick={() => {
+            toggle.reset();
+            setConfirming(true);
+          }}
+        >
+          {on ? 'Revoke demo privilege' : 'Grant demo privilege'}
+        </button>
+      )}
+      {toggle.isError && (
+        <p className="text-[11.5px] font-semibold mt-2" style={{ color: RED }}>
+          {(toggle.error as Error).message}
+        </p>
+      )}
     </div>
   );
 }

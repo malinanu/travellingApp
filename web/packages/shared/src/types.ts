@@ -25,6 +25,9 @@ export interface User {
   canManageVendorLogins?: boolean;
   /** May write travel content in the Command Center (admins always can). */
   publisher?: boolean;
+  /** Developer demo privilege (forces staging Mirissa location override). */
+  demoPrivilege?: boolean;
+  demoLocation?: string;
   totpEnabled: boolean;
   phone: string;
   /** Confirmed with a one-time code (WhatsApp or SMS); a new number resets it. */
@@ -432,6 +435,8 @@ export interface AdminUserSummary {
   role: Role;
   vendorName?: string;
   publisher: boolean;
+  demoPrivilege?: boolean;
+  demoLocation?: string;
   createdAt: string;
   activeSessions: number;
   lastActiveAt?: string;

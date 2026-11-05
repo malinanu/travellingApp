@@ -134,7 +134,8 @@ func scanUser(row pgx.Row) (domain.User, error) {
 		&u.ShareLocation, &u.Lat, &u.Lng, &u.LocationUpdatedAt,
 		&u.Phone, &u.VendorRole, &u.NotifyRedemptions, &u.NotifyReviews, &u.NotifyPayouts, &u.NotifyGrowthTips,
 		&u.GoogleID, &u.AvatarURL, &u.PhoneVerified, &u.UsageAnalytics, &u.Publisher,
-		&u.VisibleToGroup, &u.CountVibeVotes, &u.PersonalisedOffers)
+		&u.VisibleToGroup, &u.CountVibeVotes, &u.PersonalisedOffers,
+		&u.DemoPrivilege, &u.DemoLocation)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -146,7 +147,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url, phone_verified_at IS NOT NULL, usage_analytics, publisher, visible_to_group, count_vibe_votes, personalised_offers`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url, phone_verified_at IS NOT NULL, usage_analytics, publisher, visible_to_group, count_vibe_votes, personalised_offers, COALESCE(demo_privilege, false), COALESCE(demo_location, '')`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -300,6 +301,15 @@ func (s *Store) SetAdminPermission(ctx context.Context, userID, perm string, on 
 // Center, or stops it. Their posts stay either way.
 func (s *Store) SetUserPublisher(ctx context.Context, userID string, on bool) error {
 	tag, err := s.Pool.Exec(ctx, `UPDATE users SET publisher=$2 WHERE id=$1`, userID, on)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// SetUserDemoPrivilege toggles demo privilege and optional location name.
+func (s *Store) SetUserDemoPrivilege(ctx context.Context, userID string, on bool, location string) error {
+	tag, err := s.Pool.Exec(ctx, `UPDATE users SET demo_privilege=$2, demo_location=$3 WHERE id=$1`, userID, on, location)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}

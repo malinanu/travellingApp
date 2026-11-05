@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -93,3 +94,30 @@ func TestNewGuideLocation_DefaultMirissa(t *testing.T) {
 		t.Errorf("expected Known=false with defaultMirissa omitted")
 	}
 }
+
+func TestHandleAdminSetUserDemoPrivilege_Validation(t *testing.T) {
+	srv := &Server{}
+
+	for _, tc := range []struct {
+		name string
+		body string
+		code int
+	}{
+		{"omitted_reason", `{"demoPrivilege": true}`, http.StatusBadRequest},
+		{"empty_reason", `{"demoPrivilege": true, "reason": ""}`, http.StatusBadRequest},
+		{"whitespace_reason", `{"demoPrivilege": true, "reason": "   \n\t "}`, http.StatusBadRequest},
+		{"malformed_json", `{"demoPrivilege": true, `, http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPut, "/admin/users/usr_123/demo-privilege", strings.NewReader(tc.body))
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			srv.handleAdminSetUserDemoPrivilege(w, r)
+			if w.Code != tc.code {
+				t.Fatalf("expected status %d, got %d: %s", tc.code, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
