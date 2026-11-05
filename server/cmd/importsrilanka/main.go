@@ -101,7 +101,7 @@ func runImport(ctx context.Context, store *postgres.Store, spots []domain.Place)
 		return fmt.Errorf("hash password: %w", err)
 	}
 
-	const fallbackLat, fallbackLng = 7.8731, 80.7718
+	const fallbackLat, fallbackLng = 5.9483, 80.4552
 
 	for _, p := range spots {
 		vendorID := vendorIDFor(p.ID)

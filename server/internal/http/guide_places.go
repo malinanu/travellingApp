@@ -32,8 +32,11 @@ type guideLocation struct {
 // newGuideLocation interprets a chat request's location. locationKnown is
 // nil from app builds older than the flag; they only ever sent a real fix
 // or the app's old fallback point, so a non-zero point is trusted as before.
-func newGuideLocation(lat, lng float64, locationKnown *bool) guideLocation {
+func newGuideLocation(lat, lng float64, locationKnown *bool, defaultMirissa ...bool) guideLocation {
 	if (lat == 0 && lng == 0) || (locationKnown != nil && !*locationKnown) {
+		if len(defaultMirissa) > 0 && defaultMirissa[0] {
+			return guideLocation{Known: true, Lat: 5.9483, Lng: 80.4552, Area: "Mirissa"}
+		}
 		return guideLocation{}
 	}
 	return guideLocation{Known: true, Lat: lat, Lng: lng, Area: geo.NearestRegion(lat, lng).Name}

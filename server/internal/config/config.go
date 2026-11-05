@@ -141,6 +141,13 @@ type Config struct {
 	WhatsAppOTPTemplate   string
 	WhatsAppTemplateLang  string
 	WhatsAppAPIVersion    string
+
+	// DefaultLocationMirissa switches the staging/fallback location to Mirissa
+	// (Lat: 5.9483, Lng: 80.4552) for investor presentations and staging demos.
+	// When true, requests without a device GPS fix (Discover feed, AI Guide,
+	// and GET /config) center on Mirissa with street-level zoom (14.5).
+	// Set via DEFAULT_LOCATION_MIRISSA=true (or 1 / yes).
+	DefaultLocationMirissa bool
 }
 
 // R2Configured reports whether all R2 settings needed to sign uploads and
@@ -240,6 +247,7 @@ func Load() Config {
 		WhatsAppOTPTemplate:   getenv("WHATSAPP_OTP_TEMPLATE", ""),
 		WhatsAppTemplateLang:  getenv("WHATSAPP_OTP_TEMPLATE_LANG", ""),
 		WhatsAppAPIVersion:    getenv("WHATSAPP_API_VERSION", ""),
+		DefaultLocationMirissa: getenvBool("DEFAULT_LOCATION_MIRISSA", false),
 	}
 }
 
@@ -360,4 +368,13 @@ func loadDotEnv(path string) {
 			os.Setenv(key, strings.TrimSpace(value))
 		}
 	}
+}
+
+// getenvBool reads a boolean environment variable (true, 1, yes, on).
+func getenvBool(key string, fallback bool) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if v == "" {
+		return fallback
+	}
+	return v == "true" || v == "1" || v == "yes" || v == "on"
 }

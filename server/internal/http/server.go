@@ -35,6 +35,7 @@ type Server struct {
 	Tokens  *auth.Tokens
 	TOTPKey []byte // AES-256 key for encrypting TOTP secrets at rest
 	IsProduction bool
+	DefaultLocationMirissa bool
 
 	Mail *mail.Mailer
 	// Jobs runs slow side effects (email sends) off the request goroutine â€”
@@ -145,6 +146,7 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		VendorAppURL:         cfg.VendorAppURL,
 		AdminAppURL:          cfg.AdminAppURL,
 		PublicAPIURL:         cfg.PublicAPIURL,
+		DefaultLocationMirissa: cfg.DefaultLocationMirissa,
 		SuperAdminEmails:     superAdminSet(cfg.SuperAdminEmails),
 		GoogleCalendarAPIKey: cfg.GoogleCalendarAPIKey,
 		TomorrowIOAPIKey:     cfg.TomorrowIOAPIKey,
@@ -306,6 +308,10 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	// Vendor subscription packages — public endpoint for the marketing website pricing page.
 	r.With(publicCORS).Get("/packages", s.handlePublicPackages)
 	r.With(publicCORS).Get("/api/v1/packages", s.handlePublicPackages)
+
+	// Public app configuration (staging defaults, feature switches).
+	r.With(publicCORS).Get("/config", s.handleConfig)
+	r.With(publicCORS).Get("/app-config", s.handleConfig)
 
 	// The transcriber service (transcriber/) claims audio guides to
 	// transcribe and posts the transcripts back — token-protected, and

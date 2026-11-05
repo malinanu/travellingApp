@@ -41,12 +41,21 @@ List<String> parseStringList(dynamic v) {
 /// The centre of Sri Lanka, used as a fallback location when device
 /// position is denied/unavailable (never a forced default — just what the
 /// map/weather show when we truly can't get the user's own position).
-const kFallbackLat = 7.8731;
-const kFallbackLng = 80.7718;
+const kFallbackLat = 5.9483;
+const kFallbackLng = 80.4552;
 
 typedef LatLngAt = ({double lat, double lng});
 
 enum DeviceLocationResult { granted, deniedForever, unavailable }
+
+typedef DefaultLocationOverride = ({double lat, double lng, String name, double zoom});
+
+DefaultLocationOverride? _serverDefaultLocation;
+
+/// Configures or clears the default staging location override.
+void setServerDefaultLocation(DefaultLocationOverride? loc) {
+  _serverDefaultLocation = loc;
+}
 
 // bestEffortPosition has 4 independent callers (devicePositionProvider,
 // weatherLocationProvider, PlacesNotifier._currentPosition,
@@ -65,6 +74,23 @@ Future<(Position?, DeviceLocationResult)> bestEffortPosition() {
 }
 
 Future<(Position?, DeviceLocationResult)> _resolvePosition() async {
+  if (_serverDefaultLocation != null) {
+    return (
+      Position(
+        latitude: _serverDefaultLocation!.lat,
+        longitude: _serverDefaultLocation!.lng,
+        timestamp: DateTime.now(),
+        accuracy: 5.0,
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 0.0,
+        headingAccuracy: 0.0,
+        speed: 0.0,
+        speedAccuracy: 0.0,
+      ),
+      DeviceLocationResult.granted,
+    );
+  }
   try {
     var permission = await Geolocator.checkPermission().timeout(
       const Duration(seconds: 5),
@@ -112,7 +138,43 @@ Future<(Position?, DeviceLocationResult)> _resolvePosition() async {
 /// specifically rather than treating the fallback point as a real
 /// position for geofence math). Callers that just want map-centering/
 /// weather lat-lng and don't care why can ignore the second element.
+/// Public app configuration loaded from the backend GET /config.
+final appConfigProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
+  try {
+    final res = await ref.read(apiProvider).dio.get('/config');
+    final data = res.data is Map ? (res.data as Map).cast<String, dynamic>() : null;
+    if (data != null && data['defaultLocation'] is Map) {
+      final loc = (data['defaultLocation'] as Map).cast<String, dynamic>();
+      if (loc['enabled'] == true) {
+        final lat = (loc['lat'] as num?)?.toDouble() ?? kFallbackLat;
+        final lng = (loc['lng'] as num?)?.toDouble() ?? kFallbackLng;
+        final name = loc['name'] as String? ?? 'Mirissa';
+        final zoom = (loc['zoom'] as num?)?.toDouble() ?? 14.5;
+        _serverDefaultLocation = (lat: lat, lng: lng, name: name, zoom: zoom);
+        await ref.read(localStoreProvider).setJson(StoreKeys.defaultLocation, loc);
+        ref.invalidate(devicePositionProvider);
+        ref.invalidate(locationPermissionProvider);
+      } else {
+        _serverDefaultLocation = null;
+        await ref.read(localStoreProvider).remove(StoreKeys.defaultLocation);
+        ref.invalidate(devicePositionProvider);
+        ref.invalidate(locationPermissionProvider);
+      }
+    } else {
+      _serverDefaultLocation = null;
+      await ref.read(localStoreProvider).remove(StoreKeys.defaultLocation);
+      ref.invalidate(devicePositionProvider);
+      ref.invalidate(locationPermissionProvider);
+    }
+    return data;
+  } catch (e) {
+    debugPrint('appConfigProvider fetch failed: $e');
+    return null;
+  }
+});
+
 final devicePositionProvider = FutureProvider<(LatLngAt, DeviceLocationResult)>((ref) async {
+  ref.watch(appConfigProvider);
   final (pos, result) = await bestEffortPosition();
   if (pos == null) return ((lat: kFallbackLat, lng: kFallbackLng), result);
   return ((lat: pos.latitude, lng: pos.longitude), DeviceLocationResult.granted);
@@ -129,6 +191,7 @@ final locationPermissionProvider = FutureProvider<bool>((ref) => hasLocationPerm
 
 /// A plain permission read (never a prompt): true only for always/whileInUse.
 Future<bool> hasLocationPermission() async {
+  if (_serverDefaultLocation != null) return true;
   try {
     final permission = await Geolocator.checkPermission().timeout(
       const Duration(seconds: 5),

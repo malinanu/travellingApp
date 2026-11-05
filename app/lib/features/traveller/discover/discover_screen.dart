@@ -34,7 +34,7 @@ enum _LocationMode { idle, following, heading }
 /// Default initial fallback map center (the centre of Sri Lanka) used before device GPS resolves.
 /// Shown at island zoom ([_kDefaultMapZoom]) so the whole country fits.
 const _kDefaultMapCenter = LatLng(kFallbackLat, kFallbackLng);
-const _kDefaultMapZoom = 7.5;
+const _kDefaultMapZoom = 14.5;
 
 const _kPinSlotSize = Size(58, 58);
 const _kBannerSlotSize = Size(175, 62);

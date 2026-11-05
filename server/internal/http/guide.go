@@ -167,7 +167,7 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	start := time.Now()
-	loc := newGuideLocation(req.Lat, req.Lng, req.LocationKnown)
+	loc := newGuideLocation(req.Lat, req.Lng, req.LocationKnown, s.DefaultLocationMirissa)
 	res, meta, err := s.runGuideChat(ctx, c.Subject, history, req.Message, loc)
 	latencyMs := int(time.Since(start).Milliseconds())
 	if err != nil {

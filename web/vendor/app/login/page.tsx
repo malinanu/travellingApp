@@ -30,8 +30,8 @@ const REGISTER_STEPS = ['Find your business', 'Your account', 'Your business', '
 // entirely (placeLat/placeLng stay null in that case) — Colombo, matching
 // the "every vendor is Sri Lanka-based" assumption used elsewhere in this
 // wizard (see categoryFromGoogleTypes/townFromLegacyAddressComponents below).
-const DEFAULT_PIN_LAT = 6.9271;
-const DEFAULT_PIN_LNG = 79.8612;
+const DEFAULT_PIN_LAT = process.env.NEXT_PUBLIC_DEFAULT_LOCATION_MIRISSA === 'true' ? 5.9483 : 6.9271;
+const DEFAULT_PIN_LNG = process.env.NEXT_PUBLIC_DEFAULT_LOCATION_MIRISSA === 'true' ? 80.4552 : 79.8612;
 
 // Best-effort Google place-type → Spotto category mapping, checked in
 // array order (first match wins) — falls back to the wizard's existing

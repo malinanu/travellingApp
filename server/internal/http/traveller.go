@@ -137,6 +137,10 @@ func (s *Server) handlePlaces(w http.ResponseWriter, r *http.Request) {
 
 	lat, latErr := strconv.ParseFloat(r.URL.Query().Get("lat"), 64)
 	lng, lngErr := strconv.ParseFloat(r.URL.Query().Get("lng"), 64)
+	if (latErr != nil || lngErr != nil) && s.DefaultLocationMirissa {
+		lat, lng = 5.9483, 80.4552
+		latErr, lngErr = nil, nil
+	}
 	maxDistStr := r.URL.Query().Get("maxDistanceKm")
 	if maxDistStr == "" {
 		maxDistStr = r.URL.Query().Get("radiusKm")

@@ -37,6 +37,7 @@ abstract final class StoreKeys {
   static const me = 'spotto_me'; // last /me
   static const quest = 'spotto_quest'; // {day, data} of the last /me/quest
   static const weather = 'spotto_weather'; // {at, data} of the last current-location /weather
+  static const defaultLocation = 'spotto_default_loc'; // staging default location override from /config
 }
 
 class LocalStore {
