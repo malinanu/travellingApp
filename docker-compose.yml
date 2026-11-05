@@ -110,7 +110,7 @@ services:
     pull_policy: always
     restart: unless-stopped
     ports:
-      - "8000:80"
+      - "${WEBSITE_PORT:-3002}:80"
     networks: [spotto]
 
   # Writes transcripts of audio guides (transcriber/README.md). It idles at
