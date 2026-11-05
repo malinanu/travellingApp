@@ -1,5 +1,10 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { buildConfig } from 'payload';
 import { postgresAdapter } from '@payloadcms/db-postgres';
+
+const filename = fileURLToPath(import.meta.url);
+const dirname = path.dirname(filename);
 import { Users } from './collections/Users';
 import { Pages } from './collections/Pages';
 import { PricingPlans } from './collections/PricingPlans';
@@ -48,6 +53,6 @@ export default buildConfig({
     },
   }),
   typescript: {
-    outputFile: './website/cms/payload-types.ts',
+    outputFile: path.resolve(dirname, 'payload-types.ts'),
   },
 });

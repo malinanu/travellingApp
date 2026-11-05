@@ -35,6 +35,11 @@ services:
       context: ./website
     pull_policy: build
 
+  cms:
+    build:
+      context: ./website/cms
+    pull_policy: build
+
   transcriber:
     build:
       context: ./transcriber

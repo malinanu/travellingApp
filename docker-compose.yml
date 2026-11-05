@@ -113,6 +113,19 @@ services:
       - "${WEBSITE_PORT:-3002}:80"
     networks: [ spotto ]
 
+  cms:
+    image: ghcr.io/malinanu/travellingapp-cms:${SPOTTO_IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      DATABASE_URL: ${DATABASE_URL}
+      PAYLOAD_SECRET: ${PAYLOAD_SECRET:-${JWT_SECRET}}
+    ports:
+      - "${CMS_PORT:-3003}:3000"
+    depends_on: [ api ]
+    networks: [ spotto ]
+
   # Writes transcripts of audio guides (transcriber/README.md). It idles at
   # a few tens of MB and asks the api for work every minute; the Whisper
   # model is only loaded, in a short-lived child process, while a recording

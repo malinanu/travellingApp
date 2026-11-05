@@ -4,9 +4,9 @@
   "description": "Payload CMS for Spotto marketing website and vendor subscriptions",
   "license": "UNLICENSED",
   "scripts": {
-    "dev": "next dev -p 3002",
+    "dev": "next dev -p 3003",
     "build": "next build",
-    "start": "next start -p 3002",
+    "start": "next start",
     "generate:types": "payload generate:types",
     "generate:schema": "payload-graphql generate:schema"
   },

@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [api, vendor, admin, website, transcriber]
+        image: [api, vendor, admin, website, cms, transcriber]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -56,6 +56,9 @@ jobs:
           - image: website
             context: website
             dockerfile: website/Dockerfile
+          - image: cms
+            context: website/cms
+            dockerfile: website/cms/Dockerfile
           # Includes the Whisper model, downloaded from Hugging Face here.
           - image: transcriber
             context: transcriber
@@ -116,7 +119,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [api, vendor, admin, website, transcriber]
+        image: [api, vendor, admin, website, cms, transcriber]
     steps:
       - uses: actions/download-artifact@v4
         with:

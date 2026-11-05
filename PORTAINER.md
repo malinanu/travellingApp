@@ -1,11 +1,12 @@
 # Deploying Spotto on Portainer
 
-Four services — `api` (Go, container port `8881`, published on the host as
-`8881` too), `vendor` (Next.js, :3000), `admin` (Next.js, :3001), and `website`
-(Nginx Alpine, :3002) — defined in `docker-compose.yml` at the repo root. GitHub
-Actions builds their images on every push to `main` (`.github/workflows/docker-images.yml`)
-and publishes them to GitHub Container Registry as `ghcr.io/malinanu/travellingapp-api`,
-`-vendor`, `-admin`, and `-website`; the server only pulls them (see "Images are built by
+Five services — `api` (Go, container port `8881`, published on the host as
+`8881` too), `vendor` (Next.js, :3000), `admin` (Next.js, :3001), `website`
+(Nginx Alpine, :3002), and `cms` (Payload CMS 3.x, :3003) — defined in
+`docker-compose.yml` at the repo root. GitHub Actions builds their images on
+every push to `main` (`.github/workflows/docker-images.yml`) and publishes
+them to GitHub Container Registry as `ghcr.io/malinanu/travellingapp-api`,
+`-vendor`, `-admin`, `-website`, and `-cms`; the server only pulls them (see "Images are built by
 GitHub" below). This stack does **not** run its own
 Postgres; it connects to one you already have reachable from the Docker
 host.
@@ -85,9 +86,9 @@ name if it's on a shared Docker network, or `host.docker.internal` if it's
 bound to the host's own port.
 
 **Port check**: this stack publishes `8881` (api), `3000` (vendor), `3001`
-(admin), and `3002` (website) on the host. If any of these ever collide with something else
+(admin), `3002` (website), and `3003` (cms) on the host. If any of these ever collide with something else
 already running on the box, change the host-side number in
-`docker-compose.yml`'s `ports:` mapping (or set `WEBSITE_PORT=<custom_port>` in Portainer env).
+`docker-compose.yml`'s `ports:` mapping (or set `WEBSITE_PORT=<port>` / `CMS_PORT=<port>` in Portainer env).
 
 ## 4. Deploy in Portainer
 
@@ -166,6 +167,7 @@ For each of the three (repeat with the matching port):
 | `spotto-vendor.yourdomain.com` | `http://127.0.0.1:3000` |
 | `spotto-admin.yourdomain.com` | `http://127.0.0.1:3001` |
 | `spotto.yourdomain.com` (website) | `http://127.0.0.1:3002` |
+| `spotto-cms.yourdomain.com` (Payload CMS) | `http://127.0.0.1:3003` |
 
 In CloudPanel: **Sites → Add Site → Reverse Proxy** → enter the domain →
 set the reverse-proxy target to the `127.0.0.1:<port>` above → save → then
