@@ -894,7 +894,7 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                               style: text.bodySmall?.copyWith(color: SpottoColors.muted, fontSize: 11.5),
                             ),
                           ),
-                          if (place.vibe.score > 0) ...[
+                          if (place.rating > 0) ...[
                             const SizedBox(width: 6),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -902,9 +902,16 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                                 color: SpottoColors.accentTint,
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              child: Text(
-                                '${(place.vibe.score * 20).round()}% Vibe',
-                                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: SpottoColors.accent),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.star_rounded, size: 10, color: SpottoColors.accent),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    place.rating.toStringAsFixed(1),
+                                    style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: SpottoColors.accent),
+                                  ),
+                                ],
                               ),
                             ),
                           ],

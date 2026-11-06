@@ -64,6 +64,8 @@ class _AddStopSheetState extends ConsumerState<_AddStopSheet> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final trip = ref.watch(tripProvider);
+    final currentDay = trip.days[widget.dayIx];
+    final hasDayLoc = currentDay.location != null && currentDay.location!.isNotEmpty;
     final styleIds = ref.watch(prefsProvider)?.styles ?? const [];
     final usedIds = trip.days[widget.dayIx].stops.map((s) => s.placeId).toSet();
 
@@ -110,10 +112,7 @@ class _AddStopSheetState extends ConsumerState<_AddStopSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            final currentDay = trip.days[widget.dayIx];
-    final hasDayLoc = currentDay.location != null && currentDay.location!.isNotEmpty;
-
-    if (query.isEmpty && suggested.isNotEmpty)
+            if (query.isEmpty && suggested.isNotEmpty)
       Padding(
         padding: const EdgeInsets.only(bottom: 8, left: 4),
         child: Row(
