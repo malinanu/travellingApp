@@ -24,6 +24,13 @@ import native_geofence
       mapsApiKey = configured
     }
     GMSServices.provideAPIKey(mapsApiKey)
+    #if DEBUG
+    if mapsApiKey == "MISSING_MAPS_API_KEY" {
+      NSLog("[Spotto iOS] ⚠️ GMSApiKey is MISSING or unresolved in Info.plist! Google Maps tiles will not load. Ensure MAPS_API_KEY is configured in Secrets.xcconfig.")
+    } else {
+      NSLog("[Spotto iOS] ✅ Google Maps SDK initialized with key prefix: %@...", String(mapsApiKey.prefix(8)))
+    }
+    #endif
     // Nearby saved-place alerts: the geofence callback runs in a background
     // engine, which needs the app's plugins (e.g. local notifications).
     NativeGeofencePlugin.setPluginRegistrantCallback { registry in

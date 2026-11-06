@@ -941,6 +941,17 @@ class TripNotifier extends Notifier<Trip> {
     _schedulePush();
   }
 
+  void setDayLocation(int dayIndex, {String? location, String? regionId}) {
+    if (dayIndex < 0 || dayIndex >= state.days.length) return;
+    final days = [...state.days];
+    days[dayIndex] = days[dayIndex].copyWith(
+      location: location,
+      regionId: regionId,
+      clearLocation: location == null,
+    );
+    update(state.copyWith(days: days));
+  }
+
   void addStop(int dayIndex, TripStop stop) {
     final days = [...state.days];
     final stops = [...days[dayIndex].stops, stop]..sort((a, b) => a.time.compareTo(b.time));

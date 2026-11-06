@@ -17,6 +17,10 @@ import '../place_detail/business_drawer.dart';
 import 'widgets/add_stop_sheet.dart';
 import 'widgets/calendar_month.dart';
 import 'widgets/confirm_delete_dialog.dart';
+import '../../../core/api/api_client.dart';
+import '../../../core/widgets/progressive_image.dart';
+import '../../../data/models/models.dart';
+import 'widgets/location_picker_sheet.dart';
 import 'widgets/my_trips_sheet.dart';
 import 'widgets/stop_card.dart';
 import 'widgets/trip_common.dart';
@@ -158,11 +162,14 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                       _collabButton(trip),
                     ],
                   ),
-                  if (_dayView) _daySubHeader(text, trip),
+                  if (_dayView) ...[
+                    _daySubHeader(text, trip),
+                    _dayLocationChip(text, trip.days[_dayIx]),
+                  ],
                 ],
               ),
             ),
-            Expanded(child: _dayView ? _dayBody(stops) : _calendarBody(trip)),
+            Expanded(child: _dayView ? _dayBody(stops, trip.days[_dayIx]) : _calendarBody(trip)),
             if (_dayView && stops.isNotEmpty) _daySummary(text, stops),
           ],
         ),
@@ -345,6 +352,85 @@ class _TripScreenState extends ConsumerState<TripScreen> {
     );
   }
 
+  Widget _dayLocationChip(TextTheme text, TripDay day) {
+    final hasLoc = day.location != null && day.location!.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: PressScale(
+        scale: 0.98,
+        onTap: () async {
+          final choice = await showLocationPickerSheet(context, currentLocation: day.location);
+          if (choice != null) {
+            final isCleared = choice.name.isEmpty;
+            ref.read(tripProvider.notifier).setDayLocation(
+                  _dayIx,
+                  location: isCleared ? null : choice.name,
+                  regionId: isCleared ? null : choice.regionId,
+                );
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: hasLoc ? SpottoColors.accentTint : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: hasLoc ? SpottoColors.accent.withValues(alpha: 0.35) : SpottoColors.line,
+              width: 1.2,
+            ),
+            boxShadow: const [
+              BoxShadow(color: Color(0x0D103D3A), blurRadius: 6, offset: Offset(0, 2))
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(
+                hasLoc ? Icons.location_on : Icons.add_location_alt_outlined,
+                size: 16,
+                color: SpottoColors.accent,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  hasLoc ? 'Visiting ${day.location}' : 'Set location (e.g. Ella, Mirissa) to get suggestions…',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: hasLoc ? FontWeight.w800 : FontWeight.w600,
+                    color: hasLoc ? SpottoColors.ink : SpottoColors.muted,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                decoration: BoxDecoration(
+                  color: hasLoc ? SpottoColors.accent.withValues(alpha: 0.12) : SpottoColors.sand,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      hasLoc ? 'Change' : 'Pick town',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: SpottoColors.accent,
+                      ),
+                    ),
+                    const Icon(Icons.arrow_drop_down, size: 14, color: SpottoColors.accent),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _calendarBody(Trip trip) {
     final text = Theme.of(context).textTheme;
     final planned = <String, PlannedDay>{};
@@ -459,7 +545,7 @@ class _TripScreenState extends ConsumerState<TripScreen> {
     );
   }
 
-  Widget _dayBody(List<TripStop> stops) {
+  Widget _dayBody(List<TripStop> stops, TripDay currentDay) {
     final text = Theme.of(context).textTheme;
     final legs = <Leg?>[
       for (var i = 1; i < stops.length; i++)
@@ -470,6 +556,32 @@ class _TripScreenState extends ConsumerState<TripScreen> {
         }(),
     ];
 
+    final allPlaces = ref.watch(placesProvider);
+    final prefs = ref.watch(prefsProvider);
+    final userStyles = prefs?.styles ?? const <String>[];
+    final usedPlaceIds = stops.map((s) => s.placeId).toSet();
+
+    final dayLoc = (currentDay.location ?? '').trim().toLowerCase();
+    final dayReg = (currentDay.regionId ?? '').trim().toLowerCase();
+
+    final suggestedSpots = allPlaces.where((p) {
+      if (usedPlaceIds.contains(p.id)) return false;
+      final pr = p.region.toLowerCase();
+      final prid = p.regionId.toLowerCase();
+      if (dayReg.isNotEmpty && prid == dayReg) return true;
+      if (dayLoc.isNotEmpty) return pr.contains(dayLoc) || prid.contains(dayLoc);
+      return false;
+    }).toList();
+
+    suggestedSpots.sort((a, b) {
+      final aStyle = a.styles.any(userStyles.contains) ? 1 : 0;
+      final bStyle = b.styles.any(userStyles.contains) ? 1 : 0;
+      if (aStyle != bStyle) return bStyle.compareTo(aStyle);
+      return b.vibe.sampleSize.compareTo(a.vibe.sampleSize);
+    });
+
+    final hasLocation = currentDay.location != null && currentDay.location!.isNotEmpty;
+
     return GestureDetector(
       onHorizontalDragEnd: (d) {
         final v = d.primaryVelocity ?? 0;
@@ -478,29 +590,141 @@ class _TripScreenState extends ConsumerState<TripScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
         children: [
-          if (stops.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 56, 24, 12),
-              child: Column(
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: const BoxDecoration(
-                        color: SpottoColors.accentTint, shape: BoxShape.circle),
-                    child: const Icon(Icons.route, size: 28, color: SpottoColors.accent),
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Nothing planned yet', style: text.titleMedium?.copyWith(fontSize: 18)),
-                  const SizedBox(height: 6),
-                  Text(
-                      'Add your first stop — search any place or pick a suggestion for your style.',
-                      textAlign: TextAlign.center,
-                      style: text.bodyMedium?.copyWith(color: SpottoColors.muted)),
-                ],
+          if (stops.isEmpty) ...[
+            if (hasLocation) ...[
+              // Destination chosen: show smart suggestions for that town
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 12, 4, 14),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: SpottoColors.accentTint,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.auto_awesome, size: 16, color: SpottoColors.accent),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Suggested for you in ${currentDay.location}',
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: SpottoColors.ink),
+                          ),
+                          Text(
+                            'Based on your travel style — tap to add or inspect details',
+                            style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            )
-          else
+              if (suggestedSpots.isNotEmpty) ...[
+                for (final place in suggestedSpots.take(5))
+                  _spotSuggestionCard(place, currentDay),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: SpottoColors.line),
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.explore_outlined, size: 32, color: SpottoColors.muted),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No local spots indexed for ${currentDay.location} yet',
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: SpottoColors.ink),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tap "+ Add a stop" below to search any hotel, beach, cafe, or Google Maps place in ${currentDay.location}.',
+                        textAlign: TextAlign.center,
+                        style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ] else ...[
+              // No destination chosen yet: show default empty + quick town picker
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: const BoxDecoration(
+                        color: SpottoColors.accentTint,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.route, size: 26, color: SpottoColors.accent),
+                    ),
+                    const SizedBox(height: 14),
+                    Text('Nothing planned yet', style: text.titleMedium?.copyWith(fontSize: 18)),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Select where you are visiting on Day ${_dayIx + 1} to get personalized spot recommendations:',
+                      textAlign: TextAlign.center,
+                      style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        _quickTownPill('Ella', 'ella'),
+                        _quickTownPill('Galle', 'galle'),
+                        _quickTownPill('Mirissa', 'mirissa'),
+                        _quickTownPill('Weligama', 'weligama'),
+                        _quickTownPill('Kandy', 'kandy'),
+                        _quickTownPill('Colombo', 'colombo'),
+                        _quickTownPill('Sigiriya', 'sigiriya'),
+                        PressScale(
+                          scale: 0.94,
+                          onTap: () async {
+                            final choice = await showLocationPickerSheet(context, currentLocation: null);
+                            if (choice != null && choice.name.isNotEmpty) {
+                              ref.read(tripProvider.notifier).setDayLocation(
+                                    _dayIx,
+                                    location: choice.name,
+                                    regionId: choice.regionId,
+                                  );
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: SpottoColors.sand,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: SpottoColors.line),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('More towns…', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: SpottoColors.accent)),
+                                Icon(Icons.arrow_drop_down, size: 14, color: SpottoColors.accent),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ] else ...[
             for (final (i, s) in stops.indexed) ...[
               if (i > 0 && legs[i - 1] != null) LegRow(leg: legs[i - 1]!),
               if (i > 0 && legs[i - 1] == null) const SizedBox(height: 10),
@@ -532,6 +756,8 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                 );
               }),
             ],
+          ],
+
           const SizedBox(height: 12),
           PressScale(
             scale: 0.98,
@@ -556,7 +782,166 @@ class _TripScreenState extends ConsumerState<TripScreen> {
               ),
             ),
           ),
+
+          // If stops already exist and there are more spots in this town:
+          if (stops.isNotEmpty && hasLocation && suggestedSpots.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                const Icon(Icons.explore_outlined, size: 15, color: SpottoColors.accent),
+                const SizedBox(width: 6),
+                Text(
+                  'More in ${currentDay.location} you might like',
+                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: SpottoColors.ink),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            for (final place in suggestedSpots.take(3))
+              _spotSuggestionCard(place, currentDay),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _quickTownPill(String name, String regionId) {
+    return PressScale(
+      scale: 0.94,
+      onTap: () => ref.read(tripProvider.notifier).setDayLocation(_dayIx, location: name, regionId: regionId),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: SpottoColors.line),
+          boxShadow: const [
+            BoxShadow(color: Color(0x0A103D3A), blurRadius: 4, offset: Offset(0, 1))
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.place, size: 12, color: SpottoColors.accent),
+            const SizedBox(width: 4),
+            Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: SpottoColors.ink)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _spotSuggestionCard(Place place, TripDay currentDay) {
+    final text = Theme.of(context).textTheme;
+    final imgUrl = place.coverThumb.isNotEmpty ? place.coverThumb : place.cover;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: SpottoColors.line, width: 1.2),
+        boxShadow: const [
+          BoxShadow(color: Color(0x0D103D3A), blurRadius: 8, offset: Offset(0, 2))
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => showBusinessDrawer(context, place),
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    width: 58,
+                    height: 58,
+                    child: imgUrl.isNotEmpty
+                        ? ProgressiveImage(
+                            url: resolveMediaUrl(imgUrl),
+                            width: 58,
+                            height: 58,
+                            fit: BoxFit.cover,
+                          )
+                        : Container(
+                            color: SpottoColors.accentTint,
+                            child: const Icon(Icons.place, color: SpottoColors.accent),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        place.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: SpottoColors.ink),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              [place.type, if (place.region.isNotEmpty) place.region].join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: text.bodySmall?.copyWith(color: SpottoColors.muted, fontSize: 11.5),
+                            ),
+                          ),
+                          if (place.vibe.score > 0) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: SpottoColors.accentTint,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '${(place.vibe.score * 20).round()}% Vibe',
+                                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: SpottoColors.accent),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                PressScale(
+                  scale: 0.94,
+                  onTap: () {
+                    ref.read(tripProvider.notifier).addPlaceStop(_dayIx, place);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: SpottoColors.accent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add, size: 14, color: Colors.white),
+                        SizedBox(width: 3),
+                        Text(
+                          'Add',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

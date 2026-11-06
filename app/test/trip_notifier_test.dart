@@ -172,4 +172,28 @@ void main() {
     expect(stop.custom, isNull);
     expect(tripPlace(stop)!.name, 'Mirissa Beach');
   });
+
+  test('TripDay supports location and regionId serialization', () {
+    final day = const TripDay(id: 'd1', stops: [], location: 'Ella', regionId: 'ella');
+    final json = day.toJson();
+    expect(json['location'], 'Ella');
+    expect(json['regionId'], 'ella');
+
+    final decoded = TripDay.fromJson(json);
+    expect(decoded.location, 'Ella');
+    expect(decoded.regionId, 'ella');
+  });
+
+  test('TripNotifier setDayLocation sets and clears destination', () async {
+    final c = await makeContainer();
+    final notifier = c.read(tripProvider.notifier);
+
+    notifier.setDayLocation(0, location: 'Ella', regionId: 'ella');
+    expect(c.read(tripProvider).days[0].location, 'Ella');
+    expect(c.read(tripProvider).days[0].regionId, 'ella');
+
+    notifier.setDayLocation(0, location: null, regionId: null);
+    expect(c.read(tripProvider).days[0].location, isNull);
+    expect(c.read(tripProvider).days[0].regionId, isNull);
+  });
 }

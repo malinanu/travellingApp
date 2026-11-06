@@ -1,4 +1,4 @@
-name: iOS Build (unsigned, for sideload testing)
+name: iOS Build (unsigned, for sideload & simulator testing)
 
 on:
   push:
@@ -37,48 +37,63 @@ jobs:
         run: flutter pub get
 
       # Secrets.xcconfig is gitignored, so without this the CI build has an
-      # empty Google Maps key and the map shows no tiles. Optional: skipped
-      # when the IOS_MAPS_API_KEY repository secret isn't set.
+      # empty Google Maps key and the map shows no tiles.
       - name: Write Google Maps key for iOS
         env:
           IOS_MAPS_API_KEY: ${{ secrets.IOS_MAPS_API_KEY || vars.IOS_MAPS_API_KEY }}
         run: |
           if [ -n "$IOS_MAPS_API_KEY" ]; then
             echo "MAPS_API_KEY = $IOS_MAPS_API_KEY" > ios/Flutter/Secrets.xcconfig
+            echo "MAPS_API_KEY injected into Secrets.xcconfig."
           else
-            echo "IOS_MAPS_API_KEY not set; map tiles will not load in this build."
+            echo "::warning::IOS_MAPS_API_KEY not set in GitHub secrets! Google Maps tiles will not load on iOS."
           fi
 
-      - name: Build unsigned iOS release
+      - name: Build unsigned iOS release (for physical devices)
         env:
           GOOGLE_SERVER_CLIENT_ID: ${{ secrets.GOOGLE_SERVER_CLIENT_ID || vars.GOOGLE_SERVER_CLIENT_ID }}
         run: |
           flutter build ios --release --no-codesign \
             --dart-define=GOOGLE_SERVER_CLIENT_ID="$GOOGLE_SERVER_CLIENT_ID"
 
-      - name: Package Runner.app into an .ipa
+      - name: Build iOS Simulator app (for Appetize.io browser testing)
+        env:
+          GOOGLE_SERVER_CLIENT_ID: ${{ secrets.GOOGLE_SERVER_CLIENT_ID || vars.GOOGLE_SERVER_CLIENT_ID }}
+        run: |
+          flutter build ios --simulator \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID="$GOOGLE_SERVER_CLIENT_ID"
+
+      - name: Package artifacts
         run: |
           set -euo pipefail
+          # 1. Package .ipa for real device sideloading
           BUILD_DIR="build/ios/iphoneos"
           mkdir -p "$BUILD_DIR/Payload"
           cp -R "$BUILD_DIR/Runner.app" "$BUILD_DIR/Payload/"
           cd "$BUILD_DIR"
           zip -qr app-release.ipa Payload
-          echo "Built: $(pwd)/app-release.ipa"
+          echo "Built IPA: $(pwd)/app-release.ipa"
+          cd ../../..
 
-      # Published as a single rolling "ios-testing" pre-release rather than an
-      # Actions artifact — release assets don't count against the Actions
-      # artifact storage quota, which per-push .ipa artifacts kept filling.
-      # PRs only verify the build compiles.
-      - name: Publish .ipa to the ios-testing release
+          # 2. Package .zip for Appetize.io browser simulator
+          SIM_DIR="build/ios/iphonesimulator"
+          cd "$SIM_DIR"
+          zip -qr app-simulator.zip Runner.app
+          echo "Built Simulator ZIP: $(pwd)/app-simulator.zip"
+          cd ../../..
+
+      # Published as a single rolling "ios-testing" pre-release
+      - name: Publish to ios-testing release
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           gh release delete ios-testing --yes --cleanup-tag || true
-          gh release create ios-testing build/ios/iphoneos/app-release.ipa \
+          gh release create ios-testing \
+            build/ios/iphoneos/app-release.ipa \
+            build/ios/iphonesimulator/app-simulator.zip \
             --prerelease \
             --target "$GITHUB_SHA" \
             --title "iOS testing build" \
-            --notes "Unsigned sideload build of ${GITHUB_SHA::7}, built $(date -u '+%Y-%m-%d %H:%M UTC')."
+            --notes "Unsigned build of ${GITHUB_SHA::7}, built $(date -u '+%Y-%m-%d %H:%M UTC'). Includes app-release.ipa (sideload) and app-simulator.zip (upload to Appetize.io to run in browser on Windows)."

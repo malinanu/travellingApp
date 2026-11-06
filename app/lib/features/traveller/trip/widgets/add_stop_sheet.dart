@@ -110,19 +110,25 @@ class _AddStopSheetState extends ConsumerState<_AddStopSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            if (query.isEmpty && suggested.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8, left: 4),
-                child: Row(
-                  children: [
-                    const Icon(Icons.auto_awesome, size: 13, color: SpottoColors.accent),
-                    const SizedBox(width: 5),
-                    Text('SUGGESTED FOR YOUR STYLE',
-                        style: text.labelSmall
-                            ?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6)),
-                  ],
-                ),
-              ),
+            final currentDay = trip.days[widget.dayIx];
+    final hasDayLoc = currentDay.location != null && currentDay.location!.isNotEmpty;
+
+    if (query.isEmpty && suggested.isNotEmpty)
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8, left: 4),
+        child: Row(
+          children: [
+            const Icon(Icons.auto_awesome, size: 13, color: SpottoColors.accent),
+            const SizedBox(width: 5),
+            Text(
+              hasDayLoc
+                  ? 'SUGGESTED FOR YOUR STYLE · ${currentDay.location!.toUpperCase()}'
+                  : 'SUGGESTED FOR YOUR STYLE',
+              style: text.labelSmall?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6),
+            ),
+          ],
+        ),
+      ),
             Expanded(
               child: ListView(
                 children: [

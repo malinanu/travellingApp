@@ -115,14 +115,41 @@ class TripStop {
 class TripDay {
   final String id;
   final List<TripStop> stops;
-  const TripDay({required this.id, required this.stops});
+  final String? location; // e.g. "Ella"
+  final String? regionId; // e.g. "ella"
 
-  TripDay copyWith({List<TripStop>? stops}) => TripDay(id: id, stops: stops ?? this.stops);
+  const TripDay({
+    required this.id,
+    required this.stops,
+    this.location,
+    this.regionId,
+  });
 
-  Map<String, dynamic> toJson() => {'id': id, 'stops': stops.map((s) => s.toJson()).toList()};
+  TripDay copyWith({
+    List<TripStop>? stops,
+    String? location,
+    String? regionId,
+    bool clearLocation = false,
+  }) =>
+      TripDay(
+        id: id,
+        stops: stops ?? this.stops,
+        location: clearLocation ? null : (location ?? this.location),
+        regionId: clearLocation ? null : (regionId ?? this.regionId),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'stops': stops.map((s) => s.toJson()).toList(),
+        if (location != null) 'location': location,
+        if (regionId != null) 'regionId': regionId,
+      };
+
   factory TripDay.fromJson(Map<String, dynamic> json) => TripDay(
         id: json['id'] as String,
         stops: (json['stops'] as List).map((s) => TripStop.fromJson(s as Map<String, dynamic>)).toList(),
+        location: json['location'] as String?,
+        regionId: json['regionId'] as String?,
       );
 }
 
