@@ -182,7 +182,7 @@ class _LocationPickerSheetState extends ConsumerState<_LocationPickerSheet> {
                     )
                   : ListView.separated(
                       itemCount: filtered.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1, color: SpottoColors.line),
+                      separatorBuilder: (_, _) => const Divider(height: 1, color: SpottoColors.line),
                       itemBuilder: (context, index) {
                         final dest = filtered[index];
                         final isSelected = widget.currentLocation != null &&
