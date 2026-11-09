@@ -1,4 +1,4 @@
-﻿package httpapi
+package httpapi
 
 import (
 	"context"
@@ -26,7 +26,7 @@ func (s *Server) handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
 	// started the flow without server-side session storage for it.
 	http.SetCookie(w, &http.Cookie{
 		Name: "google_oauth_state", Value: state, Path: "/", MaxAge: 300,
-		HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: true,
 	})
 	http.Redirect(w, r, s.GoogleOAuth.AuthCodeURL(state), http.StatusFound)
 }

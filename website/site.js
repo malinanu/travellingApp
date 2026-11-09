@@ -65,7 +65,11 @@
      Every .photo[data-img] names its real image file. If the file exists
      (generated or supplied later), it loads in place of the art panel. */
   document.querySelectorAll('.photo[data-img]').forEach(function (fig) {
-    var src = fig.getAttribute('data-img');
+    var rawSrc = fig.getAttribute('data-img');
+    if (!rawSrc) return;
+    var s = String(rawSrc).trim();
+    if (/^\s*javascript:/i.test(s)) return;
+    var src = s;
     var probe = new Image();
     probe.onload = function () {
       var img = document.createElement('img');
@@ -917,11 +921,18 @@
   var stories = document.getElementById('stories');
   if (stories) {
     var mediaUrl = function (u) {
-      if (!u) return u;
-      if (u.charAt(0) === '/' && u.charAt(1) !== '/') {
-        return (baseCms || baseApi) + u;
+      if (!u) return '';
+      var s = String(u).trim();
+      if (s.charAt(0) === '/' && s.charAt(1) !== '/') {
+        return (baseCms || baseApi) + s;
       }
-      return u;
+      try {
+        var parsed = new URL(s, window.location.origin);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          return parsed.href;
+        }
+      } catch (e) {}
+      return '';
     };
     var storyHref = function (slug) {
       return 'blog.html?post=' + encodeURIComponent(slug) + (localApi ? '&api=' + encodeURIComponent(localApi) : '') + (localCms ? '&cms=' + encodeURIComponent(localCms) : '');
@@ -946,9 +957,10 @@
     };
     var cover = function (post, i, cls) {
       var fig = el('figure', 'photo ' + (cls || '') + ' ' + palettes[i % palettes.length]);
-      if (post.coverUrl) {
+      var safeCover = mediaUrl(post.coverUrl);
+      if (safeCover) {
         var img = el('img');
-        img.src = mediaUrl(post.coverUrl);
+        img.src = safeCover;
         img.alt = '';
         img.loading = 'lazy';
         fig.appendChild(img);
@@ -1120,10 +1132,11 @@
             titleEl.textContent = post.title;
             document.getElementById('storySummary').textContent = post.summary || '';
             document.getElementById('storyMeta').textContent = meta(post);
-            if (post.coverUrl) {
+            var safeCover = mediaUrl(post.coverUrl);
+            if (safeCover) {
               var fig = document.getElementById('storyCover');
               var img = el('img');
-              img.src = mediaUrl(post.coverUrl);
+              img.src = safeCover;
               img.alt = '';
               fig.appendChild(img);
               fig.hidden = false;

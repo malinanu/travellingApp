@@ -20,6 +20,9 @@ on:
       - 'transcriber/**'
       - '.github/workflows/transcriber-ci.yml'
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Transcriber tests

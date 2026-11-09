@@ -59,17 +59,33 @@ func ResolveShortLink(ctx context.Context, raw string) string {
 // followRedirects returns where link ends up, following at most
 // maxRedirects hops and only to hosts allowed() accepts.
 func followRedirects(ctx context.Context, client *http.Client, link string, allowed func(host string) bool) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(link))
+	if err != nil {
+		return "", err
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", errHostNotAllowed
+	}
+	if !allowed(strings.ToLower(parsed.Hostname())) {
+		return "", errHostNotAllowed
+	}
+
 	c := *client
 	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= maxRedirects {
 			return errors.New("too many redirects")
+		}
+		s := strings.ToLower(req.URL.Scheme)
+		if s != "http" && s != "https" {
+			return errHostNotAllowed
 		}
 		if !allowed(strings.ToLower(req.URL.Hostname())) {
 			return errHostNotAllowed
 		}
 		return nil
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, link, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
 		return "", err
 	}

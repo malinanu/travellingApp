@@ -9,6 +9,7 @@ import (
 	"log"
 	netmail "net/mail"
 	"net/smtp"
+	"strings"
 )
 
 type Config struct {
@@ -35,28 +36,49 @@ func New(cfg Config) *Mailer {
 	return &Mailer{cfg: cfg, enabled: enabled}
 }
 
+// Enabled reports whether SMTP is configured, i.e. whether Send really
+// delivers mail instead of only logging it.
+func (m *Mailer) Enabled() bool { return m.enabled }
+
+func sanitizeHeader(v string) string {
+	v = strings.ReplaceAll(v, "\r", "")
+	v = strings.ReplaceAll(v, "\n", "")
+	return strings.TrimSpace(v)
+}
+
 // Send delivers an HTML email. When the mailer is disabled (no SMTP
 // configured), it logs the send and returns nil rather than erroring —
 // callers that email as a side effect of another action (e.g. a team
 // invite that's still usable via its copy-link) shouldn't fail the whole
 // request just because email isn't set up yet.
-// Enabled reports whether SMTP is configured, i.e. whether Send really
-// delivers mail instead of only logging it.
-func (m *Mailer) Enabled() bool { return m.enabled }
-
 func (m *Mailer) Send(to, subject, bodyHTML string) error {
 	if !m.enabled {
 		log.Printf("mail: (SMTP disabled) would send to=%q subject=%q", to, subject)
 		return nil
 	}
+
+	cleanTo, err := netmail.ParseAddress(strings.TrimSpace(to))
+	if err != nil {
+		return fmt.Errorf("mail: invalid to address: %w", err)
+	}
+
+	fromAddr := envelopeAddress(m.cfg.From)
+	cleanFrom, err := netmail.ParseAddress(fromAddr)
+	if err != nil {
+		return fmt.Errorf("mail: invalid from address: %w", err)
+	}
+
+	cleanSubject := sanitizeHeader(subject)
+
 	addr := m.cfg.Host + ":" + m.cfg.Port
 	var a smtp.Auth
 	if m.cfg.User != "" {
 		a = smtp.PlainAuth("", m.cfg.User, m.cfg.Pass, m.cfg.Host)
 	}
-	msg := buildMessage(m.cfg.From, to, subject, bodyHTML)
-	if err := smtp.SendMail(addr, a, envelopeAddress(m.cfg.From), []string{to}, msg); err != nil {
-		log.Printf("mail: send to=%q failed: %v", to, err)
+
+	msg := buildMessage(m.cfg.From, cleanTo.String(), cleanSubject, bodyHTML)
+	if err := smtp.SendMail(addr, a, cleanFrom.Address, []string{cleanTo.Address}, msg); err != nil {
+		log.Printf("mail: send to=%q failed: %v", cleanTo.Address, err)
 		return err
 	}
 	return nil
@@ -67,14 +89,14 @@ func (m *Mailer) Send(to, subject, bodyHTML string) error {
 // header, but MAIL FROM only accepts the address itself — Gmail rejects the
 // full form with "555 5.5.2 Syntax error".
 func envelopeAddress(from string) string {
-	if a, err := netmail.ParseAddress(from); err == nil {
+	if a, err := netmail.ParseAddress(strings.TrimSpace(from)); err == nil {
 		return a.Address
 	}
-	return from
+	return sanitizeHeader(from)
 }
 
 func buildMessage(from, to, subject, bodyHTML string) []byte {
 	return []byte(fmt.Sprintf(
 		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=\"UTF-8\"\r\n\r\n%s\r\n",
-		from, to, subject, bodyHTML))
+		sanitizeHeader(from), sanitizeHeader(to), sanitizeHeader(subject), bodyHTML))
 }
