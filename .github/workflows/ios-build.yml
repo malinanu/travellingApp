@@ -52,12 +52,29 @@ jobs:
             echo "::warning::IOS_MAPS_API_KEY not set in GitHub secrets! Google Maps tiles will not load on iOS."
           fi
           printf '%s\n' \
+            'CODE_SIGN_ENTITLEMENTS =' \
             'CODE_SIGNING_ALLOWED = NO' \
             'CODE_SIGNING_REQUIRED = NO' \
             'CODE_SIGN_IDENTITY =' \
             'CODE_SIGN_IDENTITY[sdk=iphoneos*] =' \
             'EXPANDED_CODE_SIGN_IDENTITY = -' \
             'DEVELOPMENT_TEAM =' >> ios/Flutter/Secrets.xcconfig
+
+      # Headless CI runners have no Apple Developer Team or certificates.
+      # Strip target entitlements and project code-signing identities from
+      # project.pbxproj so Xcode does not abort an unsigned build with
+      # "Building a deployable iOS app requires a selected Development Team".
+      - name: Configure unsigned build settings for CI
+        run: |
+          python3 - <<'EOF'
+          with open('ios/Runner.xcodeproj/project.pbxproj', 'r', encoding='utf-8') as f:
+              s = f.read()
+          s = s.replace('CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;', '')
+          s = s.replace('"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";', '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";')
+          with open('ios/Runner.xcodeproj/project.pbxproj', 'w', encoding='utf-8') as f:
+              f.write(s)
+          print('Successfully configured project.pbxproj for unsigned headless build.')
+          EOF
 
       - name: Build unsigned iOS release (for physical devices)
         env:
