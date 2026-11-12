@@ -42,10 +42,12 @@ jobs:
         env:
           IOS_MAPS_API_KEY: ${{ secrets.IOS_MAPS_API_KEY || vars.IOS_MAPS_API_KEY }}
         run: |
-          if [ -n "$IOS_MAPS_API_KEY" ]; then
-            echo "MAPS_API_KEY = $IOS_MAPS_API_KEY" > ios/Flutter/Secrets.xcconfig
-            echo "MAPS_API_KEY injected into Secrets.xcconfig."
+          CLEAN_KEY="$(printf '%s' "$IOS_MAPS_API_KEY" | tr -d '\r\n' | sed -e 's/^[[:space:]"'\'']*//' -e 's/[[:space:]"'\'']*$//')"
+          if [ -n "$CLEAN_KEY" ]; then
+            printf 'MAPS_API_KEY = %s\n' "$CLEAN_KEY" > ios/Flutter/Secrets.xcconfig
+            echo "MAPS_API_KEY injected into Secrets.xcconfig (len=${#CLEAN_KEY}, prefix=${CLEAN_KEY:0:4}...)."
           else
+            printf 'MAPS_API_KEY =\n' > ios/Flutter/Secrets.xcconfig
             echo "::warning::IOS_MAPS_API_KEY not set in GitHub secrets! Google Maps tiles will not load on iOS."
           fi
 
@@ -62,6 +64,29 @@ jobs:
         run: |
           flutter build ios --simulator \
             --dart-define=GOOGLE_SERVER_CLIENT_ID="$GOOGLE_SERVER_CLIENT_ID"
+
+      - name: Verify Google Maps key in Info.plist
+        env:
+          IOS_MAPS_API_KEY: ${{ secrets.IOS_MAPS_API_KEY || vars.IOS_MAPS_API_KEY }}
+        run: |
+          set -euo pipefail
+          for plist in "build/ios/iphoneos/Runner.app/Info.plist" "build/ios/iphonesimulator/Runner.app/Info.plist"; do
+            if [ ! -f "$plist" ]; then
+              echo "::error::Missing built Info.plist at $plist"
+              exit 1
+            fi
+            KEY_VAL="$(plutil -extract GMSApiKey raw -o - "$plist" 2>/dev/null || true)"
+            if [ -z "$KEY_VAL" ] || [[ "$KEY_VAL" == \$* ]]; then
+              if [ -n "$IOS_MAPS_API_KEY" ]; then
+                echo "::error::GMSApiKey in $plist is empty or unresolved ('$KEY_VAL') even though IOS_MAPS_API_KEY was set!"
+                exit 1
+              else
+                echo "::warning::GMSApiKey in $plist is empty/unresolved (IOS_MAPS_API_KEY not set)."
+              fi
+            else
+              echo "Verified GMSApiKey in $plist (len=${#KEY_VAL}, prefix=${KEY_VAL:0:4}...)."
+            fi
+          done
 
       - name: Package artifacts
         run: |

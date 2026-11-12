@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/l10n/l10n_provider.dart';
+import '../core/l10n/language_selection_screen.dart';
 import '../data/repositories/repositories.dart';
 import '../features/traveller/auth/auth_screen.dart';
 import '../features/traveller/bookings/my_bookings_screen.dart';
@@ -28,13 +31,28 @@ final routerProvider = Provider<GoRouter>((ref) {
   // on a signed-in screen with a dead token until their next navigation.
   final authChanges = ValueNotifier<bool>(ref.read(authProvider));
   ref.listen(authProvider, (_, signedIn) => authChanges.value = signedIn);
-  ref.onDispose(authChanges.dispose);
+  final langChanges = ValueNotifier<bool>(ref.read(hasSelectedLanguageProvider));
+  ref.listen(hasSelectedLanguageProvider, (_, selected) => langChanges.value = selected);
+  final refreshListenable = Listenable.merge([authChanges, langChanges]);
+  ref.onDispose(() {
+    authChanges.dispose();
+    langChanges.dispose();
+  });
 
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/t',
-    refreshListenable: authChanges,
+    refreshListenable: refreshListenable,
+    redirect: (context, state) {
+      final hasSelectedLang = ref.read(hasSelectedLanguageProvider);
+      final isLangRoute = state.matchedLocation == '/t/language';
+      if (!hasSelectedLang && !isLangRoute) {
+        return '/t/language';
+      }
+      return null;
+    },
     routes: [
+      GoRoute(path: '/t/language', builder: (context, state) => const LanguageSelectionScreen()),
       GoRoute(path: '/t/auth', builder: (context, state) => const AuthScreen()),
       GoRoute(path: '/t/onboarding', builder: (context, state) => const OnboardingScreen()),
       GoRoute(path: '/t/guide', builder: (context, state) => const GuideScreen()),

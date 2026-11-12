@@ -8,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+import '../../../core/l10n/l10n_provider.dart';
+import '../../../core/l10n/language_selector_sheet.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../data/repositories/repositories.dart';
@@ -143,9 +145,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       }
     } on GoogleSignInException catch (e) {
       debugPrint('Google sign-in: ${e.code.name} ${e.description ?? ''}');
-      // Android's Credential Manager also reports setup problems (e.g. this
-      // build's signing SHA-1 not registered) as `canceled`, but with a
-      // description; only a bare cancel is the user closing the sheet.
       final detail = e.description?.trim() ?? '';
       if (e.code == GoogleSignInExceptionCode.canceled && detail.isEmpty) {
         cancelled = true;
@@ -202,7 +201,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       if (token == null) {
         err = 'Apple did not return a sign-in token. Please try again.';
       } else {
-        // Apple only provides the name on the very first sign-in.
         final fullName = [credential.givenName, credential.familyName]
             .whereType<String>()
             .where((p) => p.isNotEmpty)
@@ -213,7 +211,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             );
       }
     } on SignInWithAppleAuthorizationException catch (e) {
-      // Closing the Apple sheet isn't an error worth showing.
       if (e.code == AuthorizationErrorCode.canceled) {
         cancelled = true;
       } else {
@@ -231,7 +228,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       return;
     }
     if (cancelled) {
-      // User closed the Apple sheet: stay on the screen.
       setState(() => _busy = false);
       return;
     }
@@ -242,6 +238,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
+    final currentLang = ref.watch(appLanguageProvider);
     final isLogin = mode == _Mode.login;
     final isForgot = mode == _Mode.forgot;
     final isTwoFactor = mode == _Mode.twoFactor;
@@ -257,6 +255,34 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               children: [
                 const Illustration(kind: 'sunset'),
                 Positioned(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  right: 16,
+                  child: InkWell(
+                    onTap: () => showLanguageSelector(context, ref),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.35),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(currentLang.flag, style: const TextStyle(fontSize: 16)),
+                          const SizedBox(width: 6),
+                          Text(
+                            currentLang.nativeName,
+                            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
+                          const Icon(Icons.arrow_drop_down, color: Colors.white, size: 18),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
                   left: 24,
                   bottom: 20,
                   child: Column(
@@ -264,7 +290,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     children: [
                       Text('Spotto',
                           style: text.displaySmall?.copyWith(color: Colors.white)),
-                      Text('Sri Lanka, in your pocket',
+                      Text(l10n.welcomeSubtitle,
                           style: text.bodyLarge
                               ?.copyWith(color: Colors.white.withValues(alpha: 0.9))),
                     ],
@@ -285,8 +311,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         : isTwoFactor
                             ? 'Two-factor authentication'
                             : isLogin
-                                ? 'Welcome back'
-                                : 'Create your account',
+                                ? l10n.signIn
+                                : l10n.createAccount,
                     style: text.headlineSmall,
                   ),
                   const SizedBox(height: 8),
@@ -334,21 +360,21 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       TextField(
                           controller: _name,
                           textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(hintText: 'Name')),
+                          decoration: InputDecoration(hintText: l10n.fullName)),
                       const SizedBox(height: 12),
                     ],
                     TextField(
                         controller: _email,
                         keyboardType: TextInputType.emailAddress,
                         autocorrect: false,
-                        decoration: const InputDecoration(hintText: 'Email')),
+                        decoration: InputDecoration(hintText: l10n.emailAddress)),
                     if (!isForgot) ...[
                       const SizedBox(height: 12),
                       TextField(
                           controller: _password,
                           obscureText: true,
                           onSubmitted: (_) => _submit(),
-                          decoration: const InputDecoration(hintText: 'Password')),
+                          decoration: InputDecoration(hintText: l10n.password)),
                     ],
                     if (isLogin) ...[
                       Align(
@@ -412,8 +438,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                               : isTwoFactor
                                   ? 'Verify and sign in'
                                   : isLogin
-                                      ? 'Sign in'
-                                      : 'Create account'),
+                                      ? l10n.signIn
+                                      : l10n.createAccount),
                     ),
                     if (!isForgot && !isTwoFactor && _googleSignInAvailable) ...[
                       const SizedBox(height: 12),

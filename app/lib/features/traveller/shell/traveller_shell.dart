@@ -3,12 +3,14 @@
 // Guide FAB.
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n_provider.dart';
 import '../../../core/theme/palette.dart';
 import '../stories/story_player.dart';
 
-class TravellerShell extends StatefulWidget {
+class TravellerShell extends ConsumerStatefulWidget {
   final StatefulNavigationShell shell;
 
   /// The current route, so the mini-player can hide on the story it plays.
@@ -16,14 +18,16 @@ class TravellerShell extends StatefulWidget {
   const TravellerShell({super.key, required this.shell, required this.location});
 
   @override
-  State<TravellerShell> createState() => _TravellerShellState();
+  ConsumerState<TravellerShell> createState() => _TravellerShellState();
 }
 
-class _TravellerShellState extends State<TravellerShell> {
+class _TravellerShellState extends ConsumerState<TravellerShell> {
   Offset _fabPosition = const Offset(300, 500);
 
   @override
   Widget build(BuildContext context) {
+    final l10n = ref.watch(l10nProvider);
+
     return PopScope(
       canPop: widget.shell.currentIndex == 0,
       onPopInvokedWithResult: (didPop, result) {
@@ -81,12 +85,27 @@ class _TravellerShellState extends State<TravellerShell> {
               onDestinationSelected: (i) => widget.shell.goBranch(i, initialLocation: i == widget.shell.currentIndex),
               backgroundColor: Colors.white,
               indicatorColor: SpottoColors.accentTint,
-              destinations: const [
-                NavigationDestination(icon: Icon(Icons.explore_outlined), selectedIcon: Icon(Icons.explore), label: 'Discover'),
-                NavigationDestination(icon: Icon(Icons.place_outlined), selectedIcon: Icon(Icons.place), label: 'Spots'),
+              destinations: [
                 NavigationDestination(
-                    icon: Icon(Icons.auto_stories_outlined), selectedIcon: Icon(Icons.auto_stories), label: 'Stories'),
-                NavigationDestination(icon: Icon(Icons.route_outlined), selectedIcon: Icon(Icons.route), label: 'Trip'),
+                  icon: const Icon(Icons.explore_outlined),
+                  selectedIcon: const Icon(Icons.explore),
+                  label: l10n.navDiscover,
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.place_outlined),
+                  selectedIcon: const Icon(Icons.place),
+                  label: l10n.navSpots,
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.auto_stories_outlined),
+                  selectedIcon: const Icon(Icons.auto_stories),
+                  label: l10n.navStories,
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.route_outlined),
+                  selectedIcon: const Icon(Icons.route),
+                  label: l10n.navTrip,
+                ),
               ],
             ),
           ],

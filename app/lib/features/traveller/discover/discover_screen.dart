@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/api/google_places_service.dart';
+import '../../../core/l10n/l10n_provider.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/category_icons.dart';
 import '../../../core/widgets/map_marker.dart';
@@ -617,7 +618,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     controller: _searchController,
                     onChanged: _onSearchQueryChanged,
                     decoration: InputDecoration(
-                      hintText: 'Search spots or Google Maps…',
+                      hintText: ref.watch(l10nProvider).searchPlaceholder,
                       prefixIcon: const Icon(Icons.search, size: 18, color: SpottoColors.muted),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(

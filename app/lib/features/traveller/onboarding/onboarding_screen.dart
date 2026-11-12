@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n_provider.dart';
+import '../../../core/l10n/language_selector_sheet.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/pill.dart';
 import '../../../core/widgets/spotto_card.dart';
@@ -60,6 +62,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
+    final currentLang = ref.watch(appLanguageProvider);
 
     Widget toggleRow(
       String title,
@@ -110,6 +114,33 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Spacer(),
+                   Align(
+                     alignment: Alignment.topRight,
+                     child: InkWell(
+                       onTap: () => showLanguageSelector(context, ref),
+                       borderRadius: BorderRadius.circular(20),
+                       child: Container(
+                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                         decoration: BoxDecoration(
+                           color: SpottoColors.accentTint,
+                           borderRadius: BorderRadius.circular(20),
+                         ),
+                         child: Row(
+                           mainAxisSize: MainAxisSize.min,
+                           children: [
+                             Text(currentLang.flag, style: const TextStyle(fontSize: 16)),
+                             const SizedBox(width: 6),
+                             Text(
+                               currentLang.nativeName,
+                               style: const TextStyle(color: SpottoColors.accent, fontSize: 13, fontWeight: FontWeight.w700),
+                             ),
+                             const Icon(Icons.arrow_drop_down, color: SpottoColors.accent, size: 18),
+                           ],
+                         ),
+                       ),
+                     ),
+                   ),
+                   const Spacer(),
                   Text('Ayubowan 👋', style: text.displaySmall),
                   const SizedBox(height: 8),
                   Text(
@@ -121,7 +152,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     width: double.infinity,
                     child: FilledButton(
                       onPressed: () => setState(() => step = 1),
-                      child: const Text('Let’s go'),
+                      child: Text(l10n.getStarted),
                     ),
                   ),
                 ],
@@ -169,7 +200,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     width: double.infinity,
                     child: FilledButton(
                       onPressed: styles.isEmpty ? null : () => setState(() => step = 2),
-                      child: const Text('Next'),
+                      child: Text(l10n.next),
                     ),
                   ),
                 ],
@@ -201,7 +232,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     width: double.infinity,
                     child: FilledButton(
                       onPressed: picked.isEmpty ? null : () => setState(() => step = 3),
-                      child: const Text('Next'),
+                      child: Text(l10n.next),
                     ),
                   ),
                 ],
@@ -290,7 +321,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                               height: 18,
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                             )
-                          : const Text('Start exploring'),
+                          : Text(l10n.getStarted),
                     ),
                   ),
                 ],

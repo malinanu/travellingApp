@@ -38,6 +38,8 @@ abstract final class StoreKeys {
   static const quest = 'spotto_quest'; // {day, data} of the last /me/quest
   static const weather = 'spotto_weather'; // {at, data} of the last current-location /weather
   static const defaultLocation = 'spotto_default_loc'; // staging default location override from /config
+  static const appLanguage = 'spotto_app_language'; // active language code (e.g. en, nl, de, fr, ru, si)
+  static const hasSelectedLanguage = 'spotto_has_selected_lang'; // whether traveller completed initial language choice
 }
 
 class LocalStore {

@@ -17,20 +17,21 @@ import native_geofence
     // real key (e.g. a CI build without the IOS_MAPS_API_KEY secret) a
     // placeholder keeps the app alive; the map just won't load tiles.
     var mapsApiKey = "MISSING_MAPS_API_KEY"
-    if let configured = Bundle.main.object(forInfoDictionaryKey: "GMSApiKey") as? String,
-      !configured.isEmpty,
-      !configured.hasPrefix("$(")
-    {
-      mapsApiKey = configured
+    if let raw = Bundle.main.object(forInfoDictionaryKey: "GMSApiKey") as? String {
+      let cleaned = raw
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+      if !cleaned.isEmpty, !cleaned.hasPrefix("$(") {
+        mapsApiKey = cleaned
+      }
     }
-    GMSServices.provideAPIKey(mapsApiKey)
-    #if DEBUG
+    let provided = GMSServices.provideAPIKey(mapsApiKey)
+    let bundleId = Bundle.main.bundleIdentifier ?? "unknown"
     if mapsApiKey == "MISSING_MAPS_API_KEY" {
-      NSLog("[Spotto iOS] ⚠️ GMSApiKey is MISSING or unresolved in Info.plist! Google Maps tiles will not load. Ensure MAPS_API_KEY is configured in Secrets.xcconfig.")
+      NSLog("[Spotto iOS] ⚠️ GMSApiKey is MISSING or unresolved in Info.plist (bundleId=%@)! Google Maps tiles will not load. Ensure MAPS_API_KEY is configured in Secrets.xcconfig.", bundleId)
     } else {
-      NSLog("[Spotto iOS] ✅ Google Maps SDK initialized with key prefix: %@...", String(mapsApiKey.prefix(8)))
+      NSLog("[Spotto iOS] ✅ Google Maps SDK initialized (bundleId=%@, prefix=%@..., len=%d, ok=%@)", bundleId, String(mapsApiKey.prefix(4)), mapsApiKey.count, provided ? "true" : "false")
     }
-    #endif
     // Nearby saved-place alerts: the geofence callback runs in a background
     // engine, which needs the app's plugins (e.g. local notifications).
     NativeGeofencePlugin.setPluginRegistrantCallback { registry in

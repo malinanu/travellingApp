@@ -15,6 +15,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/l10n/l10n_provider.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../data/catalog/app_options.dart' as data;
@@ -235,6 +236,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
         data: {
           if (_conversationId != null) 'conversationId': _conversationId,
           'message': q,
+          'language': ref.read(appLanguageProvider).code,
           'locationKnown': locationKnown,
           if (locationKnown) 'lat': pos.lat,
           if (locationKnown) 'lng': pos.lng,
@@ -722,6 +724,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
     final places = ref.watch(placesProvider);
     final userPrefs = ref.watch(prefsProvider);
     final locationResult = ref.watch(devicePositionProvider).value?.$2;
@@ -760,7 +763,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Local Guide', style: text.titleMedium?.copyWith(fontSize: 17)),
+                        Text(l10n.localGuide, style: text.titleMedium?.copyWith(fontSize: 17)),
                         Row(
                           children: [
                             Container(
@@ -770,7 +773,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                                   color: Color(0xFF16A34A), shape: BoxShape.circle),
                             ),
                             const SizedBox(width: 5),
-                            Text('Tuned for $_styleLabel',
+                            Text(l10n.tunedFor(_styleLabel),
                                 style:
                                     text.bodySmall?.copyWith(color: SpottoColors.muted)),
                           ],
@@ -965,7 +968,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                         maxLines: 3,
                         textInputAction: TextInputAction.send,
                         decoration: const InputDecoration(
-                          hintText: 'Ask your local friend…',
+                          hintText: l10n.askYourLocalFriend,
                           filled: false,
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,

@@ -18,6 +18,8 @@ import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import 'payment_methods_screen.dart';
 import 'profile_subpages.dart';
+import '../../../core/l10n/l10n_provider.dart';
+import '../../../core/l10n/language_selector_sheet.dart';
 
 const _danger = Color(0xFFE11D48);
 const _saved = Color(0xFF16A34A);
@@ -128,6 +130,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
 
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
+    final currentLang = ref.watch(appLanguageProvider);
     final avatarUrl = ref.watch(meProvider)?['avatarUrl'] as String? ?? '';
     // initState fills the controllers from whatever meProvider had then —
     // nothing yet, or the /me saved on the device. When a fresher /me
@@ -171,7 +175,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 children: [
                   circleButton(Icons.chevron_left, () => context.pop()),
                   Expanded(
-                    child: Center(child: Text('Profile', style: text.titleMedium?.copyWith(fontSize: 17))),
+                    child: Center(child: Text(l10n.profile, style: text.titleMedium?.copyWith(fontSize: 17))),
                   ),
                   PressScale(
                     scale: 0.95,
@@ -190,7 +194,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             const SizedBox(width: 5),
                           ],
                           Text(
-                            _savedFlash ? 'Saved' : 'Save',
+                            _savedFlash ? l10n.saved : l10n.save,
                             style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Colors.white),
                           ),
                         ],
@@ -353,7 +357,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ]),
                   const SizedBox(height: 22),
 
-                  sectionCard(context, 'Travel style', [
+                  sectionCard(context, l10n.travelStyle, [
                     GridView.count(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
@@ -406,7 +410,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ]),
                   const SizedBox(height: 22),
 
-                  sectionCard(context, 'Interests', [
+                  sectionCard(context, l10n.interests, [
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -452,7 +456,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ]),
                   const SizedBox(height: 22),
 
-                  sectionCard(context, 'Notifications', [
+                  sectionCard(context, l10n.notifications, [
                     for (final (i, n) in const [
                       (
                         k: 'deals',
@@ -508,27 +512,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
                   const SizedBox(height: 22),
 
-                  sectionCard(context, 'Account', [
+                  sectionCard(context, l10n.account, [
+                    profRow(
+                      context,
+                      Icons.language_rounded,
+                      l10n.language,
+                      sub: '${currentLang.flag} ${currentLang.nativeName}',
+                      onTap: () => showLanguageSelector(context, ref),
+                    ),
+                    const Divider(height: 1),
                     profRow(
                       context,
                       Icons.event_available_outlined,
-                      'My Bookings',
-                      sub: 'Upcoming & past bookings',
+                      l10n.myBookings,
+                      sub: l10n.myBookingsSubtitle,
                       onTap: () => context.push('/t/bookings'),
                     ),
                     const Divider(height: 1),
                     profRow(
                       context,
                       Icons.lock_outline,
-                      'Password & security',
-                      sub: 'Change password, 2FA',
+                      l10n.passwordAndSecurity,
+                      sub: l10n.passwordAndSecuritySubtitle,
                       onTap: () => setState(() => _sub = 'security'),
                     ),
                     const Divider(height: 1),
                     profRow(
                       context,
                       Icons.credit_card,
-                      'Saved payment',
+                      l10n.savedPayment,
                       sub: _savedCardLabel(ref.watch(paymentMethodsProvider).value),
                       onTap: () => Navigator.push(
                           context, MaterialPageRoute(builder: (_) => const PaymentMethodsScreen())),
@@ -537,12 +549,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     profRow(
                       context,
                       Icons.verified_user_outlined,
-                      'Privacy',
-                      sub: 'Location & data sharing',
+                      l10n.privacy,
+                      sub: l10n.privacySubtitle,
                       onTap: () => setState(() => _sub = 'privacy'),
                     ),
                     const Divider(height: 1),
-                    profRow(context, Icons.help_outline, 'Help & support', onTap: () => setState(() => _sub = 'help')),
+                    profRow(context, Icons.help_outline, l10n.helpAndSupport, onTap: () => setState(() => _sub = 'help')),
                   ]),
                   const SizedBox(height: 22),
 
@@ -550,7 +562,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     profRow(
                       context,
                       Icons.logout,
-                      'Log out',
+                      l10n.logOut,
                       danger: true,
                       onTap: () {
                         ref.read(authProvider.notifier).signOut();

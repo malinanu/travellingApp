@@ -113,6 +113,7 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ConversationID string  `json:"conversationId"`
 		Message        string  `json:"message"`
+		Language       string  `json:"language"`
 		Lat            float64 `json:"lat"`
 		Lng            float64 `json:"lng"`
 		// False when the app has no real fix (permission denied, location
@@ -174,7 +175,7 @@ func (s *Server) handleGuideChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	loc := newGuideLocation(req.Lat, req.Lng, req.LocationKnown, s.DefaultLocationMirissa || userDemoPrivilege)
-	res, meta, err := s.runGuideChat(ctx, c.Subject, history, req.Message, loc)
+	res, meta, err := s.runGuideChat(ctx, c.Subject, history, req.Message, loc, req.Language)
 	latencyMs := int(time.Since(start).Milliseconds())
 	if err != nil {
 		status := "error"
@@ -412,7 +413,7 @@ type guideChatResult struct {
 // runGuideChat builds the conversation + tools, and runs the tool-calling
 // loop until the model gives a final text answer, calls a card tool, or
 // guideMaxToolRounds is exhausted.
-func (s *Server) runGuideChat(ctx context.Context, travellerID string, history []domain.GuideMessage, userMessage string, loc guideLocation) (guideChatResult, guideRequestMeta, error) {
+func (s *Server) runGuideChat(ctx context.Context, travellerID string, history []domain.GuideMessage, userMessage string, loc guideLocation, lang ...string) (guideChatResult, guideRequestMeta, error) {
 	var meta guideRequestMeta
 	weatherCondition := s.guideWeatherCondition(ctx, loc.Lat, loc.Lng)
 	stylesText, interestsText, bookmarksText, reviewsText, bookmarkedIDs, favoriteIDs, avoidIDs := s.guideTravellerProfileData(ctx, travellerID)
@@ -461,12 +462,30 @@ func (s *Server) runGuideChat(ctx context.Context, travellerID string, history [
 		avoidIDs = dedupe(append(avoidIDs, convPlaceIDs...))
 	}
 
+	sysPrompt := guideSystemPrompt(time.Now(), loc, stylesText, weatherCondition, guidePromptProfile{
+		Interests: interestsText,
+		Bookmarks: bookmarksText,
+		Reviews:   reviewsText,
+	})
+	if len(lang) > 0 && strings.TrimSpace(lang[0]) != "" {
+		langCode := strings.ToLower(strings.TrimSpace(lang[0]))
+		langNames := map[string]string{
+			"nl": "Dutch (Nederlands)",
+			"de": "German (Deutsch)",
+			"fr": "French (Français)",
+			"ru": "Russian (Русский)",
+			"si": "Sinhala (සිංහල)",
+			"en": "English",
+		}
+		name, ok := langNames[langCode]
+		if !ok {
+			name = langCode
+		}
+		sysPrompt += fmt.Sprintf("\n\nTraveller's preferred language: %s (code: %s). Reply naturally to the traveller in this language while keeping place names and references recognizable.", name, langCode)
+	}
+
 	messages := []gemini.Message{
-		{Role: "system", Content: guideSystemPrompt(time.Now(), loc, stylesText, weatherCondition, guidePromptProfile{
-			Interests: interestsText,
-			Bookmarks: bookmarksText,
-			Reviews:   reviewsText,
-		})},
+		{Role: "system", Content: sysPrompt},
 	}
 	// Plans from the whole conversation stay addable to the calendar; only
 	// the turns replayed to the model are capped.

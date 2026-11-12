@@ -16,6 +16,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/upload_service.dart';
+import '../../../core/l10n/l10n_provider.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/utils/debounced_saver.dart';
 import '../../../core/widgets/illustration.dart';
@@ -74,6 +75,7 @@ class BusinessDrawerBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
     final claimedCode = ref.watch(claimsProvider)[place.id];
 
     // Live Google Places details (phone/website/wheelchair/price level) —
@@ -696,6 +698,7 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
 
     // GET /places/{id} is the only response that includes the caller's own
     // latest check-in (myVibe) — the bulk list this sheet was opened from
@@ -1080,7 +1083,7 @@ class _DealCardState extends ConsumerState<DealCard> {
     HapticFeedback.mediumImpact();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('🎉 Offer used! Enjoy your discount.'),
+        content: Text('🎉 ${ref.read(l10nProvider).offerUsedPerk}'),
         duration: Duration(seconds: 4),
         behavior: SnackBarBehavior.floating,
       ),
@@ -1093,14 +1096,14 @@ class _DealCardState extends ConsumerState<DealCard> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Dismiss Offer?'),
+        title: Text(ref.read(l10nProvider).dismiss),
         content: const Text('Dismiss this claimed offer code? You can reclaim it later if still available.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(ref.read(l10nProvider).cancel)),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: SpottoColors.ink),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Dismiss'),
+            child: Text(ref.read(l10nProvider).dismiss),
           ),
         ],
       ),
@@ -1122,14 +1125,14 @@ class _DealCardState extends ConsumerState<DealCard> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Mark as Used?'),
+        title: Text(ref.read(l10nProvider).markAsUsed),
         content: const Text('Have you used this offer at the counter? The offer card will disappear from your app.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(ref.read(l10nProvider).cancel)),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: SpottoColors.sun, foregroundColor: SpottoColors.ink),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Yes, Mark as Used'),
+            child: Text(ref.read(l10nProvider).markAsUsed),
           ),
         ],
       ),
@@ -1153,6 +1156,7 @@ class _DealCardState extends ConsumerState<DealCard> {
     final place = widget.place;
     final claimedCode = widget.claimedCode;
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
     final claimed = claimedCode != null;
 
     if (ref.watch(redeemedDealsProvider).contains(place.id)) {
@@ -1218,7 +1222,7 @@ class _DealCardState extends ConsumerState<DealCard> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text('Hide QR', style: text.labelSmall?.copyWith(color: SpottoColors.paleTeal)),
+                                Text(l10n.hideQrCode, style: text.labelSmall?.copyWith(color: SpottoColors.paleTeal)),
                                 const SizedBox(width: 2),
                                 const Icon(Icons.keyboard_arrow_up_rounded, size: 18, color: SpottoColors.paleTeal),
                               ],
@@ -1246,7 +1250,7 @@ class _DealCardState extends ConsumerState<DealCard> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text('Show at counter', style: text.labelMedium?.copyWith(color: SpottoColors.paleTeal)),
+                              Text(l10n.showAtCounter, style: text.labelMedium?.copyWith(color: SpottoColors.paleTeal)),
                               const SizedBox(height: 4),
                               Text(
                                 claimedCode,
@@ -1279,7 +1283,7 @@ class _DealCardState extends ConsumerState<DealCard> {
                           ),
                           icon: const Icon(Icons.check_circle_outline_rounded, size: 14, color: SpottoColors.sun),
                           label: Text(
-                            'Mark as used',
+                            l10n.markAsUsed,
                             style: text.labelSmall?.copyWith(color: SpottoColors.sun),
                           ),
                         ),
@@ -1292,7 +1296,7 @@ class _DealCardState extends ConsumerState<DealCard> {
                             visualDensity: VisualDensity.compact,
                           ),
                           child: Text(
-                            'Dismiss',
+                            l10n.dismiss,
                             style: text.labelSmall?.copyWith(color: Colors.white60),
                           ),
                         ),
@@ -1331,7 +1335,7 @@ class _DealCardState extends ConsumerState<DealCard> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Tap to show QR code',
+                              l10n.tapToShowQr,
                               style: text.labelSmall?.copyWith(color: SpottoColors.paleTeal),
                             ),
                           ],
@@ -2005,6 +2009,7 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
     final reviewsAsync = ref.watch(placeReviewsProvider(widget.place.id));
 
     return Column(
@@ -2335,6 +2340,7 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
     final photos = ref.watch(placePhotosProvider(widget.place.id)).value ?? const <PlacePhoto>[];
     final urls = [for (final p in photos) resolveMediaUrl(p.url)];
     // Grid tiles load the small thumbnail (falling back to the full image

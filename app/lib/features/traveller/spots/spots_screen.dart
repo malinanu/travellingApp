@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/l10n/l10n_provider.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/utils/vibe_matching.dart';
 import '../../../core/widgets/category_icons.dart';
@@ -215,7 +216,7 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
                   children: [
                     ListTile(
                       leading: const Icon(Icons.public_rounded, color: SpottoColors.accent),
-                      title: const Text('All regions', style: TextStyle(fontWeight: FontWeight.w600)),
+                      title: Text(ref.read(l10nProvider).allRegions, style: const TextStyle(fontWeight: FontWeight.w600)),
                       trailing: _regionId == null ? const Icon(Icons.check, color: SpottoColors.accent) : null,
                       onTap: () => Navigator.pop(context, ''),
                     ),
@@ -240,6 +241,7 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
     final places = ref.watch(placesProvider);
     final locationStatus = ref.watch(placesLocationStatusProvider);
     final userPrefs = ref.watch(prefsProvider);
@@ -611,19 +613,20 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
 
 // ── Search & Filter Widgets ─────────────────────────────────────────────────
 
-class _SearchField extends StatelessWidget {
+class _SearchField extends ConsumerWidget {
   const _SearchField({required this.controller, required this.onChanged});
 
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = ref.watch(l10nProvider);
     return TextField(
       controller: controller,
       onChanged: onChanged,
       decoration: InputDecoration(
-        hintText: 'Search spots — name, type, region…',
+        hintText: l10n.searchPlaceholder,
         prefixIcon: const Icon(Icons.search, size: 20, color: SpottoColors.muted),
         suffixIcon: controller.text.isNotEmpty
             ? IconButton(
@@ -656,7 +659,7 @@ class _SearchField extends StatelessWidget {
 
 // ── Multi-Section Headers & Carousels ───────────────────────────────────────
 
-class _SpotSectionHeader extends StatelessWidget {
+class _SpotSectionHeader extends ConsumerWidget {
   const _SpotSectionHeader({
     required this.title,
     this.pill,
@@ -670,8 +673,9 @@ class _SpotSectionHeader extends StatelessWidget {
   final VoidCallback? onActionTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -789,7 +793,7 @@ class _QuadTileCarousel extends StatelessWidget {
 
 /// Circular category carousel featuring the 7 curated category avatars
 /// with real-time spot counts, followed by "All Regions" at the last position.
-class _CategoryCircleCarousel extends StatelessWidget {
+class _CategoryCircleCarousel extends ConsumerWidget {
   const _CategoryCircleCarousel({
     required this.selectedCategory,
     required this.selectedRegionName,
@@ -809,8 +813,9 @@ class _CategoryCircleCarousel extends StatelessWidget {
   final VoidCallback onPickRegion;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
 
     // Total items: 7 categories + 1 (Regions item at last position) = 8 items
     return SizedBox(
@@ -858,7 +863,7 @@ class _CategoryCircleCarousel extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      selectedRegionName ?? 'All Regions',
+                      selectedRegionName ?? l10n.allRegions,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
@@ -1262,15 +1267,16 @@ class _SpotTileCard extends ConsumerWidget {
 
 // ── Location Hint Banner ────────────────────────────────────────────────────
 
-class _LocationHintBanner extends StatelessWidget {
+class _LocationHintBanner extends ConsumerWidget {
   const _LocationHintBanner({required this.status, required this.onTap});
 
   final PlacesLocationStatus status;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
+    final l10n = ref.watch(l10nProvider);
     final label = status == PlacesLocationStatus.deniedForever
         ? 'Location is off — open Settings to see nearest spots first'
         : 'Enable location to see nearest spots first';
