@@ -118,7 +118,7 @@ class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScree
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: Colors.black.withValues(alpha: 0.04),
                     blurRadius: 10,
                     offset: const Offset(0, -4),
                   ),
@@ -183,7 +183,7 @@ class _LanguageCard extends StatelessWidget {
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: SpottoColors.accent.withOpacity(0.12),
+                    color: SpottoColors.accent.withValues(alpha: 0.12),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),

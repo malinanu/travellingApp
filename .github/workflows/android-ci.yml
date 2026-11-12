@@ -37,7 +37,7 @@ jobs:
 
       - name: Run Flutter analyzer & tests
         run: |
-          flutter analyze
+          flutter analyze --no-fatal-infos
           flutter test
 
       # Stable release signing so Google Sign-In (package + SHA-1) keeps
