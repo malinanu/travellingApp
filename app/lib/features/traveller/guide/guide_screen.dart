@@ -967,7 +967,7 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
                         minLines: 1,
                         maxLines: 3,
                         textInputAction: TextInputAction.send,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           hintText: l10n.askYourLocalFriend,
                           filled: false,
                           border: InputBorder.none,

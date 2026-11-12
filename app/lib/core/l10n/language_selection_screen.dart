@@ -177,7 +177,7 @@ class _LanguageCard extends StatelessWidget {
           color: isSelected ? SpottoColors.accentTint : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? SpottoColors.accent : SpottoColors.outline,
+            color: isSelected ? SpottoColors.accent : SpottoColors.line,
             width: isSelected ? 2 : 1,
           ),
           boxShadow: isSelected

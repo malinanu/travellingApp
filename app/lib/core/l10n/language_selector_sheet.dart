@@ -41,7 +41,7 @@ class _LanguageSelectorSheet extends ConsumerWidget {
               height: 4,
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: SpottoColors.outline,
+                color: SpottoColors.line,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -87,7 +87,7 @@ class _LanguageSelectorSheet extends ConsumerWidget {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: AppLanguage.values.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 6),
+              separatorBuilder: (_, _) => const SizedBox(height: 6),
               itemBuilder: (context, index) {
                 final lang = AppLanguage.values[index];
                 final isSelected = lang == currentLang;

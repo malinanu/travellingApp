@@ -75,7 +75,6 @@ class BusinessDrawerBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
-    final l10n = ref.watch(l10nProvider);
     final claimedCode = ref.watch(claimsProvider)[place.id];
 
     // Live Google Places details (phone/website/wheelchair/price level) —
@@ -698,7 +697,6 @@ class _VibeCheckState extends ConsumerState<_VibeCheck> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final l10n = ref.watch(l10nProvider);
 
     // GET /places/{id} is the only response that includes the caller's own
     // latest check-in (myVibe) — the bulk list this sheet was opened from
@@ -1082,7 +1080,7 @@ class _DealCardState extends ConsumerState<DealCard> {
     if (!mounted) return;
     HapticFeedback.mediumImpact();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text('🎉 ${ref.read(l10nProvider).offerUsedPerk}'),
         duration: Duration(seconds: 4),
         behavior: SnackBarBehavior.floating,
@@ -2009,7 +2007,6 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final l10n = ref.watch(l10nProvider);
     final reviewsAsync = ref.watch(placeReviewsProvider(widget.place.id));
 
     return Column(
@@ -2340,7 +2337,6 @@ class _TravellerPhotosState extends ConsumerState<_TravellerPhotos> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final l10n = ref.watch(l10nProvider);
     final photos = ref.watch(placePhotosProvider(widget.place.id)).value ?? const <PlacePhoto>[];
     final urls = [for (final p in photos) resolveMediaUrl(p.url)];
     // Grid tiles load the small thumbnail (falling back to the full image

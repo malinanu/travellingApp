@@ -241,7 +241,6 @@ class _SpotsScreenState extends ConsumerState<SpotsScreen> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final l10n = ref.watch(l10nProvider);
     final places = ref.watch(placesProvider);
     final locationStatus = ref.watch(placesLocationStatusProvider);
     final userPrefs = ref.watch(prefsProvider);
@@ -675,7 +674,6 @@ class _SpotSectionHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
-    final l10n = ref.watch(l10nProvider);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1276,7 +1274,6 @@ class _LocationHintBanner extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
-    final l10n = ref.watch(l10nProvider);
     final label = status == PlacesLocationStatus.deniedForever
         ? 'Location is off — open Settings to see nearest spots first'
         : 'Enable location to see nearest spots first';
