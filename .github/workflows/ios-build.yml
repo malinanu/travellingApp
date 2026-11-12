@@ -37,7 +37,8 @@ jobs:
         run: flutter pub get
 
       # Secrets.xcconfig is gitignored, so without this the CI build has an
-      # empty Google Maps key and the map shows no tiles.
+      # empty Google Maps key and the map shows no tiles. Also disable code
+      # signing at the Runner target xcconfig level for headless CI builds.
       - name: Write Google Maps key for iOS
         env:
           IOS_MAPS_API_KEY: ${{ secrets.IOS_MAPS_API_KEY || vars.IOS_MAPS_API_KEY }}
@@ -50,6 +51,13 @@ jobs:
             printf 'MAPS_API_KEY =\n' > ios/Flutter/Secrets.xcconfig
             echo "::warning::IOS_MAPS_API_KEY not set in GitHub secrets! Google Maps tiles will not load on iOS."
           fi
+          printf '%s\n' \
+            'CODE_SIGNING_ALLOWED = NO' \
+            'CODE_SIGNING_REQUIRED = NO' \
+            'CODE_SIGN_IDENTITY =' \
+            'CODE_SIGN_IDENTITY[sdk=iphoneos*] =' \
+            'EXPANDED_CODE_SIGN_IDENTITY = -' \
+            'DEVELOPMENT_TEAM =' >> ios/Flutter/Secrets.xcconfig
 
       - name: Build unsigned iOS release (for physical devices)
         env:
