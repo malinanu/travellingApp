@@ -58,10 +58,11 @@ jobs:
             'CODE_SIGN_IDENTITY =' \
             'CODE_SIGN_IDENTITY[sdk=iphoneos*] =' \
             'EXPANDED_CODE_SIGN_IDENTITY = -' \
-            'DEVELOPMENT_TEAM =' >> ios/Flutter/Secrets.xcconfig
+            'CODE_SIGN_STYLE = Manual' \
+            'DEVELOPMENT_TEAM = 0000000000' >> ios/Flutter/Secrets.xcconfig
 
       # Headless CI runners have no Apple Developer Team or certificates.
-      # Strip target entitlements and project code-signing identities from
+      # Strip target entitlements, clear identities, and set manual signing in
       # project.pbxproj so Xcode does not abort an unsigned build with
       # "Building a deployable iOS app requires a selected Development Team".
       - name: Configure unsigned build settings for CI
@@ -71,6 +72,7 @@ jobs:
               s = f.read()
           s = s.replace('CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;', '')
           s = s.replace('"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";', '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";')
+          s = s.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
           with open('ios/Runner.xcodeproj/project.pbxproj', 'w', encoding='utf-8') as f:
               f.write(s)
           print('Successfully configured project.pbxproj for unsigned headless build.')
@@ -80,7 +82,7 @@ jobs:
         env:
           GOOGLE_SERVER_CLIENT_ID: ${{ secrets.GOOGLE_SERVER_CLIENT_ID || vars.GOOGLE_SERVER_CLIENT_ID }}
         run: |
-          flutter build ios --release --no-codesign \
+          flutter build ios --release --no-codesign --verbose \
             --dart-define=GOOGLE_SERVER_CLIENT_ID="$GOOGLE_SERVER_CLIENT_ID"
 
       - name: Build iOS Simulator app (for Appetize.io browser testing)
