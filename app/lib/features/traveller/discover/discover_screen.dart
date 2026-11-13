@@ -42,6 +42,14 @@ const _kBannerSlotSize = Size(175, 62);
 const _kAvatarSlotSize = Size(48, 48);
 const _kLocationDotSlotSize = Size(34, 34);
 
+String _colorKey(Color c) {
+  try {
+    return c.toARGB32().toString();
+  } catch (_) {
+    return '${(c.a * 255).round()}_${(c.r * 255).round()}_${(c.g * 255).round()}_${(c.b * 255).round()}';
+  }
+}
+
 String _myInitial(WidgetRef ref) {
   final name = ref.watch(meProvider)?['name'] as String?;
   return name != null && name.isNotEmpty ? name[0].toUpperCase() : '?';
@@ -349,7 +357,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       final BitmapDescriptor icon_;
       if (showBanner) {
         final key =
-            'banner|${p.id}|${color.toARGB32()}|${icon.codePoint}|${p.name}|'
+            'banner|${p.id}|${_colorKey(color)}|${icon.codePoint}|${p.name}|'
             '${p.deal.active}|$isFavorite|$inTripCalendar|$matchesInterest|$emphasized';
         icon_ = _resolveBitmap(
           key: key,
@@ -370,7 +378,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       } else {
         final vibeIcon = _vibeBadgeIcon(p);
         final key =
-            'pin|${color.toARGB32()}|${icon.codePoint}|${p.deal.active}|'
+            'pin|${_colorKey(color)}|${icon.codePoint}|${p.deal.active}|'
             '$pinEmphasized|${vibeIcon?.codePoint}';
         icon_ = _resolveBitmap(
           key: key,
@@ -527,6 +535,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     return Stack(
       fit: StackFit.expand,
       children: [
+        // Styled map background while native tiles initialize
+        const ColoredBox(color: Color(0xFFF5F1E8)),
+
         // Interactive Google Maps engine
         GoogleMap(
           initialCameraPosition: const CameraPosition(target: _kDefaultMapCenter, zoom: _kDefaultMapZoom),
