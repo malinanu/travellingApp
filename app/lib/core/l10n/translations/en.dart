@@ -165,6 +165,12 @@ class EnStrings implements AppStrings {
   @override
   String get offerUsedPerk => 'Offer used! Enjoy your perk.';
   @override
+  String get markAsUsedTitle => 'Mark as Used?';
+  @override
+  String get markAsUsedConfirm => 'Yes, Mark as Used';
+  @override
+  String get dismissOfferTitle => 'Dismiss Offer?';
+  @override
   String get rateAgainIn15Minutes => 'you can rate this place again in 15 minutes';
 
   // ── Profile & Settings ──────────────────────────────────────────────────

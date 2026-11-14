@@ -1094,7 +1094,7 @@ class _DealCardState extends ConsumerState<DealCard> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(ref.read(l10nProvider).dismiss),
+        title: Text(ref.read(l10nProvider).dismissOfferTitle),
         content: const Text('Dismiss this claimed offer code? You can reclaim it later if still available.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(ref.read(l10nProvider).cancel)),
@@ -1123,14 +1123,14 @@ class _DealCardState extends ConsumerState<DealCard> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(ref.read(l10nProvider).markAsUsed),
+        title: Text(ref.read(l10nProvider).markAsUsedTitle),
         content: const Text('Have you used this offer at the counter? The offer card will disappear from your app.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(ref.read(l10nProvider).cancel)),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: SpottoColors.sun, foregroundColor: SpottoColors.ink),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ref.read(l10nProvider).markAsUsed),
+            child: Text(ref.read(l10nProvider).markAsUsedConfirm),
           ),
         ],
       ),
