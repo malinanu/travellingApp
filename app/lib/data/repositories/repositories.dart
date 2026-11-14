@@ -1174,6 +1174,17 @@ class TripNotifier extends Notifier<Trip> {
 
 final tripProvider = NotifierProvider<TripNotifier, Trip>(TripNotifier.new);
 
+/// A trip day (0-based) the Trip tab should open on next, set by flows that
+/// add stops from elsewhere (the Local Guide). The Trip tab clears it.
+class TripFocusDayNotifier extends Notifier<int?> {
+  @override
+  int? build() => null;
+  void focus(int day) => state = day;
+  void clear() => state = null;
+}
+
+final tripFocusDayProvider = NotifierProvider<TripFocusDayNotifier, int?>(TripFocusDayNotifier.new);
+
 /// Saved trips collection — manages all user trips locally.
 class SavedTripsNotifier extends Notifier<List<Trip>> {
   @override

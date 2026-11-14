@@ -499,10 +499,18 @@ class GuideCalendarCard extends ConsumerWidget {
   }
 }
 
+/// Where [applyGuideCalendar] put the stops: the trip, and the 0-based day
+/// the first of them landed on.
+typedef GuideAdded = ({String name, int day});
+
+/// "Day 2 of Kaffi Galle Fort".
+String guideAddedLabel(GuideAdded added) => 'Day ${added.day + 1} of ${added.name}';
+
 /// Adds [action]'s stops to the Trip calendar. [mode] "ask" shows a sheet
-/// to pick a new trip or the current one. Returns the trip's name, or null
-/// if the traveller cancelled.
-Future<String?> applyGuideCalendar(BuildContext context, WidgetRef ref, GuideCalendarAction action, String mode) async {
+/// to pick a new trip or the current one. Adding to the current trip asks
+/// which day unless the plan's dates already say. Returns where the stops
+/// went, or null if the traveller cancelled.
+Future<GuideAdded?> applyGuideCalendar(BuildContext context, WidgetRef ref, GuideCalendarAction action, String mode) async {
   if (mode == 'ask') {
     final picked = await _askNewOrCurrent(context, ref.read(tripProvider).name);
     if (picked == null) return null;
@@ -528,11 +536,27 @@ Future<String?> applyGuideCalendar(BuildContext context, WidgetRef ref, GuideCal
     ref.read(savedTripsProvider.notifier).saveTrip(ref.read(tripProvider));
     final trip = guideNewTrip(action, start);
     notifier.update(trip);
-    return trip.name;
+    return (name: trip.name, day: guideFirstDayIndex(action));
   }
-  final trip = guideAddStops(ref.read(tripProvider), action);
+  final current = ref.read(tripProvider);
+  final first = guideFirstDayIndex(action);
+  final byDate = guideDateOffset(current, action.startDate);
+  int? startDay;
+  if (byDate == null) {
+    final n = action.stops.length;
+    startDay = await pickTripDay(
+      context,
+      ref,
+      n == 1 ? action.stops.first.place.name : '$n places',
+      title: guideDaySpan(action) > 1 ? 'Start on which day?' : 'Add to which day?',
+      suggested: guideSuggestDay(current, action),
+    );
+    if (startDay == null) return null;
+  }
+  // Re-read: "New day" in the picker grows the trip.
+  final trip = guideAddStops(ref.read(tripProvider), action, startDay: startDay);
   notifier.update(trip);
-  return trip.name;
+  return (name: trip.name, day: startDay ?? byDate! + first);
 }
 
 Future<String?> _askNewOrCurrent(BuildContext context, String currentName) => showModalBottomSheet<String>(

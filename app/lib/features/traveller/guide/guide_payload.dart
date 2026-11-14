@@ -7,6 +7,10 @@ import '../../../data/catalog/trip_catalog.dart';
 import '../../../data/models/inspiration.dart';
 
 double? _d(Object? v) => (v as num?)?.toDouble();
+int? _tripDay(Object? v) {
+  final n = (v as num?)?.toInt() ?? 0;
+  return n >= 1 ? n : null;
+}
 String _s(Object? v) => v as String? ?? '';
 List<Map<String, dynamic>> _maps(Object? v) => [
       for (final e in (v as List? ?? const []))
@@ -74,7 +78,7 @@ class GuidePlanPlace {
       );
 
   /// Spotto's simple kind (eat/see/…) — catalog places send a category label.
-  String get simpleKind => placeKinds.contains(kind) ? kind : 'see';
+  String get simpleKind => guideSimpleKind(kind, name);
 
   /// As a Google-found place, for the shared board widgets (photo, Maps link).
   GeoPlace? get asGeoPlace => geoPlaceId == null
@@ -130,6 +134,10 @@ class GuidePlan {
   final String stay;
   final List<GuidePlanDay> days;
   final List<String> tips;
+
+  /// 1-based day of the traveller's existing trip this plan starts on, when
+  /// they named one ("plan my 2nd day").
+  final int? tripDay;
   const GuidePlan({
     required this.id,
     required this.title,
@@ -139,6 +147,7 @@ class GuidePlan {
     this.stay = '',
     this.days = const [],
     this.tips = const [],
+    this.tripDay,
   });
 
   factory GuidePlan.fromJson(Map<String, dynamic> j) => GuidePlan(
@@ -150,6 +159,7 @@ class GuidePlan {
         stay: _s(j['stay']),
         days: [for (final d in _maps(j['days'])) GuidePlanDay.fromJson(d)],
         tips: (j['tips'] as List? ?? const []).whereType<String>().toList(),
+        tripDay: _tripDay(j['tripDay']),
       );
 }
 
@@ -174,6 +184,13 @@ class GuideCalendarAction {
   final String? startDate;
   final int dayCount;
   final List<GuideCalendarStop> stops;
+
+  /// Hints for which day of the current trip the stops belong on: the
+  /// 1-based trip day the traveller named, the plan's area, and its day
+  /// titles ("Day 2 in Sigiriya").
+  final int? tripDay;
+  final String area;
+  final List<String> dayTitles;
   const GuideCalendarAction({
     this.planId,
     this.mode = 'ask',
@@ -181,6 +198,9 @@ class GuideCalendarAction {
     this.startDate,
     required this.dayCount,
     required this.stops,
+    this.tripDay,
+    this.area = '',
+    this.dayTitles = const [],
   });
 
   factory GuideCalendarAction.fromJson(Map<String, dynamic> j) {
@@ -192,6 +212,8 @@ class GuideCalendarAction {
       startDate: (j['startDate'] as String?)?.isNotEmpty == true ? j['startDate'] as String : null,
       dayCount: _dayCount((j['dayCount'] as num?)?.toInt() ?? 0, stops),
       stops: stops,
+      tripDay: _tripDay(j['tripDay']),
+      area: _s(j['area']),
     );
   }
 
@@ -208,6 +230,9 @@ class GuideCalendarAction {
       startDate: plan.startDate,
       dayCount: _dayCount(only == null ? plan.days.length : 0, stops),
       stops: stops,
+      tripDay: plan.tripDay,
+      area: plan.area,
+      dayTitles: [for (final d in plan.days) d.title],
     );
   }
 
@@ -290,13 +315,12 @@ Trip guideNewTrip(GuideCalendarAction action, String startDate) => guideAddStops
 /// [trip] with [action]'s stops added. Stops land on the trip day with the
 /// same date when both have dates (so a plan for 12 Nov goes on 12 Nov),
 /// otherwise on the plan's own day number; the trip grows to fit. A place
-/// already on that day isn't added twice.
-Trip guideAddStops(Trip trip, GuideCalendarAction action, {String? planStart}) {
-  final tripStart = _date(trip.startDate);
-  final start = _date(planStart ?? action.startDate);
-  final offset = (tripStart != null && start != null)
-      ? DateTime(start.year, start.month, start.day).difference(DateTime(tripStart.year, tripStart.month, tripStart.day)).inDays
-      : 0;
+/// already on that day isn't added twice. [startDay] (0-based) puts the
+/// action's first day on that trip day instead, whatever the dates say.
+Trip guideAddStops(Trip trip, GuideCalendarAction action, {String? planStart, int? startDay}) {
+  final offset = startDay != null
+      ? startDay - guideFirstDayIndex(action)
+      : (guideDateOffset(trip, planStart ?? action.startDate) ?? 0);
   final days = [...trip.days];
   for (final s in action.stops) {
     final dayIndex = (s.dayIndex + offset).clamp(0, 365);
@@ -326,4 +350,91 @@ Trip guideAddStops(Trip trip, GuideCalendarAction action, {String? planStart}) {
     days[dayIndex] = days[dayIndex].copyWith(stops: [...existing, stop]..sort((a, b) => a.time.compareTo(b.time)));
   }
   return trip.copyWith(days: days);
+}
+
+/// The lowest plan day the action's stops use (0 for a whole plan).
+int guideFirstDayIndex(GuideCalendarAction action) {
+  var first = action.stops.isEmpty ? 0 : action.stops.first.dayIndex;
+  for (final s in action.stops) {
+    if (s.dayIndex < first) first = s.dayIndex;
+  }
+  return first;
+}
+
+/// How many plan days the action's stops spread over.
+int guideDaySpan(GuideCalendarAction action) {
+  var last = 0;
+  for (final s in action.stops) {
+    if (s.dayIndex > last) last = s.dayIndex;
+  }
+  return last - guideFirstDayIndex(action) + 1;
+}
+
+/// Days from the trip's start to [planStart], when both are dated and the
+/// plan doesn't start before the trip. Null when dates can't place it.
+int? guideDateOffset(Trip trip, String? planStart) {
+  final tripStart = _date(trip.startDate);
+  final start = _date(planStart);
+  if (tripStart == null || start == null) return null;
+  final days = DateTime(start.year, start.month, start.day)
+      .difference(DateTime(tripStart.year, tripStart.month, tripStart.day))
+      .inDays;
+  return days < 0 ? null : days;
+}
+
+final _dayNumber = RegExp(r'\bday\s*(\d{1,2})\b', caseSensitive: false);
+
+/// The trip day (0-based) [action]'s first day most likely belongs on, or
+/// null when nothing points to one. In order: matching dates, the trip day
+/// the traveller named, "Day N" in the plan's titles, then a trip day whose
+/// location is the plan's area.
+int? guideSuggestDay(Trip trip, GuideCalendarAction action) {
+  final first = guideFirstDayIndex(action);
+  final byDate = guideDateOffset(trip, action.startDate);
+  if (byDate != null) return byDate + first;
+  if (action.tripDay != null) return action.tripDay! - 1 + first;
+
+  final titles = [
+    if (first < action.dayTitles.length) action.dayTitles[first],
+    action.title,
+  ];
+  for (final t in titles) {
+    final m = _dayNumber.firstMatch(t);
+    if (m != null) {
+      final n = int.parse(m.group(1)!);
+      if (n >= 1 && n <= trip.days.length + 1) return n - 1;
+    }
+  }
+
+  final haystack = '${action.area} ${titles.join(' ')}'.toLowerCase();
+  for (var i = 0; i < trip.days.length; i++) {
+    final loc = (trip.days[i].location ?? '').trim().toLowerCase();
+    if (loc.length >= 3 && haystack.contains(loc)) return i;
+  }
+  // The guide placed these on a later day itself ("put it on day 2").
+  return first > 0 ? first : null;
+}
+
+const _kindWords = {
+  'eat': ['restaurant', 'cafe', 'café', 'coffee', 'bakery', 'food', 'kitchen', 'diner', 'eatery', 'bistro', 'grill'],
+  'drink': ['bar', 'pub', 'lounge', 'brewery', 'nightclub', 'cocktail', 'wine'],
+  'stay': ['hotel', 'villa', 'resort', 'hostel', 'lodge', 'guesthouse', 'guest house', 'homestay', 'lodging'],
+  'shop': ['shop', 'store', 'market', 'mall', 'boutique', 'supermarket'],
+  'do': ['surf', 'safari', 'tour', 'hike', 'hiking', 'trek', 'diving', 'snorkel', 'spa', 'yoga', 'class', 'activity'],
+};
+
+/// Spotto's simple kind for a guide place. [kind] may already be one, or a
+/// category label ("Restaurant", "landmark"); the name breaks ties.
+String guideSimpleKind(String kind, [String name = '']) {
+  if (placeKinds.contains(kind)) return kind;
+  for (final text in [kind.toLowerCase(), name.toLowerCase()]) {
+    if (text.isEmpty) continue;
+    final words = text.split(RegExp(r'[^a-zà-ÿ]+'));
+    for (final e in _kindWords.entries) {
+      for (final w in e.value) {
+        if (w.contains(' ') ? text.contains(w) : words.contains(w)) return e.key;
+      }
+    }
+  }
+  return 'see';
 }

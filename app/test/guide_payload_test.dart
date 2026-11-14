@@ -130,4 +130,78 @@ void main() {
     expect(only.stops.length, 1);
     expect(only.dayCount, 2);
   });
+
+  group('choosing the trip day', () {
+    const trip = Trip(
+      name: 'Kaffi Galle Fort',
+      code: 'TRP-DAY',
+      startDate: '2026-11-07',
+      collaborators: [],
+      days: [
+        TripDay(id: 'd1', stops: [], location: 'Ella'),
+        TripDay(id: 'd2', stops: [], location: 'Sigiriya'),
+        TripDay(id: 'd3', stops: []),
+      ],
+    );
+
+    GuideCalendarAction oneDay({String title = 'Morning ideas', String dayTitle = '', String area = '', int? tripDay, String? startDate}) =>
+        GuideCalendarAction.fromPlan(GuidePlan.fromJson({
+          'id': 'gplan_2',
+          'title': title,
+          'area': area,
+          'startDate': ?startDate,
+          'tripDay': ?tripDay,
+          'days': [
+            {
+              'title': dayTitle,
+              'stops': [
+                {'time': '08:30', 'note': '', 'place': _place('g:gp_a', 'Sigiriya Tank View')},
+                {'time': '10:00', 'note': '', 'place': _place('g:gp_b', 'Water Garden')},
+              ],
+            },
+          ],
+        }));
+
+    test('startDay puts an undated one-day plan on that day, not day 1', () {
+      final added = guideAddStops(trip, oneDay(), startDay: 1);
+      expect(added.days[0].stops, isEmpty);
+      expect(added.days[1].stops.map((s) => s.custom!.name), ['Sigiriya Tank View', 'Water Garden']);
+    });
+
+    test('startDay shifts a single stop taken from a later plan day', () {
+      final plan = GuidePayload.tryParse(_planJson)!.plan!;
+      final action = GuideCalendarAction.fromPlan(plan, only: [
+        GuideCalendarStop(dayIndex: 1, time: '09:00', place: plan.days[1].stops.first.place),
+      ]);
+      final added = guideAddStops(trip, action, startDay: 2);
+      expect(added.days[2].stops.length, 1);
+      expect(added.days[0].stops, isEmpty);
+      expect(added.days[1].stops, isEmpty);
+    });
+
+    test('suggests by date, named trip day, title, then location', () {
+      expect(guideSuggestDay(trip, oneDay(startDate: '2026-11-09')), 2);
+      expect(guideSuggestDay(trip, oneDay(tripDay: 2)), 1);
+      expect(guideSuggestDay(trip, oneDay(title: 'Day 2 in Sigiriya')), 1);
+      expect(guideSuggestDay(trip, oneDay(dayTitle: 'Day 3: slow morning')), 2);
+      expect(guideSuggestDay(trip, oneDay(area: 'Sigiriya')), 1);
+      expect(guideSuggestDay(trip, oneDay(title: 'Ancient wonders in Ella')), 0);
+    });
+
+    test('suggests nothing without a hint, or for a day far beyond the trip', () {
+      expect(guideSuggestDay(trip, oneDay()), isNull);
+      expect(guideSuggestDay(trip, oneDay(title: 'Day 9 ideas')), isNull);
+      expect(guideDateOffset(trip, '2026-11-01'), isNull);
+    });
+  });
+
+  test('guide place kinds map category words before falling back to sight', () {
+    expect(guideSimpleKind('eat'), 'eat');
+    expect(guideSimpleKind('Restaurant'), 'eat');
+    expect(guideSimpleKind('landmark', 'Koha Surf Lounge'), 'drink');
+    expect(guideSimpleKind('landmark', 'Double Barrel Restaurant & Bar'), 'eat');
+    expect(guideSimpleKind('lodging'), 'stay');
+    expect(guideSimpleKind('landmark', 'Sigiriya Frescoes (480 AD)'), 'see');
+    expect(guideSimpleKind('', 'Barberyn Beach'), 'see');
+  });
 }

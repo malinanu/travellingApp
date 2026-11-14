@@ -43,6 +43,12 @@ class _TripScreenState extends ConsumerState<TripScreen> {
     super.initState();
     final start = DateTime.parse(ref.read(tripProvider).startDate);
     _calMonth = DateTime(start.year, start.month, 1);
+    final focus = ref.read(tripFocusDayProvider);
+    if (focus != null) {
+      _dayIx = focus;
+      _dayView = true;
+      Future.microtask(() => ref.read(tripFocusDayProvider.notifier).clear());
+    }
   }
 
   void _goDay(int dir) {
@@ -108,6 +114,16 @@ class _TripScreenState extends ConsumerState<TripScreen> {
     final trip = ref.watch(tripProvider);
     if (_dayIx >= trip.days.length) _dayIx = 0;
     final stops = trip.days[_dayIx].stops;
+
+    // Opened from "Added to Day 2 · Open": show that day.
+    ref.listen<int?>(tripFocusDayProvider, (_, day) {
+      if (day == null) return;
+      setState(() {
+        _dayIx = day.clamp(0, ref.read(tripProvider).days.length - 1);
+        _dayView = true;
+      });
+      Future.microtask(() => ref.read(tripFocusDayProvider.notifier).clear());
+    });
 
     ref.listen<Trip>(tripProvider, (prev, next) {
       if (prev?.startDate != next.startDate || prev?.code != next.code) {
@@ -988,7 +1004,7 @@ class _TripScreenState extends ConsumerState<TripScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               stat(Icons.place, '${stops.length} stops'),
-              stat(Icons.timer_outlined, '$totalTravel min travel'),
+              stat(Icons.timer_outlined, '${tripDuration(totalTravel)} travel'),
               stat(Icons.account_balance_wallet_outlined, tripFmtRs(totalCost)),
             ],
           ),

@@ -280,8 +280,8 @@ class Leg {
   final double km;
   final String dist;
   final int mins;
-  final String mode; // 'Walk' | 'Tuk-tuk'
-  final String icon; // 'Footprints' | 'CarTaxiFront'
+  final String mode; // 'Walk' | 'Tuk-tuk' | 'Drive'
+  final String icon; // 'Footprints' | 'CarTaxiFront' | 'Car'
   final String gmaps;
   const Leg({
     required this.km,
@@ -330,18 +330,27 @@ double tripHaversineKm(TripCatalogItem a, TripCatalogItem b) {
   return 2 * r * math.asin(math.sqrt(h));
 }
 
-/// Leg between two catalog places: walk if short, tuk-tuk otherwise.
+/// "45 min", "2 h", "11 h 15 min".
+String tripDuration(int mins) {
+  if (mins < 60) return '$mins min';
+  final h = mins ~/ 60, m = mins % 60;
+  return m == 0 ? '$h h' : '$h h $m min';
+}
+
+/// Leg between two catalog places: walk if short, tuk-tuk across town, and
+/// a drive (at open-road pace) once it's too far for a tuk-tuk.
 Leg tripLeg(TripCatalogItem from, TripCatalogItem to) {
   final km = tripHaversineKm(from, to);
   final walk = km <= 1.2;
-  final mins = math.max(1, (walk ? km * 14 : km * 3 + 4).round());
+  final drive = km > 25;
+  final mins = math.max(1, (walk ? km * 14 : (drive ? km * 1.6 + 10 : km * 3 + 4)).round());
   final dist = km < 1 ? '${(km * 1000).round()} m' : '${km.toStringAsFixed(1)} km';
   return Leg(
     km: km,
     dist: dist,
     mins: mins,
-    mode: walk ? 'Walk' : 'Tuk-tuk',
-    icon: walk ? 'Footprints' : 'CarTaxiFront',
+    mode: walk ? 'Walk' : (drive ? 'Drive' : 'Tuk-tuk'),
+    icon: walk ? 'Footprints' : (drive ? 'Car' : 'CarTaxiFront'),
     gmaps: 'https://www.google.com/maps/dir/?api=1&origin=${from.lat},${from.lng}'
         '&destination=${to.lat},${to.lng}&travelmode=${walk ? 'walking' : 'driving'}',
   );
