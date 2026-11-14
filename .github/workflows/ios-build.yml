@@ -43,7 +43,8 @@ jobs:
             echo "bundle=$BUNDLE status=$STATUS message=$MESSAGE"
           done
           echo "Reading the result:"
-          echo "  'iOS client application ... are blocked'  -> add that bundle ID to the key's iOS apps restriction"
+          echo "  'This IP, site or mobile application is not authorized' or 'iOS client application ... are blocked'"
+          echo "                                            -> add that bundle ID to the key's iOS apps restriction"
           echo "  'API key is invalid' / 'expired'          -> the secret holds a wrong or deleted key"
           echo "  'must enable Billing'                     -> billing is off on the Cloud project"
           echo "  'not authorized to use this service' or 'not activated' or status OK"
