@@ -188,7 +188,10 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           xcrun simctl launch "$UDID" "$BUNDLE_ID"
           sleep 15
-          if ! xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE_ID"; then
+          # Capture first: `launchctl list | grep -q` lets grep close the pipe
+          # early, and with pipefail the SIGPIPE reads as "not running".
+          RUNNING="$(xcrun simctl spawn "$UDID" launchctl list || true)"
+          if ! grep -q "$BUNDLE_ID" <<<"$RUNNING"; then
             echo "::error::$BUNDLE_ID launched but exited within 15s (crash on startup)."
             xcrun simctl spawn "$UDID" log show --last 1m --predicate 'process == "Runner"' | tail -n 200 || true
             exit 1
