@@ -106,6 +106,9 @@ type guidePlan struct {
 	Stay      string         `json:"stay,omitempty"`
 	Days      []guidePlanDay `json:"days"`
 	Tips      []string       `json:"tips,omitempty"`
+	// TripDay is the 1-based day of the traveller's existing trip this plan
+	// starts on, when they named one ("plan my 2nd day"). 0 when unknown.
+	TripDay int `json:"tripDay,omitempty"`
 }
 
 // guideCalendar asks the app to add stops to its Trip calendar. Mode is
@@ -117,6 +120,9 @@ type guideCalendar struct {
 	StartDate string              `json:"startDate,omitempty"`
 	DayCount  int                 `json:"dayCount"`
 	Stops     []guideCalendarStop `json:"stops"`
+	// Hints for which day of the current trip the stops belong on.
+	TripDay int    `json:"tripDay,omitempty"`
+	Area    string `json:"area,omitempty"`
 }
 
 type guideCalendarStop struct {
@@ -261,6 +267,8 @@ func plannerTools() []gemini.Tool {
 						"area":      str("Main town/area."),
 						"startDate": str("YYYY-MM-DD if the traveller gave dates, else omit."),
 						"nights":    map[string]any{"type": "number"},
+						"tripDay": map[string]any{"type": "number", "description": "Only when the traveller asks for a specific day of the trip they already have " +
+							"(\"plan my 2nd day\", \"places for day 3\"): that 1-based day number. The plan's first day goes on it. Otherwise omit."},
 						"stay":      str("Their hotel, if they said."),
 						"days": map[string]any{
 							"type": "array",
@@ -359,6 +367,7 @@ func (s *Server) runPlannerTool(ctx context.Context, tc gemini.ToolCall, turn *g
 			Area      string   `json:"area"`
 			StartDate string   `json:"startDate"`
 			Nights    float64  `json:"nights"`
+			TripDay   float64  `json:"tripDay"`
 			Stay      string   `json:"stay"`
 			Tips      []string `json:"tips"`
 			Days      []struct {
@@ -378,6 +387,9 @@ func (s *Server) runPlannerTool(ctx context.Context, tc gemini.ToolCall, turn *g
 			ID: newID("gplan"), Title: strings.TrimSpace(args.Title), Area: strings.TrimSpace(args.Area),
 			StartDate: validDate(args.StartDate), Nights: int(args.Nights), Stay: strings.TrimSpace(args.Stay),
 			Tips: limitStrings(args.Tips, 3),
+		}
+		if d := int(args.TripDay); d >= 1 && d <= 60 {
+			plan.TripDay = d
 		}
 		var dropped []string
 		resolved := map[string]guidePlanPlace{}
@@ -441,6 +453,7 @@ func (s *Server) runPlannerTool(ctx context.Context, tc gemini.ToolCall, turn *g
 		cal := guideCalendar{Mode: mode}
 		if hasPlan {
 			cal.PlanID, cal.Title, cal.StartDate = plan.ID, plan.Title, plan.StartDate
+			cal.TripDay, cal.Area = plan.TripDay, plan.Area
 			cal.DayCount = max(len(plan.Days), plan.Nights+1)
 		}
 		if len(args.Stops) == 0 {
@@ -457,6 +470,9 @@ func (s *Server) runPlannerTool(ctx context.Context, tc gemini.ToolCall, turn *g
 				day, at := 0, validClock(st.Time)
 				if st.DayIndex != nil {
 					day = max(0, int(*st.DayIndex))
+					// The model placed this stop on a trip day itself, so the
+					// plan's tripDay must not shift it again in the app.
+					cal.TripDay = 0
 				} else if i, t, ok := findInPlan(plan, p.Ref); hasPlan && ok {
 					day = i
 					if at == "" {

@@ -624,13 +624,20 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
   }
 
   Future<void> _addToCalendar(GuideCalendarAction action, String mode, int? messageIndex) async {
-    final name = await applyGuideCalendar(context, ref, action, mode);
-    if (name == null || !mounted) return;
-    if (messageIndex != null) setState(() => _addedTo[messageIndex] = name);
+    final added = await applyGuideCalendar(context, ref, action, mode);
+    if (added == null || !mounted) return;
+    final where = guideAddedLabel(added);
+    if (messageIndex != null) setState(() => _addedTo[messageIndex] = where);
     final n = action.stops.length;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Added ${n == 1 ? action.stops.first.place.name : '$n places'} to $name.'),
-      action: SnackBarAction(label: 'Open', onPressed: () => context.go('/t/trip')),
+      content: Text('Added ${n == 1 ? action.stops.first.place.name : '$n places'} to $where.'),
+      action: SnackBarAction(
+        label: 'Open',
+        onPressed: () {
+          ref.read(tripFocusDayProvider.notifier).focus(added.day);
+          context.go('/t/trip');
+        },
+      ),
     ));
   }
 

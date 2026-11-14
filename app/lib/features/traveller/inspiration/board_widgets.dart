@@ -7,12 +7,14 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/spotto_icons.dart';
+import '../../../data/catalog/trip_catalog.dart' show Trip;
 import '../../../data/models/inspiration.dart';
 import '../../../data/models/models.dart' show Place;
 import '../../../data/repositories/inspiration_repository.dart';
@@ -89,8 +91,9 @@ Future<void> openBoardPlace(BuildContext context, WidgetRef ref, BoardPlaceRef p
   await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-/// Asks which trip day to add to. Returns the day index, or null.
-Future<int?> pickTripDay(BuildContext context, WidgetRef ref, String placeName) {
+/// Asks which trip day to add to. Returns the day index, or null. [suggested]
+/// marks the day the caller thinks is meant.
+Future<int?> pickTripDay(BuildContext context, WidgetRef ref, String placeName, {String? title, int? suggested}) {
   return showModalBottomSheet<int>(
     context: context,
     backgroundColor: Colors.white,
@@ -104,7 +107,7 @@ Future<int?> pickTripDay(BuildContext context, WidgetRef ref, String placeName) 
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Add to which day?', style: Theme.of(sheet).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              Text(title ?? 'Add to which day?', style: Theme.of(sheet).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
               const SizedBox(height: 2),
               Text(placeName, style: const TextStyle(color: SpottoColors.muted, fontSize: 13)),
               const SizedBox(height: 12),
@@ -120,8 +123,19 @@ Future<int?> pickTripDay(BuildContext context, WidgetRef ref, String placeName) 
                           backgroundColor: SpottoColors.accentTint,
                           child: Text('${i + 1}', style: const TextStyle(fontWeight: FontWeight.w800, color: SpottoColors.accent)),
                         ),
-                        title: Text('Day ${i + 1}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                        title: Text(_dayTitle(trip, i), style: const TextStyle(fontWeight: FontWeight.w700)),
                         subtitle: Text(_stopCount(trip.days[i].stops.length)),
+                        trailing: i == suggested
+                            ? Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: SpottoColors.accentTint,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: const Text('Suggested',
+                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: SpottoColors.accent)),
+                              )
+                            : null,
                         onTap: () => Navigator.pop(sheet, i),
                       ),
                     ListTile(
@@ -145,6 +159,16 @@ Future<int?> pickTripDay(BuildContext context, WidgetRef ref, String placeName) 
       );
     },
   );
+}
+
+/// "Day 2 · Sun 8 Nov · Sigiriya" — date and location when the trip has them.
+String _dayTitle(Trip trip, int i) {
+  final parts = ['Day ${i + 1}'];
+  final start = DateTime.tryParse(trip.startDate);
+  if (start != null) parts.add(DateFormat('EEE d MMM').format(start.add(Duration(days: i))));
+  final loc = (trip.days[i].location ?? '').trim();
+  if (loc.isNotEmpty) parts.add(loc);
+  return parts.join(' · ');
 }
 
 String _stopCount(int n) => n == 0 ? 'No stops yet' : (n == 1 ? '1 stop' : '$n stops');

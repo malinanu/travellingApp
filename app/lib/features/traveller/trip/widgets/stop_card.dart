@@ -231,7 +231,7 @@ class LegRow extends StatelessWidget {
             const SizedBox(width: 12),
             Icon(spottoIcon(leg.icon), size: 15, color: SpottoColors.muted),
             const SizedBox(width: 8),
-            Text('${leg.mins} min ${leg.mode.toLowerCase()} · ${leg.dist}',
+            Text('${tripDuration(leg.mins)} ${leg.mode.toLowerCase()} · ${leg.dist}',
                 style: const TextStyle(
                     fontSize: 12, fontWeight: FontWeight.w700, color: SpottoColors.muted)),
             const Spacer(),

@@ -4,7 +4,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData, rootBundle;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData, SystemUiOverlayStyle, rootBundle;
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -15,6 +15,7 @@ import '../../../core/api/google_places_service.dart';
 import '../../../core/l10n/l10n_provider.dart';
 import '../../../core/maps/maps_bundle_check.dart';
 import '../../../core/theme/palette.dart';
+import '../../../core/utils/place_time.dart';
 import '../../../core/widgets/category_icons.dart';
 import '../../../core/widgets/map_marker.dart';
 import '../../../core/widgets/marker_bitmap.dart';
@@ -39,6 +40,8 @@ const _kDefaultMapCenter = LatLng(kFallbackLat, kFallbackLng);
 const _kDefaultMapZoom = 14.5;
 
 const _kPinSlotSize = Size(58, 58);
+// Room for a spotlight pin's halo at its widest frame.
+const _kSpotlightPinSlotSize = Size(84, 84);
 const _kBannerSlotSize = Size(175, 62);
 const _kAvatarSlotSize = Size(48, 48);
 const _kLocationDotSlotSize = Size(34, 34);
@@ -63,7 +66,33 @@ class DiscoverScreen extends ConsumerStatefulWidget {
   ConsumerState<DiscoverScreen> createState() => _DiscoverScreenState();
 }
 
-class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
+class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTickerProviderStateMixin {
+  // Drives the deal / music spotlight halos: three bitmap frames per loop.
+  // A ticker, so it pauses by itself while another tab is showing.
+  late final AnimationController _spotlight =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..addListener(_onSpotlightTick);
+  int _spotFrame = 1;
+  bool _hasSpotlight = false;
+
+  void _onSpotlightTick() {
+    final frame = (_spotlight.value * 3).floor().clamp(0, 2);
+    if (frame == _spotFrame) return;
+    _spotFrame = frame;
+    if (_hasSpotlight && mounted) setState(() {});
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reduced-motion setting: keep the halos, drop the pulse.
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _spotlight.stop();
+      _spotFrame = 1;
+    } else if (!_spotlight.isAnimating) {
+      _spotlight.repeat();
+    }
+  }
+
   GoogleMapController? _mapController;
   String? _mapStyle;
   bool _bundleNoticeDismissed = false;
@@ -261,6 +290,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
   @override
   void dispose() {
+    _spotlight.dispose();
     _searchController.dispose();
     _positionSub?.cancel();
     _compassSub?.cancel();
@@ -288,11 +318,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _searchQuery = '';
       _searchController.clear();
       _googleResults = [];
+      // Selected, so its pin shows even if the time filter would hide it.
+      _selectedPlaceId = p.id;
     });
     if (p.lat != 0 || p.lng != 0) {
       _animateCamera(CameraUpdate.newLatLngZoom(LatLng(p.lat, p.lng), 16.5));
     }
-    showBusinessDrawer(context, p);
+    showBusinessDrawer(context, p).whenComplete(() {
+      if (mounted && _selectedPlaceId == p.id) setState(() => _selectedPlaceId = null);
+    });
   }
 
   /// Resolves a cached marker bitmap for [key], kicking off an off-screen
@@ -304,6 +338,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     required Widget Function() build,
     required Size slotSize,
     required double placeholderHue,
+    String? fallbackKey,
   }) {
     final cached = MarkerBitmapCache.instance.get(key);
     if (cached != null) return cached;
@@ -316,7 +351,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         if (mounted) setState(() {});
       },
     );
-    return BitmapDescriptor.defaultMarkerWithHue(placeholderHue);
+    // An animation frame that isn't rendered yet shows the frame we do have,
+    // not a stock Google pin flashing in mid-pulse.
+    final fallback = fallbackKey == null ? null : MarkerBitmapCache.instance.get(fallbackKey);
+    return fallback ?? BitmapDescriptor.defaultMarkerWithHue(placeholderHue);
   }
 
   Set<Marker> _buildMapMarkers({
@@ -333,9 +371,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
     final filteredPlaces = _filterPlaces(places, favoriteIds);
 
-    // 1. Places markers as Small Banner Callouts or Compact Pins based on zoom & selection
+    // 1. Places markers: a compact pin, or the name banner for the tapped place
+    var hasSpotlight = false;
     for (final p in filteredPlaces) {
       if (p.lat == 0 && p.lng == 0) continue;
+      // Morning / Afternoon / Evening: only places open in that slot.
+      if (_selectedPlaceId != p.id && !placeShownAt(p, time)) continue;
       final emphasized = p.bestTimes.contains(time);
       final isFavorite = favoriteIds.contains(p.id);
       final inTripCalendar =
@@ -353,7 +394,11 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       }
 
       final isSelected = _selectedPlaceId == p.id;
-      final showBanner = isSelected || isSponsoredMatch || (_currentZoom >= 14.5 && (p.deal.active || inTripCalendar || isFavorite));
+      // The name banner opens on tap only (sponsored matches keep theirs);
+      // offers and music are flagged on the pin itself instead.
+      final showBanner = isSelected || isSponsoredMatch;
+      final music = time == 'evening' && placeHasMusic(p);
+      final spotlight = p.deal.active || music;
       final pinEmphasized = emphasized || isFavorite || matchesInterest || isSponsoredMatch;
 
       final BitmapDescriptor icon_;
@@ -379,12 +424,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         );
       } else {
         final vibeIcon = _vibeBadgeIcon(p);
-        final key =
+        if (spotlight) hasSpotlight = true;
+        final frame = spotlight ? _spotFrame : 1;
+        String keyFor(int f) =>
             'pin|${_colorKey(color)}|${icon.codePoint}|${p.deal.active}|'
-            '$pinEmphasized|${vibeIcon?.codePoint}';
+            '$pinEmphasized|${vibeIcon?.codePoint}|$music|$f';
         icon_ = _resolveBitmap(
-          key: key,
-          slotSize: _kPinSlotSize,
+          key: keyFor(frame),
+          fallbackKey: spotlight ? keyFor(1) : null,
+          slotSize: spotlight ? _kSpotlightPinSlotSize : _kPinSlotSize,
           placeholderHue: BitmapDescriptor.hueAzure,
           build: () => PlacePinMarker(
             color: color,
@@ -392,6 +440,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             hasDeal: p.deal.active,
             emphasized: pinEmphasized,
             vibeIcon: vibeIcon,
+            music: music,
+            frame: frame,
           ),
         );
       }
@@ -401,15 +451,19 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           markerId: MarkerId('place_${p.id}'),
           position: LatLng(p.lat, p.lng),
           icon: icon_,
-          zIndexInt: isSponsoredMatch ? 100 : (isSelected ? 50 : (showBanner ? 10 : 1)),
+          zIndexInt: isSponsoredMatch ? 100 : (isSelected ? 50 : (spotlight ? 10 : 1)),
           anchor: const Offset(0.5, 0.5),
           onTap: () {
             setState(() => _selectedPlaceId = p.id);
-            showBusinessDrawer(context, p);
+            // The banner goes away again with the drawer.
+            showBusinessDrawer(context, p).whenComplete(() {
+              if (mounted && _selectedPlaceId == p.id) setState(() => _selectedPlaceId = null);
+            });
           },
         ),
       );
     }
+    _hasSpotlight = hasSpotlight;
 
     // 2. Group members markers
     if (groupMode) {
@@ -536,7 +590,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
     final resignedBundleId = ref.watch(resignedBundleIdProvider).value;
 
-    return Stack(
+    final topInset = MediaQuery.paddingOf(context).top;
+
+    // Dark status bar icons: the scrim below keeps the clock and battery on a
+    // light surface whatever the map is showing underneath.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark,
+      child: Stack(
       fit: StackFit.expand,
       children: [
         // Styled map background while native tiles initialize
@@ -571,6 +631,28 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 700),
             decoration: BoxDecoration(gradient: _lighting(time)),
+          ),
+        ),
+
+        // Status bar scrim: the map stays full-bleed behind the notch /
+        // Dynamic Island, but fades into the paper colour there so markers
+        // don't collide with the clock.
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: topInset + 28,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: [0, topInset / (topInset + 28), 1],
+                  colors: const [Color(0xFFF5F1E8), Color(0xE6F5F1E8), Color(0x00F5F1E8)],
+                ),
+              ),
+            ),
           ),
         ),
 
@@ -954,6 +1036,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           ),
         ),
       ],
+      ),
     );
   }
 
@@ -1176,10 +1259,10 @@ class _ResignedBundleNotice extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Map tiles are blocked for this install', style: text.labelLarge),
+                Text('Sideloaded build', style: text.labelLarge),
                 const SizedBox(height: 2),
                 Text(
-                  "This build was re-signed as $bundleId. Add that bundle ID to the Maps key's iOS restriction.",
+                  "This install runs as $bundleId. If the map is blank, add that bundle ID to the Maps key's iOS restriction. Dismiss this once the map loads.",
                   style: text.bodySmall,
                 ),
                 TextButton(

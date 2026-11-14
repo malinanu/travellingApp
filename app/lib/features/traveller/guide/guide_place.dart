@@ -402,12 +402,18 @@ class _GuidePlaceCardState extends ConsumerState<GuidePlaceCard> {
           ),
         ],
       );
-      final name = await applyGuideCalendar(context, ref, action, 'ask');
-      if (name != null && mounted) {
+      final added = await applyGuideCalendar(context, ref, action, 'ask');
+      if (added != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Added ${p.name} to $name'),
-            action: SnackBarAction(label: 'Open', onPressed: () => context.go('/t/trip')),
+            content: Text('Added ${p.name} to ${guideAddedLabel(added)}'),
+            action: SnackBarAction(
+              label: 'Open',
+              onPressed: () {
+                ref.read(tripFocusDayProvider.notifier).focus(added.day);
+                context.go('/t/trip');
+              },
+            ),
           ),
         );
       }

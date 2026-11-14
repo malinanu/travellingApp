@@ -108,6 +108,13 @@ func TestPlannerToolsRegistered(t *testing.T) {
 				t.Error("search_places should declare location parameter")
 			}
 		}
+		if tool.Function.Name == "propose_trip_plan" {
+			params, _ := tool.Function.Parameters.(map[string]any)
+			props, _ := params["properties"].(map[string]any)
+			if props["tripDay"] == nil {
+				t.Error("propose_trip_plan should declare tripDay so a plan for \"day 2\" lands on day 2")
+			}
+		}
 	}
 	for _, n := range []string{"search_places", "find_places", "ask_trip_questions", "propose_trip_plan", "add_to_calendar"} {
 		if !names[n] {
@@ -193,5 +200,19 @@ func TestDatabaseFirstAndCaching(t *testing.T) {
 	res := s.findPlacesTool(context.Background(), turn, "Galle", 6)
 	if !strings.Contains(res, "search limit reached") {
 		t.Errorf("expected search limit reached, got: %s", res)
+	}
+}
+
+func TestPlanTripDayReachesTheApp(t *testing.T) {
+	raw, err := json.Marshal(guidePayload{Type: guidePayloadPlan, Plan: &guidePlan{ID: "gplan_1", Title: "Day 2 in Sigiriya", TripDay: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"tripDay":2`) {
+		t.Errorf("plan payload should carry tripDay, got %s", raw)
+	}
+	raw, _ = json.Marshal(guidePlan{ID: "gplan_2", Title: "2 nights in Ella"})
+	if strings.Contains(string(raw), "tripDay") {
+		t.Errorf("tripDay should be omitted when unknown, got %s", raw)
 	}
 }

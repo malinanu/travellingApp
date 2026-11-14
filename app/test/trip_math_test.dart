@@ -29,6 +29,34 @@ void main() {
       expect(leg.gmaps, contains('travelmode=driving'));
     });
 
+    test('far hops are drives with hours, not hundreds of tuk-tuk minutes', () {
+      const colombo = TripCatalogItem(
+          id: 'c', name: 'Colombo', type: 'Sight', icon: 'Camera', lat: 6.9271, lng: 79.8612, cost: 0, styles: [], hint: '9:00');
+      const sigiriya = TripCatalogItem(
+          id: 's', name: 'Sigiriya', type: 'Sight', icon: 'Camera', lat: 7.9570, lng: 80.7603, cost: 0, styles: [], hint: '9:00');
+      final leg = tripLeg(colombo, sigiriya);
+      expect(leg.mode, 'Drive');
+      expect(leg.mins, lessThan(6 * 60));
+      expect(tripDuration(leg.mins), contains(' h'));
+    });
+
+    test('a longer leg never shows a shorter time across the drive switch', () {
+      TripCatalogItem at(double lat) => TripCatalogItem(
+          id: 'x$lat', name: 'X', type: 'Sight', icon: 'Camera', lat: lat, lng: 80.0, cost: 0, styles: const [], hint: '9:00');
+      final origin = at(6.0);
+      final near = tripLeg(origin, at(6.0 + 24 / 111.2));
+      final far = tripLeg(origin, at(6.0 + 26 / 111.2));
+      expect(near.mode, 'Tuk-tuk');
+      expect(far.mode, 'Drive');
+      expect(far.mins, greaterThanOrEqualTo(near.mins));
+    });
+
+    test('tripDuration', () {
+      expect(tripDuration(45), '45 min');
+      expect(tripDuration(120), '2 h');
+      expect(tripDuration(675), '11 h 15 min');
+    });
+
     test('haversine matches known distance order of magnitude', () {
       // Weligama to Mirissa is roughly 5-6 km as the crow flies.
       final km = tripHaversineKm(_weligamaBeach, _mirissaBeach);

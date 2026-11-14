@@ -168,6 +168,12 @@ class PlacePinMarker extends StatelessWidget {
   final IconData? vibeIcon;
   final bool isSponsoredMatch;
 
+  /// Spotlights: a pulsing halo behind the pin for a place with a live
+  /// offer ([hasDeal]) or music on tonight ([music]). The map swaps
+  /// [frame] 0..2 to animate it; markers are bitmaps, so each frame is one.
+  final bool music;
+  final int frame;
+
   const PlacePinMarker({
     super.key,
     required this.color,
@@ -176,18 +182,41 @@ class PlacePinMarker extends StatelessWidget {
     required this.emphasized,
     this.vibeIcon,
     this.isSponsoredMatch = false,
+    this.music = false,
+    this.frame = 1,
   });
+
+  static const _dealGlow = Color(0xFFF6B81E);
+  static const _musicGlow = Color(0xFF7C5CFF);
 
   @override
   Widget build(BuildContext context) {
-    final size = emphasized ? 42.0 : 36.0;
+    final spotlight = hasDeal || music;
+    final size = emphasized || spotlight ? 42.0 : 36.0;
+    final glow = music ? _musicGlow : _dealGlow;
+    // Halo grows and fades across the three frames, like a ripple.
+    final spread = 5.0 + frame * 5.0;
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 200),
-      opacity: emphasized ? 1.0 : 0.55,
+      opacity: emphasized || spotlight ? 1.0 : 0.55,
       child: Stack(
         alignment: Alignment.center,
         clipBehavior: Clip.none,
         children: [
+          if (spotlight)
+            Positioned(
+              left: -spread,
+              top: -spread,
+              right: -spread,
+              bottom: -spread,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: glow.withValues(alpha: 0.34 - frame * 0.09),
+                  border: Border.all(color: glow.withValues(alpha: 0.75 - frame * 0.2), width: 2),
+                ),
+              ),
+            ),
           Container(
             width: size,
             height: size,
@@ -207,16 +236,35 @@ class PlacePinMarker extends StatelessWidget {
           ),
           if (hasDeal)
             Positioned(
-              top: -1,
-              right: -1,
+              top: -4,
+              right: -4,
               child: Container(
-                width: 13,
-                height: 13,
+                width: 19,
+                height: 19,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF6B81E),
+                  color: _dealGlow,
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white, width: 2),
                 ),
+                child: const Icon(Icons.percent_rounded, size: 11, color: Colors.white),
+              ),
+            ),
+          if (music)
+            Positioned(
+              // The note bobs with the halo.
+              top: -5.0 - frame * 2.0,
+              left: -4,
+              child: Container(
+                width: 19,
+                height: 19,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: _musicGlow,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: const Icon(Icons.music_note_rounded, size: 12, color: Colors.white),
               ),
             ),
           if (vibeIcon != null)

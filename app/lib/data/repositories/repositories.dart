@@ -1174,6 +1174,17 @@ class TripNotifier extends Notifier<Trip> {
 
 final tripProvider = NotifierProvider<TripNotifier, Trip>(TripNotifier.new);
 
+/// A trip day (0-based) the Trip tab should open on next, set by flows that
+/// add stops from elsewhere (the Local Guide). The Trip tab clears it.
+class TripFocusDayNotifier extends Notifier<int?> {
+  @override
+  int? build() => null;
+  void focus(int day) => state = day;
+  void clear() => state = null;
+}
+
+final tripFocusDayProvider = NotifierProvider<TripFocusDayNotifier, int?>(TripFocusDayNotifier.new);
+
 /// Saved trips collection — manages all user trips locally.
 class SavedTripsNotifier extends Notifier<List<Trip>> {
   @override
@@ -1529,7 +1540,17 @@ final weatherPinsProvider = NotifierProvider<WeatherPinsNotifier, List<PinnedLoc
 // ── session-only traveller state (matches prototype useState) ─────
 
 /// Active time-of-day filter: morning | afternoon | evening.
-final timeFilterProvider = StateProvider<String>((ref) => 'afternoon');
+/// Starts on the slot it is right now, since the Discover map hides places
+/// that are closed in the selected slot.
+final timeFilterProvider = StateProvider<String>((ref) => timeSlotFor(DateTime.now()));
+
+/// morning until noon, afternoon until 5 PM, evening after (and overnight).
+String timeSlotFor(DateTime now) {
+  final h = now.hour;
+  if (h >= 5 && h < 12) return 'morning';
+  if (h >= 12 && h < 17) return 'afternoon';
+  return 'evening';
+}
 
 /// One place's vibe state as submitted this session — a fresh three-
 /// dimension snapshot every time (see VibeCheckInsNotifier.rate).
