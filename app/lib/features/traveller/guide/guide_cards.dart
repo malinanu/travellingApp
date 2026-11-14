@@ -540,7 +540,10 @@ Future<GuideAdded?> applyGuideCalendar(BuildContext context, WidgetRef ref, Guid
   }
   final current = ref.read(tripProvider);
   final first = guideFirstDayIndex(action);
-  final byDate = guideDateOffset(current, action.startDate);
+  // Dates place the plan only when they fall on the trip (or the day right
+  // after it); a plan dated weeks away must not silently grow the trip.
+  var byDate = guideDateOffset(current, action.startDate);
+  if (byDate != null && byDate + first > current.days.length) byDate = null;
   int? startDay;
   if (byDate == null) {
     final n = action.stops.length;
@@ -551,7 +554,7 @@ Future<GuideAdded?> applyGuideCalendar(BuildContext context, WidgetRef ref, Guid
       title: guideDaySpan(action) > 1 ? 'Start on which day?' : 'Add to which day?',
       suggested: guideSuggestDay(current, action),
     );
-    if (startDay == null) return null;
+    if (startDay == null || !context.mounted) return null;
   }
   // Re-read: "New day" in the picker grows the trip.
   final trip = guideAddStops(ref.read(tripProvider), action, startDay: startDay);

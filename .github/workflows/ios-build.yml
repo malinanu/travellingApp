@@ -23,7 +23,9 @@ jobs:
       - name: Check Maps key against Google
         env:
           IOS_MAPS_API_KEY: ${{ secrets.IOS_MAPS_API_KEY || vars.IOS_MAPS_API_KEY }}
-          BUNDLE_IDS: com.spotto.spotto com.spotto.spotto.QCF9KS993A
+          # Space-separated. Sideload testers' re-signed IDs go in the
+          # MAPS_CHECK_BUNDLE_IDS repository variable, not in this file.
+          BUNDLE_IDS: ${{ vars.MAPS_CHECK_BUNDLE_IDS || 'com.spotto.spotto com.spotto.spotto.QCF9KS993A' }}
         run: |
           set -uo pipefail
           KEY="$(printf '%s' "$IOS_MAPS_API_KEY" | tr -d '\r\n' | sed -e 's/^[[:space:]"'\'']*//' -e 's/[[:space:]"'\'']*$//')"

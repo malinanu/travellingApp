@@ -391,7 +391,7 @@ final _dayNumber = RegExp(r'\bday\s*(\d{1,2})\b', caseSensitive: false);
 int? guideSuggestDay(Trip trip, GuideCalendarAction action) {
   final first = guideFirstDayIndex(action);
   final byDate = guideDateOffset(trip, action.startDate);
-  if (byDate != null) return byDate + first;
+  if (byDate != null && byDate + first <= trip.days.length) return byDate + first;
   if (action.tripDay != null) return action.tripDay! - 1 + first;
 
   final titles = [
@@ -409,7 +409,8 @@ int? guideSuggestDay(Trip trip, GuideCalendarAction action) {
   final haystack = '${action.area} ${titles.join(' ')}'.toLowerCase();
   for (var i = 0; i < trip.days.length; i++) {
     final loc = (trip.days[i].location ?? '').trim().toLowerCase();
-    if (loc.length >= 3 && haystack.contains(loc)) return i;
+    // Whole words: "Ella" must not match inside "Wellawaya".
+    if (loc.length >= 3 && RegExp('(^|[^a-z])${RegExp.escape(loc)}(\$|[^a-z])').hasMatch(haystack)) return i;
   }
   // The guide placed these on a later day itself ("put it on day 2").
   return first > 0 ? first : null;

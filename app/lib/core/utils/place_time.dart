@@ -35,6 +35,15 @@ int? _minutes(RegExpMatch m) {
 /// Parses a place's hours label ("9:00 AM – 5:00 PM", "18:00-02:00",
 /// "Open 24 hours"). Null when the label has no usable times.
 PlaceHours? parsePlaceHours(String label) {
+  // The map asks for every place on each rebuild; labels repeat a lot.
+  if (_parsed.containsKey(label)) return _parsed[label];
+  if (_parsed.length > 2000) _parsed.clear();
+  return _parsed[label] = _parseHours(label);
+}
+
+final _parsed = <String, PlaceHours?>{};
+
+PlaceHours? _parseHours(String label) {
   final text = label.trim();
   if (text.isEmpty) return null;
   final lower = text.toLowerCase();

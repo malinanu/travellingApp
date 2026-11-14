@@ -338,12 +338,13 @@ String tripDuration(int mins) {
 }
 
 /// Leg between two catalog places: walk if short, tuk-tuk across town, and
-/// a drive (at open-road pace) once it's too far for a tuk-tuk.
+/// a drive (at open-road pace beyond the first 25 km) once it's too far for
+/// a tuk-tuk, so a longer leg never shows a shorter time.
 Leg tripLeg(TripCatalogItem from, TripCatalogItem to) {
   final km = tripHaversineKm(from, to);
   final walk = km <= 1.2;
   final drive = km > 25;
-  final mins = math.max(1, (walk ? km * 14 : (drive ? km * 1.6 + 10 : km * 3 + 4)).round());
+  final mins = math.max(1, (walk ? km * 14 : (drive ? 79 + (km - 25) * 1.6 : km * 3 + 4)).round());
   final dist = km < 1 ? '${(km * 1000).round()} m' : '${km.toStringAsFixed(1)} km';
   return Leg(
     km: km,

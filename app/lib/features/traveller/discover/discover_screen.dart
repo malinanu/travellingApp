@@ -318,11 +318,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
       _searchQuery = '';
       _searchController.clear();
       _googleResults = [];
+      // Selected, so its pin shows even if the time filter would hide it.
+      _selectedPlaceId = p.id;
     });
     if (p.lat != 0 || p.lng != 0) {
       _animateCamera(CameraUpdate.newLatLngZoom(LatLng(p.lat, p.lng), 16.5));
     }
-    showBusinessDrawer(context, p);
+    showBusinessDrawer(context, p).whenComplete(() {
+      if (mounted && _selectedPlaceId == p.id) setState(() => _selectedPlaceId = null);
+    });
   }
 
   /// Resolves a cached marker bitmap for [key], kicking off an off-screen

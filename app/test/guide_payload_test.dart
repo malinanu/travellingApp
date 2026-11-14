@@ -192,6 +192,10 @@ void main() {
       expect(guideSuggestDay(trip, oneDay()), isNull);
       expect(guideSuggestDay(trip, oneDay(title: 'Day 9 ideas')), isNull);
       expect(guideDateOffset(trip, '2026-11-01'), isNull);
+      // "Ella" is a trip day, but not a word in "Wellawaya".
+      expect(guideSuggestDay(trip, oneDay(area: 'Wellawaya')), isNull);
+      // A plan dated weeks after the trip isn't placed by date.
+      expect(guideSuggestDay(trip, oneDay(startDate: '2026-12-20')), isNull);
     });
   });
 

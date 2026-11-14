@@ -470,6 +470,9 @@ func (s *Server) runPlannerTool(ctx context.Context, tc gemini.ToolCall, turn *g
 				day, at := 0, validClock(st.Time)
 				if st.DayIndex != nil {
 					day = max(0, int(*st.DayIndex))
+					// The model placed this stop on a trip day itself, so the
+					// plan's tripDay must not shift it again in the app.
+					cal.TripDay = 0
 				} else if i, t, ok := findInPlan(plan, p.Ref); hasPlan && ok {
 					day = i
 					if at == "" {

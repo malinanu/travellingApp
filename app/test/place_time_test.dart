@@ -3,6 +3,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:spotto/core/utils/place_time.dart';
 import 'package:spotto/data/models/models.dart';
+import 'package:spotto/data/repositories/repositories.dart' show timeSlotFor;
 
 Place _place({String hours = '', String categoryId = '', List<String> tags = const []}) => Place.fromJson({
       'id': 'p1',
@@ -52,5 +53,12 @@ void main() {
     expect(placeHasMusic(_place(tags: ['Sea view', 'Live music'])), isTrue);
     expect(placeHasMusic(_place(tags: ['DJ nights'])), isTrue);
     expect(placeHasMusic(_place(categoryId: 'cafe', tags: ['Wifi'])), isFalse);
+  });
+
+  test('the filter starts on the slot it is now', () {
+    expect(timeSlotFor(DateTime(2026, 11, 14, 9)), 'morning');
+    expect(timeSlotFor(DateTime(2026, 11, 14, 14)), 'afternoon');
+    expect(timeSlotFor(DateTime(2026, 11, 14, 21)), 'evening');
+    expect(timeSlotFor(DateTime(2026, 11, 14, 1)), 'evening');
   });
 }

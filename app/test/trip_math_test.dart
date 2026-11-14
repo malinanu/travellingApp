@@ -40,6 +40,17 @@ void main() {
       expect(tripDuration(leg.mins), contains(' h'));
     });
 
+    test('a longer leg never shows a shorter time across the drive switch', () {
+      TripCatalogItem at(double lat) => TripCatalogItem(
+          id: 'x$lat', name: 'X', type: 'Sight', icon: 'Camera', lat: lat, lng: 80.0, cost: 0, styles: const [], hint: '9:00');
+      final origin = at(6.0);
+      final near = tripLeg(origin, at(6.0 + 24 / 111.2));
+      final far = tripLeg(origin, at(6.0 + 26 / 111.2));
+      expect(near.mode, 'Tuk-tuk');
+      expect(far.mode, 'Drive');
+      expect(far.mins, greaterThanOrEqualTo(near.mins));
+    });
+
     test('tripDuration', () {
       expect(tripDuration(45), '45 min');
       expect(tripDuration(120), '2 h');
