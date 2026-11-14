@@ -165,6 +165,12 @@ class FrStrings implements AppStrings {
   @override
   String get offerUsedPerk => 'Offre utilisée ! Bon shopping.';
   @override
+  String get markAsUsedTitle => 'Marquer comme utilisée ?';
+  @override
+  String get markAsUsedConfirm => 'Oui, marquer comme utilisée';
+  @override
+  String get dismissOfferTitle => 'Ignorer cette offre ?';
+  @override
   String get rateAgainIn15Minutes => 'Vous pourrez à nouveau noter ce lieu dans 15 minutes';
 
   // ── Profile & Settings ──────────────────────────────────────────────────

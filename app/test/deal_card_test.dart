@@ -118,7 +118,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('SPOTTO-VG6F'), findsOneWidget);
-    expect(find.text('Hide QR'), findsOneWidget);
+    expect(find.text('Hide QR code'), findsOneWidget);
     expect(find.text('Show at counter'), findsOneWidget);
     expect(find.byKey(const Key('deal_card_collapse_button')), findsOneWidget);
     expect(find.byKey(const Key('deal_card_mark_used_button')), findsOneWidget);
@@ -128,7 +128,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('Tap to show QR code'), findsOneWidget);
-    expect(find.text('Hide QR'), findsNothing);
+    expect(find.text('Hide QR code'), findsNothing);
     expect(find.text('Show at counter'), findsNothing);
     expect(find.byKey(const Key('deal_card_expand_button')), findsOneWidget);
 
@@ -136,7 +136,7 @@ void main() {
     await tester.tap(find.byKey(const Key('deal_card_expand_button')));
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('Hide QR'), findsOneWidget);
+    expect(find.text('Hide QR code'), findsOneWidget);
     expect(find.text('Show at counter'), findsOneWidget);
   });
 
@@ -186,7 +186,7 @@ void main() {
     expect(container.read(redeemedDealsProvider).contains('plc_deal_1'), isTrue);
 
     // Celebration toast shown
-    expect(find.text('🎉 Offer used! Enjoy your discount.'), findsOneWidget);
+    expect(find.text('🎉 Offer used! Enjoy your perk.'), findsOneWidget);
   });
 
   testWidgets('Auto-disappearance when polling detects redeemed status', (tester) async {
@@ -242,7 +242,7 @@ void main() {
     expect(find.text('SPOTTO-VG6F'), findsNothing);
     expect(container.read(claimsProvider)['plc_deal_1'], isNull);
     expect(container.read(redeemedDealsProvider).contains('plc_deal_1'), isTrue);
-    expect(find.text('🎉 Offer used! Enjoy your discount.'), findsOneWidget);
+    expect(find.text('🎉 Offer used! Enjoy your perk.'), findsOneWidget);
   });
 
   testWidgets('Current Vibe row does not overflow on a narrow 300px screen', (tester) async {
