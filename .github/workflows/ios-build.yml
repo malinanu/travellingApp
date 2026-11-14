@@ -33,9 +33,6 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Disable Swift Package Manager for iOS (enforce CocoaPods)
-        run: flutter config --no-enable-swift-package-manager
-
       - name: Install dependencies
         run: flutter pub get
 
