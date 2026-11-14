@@ -96,6 +96,69 @@ jobs:
           flutter build ios --simulator \
             --dart-define=GOOGLE_SERVER_CLIENT_ID="$GOOGLE_SERVER_CLIENT_ID"
 
+      # The unsigned-CI settings above (CODE_SIGNING_ALLOWED = NO in
+      # Secrets.xcconfig and the Podfile) also apply to the simulator build,
+      # leaving Runner.app and its embedded frameworks without a valid
+      # signature. arm64 simulators refuse to launch such a bundle:
+      #   "The request was denied by service delegate (SBMainWorkspace)"
+      # which is exactly what Appetize.io reports. Simulator apps need no
+      # certificate, only an ad-hoc signature ("Sign to Run Locally"), so apply
+      # one here: nested code first, then the app bundle itself.
+      - name: Ad-hoc sign simulator app
+        run: |
+          set -euo pipefail
+          APP="build/ios/iphonesimulator/Runner.app"
+          if [ -d "$APP/Frameworks" ]; then
+            find "$APP/Frameworks" -depth \( -name '*.framework' -o -name '*.dylib' \) -print0 |
+              while IFS= read -r -d '' item; do
+                codesign --force --sign - --timestamp=none "$item"
+              done
+          fi
+          if [ -d "$APP/PlugIns" ]; then
+            find "$APP/PlugIns" -depth -name '*.appex' -print0 |
+              while IFS= read -r -d '' item; do
+                codesign --force --sign - --timestamp=none "$item"
+              done
+          fi
+          codesign --force --sign - --timestamp=none "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          echo "Simulator app architectures: $(lipo -archs "$APP/Runner")"
+          echo "MinimumOSVersion: $(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")"
+
+      # Install and launch the exact bundle that gets zipped for Appetize, so a
+      # launch denial fails the build here instead of surfacing in the browser.
+      - name: Smoke-test launch on iOS Simulator
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          APP="build/ios/iphonesimulator/Runner.app"
+          BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")"
+          UDID="$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          for runtime in sorted(data, reverse=True):
+              if "iOS" not in runtime:
+                  continue
+              for d in data[runtime]:
+                  if d["name"].startswith("iPhone"):
+                      print(d["udid"])
+                      sys.exit(0)
+          sys.exit("No available iPhone simulator found")
+          ')"
+          echo "Using simulator $UDID for $BUNDLE_ID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" "$BUNDLE_ID"
+          sleep 15
+          if ! xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE_ID"; then
+            echo "::error::$BUNDLE_ID launched but exited within 15s (crash on startup)."
+            xcrun simctl spawn "$UDID" log show --last 1m --predicate 'process == "Runner"' | tail -n 200 || true
+            exit 1
+          fi
+          echo "$BUNDLE_ID is running on the simulator."
+          xcrun simctl shutdown "$UDID" || true
+
       - name: Verify Google Maps key in Info.plist
         env:
           IOS_MAPS_API_KEY: ${{ secrets.IOS_MAPS_API_KEY || vars.IOS_MAPS_API_KEY }}
