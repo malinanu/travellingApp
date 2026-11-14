@@ -4,7 +4,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData, rootBundle;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData, SystemUiOverlayStyle, rootBundle;
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -536,7 +536,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
     final resignedBundleId = ref.watch(resignedBundleIdProvider).value;
 
-    return Stack(
+    final topInset = MediaQuery.paddingOf(context).top;
+
+    // Dark status bar icons: the scrim below keeps the clock and battery on a
+    // light surface whatever the map is showing underneath.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark,
+      child: Stack(
       fit: StackFit.expand,
       children: [
         // Styled map background while native tiles initialize
@@ -571,6 +577,28 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 700),
             decoration: BoxDecoration(gradient: _lighting(time)),
+          ),
+        ),
+
+        // Status bar scrim: the map stays full-bleed behind the notch /
+        // Dynamic Island, but fades into the paper colour there so markers
+        // don't collide with the clock.
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: topInset + 28,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: [0, topInset / (topInset + 28), 1],
+                  colors: const [Color(0xFFF5F1E8), Color(0xE6F5F1E8), Color(0x00F5F1E8)],
+                ),
+              ),
+            ),
           ),
         ),
 
@@ -954,6 +982,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           ),
         ),
       ],
+      ),
     );
   }
 

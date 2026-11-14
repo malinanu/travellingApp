@@ -11,6 +11,45 @@ permissions:
   contents: write
 
 jobs:
+  # Asks Google why (or whether) it rejects the Maps key for each bundle ID the
+  # app runs under. A sideloaded install is re-signed with a different bundle
+  # ID, and an app-restricted key then silently shows a blank map. Prints only
+  # Google's status and error message, never the key. Never fails the build.
+  check-maps-key:
+    runs-on: ubuntu-latest
+    environment: IOS_MAPS_API_KEY
+    continue-on-error: true
+    steps:
+      - name: Check Maps key against Google
+        env:
+          IOS_MAPS_API_KEY: ${{ secrets.IOS_MAPS_API_KEY || vars.IOS_MAPS_API_KEY }}
+          BUNDLE_IDS: com.spotto.spotto com.spotto.spotto.QCF9KS993A
+        run: |
+          set -uo pipefail
+          KEY="$(printf '%s' "$IOS_MAPS_API_KEY" | tr -d '\r\n' | sed -e 's/^[[:space:]"'\'']*//' -e 's/[[:space:]"'\'']*$//')"
+          if [ -z "$KEY" ]; then
+            echo "::warning::IOS_MAPS_API_KEY is not set."
+            exit 0
+          fi
+          echo "Key: len=${#KEY}, prefix=${KEY:0:4}..."
+          for BUNDLE in $BUNDLE_IDS; do
+            BODY="$(curl -sS --max-time 20 -G 'https://maps.googleapis.com/maps/api/geocode/json' \
+              -H "X-Ios-Bundle-Identifier: $BUNDLE" \
+              --data-urlencode 'address=Colombo' \
+              --data-urlencode "key=$KEY" || true)"
+            STATUS="$(printf '%s' "$BODY" | jq -r '.status // "NO_RESPONSE"' 2>/dev/null || echo UNPARSEABLE)"
+            MESSAGE="$(printf '%s' "$BODY" | jq -r '.error_message // ""' 2>/dev/null || true)"
+            MESSAGE="${MESSAGE//$KEY/***}"
+            echo "bundle=$BUNDLE status=$STATUS message=$MESSAGE"
+          done
+          echo "Reading the result:"
+          echo "  'iOS client application ... are blocked'  -> add that bundle ID to the key's iOS apps restriction"
+          echo "  'API key is invalid' / 'expired'          -> the secret holds a wrong or deleted key"
+          echo "  'must enable Billing'                     -> billing is off on the Cloud project"
+          echo "  'not authorized to use this service' or 'not activated' or status OK"
+          echo "                                            -> the key and bundle ID are accepted; check that"
+          echo "                                               Maps SDK for iOS is enabled and allowed by the key's API restrictions"
+
   build-ios:
     runs-on: macos-latest
     environment: IOS_MAPS_API_KEY
