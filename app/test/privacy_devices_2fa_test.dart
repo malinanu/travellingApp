@@ -131,7 +131,7 @@ void main() {
     await tester.pump();
 
     // Welcome -> Step 1
-    await tester.tap(find.text('Let’s go'));
+    await tester.tap(find.text('Get Started'));
     await tester.pump(const Duration(milliseconds: 100));
 
     // Step 1: Pick a style
@@ -154,7 +154,7 @@ void main() {
     expect(find.text('Count my vibe votes'), findsOneWidget);
     expect(find.text('Usage analytics'), findsOneWidget);
     expect(find.text('Personalised offers'), findsOneWidget);
-    expect(find.text('Start exploring'), findsOneWidget);
+    expect(find.text('Get Started'), findsOneWidget);
   });
 
   testWidgets('PrivacyPage displays toggles and Download my data button', (tester) async {

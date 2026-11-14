@@ -165,6 +165,12 @@ class RuStrings implements AppStrings {
   @override
   String get offerUsedPerk => 'Скидка использована! Приятного отдыха.';
   @override
+  String get markAsUsedTitle => 'Отметить как использованное?';
+  @override
+  String get markAsUsedConfirm => 'Да, отметить';
+  @override
+  String get dismissOfferTitle => 'Скрыть предложение?';
+  @override
   String get rateAgainIn15Minutes => 'Вы сможете снова оценить это место через 15 минут';
 
   // ── Profile & Settings ──────────────────────────────────────────────────

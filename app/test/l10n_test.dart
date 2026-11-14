@@ -166,6 +166,9 @@ void main() {
         verifyString(strings.tapToShowQr);
         verifyString(strings.markAsUsed);
         verifyString(strings.offerUsedPerk);
+        verifyString(strings.markAsUsedTitle);
+        verifyString(strings.markAsUsedConfirm);
+        verifyString(strings.dismissOfferTitle);
         verifyString(strings.rateAgainIn15Minutes);
 
         // Profile & Settings
