@@ -4,7 +4,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData, rootBundle;
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -13,6 +13,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/api/google_places_service.dart';
 import '../../../core/l10n/l10n_provider.dart';
+import '../../../core/maps/maps_bundle_check.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/category_icons.dart';
 import '../../../core/widgets/map_marker.dart';
@@ -65,6 +66,7 @@ class DiscoverScreen extends ConsumerStatefulWidget {
 class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   GoogleMapController? _mapController;
   String? _mapStyle;
+  bool _bundleNoticeDismissed = false;
 
   LatLngAt? _resolvedPosition;
   bool _centeredOnDevice = false;
@@ -532,6 +534,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final localResults = _searchResults(places);
     final showSearchResults = localResults.isNotEmpty || _googleResults.isNotEmpty || _isSearchingGoogle;
 
+    final resignedBundleId = ref.watch(resignedBundleIdProvider).value;
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -618,6 +622,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     ),
                   ),
                 ),
+                if (resignedBundleId != null && !_bundleNoticeDismissed) ...[
+                  const SizedBox(height: 8),
+                  _ResignedBundleNotice(
+                    bundleId: resignedBundleId,
+                    onDismiss: () => setState(() => _bundleNoticeDismissed = true),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 Container(
                   decoration: BoxDecoration(
@@ -1130,6 +1141,65 @@ class _QuestChip extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Shown on iOS installs that were re-signed under a different bundle ID,
+/// where the Maps key restriction blocks tiles. See maps_bundle_check.dart.
+class _ResignedBundleNotice extends StatelessWidget {
+  const _ResignedBundleNotice({required this.bundleId, required this.onDismiss});
+
+  final String bundleId;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4D6),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4))],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 2),
+            child: Icon(Icons.map_outlined, size: 18, color: Color(0xFF8A6410)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Map tiles are blocked for this install', style: text.labelLarge),
+                const SizedBox(height: 2),
+                Text(
+                  "This build was re-signed as $bundleId. Add that bundle ID to the Maps key's iOS restriction.",
+                  style: text.bodySmall,
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: bundleId));
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bundle ID copied')));
+                  },
+                  child: const Text('Copy bundle ID', style: TextStyle(fontWeight: FontWeight.w800)),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Dismiss',
+            icon: const Icon(Icons.close, size: 18, color: SpottoColors.muted),
+            onPressed: onDismiss,
+          ),
+        ],
       ),
     );
   }

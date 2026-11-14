@@ -82,6 +82,14 @@ map render.
    `GMSServices.provideAPIKey` at launch — same empty-is-fine fallback as
    Android.
 
+**Sideloaded iOS builds:** Sideloadly and AltStore re-sign the IPA under a
+personal Apple ID and change the bundle ID (for example
+`com.spotto.spotto.ABCDE12345`). A Maps key restricted to iOS app
+`com.spotto.spotto` then refuses tiles: the map shows markers and the Google
+logo on a blank background. Discover shows a notice with the bundle ID the
+install actually runs under; add that ID to the key's iOS apps restriction in
+Google Cloud Console (APIs & Services > Credentials). No rebuild is needed.
+
 The same Cloud project/key (with Calendar API, Maps JavaScript API, and
 Places API also enabled) additionally powers the vendor portal's automatic
 public-holiday prompts and its address-search location picker — see
