@@ -1205,10 +1205,10 @@ class _ResignedBundleNotice extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Map tiles are blocked for this install', style: text.labelLarge),
+                Text('Sideloaded build', style: text.labelLarge),
                 const SizedBox(height: 2),
                 Text(
-                  "This build was re-signed as $bundleId. Add that bundle ID to the Maps key's iOS restriction.",
+                  "This install runs as $bundleId. If the map is blank, add that bundle ID to the Maps key's iOS restriction. Dismiss this once the map loads.",
                   style: text.bodySmall,
                 ),
                 TextButton(
