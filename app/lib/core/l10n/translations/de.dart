@@ -57,7 +57,7 @@ class DeStrings implements AppStrings {
   @override
   String get navSpots => 'Orte';
   @override
-  String get navStories => 'Stories';
+  String get navStories => 'Geschichten';
   @override
   String get navTrip => 'Reise';
 
@@ -164,6 +164,12 @@ class DeStrings implements AppStrings {
   String get markAsUsed => 'Eingelöst';
   @override
   String get offerUsedPerk => 'Angebot eingelöst! Viel Spaß damit.';
+  @override
+  String get markAsUsedTitle => 'Als eingelöst markieren?';
+  @override
+  String get markAsUsedConfirm => 'Ja, als eingelöst markieren';
+  @override
+  String get dismissOfferTitle => 'Angebot verwerfen?';
   @override
   String get rateAgainIn15Minutes => 'Du kannst diesen Ort in 15 Minuten wieder bewerten';
 

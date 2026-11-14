@@ -165,6 +165,12 @@ class SiStrings implements AppStrings {
   @override
   String get offerUsedPerk => 'දීමනාව ලබාගත්තා! වාසිය භුක්ති විඳින්න.';
   @override
+  String get markAsUsedTitle => 'භාවිතා කළ ලෙස සලකුණු කරන්නද?';
+  @override
+  String get markAsUsedConfirm => 'ඔව්, භාවිතා කළා';
+  @override
+  String get dismissOfferTitle => 'දීමනාව ඉවත් කරන්නද?';
+  @override
   String get rateAgainIn15Minutes => 'විනාඩි 15කින් ඔබට නැවත රේට් කරන්න පුළුවන්';
 
   // ── Profile & Settings ──────────────────────────────────────────────────

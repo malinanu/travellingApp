@@ -90,6 +90,9 @@ abstract class AppStrings {
   String get tapToShowQr;
   String get markAsUsed;
   String get offerUsedPerk;
+  String get markAsUsedTitle;
+  String get markAsUsedConfirm;
+  String get dismissOfferTitle;
   String get rateAgainIn15Minutes;
 
   // ── Profile & Settings ──────────────────────────────────────────────────

@@ -165,6 +165,12 @@ class NlStrings implements AppStrings {
   @override
   String get offerUsedPerk => 'Deal gebruikt! Veel plezier ermee.';
   @override
+  String get markAsUsedTitle => 'Als gebruikt markeren?';
+  @override
+  String get markAsUsedConfirm => 'Ja, markeer als gebruikt';
+  @override
+  String get dismissOfferTitle => 'Deal verwijderen?';
+  @override
   String get rateAgainIn15Minutes => 'Je kunt deze plek over 15 minuten weer beoordelen';
 
   // ── Profile & Settings ──────────────────────────────────────────────────
