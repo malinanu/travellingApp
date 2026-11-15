@@ -53,7 +53,12 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/t/language', builder: (context, state) => const LanguageSelectionScreen()),
       GoRoute(path: '/t/auth', builder: (context, state) => const AuthScreen()),
-      GoRoute(path: '/t/onboarding', builder: (context, state) => const OnboardingScreen()),
+      // One start-up order on every platform: language, sign-in, onboarding.
+      GoRoute(
+        path: '/t/onboarding',
+        redirect: (context, state) => ref.read(authProvider) ? null : '/t/auth',
+        builder: (context, state) => const OnboardingScreen(),
+      ),
       GoRoute(path: '/t/guide', builder: (context, state) => const GuideScreen()),
       GoRoute(path: '/t/profile', builder: (context, state) => const ProfileScreen()),
       GoRoute(path: '/t/weather', builder: (context, state) => const WeatherScreen()),

@@ -206,6 +206,9 @@ Future<void> showAddItinerarySheet(BuildContext context, WidgetRef ref, ContentI
   if (added == null || !context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
     content: Text('“$added” is now your active trip.'),
+    // A snack bar with an action stays up until tapped unless told otherwise.
+    persist: false,
+    duration: const Duration(seconds: 5),
     action: SnackBarAction(label: 'Open', onPressed: () => context.go('/t/trip')),
   ));
 }

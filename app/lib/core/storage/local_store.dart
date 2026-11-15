@@ -40,6 +40,7 @@ abstract final class StoreKeys {
   static const defaultLocation = 'spotto_default_loc'; // staging default location override from /config
   static const appLanguage = 'spotto_app_language'; // active language code (e.g. en, nl, de, fr, ru, si)
   static const hasSelectedLanguage = 'spotto_has_selected_lang'; // whether traveller completed initial language choice
+  static const installed = 'spotto_installed'; // set on first launch, see LocalStore.init
 }
 
 class LocalStore {
@@ -60,6 +61,19 @@ class LocalStore {
   static Future<LocalStore> init() async {
     final prefs = await SharedPreferences.getInstance();
     const secure = FlutterSecureStorage();
+    // First launch after an install: nothing has been saved yet. iOS keeps
+    // Keychain items when an app is deleted, so a reinstall would otherwise
+    // start half signed-in on a dead session (onboarding before sign-in,
+    // where Android starts at sign-in). Start every fresh install signed out.
+    if (prefs.getKeys().isEmpty) {
+      try {
+        await secure.delete(key: StoreKeys.token);
+        await secure.delete(key: StoreKeys.refreshToken);
+      } catch (_) {
+        // Keychain unusable: the reads below fall back to signed-out anyway.
+      }
+      await prefs.setBool(StoreKeys.installed, true);
+    }
     String? token;
     try {
       token = await secure.read(key: StoreKeys.token);

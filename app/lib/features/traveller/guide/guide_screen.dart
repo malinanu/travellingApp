@@ -631,6 +631,9 @@ class _GuideScreenState extends ConsumerState<GuideScreen> {
     final n = action.stops.length;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text('Added ${n == 1 ? action.stops.first.place.name : '$n places'} to $where.'),
+      // A snack bar with an action stays up until tapped unless told otherwise.
+      persist: false,
+      duration: const Duration(seconds: 5),
       action: SnackBarAction(
         label: 'Open',
         onPressed: () {

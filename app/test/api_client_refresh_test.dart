@@ -62,7 +62,8 @@ Future<(ApiClient, _FakeServer, LocalStore, List<int>)> _client(String refresh) 
       return null;
     },
   );
-  SharedPreferences.setMockInitialValues({});
+  // An existing install with a saved session (a first launch starts signed out).
+  SharedPreferences.setMockInitialValues({StoreKeys.installed: true});
   final store = await LocalStore.init();
   final server = _FakeServer(refresh);
   final api = ApiClient(store, adapter: server);
