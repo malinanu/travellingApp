@@ -8,7 +8,24 @@
 // delete it.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRightLeft, CheckCircle2, Compass, KeyRound, LogOut, MonitorSmartphone, PenLine, Search, ShieldAlert, Trash2, Trophy } from 'lucide-react';
+import {
+  ArrowRightLeft,
+  Check,
+  CheckCircle2,
+  Compass,
+  Info,
+  KeyRound,
+  LogOut,
+  MonitorSmartphone,
+  PenLine,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  Sliders,
+  Trash2,
+  Trophy,
+  X,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
@@ -143,12 +160,12 @@ function UserDetail({ id }: { id: string }) {
         </p>
       </div>
 
-      {user.role === 'admin' && me?.isSuperAdmin && (
-        <AdminPermissionsPanel userId={user.id} isSuperAdmin={data.isSuperAdmin} permissions={data.adminPermissions} />
-      )}
-
-      {user.role !== 'admin' && <PublisherPanel key={user.id} user={user} />}
-      <DemoPrivilegePanel key={user.id} user={user} />
+      <UserAccessControlPanel
+        user={user}
+        isSuperAdmin={!!me?.isSuperAdmin}
+        isAdminUserSuperAdmin={data.isSuperAdmin}
+        adminPermissions={data.adminPermissions}
+      />
 
       <div className="panel p-5">
         <CardTitle icon={MonitorSmartphone}>Signed-in devices · {sessions.length}</CardTitle>
@@ -254,226 +271,392 @@ function PublisherPill() {
   );
 }
 
-// Any admin can let an account write travel content (blogs, audio guides,
-// travel guides, itineraries, tips). Publishers sign in here and only see
-// the Content section with their own posts, which an admin reviews before
-// they go live. Admins can always write, so this is for everyone else.
-function PublisherPanel({ user }: { user: User }) {
+// Unified User Access Control & Privileges Panel
+// Consolidates individual privilege cards into a clean, space-saving list
+// where each privilege has a clear interactive check mark in front of its name.
+function UserAccessControlPanel({
+  user,
+  isSuperAdmin,
+  isAdminUserSuperAdmin,
+  adminPermissions = [],
+}: {
+  user: User;
+  isSuperAdmin: boolean;
+  isAdminUserSuperAdmin?: boolean;
+  adminPermissions?: string[];
+}) {
   const qc = useQueryClient();
-  const on = !!user.publisher;
-  const [confirming, setConfirming] = useState(false);
-  const [reason, setReason] = useState('');
-  const toggle = useMutation({
-    mutationFn: () => api.put(`/admin/users/${encodeURIComponent(user.id)}/publisher`, { publisher: !on, reason: reason.trim() }),
+  const isPublisher = !!user.publisher;
+  const isDemo = !!user.demoPrivilege;
+  const hasVendorLogins = adminPermissions.includes('vendor_logins');
+
+  // Modal confirmation state
+  const [activeModal, setActiveModal] = useState<{
+    type: 'publisher' | 'demo' | 'vendor_logins';
+    action: 'grant' | 'revoke';
+  } | null>(null);
+
+  const [modalReason, setModalReason] = useState('');
+  const [demoLocation, setDemoLocation] = useState(user.demoLocation || 'mirissa');
+  const [mutationError, setMutationError] = useState<string | null>(null);
+
+  const publisherMutation = useMutation({
+    mutationFn: (vars: { publisher: boolean; reason: string }) =>
+      api.put(`/admin/users/${encodeURIComponent(user.id)}/publisher`, vars),
     onSuccess: () => {
-      setConfirming(false);
-      setReason('');
+      closeModal();
       qc.invalidateQueries({ queryKey: ['admin-user', user.id] });
       qc.invalidateQueries({ queryKey: ['admin-users'] });
     },
+    onError: (err: any) => setMutationError(err?.message || 'Failed to update publisher access'),
   });
 
-  return (
-    <div className="panel p-5">
-      <CardTitle icon={PenLine}>Publisher</CardTitle>
-      <p className="text-[12.5px] font-semibold">
-        Writes travel content: <span style={{ color: on ? GREEN : undefined }} className={on ? '' : 'text-muted'}>{on ? 'Yes' : 'No'}</span>
-        {on && (
-          <Link href={`/content?author=${encodeURIComponent(user.id)}`} className="ml-2 font-bold" style={{ color: 'var(--accent)' }}>
-            See their posts →
-          </Link>
-        )}
-      </p>
-      <p className="text-[11.5px] text-muted font-semibold mt-0.5">
-        Publishers sign in to the Command Center with this account and see only Content: they write blog posts, audio guides,
-        travel guides, itineraries and tips, and an admin approves each one before travellers see it.
-      </p>
-      {confirming ? (
-        <form className="space-y-2 mt-3" onSubmit={(e) => { e.preventDefault(); toggle.mutate(); }}>
-          <label className="block">
-            <span className="text-[12px] font-bold block mb-1">Reason (saved in the audit log)</span>
-            <input autoFocus required value={reason} onChange={(e) => setReason(e.target.value)} className="input w-full py-1.5"
-              placeholder={on ? 'e.g. Contract ended' : 'e.g. Writes our Galle guides'} />
-          </label>
-          <div className="flex items-center justify-end gap-2">
-            <button type="button" className="btn py-1 px-3 text-[12px]" onClick={() => setConfirming(false)}>Cancel</button>
-            <button type="submit" className={`btn ${on ? 'btn-danger' : 'btn-primary'} py-1 px-3 text-[12px]`} disabled={toggle.isPending || !reason.trim()}>
-              {toggle.isPending ? 'Saving…' : on ? 'Stop publishing' : 'Make publisher'}
-            </button>
-          </div>
-        </form>
-      ) : (
-        <button className="btn py-1.5 px-3 text-[12px] mt-3" onClick={() => { toggle.reset(); setConfirming(true); }}>
-          {on ? 'Stop this account publishing' : 'Make publisher'}
-        </button>
-      )}
-      {toggle.isError && <p className="text-[11.5px] font-semibold mt-2" style={{ color: RED }}>{(toggle.error as Error).message}</p>}
-    </div>
-  );
-}
-
-// Admins can grant developer/test accounts Demo Privilege to force their
-// location to Mirissa for staging investor presentations.
-function DemoPrivilegePanel({ user }: { user: User }) {
-  const qc = useQueryClient();
-  const on = !!user.demoPrivilege;
-  const [confirming, setConfirming] = useState(false);
-  const [reason, setReason] = useState('');
-  const [location, setLocation] = useState(user.demoLocation || 'mirissa');
-
-  const toggle = useMutation({
-    mutationFn: () =>
-      api.put(`/admin/users/${encodeURIComponent(user.id)}/demo-privilege`, {
-        demoPrivilege: !on,
-        location: !on ? location.trim() || 'mirissa' : '',
-        reason: reason.trim(),
-      }),
+  const demoMutation = useMutation({
+    mutationFn: (vars: { demoPrivilege: boolean; location: string; reason: string }) =>
+      api.put(`/admin/users/${encodeURIComponent(user.id)}/demo-privilege`, vars),
     onSuccess: () => {
-      setConfirming(false);
-      setReason('');
+      closeModal();
       qc.invalidateQueries({ queryKey: ['admin-user', user.id] });
       qc.invalidateQueries({ queryKey: ['admin-users'] });
     },
+    onError: (err: any) => setMutationError(err?.message || 'Failed to update demo privilege'),
   });
+
+  const vendorLoginsMutation = useMutation({
+    mutationFn: (vars: { vendorLogins: boolean; reason: string }) =>
+      api.put(`/admin/users/${encodeURIComponent(user.id)}/permissions`, vars),
+    onSuccess: () => {
+      closeModal();
+      qc.invalidateQueries({ queryKey: ['admin-user', user.id] });
+    },
+    onError: (err: any) => setMutationError(err?.message || 'Failed to update admin permissions'),
+  });
+
+  const openModal = (type: 'publisher' | 'demo' | 'vendor_logins', isEditLocation: boolean = false) => {
+    setMutationError(null);
+    setModalReason('');
+    if (type === 'publisher') {
+      setActiveModal({ type: 'publisher', action: isPublisher ? 'revoke' : 'grant' });
+    } else if (type === 'demo') {
+      setDemoLocation(user.demoLocation || 'mirissa');
+      setActiveModal({ type: 'demo', action: isEditLocation || !isDemo ? 'grant' : 'revoke' });
+    } else if (type === 'vendor_logins') {
+      setActiveModal({ type: 'vendor_logins', action: hasVendorLogins ? 'revoke' : 'grant' });
+    }
+  };
+
+  const closeModal = () => {
+    setActiveModal(null);
+    setModalReason('');
+    setMutationError(null);
+  };
+
+  const isSubmitting =
+    publisherMutation.isPending || demoMutation.isPending || vendorLoginsMutation.isPending;
+
+  const handleModalSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeModal || !modalReason.trim()) return;
+
+    if (activeModal.type === 'publisher') {
+      publisherMutation.mutate({
+        publisher: activeModal.action === 'grant',
+        reason: modalReason.trim(),
+      });
+    } else if (activeModal.type === 'demo') {
+      demoMutation.mutate({
+        demoPrivilege: activeModal.action === 'grant',
+        location: activeModal.action === 'grant' ? demoLocation.trim() || 'mirissa' : '',
+        reason: modalReason.trim(),
+      });
+    } else if (activeModal.type === 'vendor_logins') {
+      vendorLoginsMutation.mutate({
+        vendorLogins: activeModal.action === 'grant',
+        reason: modalReason.trim(),
+      });
+    }
+  };
+
+  const activePrivilegesCount =
+    (isPublisher ? 1 : 0) +
+    (isDemo ? 1 : 0) +
+    (user.role === 'admin' ? (isAdminUserSuperAdmin || hasVendorLogins ? 1 : 0) : 0);
 
   return (
     <div className="panel p-5">
-      <CardTitle icon={Compass}>Developer Demo Privilege</CardTitle>
-      <div className="flex items-center gap-2 text-[12.5px] font-semibold">
-        <span>Staging location override:</span>
-        <span className={`font-bold ${on ? 'text-amber-700' : 'text-muted'}`}>
-          {on ? `Active (${user.demoLocation || 'Mirissa'})` : 'Inactive (Real GPS)'}
+      <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-line">
+        <div className="flex items-center gap-2">
+          <ShieldCheck size={18} style={{ color: 'var(--accent)' }} />
+          <h3 className="font-bold text-[14px]">Access Control & Privileges</h3>
+        </div>
+        <span className="text-[11.5px] font-semibold text-muted">
+          {activePrivilegesCount} active privilege{activePrivilegesCount === 1 ? '' : 's'}
         </span>
       </div>
-      <p className="text-[11.5px] text-muted font-semibold mt-1">
-        When enabled, the mobile app automatically sets this developer&apos;s location to Mirissa Beach (5.9483, 80.4552) for staging demos and investor pitches without GPS spoofing.
-      </p>
-      {confirming ? (
-        <form
-          className="space-y-3 mt-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            toggle.mutate();
-          }}
-        >
-          {!on && (
-            <label className="block">
-              <span className="text-[12px] font-bold block mb-1">Target Demo Location</span>
-              <input
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="input w-full py-1.5"
-                placeholder="mirissa"
-              />
-            </label>
-          )}
-          <label className="block">
-            <span className="text-[12px] font-bold block mb-1">Reason (saved in the audit log)</span>
-            <input
-              autoFocus
-              required
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="input w-full py-1.5"
-              placeholder={on ? 'e.g. Investor demo completed' : 'e.g. Staging pitch to investors'}
-            />
-          </label>
-          <div className="flex items-center justify-end gap-2">
+
+      <div className="space-y-2.5">
+        {/* Privilege 1: Publisher Access */}
+        {user.role !== 'admin' && (
+          <div className="flex items-start sm:items-center justify-between gap-3 p-3 rounded-xl border border-line bg-[var(--surface)] hover:border-muted/80 transition-colors">
+            <div className="flex items-start gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => openModal('publisher')}
+                className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 border transition-all mt-0.5 sm:mt-0 ${
+                  isPublisher
+                    ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm hover:bg-emerald-600'
+                    : 'border-line hover:border-muted bg-transparent text-transparent hover:text-muted/30'
+                }`}
+                title={isPublisher ? 'Click to revoke publisher access' : 'Click to grant publisher access'}
+              >
+                <Check size={14} className={isPublisher ? 'stroke-[3]' : 'stroke-[2]'} />
+              </button>
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-[13px]">Publisher Access</span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ${
+                      isPublisher ? 'bg-emerald-500/15 text-emerald-600' : 'bg-line text-muted'
+                    }`}
+                  >
+                    {isPublisher ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                <p className="text-[11.5px] text-muted font-medium mt-0.5">
+                  Allows creating blog posts, audio guides, travel guides, and itineraries for admin review.
+                </p>
+              </div>
+            </div>
+
+            {isPublisher && (
+              <Link
+                href={`/content?author=${encodeURIComponent(user.id)}`}
+                className="text-[12px] font-bold shrink-0 flex items-center gap-1 hover:underline"
+                style={{ color: 'var(--accent)' }}
+              >
+                See posts →
+              </Link>
+            )}
+          </div>
+        )}
+
+        {/* Privilege 2: Developer Demo Mode */}
+        <div className="flex items-start sm:items-center justify-between gap-3 p-3 rounded-xl border border-line bg-[var(--surface)] hover:border-muted/80 transition-colors">
+          <div className="flex items-start gap-3 min-w-0">
             <button
               type="button"
-              className="btn py-1 px-3 text-[12px]"
-              onClick={() => setConfirming(false)}
+              onClick={() => openModal('demo')}
+              className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 border transition-all mt-0.5 sm:mt-0 ${
+                isDemo
+                  ? 'bg-amber-500 border-amber-600 text-white shadow-sm hover:bg-amber-600'
+                  : 'border-line hover:border-muted bg-transparent text-transparent hover:text-muted/30'
+              }`}
+              title={isDemo ? 'Click to revoke demo privilege' : 'Click to grant demo privilege'}
             >
-              Cancel
+              <Check size={14} className={isDemo ? 'stroke-[3]' : 'stroke-[2]'} />
             </button>
-            <button
-              type="submit"
-              className={`btn ${on ? 'btn-danger' : 'btn-primary'} py-1 px-3 text-[12px]`}
-              disabled={toggle.isPending || !reason.trim()}
-            >
-              {toggle.isPending ? 'Saving…' : on ? 'Revoke demo privilege' : 'Grant demo privilege'}
-            </button>
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-[13px]">Developer Demo Mode</span>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ${
+                    isDemo ? 'bg-amber-500/15 text-amber-700' : 'bg-line text-muted'
+                  }`}
+                >
+                  {isDemo ? `Active (${user.demoLocation || 'Mirissa'})` : 'Inactive (Real GPS)'}
+                </span>
+              </div>
+              <p className="text-[11.5px] text-muted font-medium mt-0.5">
+                Sets mobile app location override to Mirissa Beach (5.9483, 80.4552) for staging pitches without GPS spoofing.
+              </p>
+            </div>
           </div>
-        </form>
-      ) : (
-        <button
-          className="btn py-1.5 px-3 text-[12px] mt-3"
-          onClick={() => {
-            toggle.reset();
-            setConfirming(true);
-          }}
-        >
-          {on ? 'Revoke demo privilege' : 'Grant demo privilege'}
-        </button>
-      )}
-      {toggle.isError && (
-        <p className="text-[11.5px] font-semibold mt-2" style={{ color: RED }}>
-          {(toggle.error as Error).message}
-        </p>
-      )}
-    </div>
-  );
-}
 
-// Super-admins grant individual admins extra powers. Today that's only
-// handing vendor logins over to their real owners (vendor Team tab).
-function AdminPermissionsPanel({ userId, isSuperAdmin, permissions }: { userId: string; isSuperAdmin: boolean; permissions: string[] }) {
-  const qc = useQueryClient();
-  const granted = permissions.includes('vendor_logins');
-  const [confirming, setConfirming] = useState(false);
-  const [reason, setReason] = useState('');
-  const toggle = useMutation({
-    mutationFn: () => api.put(`/admin/users/${encodeURIComponent(userId)}/permissions`, { vendorLogins: !granted, reason: reason.trim() }),
-    onSuccess: () => {
-      setConfirming(false);
-      setReason('');
-      qc.invalidateQueries({ queryKey: ['admin-user', userId] });
-    },
-  });
+          {isDemo && (
+            <button
+              type="button"
+              onClick={() => openModal('demo', true)}
+              className="text-[11.5px] font-bold shrink-0 text-muted hover:text-[var(--ink)] flex items-center gap-1 underline"
+            >
+              <Sliders size={12} /> Edit location
+            </button>
+          )}
+        </div>
 
-  return (
-    <div className="panel p-5">
-      <CardTitle icon={KeyRound}>Admin permissions</CardTitle>
-      {isSuperAdmin ? (
-        <p className="text-[12.5px] text-muted font-semibold">Super-admin: has every permission, including changing vendor logins.</p>
-      ) : (
-        <>
-          <p className="text-[12.5px] font-semibold">
-            Change vendor logins: <span style={{ color: granted ? GREEN : undefined }} className={granted ? '' : 'text-muted'}>{granted ? 'Allowed' : 'Not allowed'}</span>
-          </p>
-          <p className="text-[11.5px] text-muted font-semibold mt-0.5">Lets this admin move a business account to its real owner&apos;s email and reset its password.</p>
-          {confirming ? (
-            <form className="space-y-2 mt-3" onSubmit={(e) => { e.preventDefault(); toggle.mutate(); }}>
+        {/* Privilege 3: Vendor Login Handover (Admin only) */}
+        {user.role === 'admin' && (
+          <div className="flex items-start sm:items-center justify-between gap-3 p-3 rounded-xl border border-line bg-[var(--surface)] hover:border-muted/80 transition-colors">
+            <div className="flex items-start gap-3 min-w-0">
+              <button
+                type="button"
+                disabled={isAdminUserSuperAdmin || !isSuperAdmin}
+                onClick={() => openModal('vendor_logins')}
+                className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 border transition-all mt-0.5 sm:mt-0 ${
+                  isAdminUserSuperAdmin || hasVendorLogins
+                    ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm hover:bg-emerald-600'
+                    : 'border-line hover:border-muted bg-transparent text-transparent hover:text-muted/30'
+                } ${isAdminUserSuperAdmin || !isSuperAdmin ? 'opacity-80 cursor-default' : ''}`}
+                title={
+                  isAdminUserSuperAdmin
+                    ? 'Super-admin has every permission'
+                    : !isSuperAdmin
+                    ? 'Super-admin only'
+                    : hasVendorLogins
+                    ? 'Click to revoke'
+                    : 'Click to grant'
+                }
+              >
+                <Check size={14} className={isAdminUserSuperAdmin || hasVendorLogins ? 'stroke-[3]' : 'stroke-[2]'} />
+              </button>
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-[13px]">Vendor Login Handover</span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ${
+                      isAdminUserSuperAdmin
+                        ? 'bg-amber-500/15 text-amber-600'
+                        : hasVendorLogins
+                        ? 'bg-emerald-500/15 text-emerald-600'
+                        : 'bg-line text-muted'
+                    }`}
+                  >
+                    {isAdminUserSuperAdmin ? 'Super-Admin Default' : hasVendorLogins ? 'Allowed' : 'Not Allowed'}
+                  </span>
+                </div>
+                <p className="text-[11.5px] text-muted font-medium mt-0.5">
+                  Allows transferring merchant business accounts to real owner emails and issuing password setup links.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Command Center Granular Permissions (Admin only) */}
+        {user.role === 'admin' && (
+          <div className="flex items-center justify-between gap-3 p-3 rounded-xl border border-line bg-[var(--surface)]">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-6 h-6 rounded-md flex items-center justify-center bg-[var(--accent)]/15 text-[var(--accent)] shrink-0">
+                <KeyRound size={13} />
+              </div>
+              <div className="min-w-0">
+                <span className="font-bold text-[13px] block truncate">Command Center Granular Permissions</span>
+                <p className="text-[11.5px] text-muted font-medium mt-0.5">
+                  {isAdminUserSuperAdmin
+                    ? 'Super-admin account holds all platform permissions.'
+                    : `${adminPermissions.length} feature permissions assigned.`}
+                </p>
+              </div>
+            </div>
+            <Link
+              href={`/access-control?admin=${encodeURIComponent(user.id)}`}
+              className="btn btn-primary !py-1 !px-2.5 text-[11.5px] font-bold flex items-center gap-1 shrink-0"
+            >
+              Access Control Board →
+            </Link>
+          </div>
+        )}
+      </div>
+
+      {/* Audit Confirmation Modal */}
+      {activeModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[var(--surface)] border border-line rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-[16px]">
+                  {activeModal.type === 'publisher'
+                    ? `${activeModal.action === 'grant' ? 'Grant' : 'Revoke'} Publisher Access`
+                    : activeModal.type === 'demo'
+                    ? `${activeModal.action === 'grant' ? 'Configure' : 'Revoke'} Developer Demo Mode`
+                    : `${activeModal.action === 'grant' ? 'Grant' : 'Revoke'} Vendor Login Access`}
+                </h3>
+                <p className="text-[12px] text-muted mt-0.5">
+                  {activeModal.type === 'publisher'
+                    ? 'Publishers can write and submit travel blogs and guides for admin review.'
+                    : activeModal.type === 'demo'
+                    ? 'Forces staging location in mobile app for investor presentations without GPS spoofing.'
+                    : 'Allows this admin to reassign merchant logins to real business owner emails.'}
+                </p>
+              </div>
+              <button
+                onClick={closeModal}
+                className="text-muted hover:text-[var(--ink)] p-1 rounded-lg border border-transparent hover:border-line"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleModalSubmit} className="space-y-3">
+              {activeModal.type === 'demo' && activeModal.action === 'grant' && (
+                <label className="block">
+                  <span className="text-[12px] font-bold block mb-1">Target Demo Location</span>
+                  <input
+                    value={demoLocation}
+                    onChange={(e) => setDemoLocation(e.target.value)}
+                    placeholder="mirissa"
+                    className="input w-full py-2 text-[13px]"
+                  />
+                </label>
+              )}
+
               <label className="block">
-                <span className="text-[12px] font-bold block mb-1">Reason (saved in the audit log)</span>
-                <input autoFocus required value={reason} onChange={(e) => setReason(e.target.value)} className="input w-full py-1.5"
-                  placeholder={granted ? 'e.g. Moved off the support team' : 'e.g. Handles vendor onboarding'} />
+                <span className="text-[12px] font-bold block mb-1">Reason (saved in audit log)</span>
+                <input
+                  autoFocus
+                  required
+                  value={modalReason}
+                  onChange={(e) => setModalReason(e.target.value)}
+                  placeholder={
+                    activeModal.type === 'publisher'
+                      ? activeModal.action === 'grant'
+                        ? 'e.g. Writes our Galle guides'
+                        : 'e.g. Contract ended'
+                      : activeModal.type === 'demo'
+                      ? activeModal.action === 'grant'
+                        ? 'e.g. Staging pitch to investors'
+                        : 'e.g. Investor demo completed'
+                      : activeModal.action === 'grant'
+                      ? 'e.g. Handles vendor onboarding'
+                      : 'e.g. Moved off support team'
+                  }
+                  className="input w-full py-2 text-[13px]"
+                />
               </label>
-              <div className="flex items-center justify-end gap-2">
-                <button type="button" className="btn py-1 px-3 text-[12px]" onClick={() => setConfirming(false)}>Cancel</button>
-                <button type="submit" className={`btn ${granted ? 'btn-danger' : 'btn-primary'} py-1 px-3 text-[12px]`} disabled={toggle.isPending || !reason.trim()}>
-                  {toggle.isPending ? 'Saving…' : granted ? 'Remove permission' : 'Allow'}
+
+              {mutationError && (
+                <p className="text-[12px] font-semibold text-rose-500">{mutationError}</p>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-line">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="btn py-1.5 px-3.5 text-[12px]"
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className={`btn ${
+                    activeModal.action === 'revoke' ? 'btn-danger' : 'btn-primary'
+                  } py-1.5 px-3.5 text-[12px] font-bold`}
+                  disabled={isSubmitting || !modalReason.trim()}
+                >
+                  {isSubmitting
+                    ? 'Saving…'
+                    : activeModal.action === 'revoke'
+                    ? 'Revoke Privilege'
+                    : 'Grant Privilege'}
                 </button>
               </div>
             </form>
-          ) : (
-            <button className="btn py-1.5 px-3 text-[12px] mt-3" onClick={() => { toggle.reset(); setConfirming(true); }}>
-              {granted ? 'Remove permission' : 'Allow changing vendor logins'}
-            </button>
-          )}
-          {toggle.isError && <p className="text-[11.5px] font-semibold mt-2" style={{ color: RED }}>{(toggle.error as Error).message}</p>}
-        </>
+          </div>
+        </div>
       )}
-
-      <div className="mt-3 pt-3 border-t border-line flex items-center justify-between">
-        <span className="text-[11.5px] text-muted font-medium">Granular Command Center features & drag-and-drop:</span>
-        <Link
-          href={`/access-control?admin=${encodeURIComponent(userId)}`}
-          className="btn btn-primary !py-1 !px-2.5 text-[11.5px] font-bold flex items-center gap-1"
-        >
-          Access Control Board →
-        </Link>
-      </div>
     </div>
   );
 }

@@ -33,6 +33,7 @@ import {
   Lock,
   LucideIcon,
   Map,
+  Minus,
   Newspaper,
   RotateCcw,
   Save,
@@ -165,6 +166,19 @@ function AccessControlManager() {
   // Search & category filter
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+
+  // View mode: compact checklist (default) vs 3-column Kanban board
+  const [viewMode, setViewMode] = useState<'checklist' | 'kanban'>('checklist');
+  const [collapsedFeatureIds, setCollapsedFeatureIds] = useState<Set<string>>(new Set());
+
+  const toggleFeatureCollapsed = (id: string) => {
+    setCollapsedFeatureIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   // Drag-and-drop state
   const [draggedItem, setDraggedItem] = useState<{ type: 'feature' | 'permission'; id: string; featureId?: string } | null>(null);
@@ -633,47 +647,288 @@ function AccessControlManager() {
         </div>
       )}
 
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search features or permissions…"
-            className="input w-full pl-9 py-1.5 text-[13px]"
-          />
-        </div>
+      {/* Filter, Search Bar, and View Mode Switcher */}
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+        <div className="flex items-center gap-3 flex-1 flex-wrap sm:flex-nowrap">
+          <div className="relative w-full sm:w-72">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search features or permissions…"
+              className="input w-full pl-9 py-1.5 text-[13px]"
+            />
+          </div>
 
-        <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
-          <button
-            onClick={() => setCategoryFilter('all')}
-            className={`px-3 py-1 rounded-lg text-[12px] font-bold border transition-colors ${
-              categoryFilter === 'all'
-                ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
-                : 'bg-[var(--surface)] text-muted border-line'
-            }`}
-          >
-            All Categories ({features.length})
-          </button>
-          {Object.entries(CATEGORY_META).map(([catKey, meta]) => (
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
             <button
-              key={catKey}
-              onClick={() => setCategoryFilter(catKey)}
-              className={`px-2.5 py-1 rounded-lg text-[11.5px] font-bold border transition-colors whitespace-nowrap ${
-                categoryFilter === catKey
+              onClick={() => setCategoryFilter('all')}
+              className={`px-3 py-1 rounded-lg text-[12px] font-bold border transition-colors ${
+                categoryFilter === 'all'
                   ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
                   : 'bg-[var(--surface)] text-muted border-line'
               }`}
             >
-              {meta.label}
+              All Categories ({features.length})
             </button>
-          ))}
+            {Object.entries(CATEGORY_META).map(([catKey, meta]) => (
+              <button
+                key={catKey}
+                onClick={() => setCategoryFilter(catKey)}
+                className={`px-2.5 py-1 rounded-lg text-[11.5px] font-bold border transition-colors whitespace-nowrap ${
+                  categoryFilter === catKey
+                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                    : 'bg-[var(--surface)] text-muted border-line'
+                }`}
+              >
+                {meta.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* View Mode Switcher */}
+        <div className="flex items-center gap-1 bg-line/20 p-1 rounded-xl border border-line shrink-0 self-start lg:self-auto">
+          <button
+            onClick={() => setViewMode('checklist')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-all ${
+              viewMode === 'checklist'
+                ? 'bg-[var(--accent)] text-white shadow-sm'
+                : 'text-muted hover:text-[var(--ink)]'
+            }`}
+          >
+            <CheckSquare size={13} />
+            <span>Checklist View</span>
+          </button>
+          <button
+            onClick={() => setViewMode('kanban')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-all ${
+              viewMode === 'kanban'
+                ? 'bg-[var(--accent)] text-white shadow-sm'
+                : 'text-muted hover:text-[var(--ink)]'
+            }`}
+          >
+            <Layers size={13} />
+            <span>Kanban Board</span>
+          </button>
         </div>
       </div>
 
-      {/* To-Do List Style 3-Column Kanban Board with Bidirectional Drag and Drop */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+      {viewMode === 'checklist' ? (
+        <div className="panel p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 border-b border-line gap-2">
+            <div>
+              <h2 className="font-bold text-[15px] flex items-center gap-2">
+                <CheckSquare size={16} style={{ color: 'var(--accent)' }} />
+                <span>Privilege Checklist</span>
+              </h2>
+              <p className="text-[12px] text-muted font-medium mt-0.5">
+                Each privilege is listed with a check mark directly in front for quick, compact access configuration.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-auto text-[12px]">
+              <span className="font-semibold text-muted">
+                <strong className="text-[var(--ink)]">{draftPermissions.length}</strong> permissions granted
+              </span>
+              {isSuperAdmin && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => applyPreset('super')}
+                    className="text-[11.5px] font-bold text-[var(--accent)] hover:underline ml-2"
+                  >
+                    Select All
+                  </button>
+                  <span className="text-muted">·</span>
+                  <button
+                    type="button"
+                    onClick={() => applyPreset('reset')}
+                    className="text-[11.5px] font-bold text-rose-500 hover:underline"
+                  >
+                    Clear All
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {filteredFeatures.length === 0 ? (
+            <div className="p-8 text-center text-muted font-semibold text-[13px]">
+              No features match your current filter.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredFeatures.map((feat) => {
+                const Icon = FEATURE_ICONS[feat.icon] || Shield;
+                const catMeta = CATEGORY_META[feat.category] || { label: feat.category, bg: '#eee', text: '#333', border: '#ccc' };
+                const grantedCount = feat.subPermissions.filter((sp) => draftPermissions.includes(sp.id)).length;
+                const isAllGranted = feat.subPermissions.length > 0 && grantedCount === feat.subPermissions.length;
+                const isPartiallyGranted = grantedCount > 0 && !isAllGranted;
+                const isCollapsed = collapsedFeatureIds.has(feat.id);
+
+                return (
+                  <div
+                    key={feat.id}
+                    className={`rounded-xl border transition-all overflow-hidden ${
+                      isAllGranted
+                        ? 'border-emerald-500/30 bg-emerald-500/[0.02]'
+                        : isPartiallyGranted
+                        ? 'border-amber-500/30 bg-amber-500/[0.02]'
+                        : 'border-line bg-[var(--surface)]'
+                    }`}
+                  >
+                    {/* Feature Master Row */}
+                    <div className="p-3.5 flex items-start sm:items-center justify-between gap-3 bg-[var(--surface)] border-b border-line/60">
+                      <div className="flex items-start sm:items-center gap-3 min-w-0">
+                        {/* Check mark directly in front of the feature name */}
+                        <button
+                          type="button"
+                          disabled={!isSuperAdmin}
+                          onClick={() => {
+                            if (isAllGranted) {
+                              revokeWholeFeature(feat);
+                            } else {
+                              grantWholeFeature(feat);
+                            }
+                          }}
+                          className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 border transition-all mt-0.5 sm:mt-0 ${
+                            isAllGranted
+                              ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm'
+                              : isPartiallyGranted
+                              ? 'bg-amber-500 border-amber-600 text-white shadow-sm'
+                              : 'border-line hover:border-muted bg-transparent text-transparent hover:text-muted/30'
+                          } ${!isSuperAdmin ? 'cursor-default opacity-80' : 'cursor-pointer hover:scale-105'}`}
+                          title={
+                            isAllGranted
+                              ? 'Click to revoke all permissions in this feature'
+                              : 'Click to grant all permissions in this feature'
+                          }
+                        >
+                          {isAllGranted && <Check size={14} className="stroke-[3]" />}
+                          {isPartiallyGranted && <Minus size={14} className="stroke-[3]" />}
+                        </button>
+
+                        <div
+                          className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 hidden sm:flex"
+                          style={{ background: catMeta.bg, color: catMeta.text }}
+                        >
+                          <Icon size={14} />
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-[13.5px] leading-snug">{feat.name}</span>
+                            <span
+                              className="text-[9.5px] font-bold px-1.5 py-0.2 rounded uppercase border"
+                              style={{ background: catMeta.bg, color: catMeta.text, borderColor: catMeta.border }}
+                            >
+                              {catMeta.label}
+                            </span>
+                          </div>
+                          <p className="text-[11.5px] text-muted font-medium mt-0.5 line-clamp-1 sm:line-clamp-none">
+                            {feat.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span
+                          className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                            isAllGranted
+                              ? 'bg-emerald-500/15 text-emerald-600'
+                              : isPartiallyGranted
+                              ? 'bg-amber-500/15 text-amber-600'
+                              : 'bg-line text-muted'
+                          }`}
+                        >
+                          {grantedCount} / {feat.subPermissions.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => toggleFeatureCollapsed(feat.id)}
+                          className="p-1 rounded text-muted hover:text-[var(--ink)]"
+                          title={isCollapsed ? 'Expand permissions' : 'Collapse permissions'}
+                        >
+                          {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Granular Sub-permissions Checklist */}
+                    {!isCollapsed && (
+                      <div className="divide-y divide-line/40 bg-[var(--surface-subtle,rgba(0,0,0,0.01))]">
+                        {feat.subPermissions.map((sp) => {
+                          const isGranted = draftPermissions.includes(sp.id);
+                          const risk = RISK_META[sp.risk] || RISK_META.low;
+
+                          return (
+                            <div
+                              key={sp.id}
+                              className={`px-4 sm:px-6 py-2.5 flex items-start sm:items-center justify-between gap-3 hover:bg-[var(--line)]/15 transition-colors ${
+                                isGranted ? 'bg-emerald-500/[0.015]' : ''
+                              }`}
+                            >
+                              <div className="flex items-start sm:items-center gap-3 min-w-0">
+                                {/* Sub-permission Checkmark Button */}
+                                <button
+                                  type="button"
+                                  disabled={!isSuperAdmin}
+                                  onClick={() => {
+                                    if (isGranted) {
+                                      revokePermission(sp.id);
+                                    } else {
+                                      grantPermission(sp.id);
+                                    }
+                                  }}
+                                  className={`w-5 h-5 rounded flex items-center justify-center shrink-0 border transition-all mt-0.5 sm:mt-0 ${
+                                    isGranted
+                                      ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm'
+                                      : 'border-line hover:border-muted bg-transparent text-transparent hover:text-muted/30'
+                                  } ${!isSuperAdmin ? 'cursor-default opacity-80' : 'cursor-pointer hover:scale-105'}`}
+                                  title={isGranted ? 'Click to revoke' : 'Click to grant'}
+                                >
+                                  {isGranted && <Check size={12} className="stroke-[3]" />}
+                                </button>
+
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span
+                                      className={`text-[12.5px] ${
+                                        isGranted ? 'font-bold text-[var(--ink)]' : 'font-medium text-muted'
+                                      }`}
+                                    >
+                                      {sp.name}
+                                    </span>
+                                    <span
+                                      className="text-[9px] font-bold px-1.5 py-0.2 rounded uppercase"
+                                      style={{ background: risk.bg, color: risk.text }}
+                                    >
+                                      {risk.label}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-muted font-normal mt-0.5">
+                                    {sp.description}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <span className="text-[10.5px] font-mono text-muted/70 shrink-0 hidden md:inline">
+                                {sp.id}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* To-Do List Style 3-Column Kanban Board with Bidirectional Drag and Drop */
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         {/* Column 1: Feature Catalog & Available Pool (The Feature Catalog) */}
         <div
           onDragOver={(e) => handleDragOver(e, 'available')}
@@ -1072,6 +1327,7 @@ function AccessControlManager() {
           )}
         </div>
       </div>
+      )}
 
       {/* Save Confirmation Modal with Audit Log Reason */}
       {isSaveModalOpen && (
