@@ -407,6 +407,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ),
                       ],
                     ),
+                    const SizedBox(height: 10),
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: () => context.push('/t/onboarding'),
+                        icon: const Icon(Icons.refresh_rounded, size: 16, color: SpottoColors.accent),
+                        label: const Text(
+                          'Retake onboarding survey',
+                          style: TextStyle(
+                            color: SpottoColors.accent,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
                   ]),
                   const SizedBox(height: 22),
 

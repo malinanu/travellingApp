@@ -30,11 +30,14 @@ final routerProvider = Provider<GoRouter>((ref) {
   // on a signed-in screen with a dead token until their next navigation.
   final authChanges = ValueNotifier<bool>(ref.read(authProvider));
   ref.listen(authProvider, (_, signedIn) => authChanges.value = signedIn);
+  final prefsChanges = ValueNotifier<bool>(ref.read(prefsProvider) != null);
+  ref.listen(prefsProvider, (_, prefs) => prefsChanges.value = prefs != null);
   final langChanges = ValueNotifier<bool>(ref.read(hasSelectedLanguageProvider));
   ref.listen(hasSelectedLanguageProvider, (_, selected) => langChanges.value = selected);
-  final refreshListenable = Listenable.merge([authChanges, langChanges]);
+  final refreshListenable = Listenable.merge([authChanges, prefsChanges, langChanges]);
   ref.onDispose(() {
     authChanges.dispose();
+    prefsChanges.dispose();
     langChanges.dispose();
   });
 
@@ -43,10 +46,14 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/t',
     refreshListenable: refreshListenable,
     redirect: (context, state) {
-      final hasSelectedLang = ref.read(hasSelectedLanguageProvider);
-      final isLangRoute = state.matchedLocation == '/t/language';
-      if (!hasSelectedLang && !isLangRoute) {
-        return '/t/language';
+      final hasPrefs = ref.read(prefsProvider) != null;
+      final loc = state.matchedLocation;
+      final isOnboarding = loc == '/t/onboarding';
+      final isAuth = loc == '/t/auth';
+      final isLang = loc == '/t/language';
+
+      if (!hasPrefs && !isOnboarding && !isAuth && !isLang) {
+        return '/t/onboarding';
       }
       return null;
     },
@@ -74,8 +81,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => TravellerShell(shell: shell, location: state.uri.path),
         redirect: (context, state) {
-          if (!ref.read(authProvider)) return '/t/auth';
           if (ref.read(prefsProvider) == null) return '/t/onboarding';
+          if (!ref.read(authProvider)) return '/t/auth';
           return null;
         },
         branches: [

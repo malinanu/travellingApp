@@ -43,6 +43,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       ref.read(prefsProvider.notifier).save(
             UserPrefs(styles: styles.toList(), interests: picked.toList()),
           );
+      await ref.read(hasSelectedLanguageProvider.notifier).markSelected();
       await ref.read(apiProvider).dio.put('/me/privacy', data: {
         'shareLocation': _shareLocation,
         'usageAnalytics': _usageAnalytics,
@@ -55,7 +56,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       // Preferences are saved locally even if offline.
     }
     if (mounted) {
-      context.go('/t');
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      } else {
+        final signedIn = ref.read(authProvider);
+        context.go(signedIn ? '/t' : '/t/auth');
+      }
     }
   }
 
