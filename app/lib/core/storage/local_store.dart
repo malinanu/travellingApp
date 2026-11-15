@@ -41,6 +41,8 @@ abstract final class StoreKeys {
   static const appLanguage = 'spotto_app_language'; // active language code (e.g. en, nl, de, fr, ru, si)
   static const hasSelectedLanguage = 'spotto_has_selected_lang'; // whether traveller completed initial language choice
   static const installed = 'spotto_installed'; // set on first launch, see LocalStore.init
+  static const onboarded = 'spotto_onboarded'; // onboarding finished on this device; survives sign-out
+  static const pendingPrivacy = 'spotto_pending_privacy'; // privacy choices made before sign-in, pushed after it
 }
 
 class LocalStore {

@@ -2,8 +2,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../core/l10n/l10n_provider.dart';
 import '../core/l10n/language_selection_screen.dart';
+import '../core/storage/local_store.dart';
 import '../data/repositories/repositories.dart';
 import '../features/traveller/auth/auth_screen.dart';
 import '../features/traveller/bookings/my_bookings_screen.dart';
@@ -22,6 +22,17 @@ import '../features/traveller/weather/weather_screen.dart';
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
+/// Where the app's main screens send someone who isn't ready for them yet, or
+/// null to let them in. One order on every platform: the onboarding questions
+/// (with the language chip) on first launch, then sign-in, then the app.
+/// Someone who has been through onboarding on this device and signed out goes
+/// straight to sign-in.
+String? startRedirect({required bool signedIn, required bool hasPrefs, required bool onboarded}) {
+  if (!signedIn) return (hasPrefs || onboarded) ? '/t/auth' : '/t/onboarding';
+  if (!hasPrefs) return '/t/onboarding';
+  return null;
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   // The app trusts the stored token at launch and never waits on the server
   // to confirm the session (see AuthNotifier.build). The other half of that
@@ -30,35 +41,16 @@ final routerProvider = Provider<GoRouter>((ref) {
   // on a signed-in screen with a dead token until their next navigation.
   final authChanges = ValueNotifier<bool>(ref.read(authProvider));
   ref.listen(authProvider, (_, signedIn) => authChanges.value = signedIn);
-  final langChanges = ValueNotifier<bool>(ref.read(hasSelectedLanguageProvider));
-  ref.listen(hasSelectedLanguageProvider, (_, selected) => langChanges.value = selected);
-  final refreshListenable = Listenable.merge([authChanges, langChanges]);
-  ref.onDispose(() {
-    authChanges.dispose();
-    langChanges.dispose();
-  });
+  ref.onDispose(authChanges.dispose);
 
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/t',
-    refreshListenable: refreshListenable,
-    redirect: (context, state) {
-      final hasSelectedLang = ref.read(hasSelectedLanguageProvider);
-      final isLangRoute = state.matchedLocation == '/t/language';
-      if (!hasSelectedLang && !isLangRoute) {
-        return '/t/language';
-      }
-      return null;
-    },
+    refreshListenable: authChanges,
     routes: [
       GoRoute(path: '/t/language', builder: (context, state) => const LanguageSelectionScreen()),
       GoRoute(path: '/t/auth', builder: (context, state) => const AuthScreen()),
-      // One start-up order on every platform: language, sign-in, onboarding.
-      GoRoute(
-        path: '/t/onboarding',
-        redirect: (context, state) => ref.read(authProvider) ? null : '/t/auth',
-        builder: (context, state) => const OnboardingScreen(),
-      ),
+      GoRoute(path: '/t/onboarding', builder: (context, state) => const OnboardingScreen()),
       GoRoute(path: '/t/guide', builder: (context, state) => const GuideScreen()),
       GoRoute(path: '/t/profile', builder: (context, state) => const ProfileScreen()),
       GoRoute(path: '/t/weather', builder: (context, state) => const WeatherScreen()),
@@ -78,11 +70,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => TravellerShell(shell: shell, location: state.uri.path),
-        redirect: (context, state) {
-          if (!ref.read(authProvider)) return '/t/auth';
-          if (ref.read(prefsProvider) == null) return '/t/onboarding';
-          return null;
-        },
+        redirect: (context, state) => startRedirect(
+          signedIn: ref.read(authProvider),
+          hasPrefs: ref.read(prefsProvider) != null,
+          onboarded: ref.read(localStoreProvider).getBool(StoreKeys.onboarded),
+        ),
         branches: [
           StatefulShellBranch(
             routes: [GoRoute(path: '/t', builder: (context, state) => const DiscoverScreen())],
