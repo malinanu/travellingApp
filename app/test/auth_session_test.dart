@@ -3,6 +3,8 @@
 // that depends on it, so AuthNotifier must not invalidate providers that
 // watch authProvider: they refresh on their own when it changes.
 
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,8 +18,8 @@ const _quest = {'goal': 3, 'progress': 1, 'rewardDescription': 'Free coconut', '
 
 /// A container whose API answers login and today's quest, records every
 /// request, and fails everything else as if offline.
-Future<(ProviderContainer, List<String>)> _container({String? token}) async {
-  SharedPreferences.setMockInitialValues({});
+Future<(ProviderContainer, List<String>)> _container({String? token, Map<String, Object> prefs = const {}}) async {
+  SharedPreferences.setMockInitialValues(prefs);
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
     const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
     (call) async => call.method == 'read' && call.arguments['key'] == StoreKeys.token ? token : null,
@@ -67,6 +69,23 @@ void main() {
     expect(c.read(authProvider), isTrue);
     expect((await c.read(dailyQuestProvider.future)).goal, 3);
     expect(requests, contains('/me/quest'));
+  });
+
+  test('a new account gets the onboarding answers given before sign-in', () async {
+    final (c, requests) = await _container(prefs: {
+      StoreKeys.installed: true,
+      StoreKeys.prefs: jsonEncode({'styles': ['surf'], 'interests': ['coffee']}),
+      StoreKeys.pendingPrivacy: jsonEncode({'shareLocation': true, 'usageAnalytics': false}),
+    });
+
+    final error = await c.read(authProvider.notifier).login('new@example.com', 'password-123');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(error, isNull);
+    // The fake server's user has no travel style, i.e. a new account.
+    expect(requests, containsAll(['/me', '/me/privacy']));
+    expect(c.read(prefsProvider)?.styles, ['surf']);
+    expect(c.read(localStoreProvider).getJson(StoreKeys.pendingPrivacy), isNull);
   });
 
   test('sign-out with the quest providers alive', () async {

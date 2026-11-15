@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/l10n/l10n_provider.dart';
 import '../../../core/l10n/language_selector_sheet.dart';
+import '../../../core/storage/local_store.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/widgets/pill.dart';
 import '../../../core/widgets/spotto_card.dart';
@@ -39,17 +40,28 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   Future<void> _finish() async {
     if (_finishing) return;
     setState(() => _finishing = true);
+    final prefs = UserPrefs(styles: styles.toList(), interests: picked.toList());
+    final privacy = {
+      'shareLocation': _shareLocation,
+      'usageAnalytics': _usageAnalytics,
+      'visibleToGroup': _visibleToGroup,
+      'countVibeVotes': _countVibeVotes,
+      'personalisedOffers': _personalisedOffers,
+    };
+    final store = ref.read(localStoreProvider);
+    await store.setBool(StoreKeys.onboarded, true);
+    if (!ref.read(authProvider)) {
+      // Onboarding comes before sign-in on a first launch: keep the answers
+      // on the device and send them once there's an account (see
+      // AuthNotifier._adoptSession). '/t' then leads to sign-in.
+      ref.read(prefsProvider.notifier).saveLocal(prefs);
+      await store.setJson(StoreKeys.pendingPrivacy, privacy);
+      if (mounted) context.go('/t');
+      return;
+    }
     try {
-      ref.read(prefsProvider.notifier).save(
-            UserPrefs(styles: styles.toList(), interests: picked.toList()),
-          );
-      await ref.read(apiProvider).dio.put('/me/privacy', data: {
-        'shareLocation': _shareLocation,
-        'usageAnalytics': _usageAnalytics,
-        'visibleToGroup': _visibleToGroup,
-        'countVibeVotes': _countVibeVotes,
-        'personalisedOffers': _personalisedOffers,
-      });
+      ref.read(prefsProvider.notifier).save(prefs);
+      await ref.read(apiProvider).dio.put('/me/privacy', data: privacy);
       await ref.read(meProvider.notifier).refresh();
     } catch (_) {
       // Preferences are saved locally even if offline.

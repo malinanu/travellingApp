@@ -407,6 +407,9 @@ class _GuidePlaceCardState extends ConsumerState<GuidePlaceCard> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Added ${p.name} to ${guideAddedLabel(added)}'),
+            // A snack bar with an action stays up until tapped unless told otherwise.
+            persist: false,
+            duration: const Duration(seconds: 5),
             action: SnackBarAction(
               label: 'Open',
               onPressed: () {

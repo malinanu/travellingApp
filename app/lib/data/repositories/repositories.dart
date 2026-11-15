@@ -387,6 +387,7 @@ class AuthNotifier extends Notifier<bool> {
     final user = data['user'] as Map<String, dynamic>? ?? const {};
     await store.setJson(StoreKeys.me, user);
     final styles = parseStringList(user['travelStyle']);
+    final pendingPrivacy = store.getJson(StoreKeys.pendingPrivacy);
     if (styles.isNotEmpty) {
       ref
           .read(prefsProvider.notifier)
@@ -396,7 +397,18 @@ class AuthNotifier extends Notifier<bool> {
               interests: [for (final i in (user['interests'] as List? ?? const [])) i as String],
             ),
           );
+    } else {
+      // A new account: send what they answered in onboarding before signing
+      // in. Best effort; the answers stay on the device either way.
+      final local = ref.read(prefsProvider);
+      if (local != null) ref.read(prefsProvider.notifier).save(local);
+      if (pendingPrivacy != null) {
+        ref.read(apiProvider).dio.put('/me/privacy', data: pendingPrivacy).ignore();
+      }
     }
+    // A returning account keeps the privacy settings it already has, so the
+    // onboarding defaults never overwrite them.
+    if (pendingPrivacy != null) await store.remove(StoreKeys.pendingPrivacy);
     final demoPrivilege = user['demoPrivilege'] as bool? ?? false;
     if (demoPrivilege) {
       setServerDefaultLocation((lat: 5.9483, lng: 80.4552, name: 'Mirissa', zoom: 14.5));
