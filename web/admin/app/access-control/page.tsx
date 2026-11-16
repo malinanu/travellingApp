@@ -739,7 +739,7 @@ function AccessControlManager() {
                       });
                     }
                   }}
-                  className="input !py-0.5 !px-2 text-[11px] font-semibold bg-white border-line rounded"
+                  className="input !py-0.5 !px-2 text-[11px] font-semibold border-line rounded"
                 >
                   <option value="">No Group (Custom Permissions Only)</option>
                   {groups.map((g) => (
@@ -1608,7 +1608,7 @@ function AccessControlManager() {
                 <select
                   value={newUserGroupId}
                   onChange={(e) => setNewUserGroupId(e.target.value)}
-                  className="input w-full py-2 text-[13px] bg-white"
+                  className="input w-full py-2 text-[13px]"
                 >
                   {groups.map((g) => (
                     <option key={g.id} value={g.id}>
@@ -1690,30 +1690,33 @@ function AccessControlManager() {
 
             <div className="overflow-y-auto space-y-3 pr-1 flex-1">
               {groups.map((g) => (
-                <div key={g.id} className="p-4 rounded-xl border border-line bg-white/50 hover:bg-white transition-all space-y-2">
+                <div
+                  key={g.id}
+                  className="p-4 rounded-xl border border-[var(--line)] bg-[var(--bg)] hover:border-[var(--accent)] transition-all space-y-2.5"
+                >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center">
-                        <Shield size={15} />
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-[var(--accent)]/15 text-[var(--accent)] flex items-center justify-center shrink-0">
+                        <Shield size={16} />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-[14px]">{g.name}</h4>
+                          <h4 className="font-bold text-[14px] text-[var(--ink)]">{g.name}</h4>
                           {g.isSystem ? (
-                            <span className="text-[9.5px] uppercase font-bold tracking-wider px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-400 border border-sky-500/30">
                               System
                             </span>
                           ) : (
-                            <span className="text-[9.5px] uppercase font-bold tracking-wider px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-600 border border-purple-500/20">
+                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/30">
                               Custom
                             </span>
                           )}
                         </div>
-                        <p className="text-[12px] text-muted font-medium">{g.description}</p>
+                        <p className="text-[12px] text-[var(--muted)] font-medium mt-0.5">{g.description}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11.5px] font-bold text-muted bg-line/30 px-2 py-0.5 rounded-full">
+                      <span className="text-[11.5px] font-bold text-[var(--muted)] bg-[var(--surface)] border border-[var(--line)] px-2.5 py-0.5 rounded-full">
                         {g.memberCount ?? 0} {g.memberCount === 1 ? 'member' : 'members'}
                       </span>
                       {!g.isSystem && isSuperAdmin && (
@@ -1724,7 +1727,7 @@ function AccessControlManager() {
                               deleteGroupMutation.mutate({ id: g.id, reason: reason.trim() });
                             }
                           }}
-                          className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50"
+                          className="text-rose-400 hover:text-rose-300 p-1.5 rounded hover:bg-rose-500/15 transition-colors"
                           title="Delete custom group"
                         >
                           <Trash2 size={14} />
@@ -1733,15 +1736,20 @@ function AccessControlManager() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-line/40">
-                    <span className="text-[10.5px] font-bold text-muted uppercase tracking-wider">Granted:</span>
+                  <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-[var(--line)]">
+                    <span className="text-[10.5px] font-bold text-[var(--ink-soft)] uppercase tracking-wider">
+                      Granted:
+                    </span>
                     {g.permissions.includes('*') ? (
-                      <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700">
+                      <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30">
                         All Features (*)
                       </span>
                     ) : (
                       g.permissions.map((p) => (
-                        <span key={p} className="text-[10.5px] font-mono px-2 py-0.5 rounded bg-line/20 text-muted">
+                        <span
+                          key={p}
+                          className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[var(--surface)] text-[var(--ink-soft)] border border-[var(--line)]"
+                        >
                           {p}
                         </span>
                       ))
@@ -1826,8 +1834,8 @@ function AccessControlManager() {
                   {features.map((f) => {
                     const isFeatureSelected = newGroupPerms.includes(f.id);
                     return (
-                      <div key={f.id} className="p-2 rounded-lg bg-white/60 border border-line/60">
-                        <label className="flex items-center gap-2 cursor-pointer font-bold text-[12.5px]">
+                      <div key={f.id} className="p-2.5 rounded-lg bg-[var(--surface)] border border-[var(--line)]">
+                        <label className="flex items-center gap-2 cursor-pointer font-bold text-[12.5px] text-[var(--ink)]">
                           <input
                             type="checkbox"
                             checked={isFeatureSelected}
@@ -1843,7 +1851,7 @@ function AccessControlManager() {
                           />
                           <span>{f.name}</span>
                         </label>
-                        <div className="flex items-center gap-1 flex-wrap mt-1.5 ml-5">
+                        <div className="flex items-center gap-1.5 flex-wrap mt-2 ml-5">
                           {f.subPermissions.map((sp) => {
                             const isPermChecked = newGroupPerms.includes(sp.id);
                             return (
@@ -1857,10 +1865,10 @@ function AccessControlManager() {
                                     setNewGroupPerms((prev) => [...prev, sp.id]);
                                   }
                                 }}
-                                className={`text-[11px] px-2 py-0.5 rounded border transition-all ${
+                                className={`text-[11px] font-medium px-2 py-0.5 rounded-md border transition-all ${
                                   isPermChecked
-                                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
-                                    : 'bg-white text-muted border-line hover:border-muted'
+                                    ? 'bg-[var(--accent)] text-white border-[var(--accent)] font-semibold shadow-sm'
+                                    : 'bg-[var(--bg)] text-[var(--muted)] border-[var(--line)] hover:text-[var(--ink)] hover:border-[var(--muted)]'
                                 }`}
                               >
                                 {sp.name}

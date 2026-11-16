@@ -633,7 +633,7 @@ function UserAccessControlPanel({
                           setDemoLng(p.lng);
                         }
                       }}
-                      className="input w-full py-2 text-[13px] bg-white"
+                      className="input w-full py-2 text-[13px]"
                     >
                       {DEMO_LOCATION_PRESETS.map((p) => (
                         <option key={p.id} value={p.id}>
@@ -653,7 +653,7 @@ function UserAccessControlPanel({
                           setSelectedPreset('custom');
                         }}
                         placeholder="Ratnapura"
-                        className="input w-full py-1.5 text-[12px] bg-white"
+                        className="input w-full py-1.5 text-[12px]"
                       />
                     </label>
                     <div className="grid grid-cols-2 gap-1">
@@ -668,7 +668,7 @@ function UserAccessControlPanel({
                             setSelectedPreset('custom');
                           }}
                           placeholder="6.6828"
-                          className="input w-full py-1.5 text-[12px] bg-white font-mono"
+                          className="input w-full py-1.5 text-[12px] font-mono"
                         />
                       </label>
                       <label className="block">
@@ -682,7 +682,7 @@ function UserAccessControlPanel({
                             setSelectedPreset('custom');
                           }}
                           placeholder="80.3992"
-                          className="input w-full py-1.5 text-[12px] bg-white font-mono"
+                          className="input w-full py-1.5 text-[12px] font-mono"
                         />
                       </label>
                     </div>
