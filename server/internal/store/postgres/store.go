@@ -111,10 +111,10 @@ func (s *Store) CreateUser(ctx context.Context, u domain.User) error {
 		vendorRole = domain.VendorRoleOwner
 	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, vendor_role, phone)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		INSERT INTO users (id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, vendor_role, phone, admin_group_id, demo_privilege, demo_location, demo_lat, demo_lng)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
 		u.ID, u.Email, u.PasswordHash, u.Role, u.Name, u.Country, jsonb(u.TravelStyle),
-		jsonb(u.Interests), u.VendorID, u.Extra, u.CreatedAt, vendorRole, u.Phone)
+		jsonb(u.Interests), u.VendorID, u.Extra, u.CreatedAt, vendorRole, u.Phone, u.AdminGroupID, u.DemoPrivilege, u.DemoLocation, u.DemoLat, u.DemoLng)
 	return err
 }
 
@@ -135,7 +135,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 		&u.Phone, &u.VendorRole, &u.NotifyRedemptions, &u.NotifyReviews, &u.NotifyPayouts, &u.NotifyGrowthTips,
 		&u.GoogleID, &u.AvatarURL, &u.PhoneVerified, &u.UsageAnalytics, &u.Publisher,
 		&u.VisibleToGroup, &u.CountVibeVotes, &u.PersonalisedOffers,
-		&u.DemoPrivilege, &u.DemoLocation)
+		&u.DemoPrivilege, &u.DemoLocation, &u.DemoLat, &u.DemoLng, &u.AdminGroupID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -147,7 +147,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	return u, nil
 }
 
-const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url, phone_verified_at IS NOT NULL, usage_analytics, publisher, visible_to_group, count_vibe_votes, personalised_offers, COALESCE(demo_privilege, false), COALESCE(demo_location, '')`
+const userCols = `id, email, password_hash, role, name, country, travel_style, interests, vendor_id, extra, created_at, totp_secret, totp_pending_secret, totp_enabled, token_version, share_location, lat, lng, location_updated_at, phone, vendor_role, notify_redemptions, notify_reviews, notify_payouts, notify_growth_tips, google_id, avatar_url, phone_verified_at IS NOT NULL, usage_analytics, publisher, visible_to_group, count_vibe_votes, personalised_offers, COALESCE(demo_privilege, false), COALESCE(demo_location, ''), demo_lat, demo_lng, admin_group_id`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE lower(email)=lower($1)`, email))
@@ -273,15 +273,37 @@ func (s *Store) LockUserPassword(ctx context.Context, id string) error {
 }
 
 // AdminPermissions lists the extra powers granted to an admin (see
-// migration 042). Super-admins hold every permission implicitly; that's
-// checked by the caller, not stored here.
+// migration 042 and 054). Combines direct user permissions and inherited group permissions.
+// Super-admins hold every permission implicitly; that's checked by the caller, not stored here.
 func (s *Store) AdminPermissions(ctx context.Context, userID string) ([]string, error) {
-	var perms []string
-	err := s.Pool.QueryRow(ctx, `SELECT admin_permissions FROM users WHERE id=$1`, userID).Scan(&perms)
+	var userPerms []string
+	var groupPerms []string
+	err := s.Pool.QueryRow(ctx, `
+		SELECT COALESCE(u.admin_permissions, '{}'), COALESCE(g.permissions, '{}')
+		FROM users u
+		LEFT JOIN admin_groups g ON g.id = u.admin_group_id
+		WHERE u.id=$1`, userID).Scan(&userPerms, &groupPerms)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	return perms, err
+	if err != nil {
+		return nil, err
+	}
+	merged := make([]string, 0, len(userPerms)+len(groupPerms))
+	seen := make(map[string]bool)
+	for _, p := range groupPerms {
+		if !seen[p] && p != "" {
+			seen[p] = true
+			merged = append(merged, p)
+		}
+	}
+	for _, p := range userPerms {
+		if !seen[p] && p != "" {
+			seen[p] = true
+			merged = append(merged, p)
+		}
+	}
+	return merged, nil
 }
 
 // SetAdminPermission grants or removes one permission, without duplicates.
@@ -309,15 +331,18 @@ func (s *Store) SetAdminPermissions(ctx context.Context, userID string, perms []
 	return err
 }
 
-// ListAdminUsers returns all admin accounts, their permissions, and activity.
+// ListAdminUsers returns all admin accounts, their groups, permissions, and activity.
 func (s *Store) ListAdminUsers(ctx context.Context) ([]domain.AdminAccessUser, error) {
 	rows, err := s.Pool.Query(ctx, `
 		SELECT u.id, COALESCE(u.name, ''), u.email, u.role, COALESCE(u.admin_permissions, '{}'),
 		       (SELECT COUNT(*) FROM user_sessions us
 		        WHERE us.user_id = u.id AND us.revoked_at IS NULL AND us.expires_at > now()),
 		       (SELECT MAX(us.last_used_at) FROM user_sessions us WHERE us.user_id = u.id),
-		       u.created_at
+		       u.created_at,
+		       u.admin_group_id,
+		       COALESCE(g.name, '')
 		FROM users u
+		LEFT JOIN admin_groups g ON g.id = u.admin_group_id
 		WHERE u.role = 'admin'
 		ORDER BY u.created_at ASC`)
 	if err != nil {
@@ -328,7 +353,7 @@ func (s *Store) ListAdminUsers(ctx context.Context) ([]domain.AdminAccessUser, e
 	for rows.Next() {
 		var u domain.AdminAccessUser
 		var perms []string
-		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &perms, &u.ActiveSessions, &u.LastActiveAt, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &perms, &u.ActiveSessions, &u.LastActiveAt, &u.CreatedAt, &u.AdminGroupID, &u.AdminGroupName); err != nil {
 			return nil, err
 		}
 		if perms == nil {
@@ -338,6 +363,102 @@ func (s *Store) ListAdminUsers(ctx context.Context) ([]domain.AdminAccessUser, e
 		out = append(out, u)
 	}
 	return out, rows.Err()
+}
+
+// ListAdminGroups returns all access control groups with member counts.
+func (s *Store) ListAdminGroups(ctx context.Context) ([]domain.AdminGroup, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT g.id, g.name, g.description, g.icon, g.is_system, g.permissions, g.created_at, g.updated_at,
+		       COUNT(u.id)
+		FROM admin_groups g
+		LEFT JOIN users u ON u.admin_group_id = g.id AND u.role = 'admin'
+		GROUP BY g.id
+		ORDER BY g.is_system DESC, g.name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.AdminGroup{}
+	for rows.Next() {
+		var g domain.AdminGroup
+		var perms []string
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.Icon, &g.IsSystem, &perms, &g.CreatedAt, &g.UpdatedAt, &g.MemberCount); err != nil {
+			return nil, err
+		}
+		if perms == nil {
+			perms = []string{}
+		}
+		g.Permissions = perms
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// AdminGroupByID returns one access control group by ID.
+func (s *Store) AdminGroupByID(ctx context.Context, id string) (domain.AdminGroup, error) {
+	var g domain.AdminGroup
+	var perms []string
+	err := s.Pool.QueryRow(ctx, `
+		SELECT id, name, description, icon, is_system, permissions, created_at, updated_at
+		FROM admin_groups WHERE id = $1`, id).
+		Scan(&g.ID, &g.Name, &g.Description, &g.Icon, &g.IsSystem, &perms, &g.CreatedAt, &g.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return g, ErrNotFound
+	}
+	if err != nil {
+		return g, err
+	}
+	if perms == nil {
+		perms = []string{}
+	}
+	g.Permissions = perms
+	return g, nil
+}
+
+// CreateAdminGroup inserts a new access control group.
+func (s *Store) CreateAdminGroup(ctx context.Context, g domain.AdminGroup) error {
+	if g.Permissions == nil {
+		g.Permissions = []string{}
+	}
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO admin_groups (id, name, description, icon, is_system, permissions, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		g.ID, g.Name, g.Description, g.Icon, g.IsSystem, g.Permissions, g.CreatedAt, g.UpdatedAt)
+	return err
+}
+
+// UpdateAdminGroup updates a custom access control group's details and permissions.
+func (s *Store) UpdateAdminGroup(ctx context.Context, g domain.AdminGroup) error {
+	if g.Permissions == nil {
+		g.Permissions = []string{}
+	}
+	tag, err := s.Pool.Exec(ctx, `
+		UPDATE admin_groups
+		SET name = $2, description = $3, icon = $4, permissions = $5, updated_at = now()
+		WHERE id = $1`,
+		g.ID, g.Name, g.Description, g.Icon, g.Permissions)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// DeleteAdminGroup deletes a custom group if it is not a system group.
+func (s *Store) DeleteAdminGroup(ctx context.Context, id string) error {
+	tag, err := s.Pool.Exec(ctx, `DELETE FROM admin_groups WHERE id = $1 AND is_system = false`, id)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// SetUserAdminGroup reassigns an admin user to an access control group.
+func (s *Store) SetUserAdminGroup(ctx context.Context, userID string, groupID *string) error {
+	tag, err := s.Pool.Exec(ctx, `UPDATE users SET admin_group_id = $2 WHERE id = $1 AND role = 'admin'`, userID, groupID)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
 }
 
 // SetUserPublisher lets the account write travel content in the Command
@@ -350,9 +471,9 @@ func (s *Store) SetUserPublisher(ctx context.Context, userID string, on bool) er
 	return err
 }
 
-// SetUserDemoPrivilege toggles demo privilege and optional location name.
-func (s *Store) SetUserDemoPrivilege(ctx context.Context, userID string, on bool, location string) error {
-	tag, err := s.Pool.Exec(ctx, `UPDATE users SET demo_privilege=$2, demo_location=$3 WHERE id=$1`, userID, on, location)
+// SetUserDemoPrivilege toggles demo privilege and optional location name and coordinates.
+func (s *Store) SetUserDemoPrivilege(ctx context.Context, userID string, on bool, location string, lat, lng *float64) error {
+	tag, err := s.Pool.Exec(ctx, `UPDATE users SET demo_privilege=$2, demo_location=$3, demo_lat=$4, demo_lng=$5 WHERE id=$1`, userID, on, location, lat, lng)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}

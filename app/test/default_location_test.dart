@@ -47,5 +47,45 @@ void main() {
     setServerDefaultLocation(null);
     expect(serverDefaultLocation, isNull);
   });
+
+  test('resolveDemoLocation correctly resolves Ratnapura and custom coordinates', () {
+    // 1. Ratnapura by name
+    final ratnapura = resolveDemoLocation({
+      'demoPrivilege': true,
+      'demoLocation': 'Ratnapura',
+    });
+    expect(ratnapura, isNotNull);
+    expect(ratnapura!.name, 'Ratnapura');
+    expect(ratnapura.lat, closeTo(6.6828, 0.001));
+    expect(ratnapura.lng, closeTo(80.3992, 0.001));
+
+    // 2. Explicit demoLat and demoLng
+    final custom = resolveDemoLocation({
+      'demoPrivilege': true,
+      'demoLocation': 'My Gem Mine',
+      'demoLat': 6.7000,
+      'demoLng': 80.4000,
+    });
+    expect(custom, isNotNull);
+    expect(custom!.name, 'My Gem Mine');
+    expect(custom.lat, 6.7000);
+    expect(custom.lng, 80.4000);
+
+    // 3. Comma-separated coordinates
+    final coords = resolveDemoLocation({
+      'demoPrivilege': true,
+      'demoLocation': '6.9271, 79.8612',
+    });
+    expect(coords, isNotNull);
+    expect(coords!.lat, closeTo(6.9271, 0.001));
+    expect(coords.lng, closeTo(79.8612, 0.001));
+
+    // 4. No demo privilege returns null
+    final noPriv = resolveDemoLocation({
+      'demoPrivilege': false,
+      'demoLocation': 'Ratnapura',
+    });
+    expect(noPriv, isNull);
+  });
 }
 

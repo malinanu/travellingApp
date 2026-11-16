@@ -271,6 +271,23 @@ function PublisherPill() {
   );
 }
 
+const DEMO_LOCATION_PRESETS = [
+  { id: 'ratnapura', name: 'Ratnapura', tag: 'Gem Capital & Wilderness', lat: 6.6828, lng: 80.3992 },
+  { id: 'mirissa', name: 'Mirissa', tag: 'South Coast & Whales', lat: 5.9483, lng: 80.4552 },
+  { id: 'weligama', name: 'Weligama', tag: 'Surf Hub & Beaches', lat: 5.9723, lng: 80.4287 },
+  { id: 'galle', name: 'Galle Fort', tag: 'Historic Heritage', lat: 6.0535, lng: 80.2210 },
+  { id: 'colombo', name: 'Colombo', tag: 'Commercial Hub', lat: 6.9271, lng: 79.8612 },
+  { id: 'ella', name: 'Ella', tag: 'Hill Country & Hiking', lat: 6.8667, lng: 81.0466 },
+  { id: 'kandy', name: 'Kandy', tag: 'Cultural Capital', lat: 7.2906, lng: 80.6337 },
+  { id: 'sigiriya', name: 'Sigiriya', tag: 'Ancient Rock Fortress', lat: 7.9570, lng: 80.7603 },
+  { id: 'arugambay', name: 'Arugam Bay', tag: 'East Coast Surf', lat: 6.8417, lng: 81.8358 },
+  { id: 'nuwara_eliya', name: 'Nuwara Eliya', tag: 'Tea Country & Cool Climate', lat: 6.9497, lng: 80.7891 },
+  { id: 'negombo', name: 'Negombo', tag: 'Coastal Lagoon', lat: 7.2008, lng: 79.8737 },
+  { id: 'jaffna', name: 'Jaffna', tag: 'Northern Peninsula', lat: 9.6615, lng: 80.0255 },
+  { id: 'trincomalee', name: 'Trincomalee', tag: 'East Coast Harbor & Beaches', lat: 8.5874, lng: 81.2152 },
+  { id: 'custom', name: 'Custom Coordinates', tag: 'Any point on the map', lat: 0, lng: 0 },
+];
+
 // Unified User Access Control & Privileges Panel
 // Consolidates individual privilege cards into a clean, space-saving list
 // where each privilege has a clear interactive check mark in front of its name.
@@ -297,7 +314,10 @@ function UserAccessControlPanel({
   } | null>(null);
 
   const [modalReason, setModalReason] = useState('');
-  const [demoLocation, setDemoLocation] = useState(user.demoLocation || 'mirissa');
+  const [demoLocation, setDemoLocation] = useState(user.demoLocation || 'Ratnapura');
+  const [demoLat, setDemoLat] = useState<number | ''>(user.demoLat ?? 6.6828);
+  const [demoLng, setDemoLng] = useState<number | ''>(user.demoLng ?? 80.3992);
+  const [selectedPreset, setSelectedPreset] = useState<string>('ratnapura');
   const [mutationError, setMutationError] = useState<string | null>(null);
 
   const publisherMutation = useMutation({
@@ -312,7 +332,7 @@ function UserAccessControlPanel({
   });
 
   const demoMutation = useMutation({
-    mutationFn: (vars: { demoPrivilege: boolean; location: string; reason: string }) =>
+    mutationFn: (vars: { demoPrivilege: boolean; location: string; lat?: number; lng?: number; reason: string }) =>
       api.put(`/admin/users/${encodeURIComponent(user.id)}/demo-privilege`, vars),
     onSuccess: () => {
       closeModal();
@@ -338,7 +358,12 @@ function UserAccessControlPanel({
     if (type === 'publisher') {
       setActiveModal({ type: 'publisher', action: isPublisher ? 'revoke' : 'grant' });
     } else if (type === 'demo') {
-      setDemoLocation(user.demoLocation || 'mirissa');
+      const loc = user.demoLocation || 'Ratnapura';
+      setDemoLocation(loc);
+      setDemoLat(user.demoLat ?? (loc.toLowerCase() === 'mirissa' ? 5.9483 : 6.6828));
+      setDemoLng(user.demoLng ?? (loc.toLowerCase() === 'mirissa' ? 80.4552 : 80.3992));
+      const match = DEMO_LOCATION_PRESETS.find((p) => p.name.toLowerCase() === loc.toLowerCase());
+      setSelectedPreset(match ? match.id : 'custom');
       setActiveModal({ type: 'demo', action: isEditLocation || !isDemo ? 'grant' : 'revoke' });
     } else if (type === 'vendor_logins') {
       setActiveModal({ type: 'vendor_logins', action: hasVendorLogins ? 'revoke' : 'grant' });
@@ -366,7 +391,9 @@ function UserAccessControlPanel({
     } else if (activeModal.type === 'demo') {
       demoMutation.mutate({
         demoPrivilege: activeModal.action === 'grant',
-        location: activeModal.action === 'grant' ? demoLocation.trim() || 'mirissa' : '',
+        location: activeModal.action === 'grant' ? demoLocation.trim() || 'Ratnapura' : '',
+        lat: typeof demoLat === 'number' ? demoLat : undefined,
+        lng: typeof demoLng === 'number' ? demoLng : undefined,
         reason: modalReason.trim(),
       });
     } else if (activeModal.type === 'vendor_logins') {
@@ -591,15 +618,79 @@ function UserAccessControlPanel({
 
             <form onSubmit={handleModalSubmit} className="space-y-3">
               {activeModal.type === 'demo' && activeModal.action === 'grant' && (
-                <label className="block">
-                  <span className="text-[12px] font-bold block mb-1">Target Demo Location</span>
-                  <input
-                    value={demoLocation}
-                    onChange={(e) => setDemoLocation(e.target.value)}
-                    placeholder="mirissa"
-                    className="input w-full py-2 text-[13px]"
-                  />
-                </label>
+                <div className="space-y-3 bg-[var(--sand)]/30 p-3 rounded-xl border border-line">
+                  <label className="block">
+                    <span className="text-[12px] font-bold block mb-1">Target Demo Location</span>
+                    <select
+                      value={selectedPreset}
+                      onChange={(e) => {
+                        const pid = e.target.value;
+                        setSelectedPreset(pid);
+                        const p = DEMO_LOCATION_PRESETS.find((x) => x.id === pid);
+                        if (p && p.id !== 'custom') {
+                          setDemoLocation(p.name);
+                          setDemoLat(p.lat);
+                          setDemoLng(p.lng);
+                        }
+                      }}
+                      className="input w-full py-2 text-[13px] bg-white"
+                    >
+                      {DEMO_LOCATION_PRESETS.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} {p.tag ? `· ${p.tag}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className="text-[11px] font-semibold text-muted block mb-1">Location Name</span>
+                      <input
+                        value={demoLocation}
+                        onChange={(e) => {
+                          setDemoLocation(e.target.value);
+                          setSelectedPreset('custom');
+                        }}
+                        placeholder="Ratnapura"
+                        className="input w-full py-1.5 text-[12px] bg-white"
+                      />
+                    </label>
+                    <div className="grid grid-cols-2 gap-1">
+                      <label className="block">
+                        <span className="text-[11px] font-semibold text-muted block mb-1">Latitude</span>
+                        <input
+                          type="number"
+                          step="any"
+                          value={demoLat}
+                          onChange={(e) => {
+                            setDemoLat(e.target.value ? parseFloat(e.target.value) : '');
+                            setSelectedPreset('custom');
+                          }}
+                          placeholder="6.6828"
+                          className="input w-full py-1.5 text-[12px] bg-white font-mono"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[11px] font-semibold text-muted block mb-1">Longitude</span>
+                        <input
+                          type="number"
+                          step="any"
+                          value={demoLng}
+                          onChange={(e) => {
+                            setDemoLng(e.target.value ? parseFloat(e.target.value) : '');
+                            setSelectedPreset('custom');
+                          }}
+                          placeholder="80.3992"
+                          className="input w-full py-1.5 text-[12px] bg-white font-mono"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted">
+                    Forces mobile app position anywhere on the map for presentations without physical GPS spoofing.
+                  </p>
+                </div>
               )}
 
               <label className="block">

@@ -22,6 +22,7 @@ import '../../../core/widgets/marker_bitmap.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../core/widgets/spotto_icons.dart';
 import '../../../data/catalog/app_options.dart' as data;
+import '../../../data/catalog/sri_lanka_locations.dart';
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import '../../../data/vendor_categories.dart';
@@ -220,6 +221,59 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
       setState(() => _locationMode = _LocationMode.following);
       _updateCamera();
     }
+  }
+
+  void _openLocationPickerSheet(BuildContext context, [LatLng? initialPin]) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _DeveloperLocationSheet(
+        initialPin: initialPin,
+        currentLocationName: serverDefaultLocation?.name ?? 'Real Device Location',
+        currentLat: serverDefaultLocation?.lat ?? _lastKnownLatLng?.latitude ?? kFallbackLat,
+        currentLng: serverDefaultLocation?.lng ?? _lastKnownLatLng?.longitude ?? kFallbackLng,
+        isOverrideActive: serverDefaultLocation != null,
+        onResetGPS: () async {
+          Navigator.of(ctx).pop();
+          setServerDefaultLocation(null);
+          ref.invalidate(devicePositionProvider);
+          ref.invalidate(locationPermissionProvider);
+          ref.invalidate(weatherLocationProvider);
+          ref.invalidate(currentWeatherProvider);
+          ref.invalidate(placesProvider);
+          _startPositionStream();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Reset to real device GPS')),
+            );
+          }
+        },
+        onSelectLocation: (name, lat, lng) async {
+          Navigator.of(ctx).pop();
+          final err = await ref.read(meProvider.notifier).updateDemoLocation(
+            name: name,
+            lat: lat,
+            lng: lng,
+          );
+          if (err != null && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update location: $err')));
+          } else if (mounted) {
+            final target = LatLng(lat, lng);
+            setState(() {
+              _lastKnownLatLng = target;
+            });
+            _animateCamera(CameraUpdate.newLatLngZoom(target, 14.5));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Simulated location set to $name (${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)})'),
+                backgroundColor: SpottoColors.primary,
+              ),
+            );
+          }
+        },
+      ),
+    );
   }
 
   void _onCameraMoveStarted() {
@@ -542,6 +596,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
         .where((id) => id.isNotEmpty)
         .toSet();
     final userInterests = prefs?.styles ?? const <String>[];
+    final me = ref.watch(meProvider);
+    final isDemoEligible = (me?['demoPrivilege'] as bool? ?? false) ||
+        (me?['role'] == 'admin') ||
+        (serverDefaultLocation != null);
 
     ref.watch(nearbyTravellersProvider);
     ref.listen<AsyncValue<(LatLngAt, DeviceLocationResult)>>(devicePositionProvider, (_, next) {
@@ -549,8 +607,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
       // where the user is — don't zoom in on it or share it with the group.
       final resolved = next.value;
       _resolvedPosition = resolved != null && resolved.$2 == DeviceLocationResult.granted ? resolved.$1 : null;
-      if (_resolvedPosition != null && _lastKnownLatLng == null) {
-        _lastKnownLatLng = LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng);
+      if (_resolvedPosition != null) {
+        if (_lastKnownLatLng == null || serverDefaultLocation != null) {
+          _lastKnownLatLng = LatLng(_resolvedPosition!.lat, _resolvedPosition!.lng);
+        }
       }
       if (_lastKnownLatLng != null) {
         ref.read(groupLiveLocationsProvider.notifier).sendLocation(_lastKnownLatLng!);
@@ -562,12 +622,19 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
     ref.listen<Map<String, dynamic>?>(meProvider, (prev, next) {
       final wasDemo = prev?['demoPrivilege'] as bool? ?? false;
       final isDemo = next?['demoPrivilege'] as bool? ?? false;
-      if (!wasDemo && isDemo) {
+      final prevLoc = prev?['demoLocation'] as String?;
+      final nextLoc = next?['demoLocation'] as String?;
+      final prevLat = prev?['demoLat'];
+      final nextLat = next?['demoLat'];
+      final prevLng = prev?['demoLng'];
+      final nextLng = next?['demoLng'];
+      final locChanged = prevLoc != nextLoc || prevLat != nextLat || prevLng != nextLng;
+      if (isDemo && (!wasDemo || locChanged)) {
         final loc = serverDefaultLocation;
         if (loc != null) {
-          final mirissa = LatLng(loc.lat, loc.lng);
-          _lastKnownLatLng = mirissa;
-          _animateCamera(CameraUpdate.newLatLngZoom(mirissa, loc.zoom));
+          final target = LatLng(loc.lat, loc.lng);
+          _lastKnownLatLng = target;
+          _animateCamera(CameraUpdate.newLatLngZoom(target, loc.zoom));
         }
       } else if (wasDemo && !isDemo) {
         _startPositionStream();
@@ -624,6 +691,11 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
             }
           },
           onCameraIdle: () => _isProgrammaticCamera = false,
+          onLongPress: isDemoEligible
+              ? (latLng) {
+                  _openLocationPickerSheet(context, latLng);
+                }
+              : null,
         ),
 
         // time-of-day lighting overlay
@@ -704,6 +776,16 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
                     ),
                   ),
                 ),
+                if (isDemoEligible) ...[
+                  const SizedBox(height: 8),
+                  _DeveloperLocationBanner(
+                    locationName: serverDefaultLocation?.name ?? 'Real Device Location',
+                    lat: serverDefaultLocation?.lat ?? _lastKnownLatLng?.latitude ?? kFallbackLat,
+                    lng: serverDefaultLocation?.lng ?? _lastKnownLatLng?.longitude ?? kFallbackLng,
+                    isOverrideActive: serverDefaultLocation != null,
+                    onTap: () => _openLocationPickerSheet(context),
+                  ),
+                ],
                 if (resignedBundleId != null && !_bundleNoticeDismissed) ...[
                   const SizedBox(height: 8),
                   _ResignedBundleNotice(
@@ -1281,6 +1363,440 @@ class _ResignedBundleNotice extends StatelessWidget {
             tooltip: 'Dismiss',
             icon: const Icon(Icons.close, size: 18, color: SpottoColors.muted),
             onPressed: onDismiss,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeveloperLocationBanner extends StatelessWidget {
+  const _DeveloperLocationBanner({
+    required this.locationName,
+    required this.lat,
+    required this.lng,
+    required this.isOverrideActive,
+    required this.onTap,
+  });
+
+  final String locationName;
+  final double lat;
+  final double lng;
+  final bool isOverrideActive;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressScale(
+      scale: 0.98,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F3D38),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: const [
+            BoxShadow(
+              color: SpottoColors.inkShadow,
+              blurRadius: 10,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isOverrideActive ? const Color(0xFF4ADE80) : Colors.amberAccent,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.gps_fixed, size: 16, color: Colors.white70),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        isOverrideActive ? 'SIMULATED LOCATION' : 'REAL GPS (DEV MODE)',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                          color: Color(0xFF94D2BD),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    '$locationName (${lat.toStringAsFixed(3)}, ${lng.toStringAsFixed(3)})',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'Change ▾',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DeveloperLocationSheet extends StatefulWidget {
+  const _DeveloperLocationSheet({
+    this.initialPin,
+    required this.currentLocationName,
+    required this.currentLat,
+    required this.currentLng,
+    required this.isOverrideActive,
+    required this.onSelectLocation,
+    required this.onResetGPS,
+  });
+
+  final LatLng? initialPin;
+  final String currentLocationName;
+  final double currentLat;
+  final double currentLng;
+  final bool isOverrideActive;
+  final void Function(String name, double lat, double lng) onSelectLocation;
+  final VoidCallback onResetGPS;
+
+  @override
+  State<_DeveloperLocationSheet> createState() => _DeveloperLocationSheetState();
+}
+
+class _DeveloperLocationSheetState extends State<_DeveloperLocationSheet> {
+  late final TextEditingController _latController;
+  late final TextEditingController _lngController;
+  late final TextEditingController _nameController;
+  String? _coordError;
+
+  @override
+  void initState() {
+    super.initState();
+    final initLat = widget.initialPin?.latitude ?? widget.currentLat;
+    final initLng = widget.initialPin?.longitude ?? widget.currentLng;
+    final initName = widget.initialPin != null
+        ? 'Map Pin (${initLat.toStringAsFixed(3)}, ${initLng.toStringAsFixed(3)})'
+        : widget.currentLocationName;
+    _latController = TextEditingController(text: initLat.toStringAsFixed(4));
+    _lngController = TextEditingController(text: initLng.toStringAsFixed(4));
+    _nameController = TextEditingController(text: initName);
+  }
+
+  @override
+  void dispose() {
+    _latController.dispose();
+    _lngController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _applyCustomCoords() {
+    final lat = double.tryParse(_latController.text.trim());
+    final lng = double.tryParse(_lngController.text.trim());
+    if (lat == null || lat < -90 || lat > 90) {
+      setState(() => _coordError = 'Latitude must be between -90 and 90');
+      return;
+    }
+    if (lng == null || lng < -180 || lng > 180) {
+      setState(() => _coordError = 'Longitude must be between -180 and 180');
+      return;
+    }
+    final name = _nameController.text.trim().isNotEmpty
+        ? _nameController.text.trim()
+        : 'Custom (${lat.toStringAsFixed(3)}, ${lng.toStringAsFixed(3)})';
+    widget.onSelectLocation(name, lat, lng);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: SpottoColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.developer_mode, color: SpottoColors.primary, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text('Location Simulator', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F3D38),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'DEV MODE',
+                              style: TextStyle(color: Color(0xFF4ADE80), fontSize: 9, fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        'Simulate any location without GPS spoofing',
+                        style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: SpottoColors.muted),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              children: [
+                if (widget.initialPin != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F5E9),
+                      border: Border.all(color: const Color(0xFF81C784)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: const [
+                            Icon(Icons.touch_app, size: 18, color: Color(0xFF2E7D32)),
+                            SizedBox(width: 8),
+                            Text(
+                              'Point Selected on Map',
+                              style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF2E7D32), fontSize: 13),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${widget.initialPin!.latitude.toStringAsFixed(5)}, ${widget.initialPin!.longitude.toStringAsFixed(5)}',
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                        const SizedBox(height: 10),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2E7D32),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            minimumSize: const Size.fromHeight(40),
+                          ),
+                          onPressed: () => widget.onSelectLocation(
+                            'Map Pin (${widget.initialPin!.latitude.toStringAsFixed(3)}, ${widget.initialPin!.longitude.toStringAsFixed(3)})',
+                            widget.initialPin!.latitude,
+                            widget.initialPin!.longitude,
+                          ),
+                          icon: const Icon(Icons.check, size: 16),
+                          label: const Text('Move Location to this Point', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                Text('Sri Lanka Presets', style: text.labelLarge?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text(
+                  'Tap any hub to instantly teleport your app session there:',
+                  style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final loc in kSriLankaWeatherLocations)
+                      ActionChip(
+                        avatar: loc.name.toLowerCase() == widget.currentLocationName.toLowerCase()
+                            ? const Icon(Icons.check_circle, size: 16, color: SpottoColors.primary)
+                            : const Icon(Icons.location_on_outlined, size: 16, color: SpottoColors.muted),
+                        backgroundColor: loc.name.toLowerCase() == widget.currentLocationName.toLowerCase()
+                            ? SpottoColors.primary.withOpacity(0.12)
+                            : const Color(0xFFF3F4F6),
+                        label: Text(
+                          loc.name,
+                          style: TextStyle(
+                            fontWeight: loc.name.toLowerCase() == widget.currentLocationName.toLowerCase()
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                            color: loc.name.toLowerCase() == widget.currentLocationName.toLowerCase()
+                                ? SpottoColors.primary
+                                : Colors.black87,
+                            fontSize: 12,
+                          ),
+                        ),
+                        onPressed: () => widget.onSelectLocation(loc.name, loc.lat, loc.lng),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                Text('Custom Coordinates', style: text.labelLarge?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text('Or enter exact latitude & longitude anywhere on Earth:',
+                    style: text.bodySmall?.copyWith(color: SpottoColors.muted)),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _latController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                        decoration: InputDecoration(
+                          labelText: 'Latitude',
+                          hintText: 'e.g. 6.6828',
+                          isDense: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _lngController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                        decoration: InputDecoration(
+                          labelText: 'Longitude',
+                          hintText: 'e.g. 80.3992',
+                          isDense: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _nameController,
+                  decoration: InputDecoration(
+                    labelText: 'Label Name (Optional)',
+                    hintText: 'e.g. Ratnapura Gem Market',
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                if (_coordError != null) ...[
+                  const SizedBox(height: 6),
+                  Text(_coordError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                ],
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: SpottoColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    minimumSize: const Size.fromHeight(42),
+                  ),
+                  onPressed: _applyCustomCoords,
+                  icon: const Icon(Icons.send_rounded, size: 16),
+                  label: const Text('Apply Custom Coordinates', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(height: 20),
+
+                if (widget.isOverrideActive) ...[
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade700,
+                      side: BorderSide(color: Colors.red.shade300),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      minimumSize: const Size.fromHeight(42),
+                    ),
+                    onPressed: widget.onResetGPS,
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Reset to Real Device GPS', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF9FAFB),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.tips_and_updates_outlined, size: 18, color: Colors.amber),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Tip: Long-press anywhere on the map to jump your simulated position directly to that spot.',
+                          style: text.bodySmall?.copyWith(color: Colors.black87),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

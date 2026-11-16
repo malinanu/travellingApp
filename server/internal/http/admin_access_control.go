@@ -1,12 +1,19 @@
 package httpapi
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
+	"github.com/spotto/server/internal/store/postgres"
 )
 
 // MasterCommandCenterFeatures lists all features in the Command Center and
@@ -270,4 +277,327 @@ func (s *Server) handleAdminAccessControlUpdate(w http.ResponseWriter, r *http.R
 		"userId":           id,
 		"adminPermissions": nonNilStrings(perms),
 	})
+}
+
+// handleAdminAccessControlGroups returns all access control groups.
+func (s *Server) handleAdminAccessControlGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := s.Store.ListAdminGroups(r.Context())
+	if err != nil {
+		log.Printf("list admin groups: %v", err)
+		writeErr(w, http.StatusInternalServerError, "Couldn't load access control groups.")
+		return
+	}
+	writeJSON(w, http.StatusOK, groups)
+}
+
+// handleAdminAccessControlCreateGroup creates a new custom access control group.
+func (s *Server) handleAdminAccessControlCreateGroup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID          string   `json:"id"`
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Icon        string   `json:"icon"`
+		Permissions []string `json:"permissions"`
+		Reason      string   `json:"reason"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		writeErr(w, http.StatusBadRequest, "Group name is required.")
+		return
+	}
+	reason := sanitizeText(req.Reason, 500)
+	if reason == "" {
+		writeErr(w, http.StatusBadRequest, "Reason is required for audit log.")
+		return
+	}
+	id := strings.ToLower(strings.TrimSpace(req.ID))
+	if id == "" {
+		id = strings.ReplaceAll(strings.ToLower(name), " ", "_")
+	}
+	icon := strings.TrimSpace(req.Icon)
+	if icon == "" {
+		icon = "Shield"
+	}
+	cleaned := make([]string, 0, len(req.Permissions))
+	seen := make(map[string]bool)
+	for _, p := range req.Permissions {
+		p = strings.TrimSpace(p)
+		if p != "" && !seen[p] {
+			seen[p] = true
+			cleaned = append(cleaned, p)
+		}
+	}
+	now := time.Now()
+	group := domain.AdminGroup{
+		ID:          id,
+		Name:        name,
+		Description: strings.TrimSpace(req.Description),
+		Icon:        icon,
+		IsSystem:    false,
+		Permissions: cleaned,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := s.Store.CreateAdminGroup(r.Context(), group); err != nil {
+		if postgres.IsUniqueViolation(err) {
+			writeErr(w, http.StatusConflict, "A group with this ID already exists.")
+			return
+		}
+		log.Printf("create admin group %s: %v", id, err)
+		writeErr(w, http.StatusInternalServerError, "Couldn't create group.")
+		return
+	}
+	s.logAdminAction(r.Context(), "group.create", "group", id, map[string]any{
+		"name": name, "permissions": cleaned, "reason": reason,
+	})
+	writeJSON(w, http.StatusCreated, group)
+}
+
+// handleAdminAccessControlUpdateGroup updates a custom group's name, description, icon, or permissions.
+func (s *Server) handleAdminAccessControlUpdateGroup(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Icon        string   `json:"icon"`
+		Permissions []string `json:"permissions"`
+		Reason      string   `json:"reason"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		writeErr(w, http.StatusBadRequest, "Group name is required.")
+		return
+	}
+	reason := sanitizeText(req.Reason, 500)
+	if reason == "" {
+		writeErr(w, http.StatusBadRequest, "Reason is required for audit log.")
+		return
+	}
+	cleaned := make([]string, 0, len(req.Permissions))
+	seen := make(map[string]bool)
+	for _, p := range req.Permissions {
+		p = strings.TrimSpace(p)
+		if p != "" && !seen[p] {
+			seen[p] = true
+			cleaned = append(cleaned, p)
+		}
+	}
+	icon := strings.TrimSpace(req.Icon)
+	if icon == "" {
+		icon = "Shield"
+	}
+	group := domain.AdminGroup{
+		ID:          id,
+		Name:        name,
+		Description: strings.TrimSpace(req.Description),
+		Icon:        icon,
+		Permissions: cleaned,
+		UpdatedAt:   time.Now(),
+	}
+	if err := s.Store.UpdateAdminGroup(r.Context(), group); err != nil {
+		storeErr(w, err)
+		return
+	}
+	s.logAdminAction(r.Context(), "group.update", "group", id, map[string]any{
+		"name": name, "permissions": cleaned, "reason": reason,
+	})
+	writeJSON(w, http.StatusOK, group)
+}
+
+// handleAdminAccessControlDeleteGroup removes a custom access control group.
+func (s *Server) handleAdminAccessControlDeleteGroup(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	readJSON(w, r, &req)
+	reason := sanitizeText(req.Reason, 500)
+	g, err := s.Store.AdminGroupByID(r.Context(), id)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if g.IsSystem {
+		writeErr(w, http.StatusBadRequest, "Built-in system groups cannot be deleted.")
+		return
+	}
+	if err := s.Store.DeleteAdminGroup(r.Context(), id); err != nil {
+		storeErr(w, err)
+		return
+	}
+	s.logAdminAction(r.Context(), "group.delete", "group", id, map[string]any{
+		"name": g.Name, "reason": reason,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "id": id})
+}
+
+// handleAdminAccessControlAddUser invites or grants Command Center operator access to a user
+// directly without needing to edit .env.
+func (s *Server) handleAdminAccessControlAddUser(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email           string  `json:"email"`
+		Name            string  `json:"name"`
+		GroupID         *string `json:"groupId"`
+		InitialPassword string  `json:"initialPassword"`
+		Reason          string  `json:"reason"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if email == "" || !strings.Contains(email, "@") {
+		writeErr(w, http.StatusBadRequest, "Valid email is required.")
+		return
+	}
+	reason := sanitizeText(req.Reason, 500)
+	if reason == "" {
+		writeErr(w, http.StatusBadRequest, "Reason is required for audit log.")
+		return
+	}
+	var groupID *string
+	if req.GroupID != nil && strings.TrimSpace(*req.GroupID) != "" {
+		g := strings.TrimSpace(*req.GroupID)
+		groupID = &g
+	}
+
+	u, err := s.Store.UserByEmail(r.Context(), email)
+	if errors.Is(err, postgres.ErrNotFound) {
+		// Create new admin user
+		password := strings.TrimSpace(req.InitialPassword)
+		if password == "" {
+			password = "spotto123"
+		}
+		hash, err := auth.HashPassword(password)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "Failed to hash password.")
+			return
+		}
+		b := make([]byte, 6)
+		rand.Read(b)
+		id := "usr_adm_" + hex.EncodeToString(b)
+		name := strings.TrimSpace(req.Name)
+		if name == "" {
+			name = strings.Split(email, "@")[0]
+		}
+		newUser := domain.User{
+			ID:           id,
+			Email:        email,
+			Name:         name,
+			PasswordHash: hash,
+			Role:         domain.RoleAdmin,
+			AdminGroupID: groupID,
+			CreatedAt:    time.Now(),
+		}
+		if err := s.Store.CreateUser(r.Context(), newUser); err != nil {
+			log.Printf("create admin user: %v", err)
+			writeErr(w, http.StatusInternalServerError, "Couldn't create operator account.")
+			return
+		}
+		s.logAdminAction(r.Context(), "user.create_operator", "user", id, map[string]any{
+			"email": email, "groupId": groupID, "reason": reason,
+		})
+		writeJSON(w, http.StatusCreated, domain.AdminAccessUser{
+			ID:           id,
+			Name:         name,
+			Email:        email,
+			Role:         domain.RoleAdmin,
+			AdminGroupID: groupID,
+			CreatedAt:    newUser.CreatedAt,
+		})
+		return
+	} else if err != nil {
+		storeErr(w, err)
+		return
+	}
+
+	// Promote existing user to admin and assign group
+	if err := s.Store.SetUserRole(r.Context(), u.ID, domain.RoleAdmin); err != nil {
+		storeErr(w, err)
+		return
+	}
+	if err := s.Store.SetUserAdminGroup(r.Context(), u.ID, groupID); err != nil {
+		storeErr(w, err)
+		return
+	}
+	s.logAdminAction(r.Context(), "user.promote_operator", "user", u.ID, map[string]any{
+		"email": email, "groupId": groupID, "previousRole": u.Role, "reason": reason,
+	})
+	perms, _ := s.Store.AdminPermissions(r.Context(), u.ID)
+	writeJSON(w, http.StatusOK, domain.AdminAccessUser{
+		ID:               u.ID,
+		Name:             u.Name,
+		Email:            u.Email,
+		Role:             domain.RoleAdmin,
+		AdminGroupID:     groupID,
+		AdminPermissions: nonNilStrings(perms),
+		CreatedAt:        u.CreatedAt,
+	})
+}
+
+// handleAdminAccessControlSetUserGroup reassigns an admin to an access control group.
+func (s *Server) handleAdminAccessControlSetUserGroup(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req struct {
+		GroupID *string `json:"groupId"`
+		Reason  string  `json:"reason"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	reason := sanitizeText(req.Reason, 500)
+	if reason == "" {
+		writeErr(w, http.StatusBadRequest, "Reason is required for audit log.")
+		return
+	}
+	var groupID *string
+	if req.GroupID != nil && strings.TrimSpace(*req.GroupID) != "" {
+		g := strings.TrimSpace(*req.GroupID)
+		groupID = &g
+	}
+	if err := s.Store.SetUserAdminGroup(r.Context(), id, groupID); err != nil {
+		storeErr(w, err)
+		return
+	}
+	s.logAdminAction(r.Context(), "user.set_admin_group", "user", id, map[string]any{
+		"groupId": groupID, "reason": reason,
+	})
+	perms, _ := s.Store.AdminPermissions(r.Context(), id)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"userId":           id,
+		"adminGroupId":     groupID,
+		"adminPermissions": nonNilStrings(perms),
+	})
+}
+
+// RequirePermission returns an HTTP middleware ensuring the user has the required permission.
+func (s *Server) RequirePermission(perm string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			c := auth.FromContext(r.Context())
+			if c == nil {
+				writeErr(w, http.StatusUnauthorized, "sign in required")
+				return
+			}
+			u, err := s.Store.UserByID(r.Context(), c.Subject)
+			if err != nil {
+				storeErr(w, err)
+				return
+			}
+			if u.Role != domain.RoleAdmin {
+				writeErr(w, http.StatusForbidden, "admin only")
+				return
+			}
+			if !s.hasAdminPermission(r.Context(), u.ID, u.Email, perm) {
+				writeErr(w, http.StatusForbidden, fmt.Sprintf("permission required: %s", perm))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

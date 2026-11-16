@@ -21,6 +21,19 @@ type CommandCenterFeature struct {
 	SubPermissions []CommandCenterPermission `json:"subPermissions"`
 }
 
+// AdminGroup represents a role / access control group containing a bundle of permissions.
+type AdminGroup struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Icon        string    `json:"icon"`
+	IsSystem    bool      `json:"isSystem"`
+	Permissions []string  `json:"permissions"`
+	MemberCount int       `json:"memberCount,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 // AdminAccessUser represents a Command Center admin operator with their assigned permissions.
 type AdminAccessUser struct {
 	ID               string     `json:"id"`
@@ -28,6 +41,8 @@ type AdminAccessUser struct {
 	Email            string     `json:"email"`
 	Role             Role       `json:"role"`
 	IsSuperAdmin     bool       `json:"isSuperAdmin"`
+	AdminGroupID     *string    `json:"adminGroupId,omitempty"`
+	AdminGroupName   string     `json:"adminGroupName,omitempty"`
 	AdminPermissions []string   `json:"adminPermissions"`
 	ActiveSessions   int        `json:"activeSessions"`
 	LastActiveAt     *time.Time `json:"lastActiveAt,omitempty"`

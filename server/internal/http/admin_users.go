@@ -106,13 +106,15 @@ func (s *Server) handleAdminRevokeUserSessions(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]any{"sessionsEnded": ended})
 }
 
-// handleAdminSetUserDemoPrivilege grants or revokes developer demo privilege (Mirissa override).
+// handleAdminSetUserDemoPrivilege grants or revokes developer demo privilege (location override).
 // Any admin can; it's recorded in the audit log.
 func (s *Server) handleAdminSetUserDemoPrivilege(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		DemoPrivilege bool   `json:"demoPrivilege"`
-		Location      string `json:"location"`
-		Reason        string `json:"reason"`
+		DemoPrivilege bool     `json:"demoPrivilege"`
+		Location      string   `json:"location"`
+		Lat           *float64 `json:"lat"`
+		Lng           *float64 `json:"lng"`
+		Reason        string   `json:"reason"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -129,19 +131,30 @@ func (s *Server) handleAdminSetUserDemoPrivilege(w http.ResponseWriter, r *http.
 		return
 	}
 	loc := strings.TrimSpace(req.Location)
-	if req.DemoPrivilege && loc == "" {
-		loc = "mirissa"
-	}
-	if !req.DemoPrivilege {
+	var lat, lng *float64
+	if req.DemoPrivilege {
+		if loc == "" {
+			loc = "mirissa"
+		}
+		lat, lng = req.Lat, req.Lng
+		if lat == nil || lng == nil {
+			lat, lng = resolveTownCoordinates(loc)
+		}
+	} else {
 		loc = ""
 	}
-	if err := s.Store.SetUserDemoPrivilege(r.Context(), id, req.DemoPrivilege, loc); err != nil {
+	if err := s.Store.SetUserDemoPrivilege(r.Context(), id, req.DemoPrivilege, loc, lat, lng); err != nil {
 		storeErr(w, err)
 		return
 	}
 	s.logAdminAction(r.Context(), "user.demo_privilege", "user", id, map[string]any{
-		"email": u.Email, "demoPrivilege": req.DemoPrivilege, "location": loc, "reason": reason,
+		"email": u.Email, "demoPrivilege": req.DemoPrivilege, "location": loc, "lat": lat, "lng": lng, "reason": reason,
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"demoPrivilege": req.DemoPrivilege, "location": loc})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"demoPrivilege": req.DemoPrivilege,
+		"location":      loc,
+		"demoLat":       lat,
+		"demoLng":       lng,
+	})
 }
 

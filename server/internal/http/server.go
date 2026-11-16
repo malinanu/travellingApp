@@ -351,6 +351,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Use(s.Authenticated)
 		r.Get("/ws/group", s.handleGroupWS)
 		r.Get("/me", s.handleMe)
+		r.Put("/me/demo-location", s.handleUpdateDemoLocation)
 		r.Delete("/me", s.handleDeleteAccount)
 		r.Get("/me/export", s.handleExportData)
 		r.Put("/me", s.handleUpdateMe)
@@ -599,12 +600,18 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		// Command Center User Access Controls
 		r.Get("/admin/access-control/catalog", s.handleAdminAccessControlCatalog)
 		r.Get("/admin/access-control/admins", s.handleAdminAccessControlAdmins)
+		r.Get("/admin/access-control/groups", s.handleAdminAccessControlGroups)
 
 		// Cross-admin history of destructive actions
 		r.Group(func(r chi.Router) {
 			r.Use(s.RequireSuperAdmin)
 			r.Get("/admin/audit-log", s.handleAdminAuditLog)
 			r.Put("/admin/users/{id}/permissions", s.handleAdminSetUserPermissions)
+			r.Post("/admin/access-control/groups", s.handleAdminAccessControlCreateGroup)
+			r.Put("/admin/access-control/groups/{id}", s.handleAdminAccessControlUpdateGroup)
+			r.Delete("/admin/access-control/groups/{id}", s.handleAdminAccessControlDeleteGroup)
+			r.Post("/admin/access-control/users", s.handleAdminAccessControlAddUser)
+			r.Put("/admin/access-control/users/{id}/group", s.handleAdminAccessControlSetUserGroup)
 			r.Put("/admin/access-control/users/{id}", s.handleAdminAccessControlUpdate)
 			// Account surgery: change traveller <-> vendor, or delete a user or
 			// a business outright (see admin_superadmin.go).

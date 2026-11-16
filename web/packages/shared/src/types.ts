@@ -28,6 +28,11 @@ export interface User {
   /** Developer demo privilege (forces staging Mirissa location override). */
   demoPrivilege?: boolean;
   demoLocation?: string;
+  demoLat?: number;
+  demoLng?: number;
+  adminGroupId?: string;
+  adminGroupName?: string;
+  adminPermissions?: string[];
   totpEnabled: boolean;
   phone: string;
   /** Confirmed with a one-time code (WhatsApp or SMS); a new number resets it. */
@@ -437,6 +442,10 @@ export interface AdminUserSummary {
   publisher: boolean;
   demoPrivilege?: boolean;
   demoLocation?: string;
+  demoLat?: number;
+  demoLng?: number;
+  adminGroupId?: string;
+  adminGroupName?: string;
   createdAt: string;
   activeSessions: number;
   lastActiveAt?: string;
@@ -483,12 +492,26 @@ export interface CommandCenterFeature {
   subPermissions: CommandCenterPermission[];
 }
 
+export interface AdminGroup {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  isSystem: boolean;
+  permissions: string[];
+  memberCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AdminAccessUser {
   id: string;
   name: string;
   email: string;
   role: Role;
   isSuperAdmin: boolean;
+  adminGroupId?: string;
+  adminGroupName?: string;
   adminPermissions: string[];
   activeSessions: number;
   lastActiveAt?: string;

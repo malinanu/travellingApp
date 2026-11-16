@@ -16,6 +16,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/storage/local_store.dart';
+import '../catalog/sri_lanka_locations.dart';
 import '../catalog/travellers.dart' as seed;
 import '../catalog/trip_catalog.dart';
 import '../models/models.dart';
@@ -58,6 +59,40 @@ void setServerDefaultLocation(DefaultLocationOverride? loc) {
 }
 
 DefaultLocationOverride? get serverDefaultLocation => _serverDefaultLocation;
+
+/// Resolves the simulated location for accounts with developer demo privilege.
+/// Handles explicit coordinates (demoLat, demoLng), Sri Lanka town names (e.g. Ratnapura),
+/// and comma-separated coordinates, falling back to Mirissa.
+DefaultLocationOverride? resolveDemoLocation(Map<String, dynamic> userMap) {
+  final demoPrivilege = userMap['demoPrivilege'] as bool? ?? false;
+  if (!demoPrivilege) return null;
+  final latNum = userMap['demoLat'] as num?;
+  final lngNum = userMap['demoLng'] as num?;
+  final rawLoc = (userMap['demoLocation'] as String?)?.trim() ?? '';
+  if (latNum != null && lngNum != null) {
+    final name = rawLoc.isNotEmpty ? rawLoc : 'Demo (${latNum.toStringAsFixed(3)}, ${lngNum.toStringAsFixed(3)})';
+    return (lat: latNum.toDouble(), lng: lngNum.toDouble(), name: name, zoom: 14.5);
+  }
+  if (rawLoc.isNotEmpty) {
+    final parts = rawLoc.split(',');
+    if (parts.length == 2) {
+      final pLat = double.tryParse(parts[0].trim());
+      final pLng = double.tryParse(parts[1].trim());
+      if (pLat != null && pLng != null) {
+        return (lat: pLat, lng: pLng, name: 'Custom ($pLat, $pLng)', zoom: 14.5);
+      }
+    }
+    for (final loc in kSriLankaWeatherLocations) {
+      if (loc.name.toLowerCase() == rawLoc.toLowerCase() ||
+          loc.id.toLowerCase() == rawLoc.toLowerCase() ||
+          rawLoc.toLowerCase().contains(loc.name.toLowerCase())) {
+        return (lat: loc.lat, lng: loc.lng, name: loc.name, zoom: 14.5);
+      }
+    }
+    return (lat: kFallbackLat, lng: kFallbackLng, name: rawLoc, zoom: 14.5);
+  }
+  return (lat: 5.9483, lng: 80.4552, name: 'Mirissa', zoom: 14.5);
+}
 
 // bestEffortPosition has 4 independent callers (devicePositionProvider,
 // weatherLocationProvider, PlacesNotifier._currentPosition,
@@ -397,12 +432,8 @@ class AuthNotifier extends Notifier<bool> {
             ),
           );
     }
-    final demoPrivilege = user['demoPrivilege'] as bool? ?? false;
-    if (demoPrivilege) {
-      setServerDefaultLocation((lat: 5.9483, lng: 80.4552, name: 'Mirissa', zoom: 14.5));
-    } else {
-      setServerDefaultLocation(null);
-    }
+    final demoOverride = resolveDemoLocation(user);
+    setServerDefaultLocation(demoOverride);
     ref.invalidate(devicePositionProvider);
     ref.invalidate(locationPermissionProvider);
     ref.invalidate(weatherLocationProvider);
@@ -471,9 +502,9 @@ class MeNotifier extends Notifier<Map<String, dynamic>?> {
     if (!ref.read(authProvider)) return null;
     final cached = ref.read(localStoreProvider).getJson(StoreKeys.me);
     if (cached == null) return null;
-    final demoPrivilege = cached['demoPrivilege'] as bool? ?? false;
-    if (demoPrivilege) {
-      setServerDefaultLocation((lat: 5.9483, lng: 80.4552, name: 'Mirissa', zoom: 14.5));
+    final demoOverride = resolveDemoLocation(cached);
+    if (demoOverride != null) {
+      setServerDefaultLocation(demoOverride);
     }
     try {
       seed.me = Traveler.fromMe(cached);
@@ -497,17 +528,16 @@ class MeNotifier extends Notifier<Map<String, dynamic>?> {
       state = data;
       seed.me = Traveler.fromMe(data);
       await store.setJson(StoreKeys.me, data);
-      final demoPrivilege = data['demoPrivilege'] as bool? ?? false;
-      final wasDemo = _serverDefaultLocation != null;
-      if (demoPrivilege) {
-        setServerDefaultLocation((lat: 5.9483, lng: 80.4552, name: 'Mirissa', zoom: 14.5));
-        ref.invalidate(devicePositionProvider);
-        ref.invalidate(locationPermissionProvider);
-        ref.invalidate(weatherLocationProvider);
-        ref.invalidate(currentWeatherProvider);
-        ref.invalidate(placesProvider);
-      } else if (wasDemo) {
-        setServerDefaultLocation(null);
+      final demoOverride = resolveDemoLocation(data);
+      final prevLoc = _serverDefaultLocation;
+      final locChanged = (prevLoc == null && demoOverride != null) ||
+          (prevLoc != null && demoOverride == null) ||
+          (prevLoc != null && demoOverride != null &&
+              (prevLoc.lat != demoOverride.lat ||
+               prevLoc.lng != demoOverride.lng ||
+               prevLoc.name != demoOverride.name));
+      setServerDefaultLocation(demoOverride);
+      if (locChanged) {
         ref.invalidate(devicePositionProvider);
         ref.invalidate(locationPermissionProvider);
         ref.invalidate(weatherLocationProvider);
@@ -525,6 +555,39 @@ class MeNotifier extends Notifier<Map<String, dynamic>?> {
       }
     } catch (_) {
       // Offline — leave the previous state (or null) as-is.
+    }
+  }
+
+  /// Allows developers or demo users to switch their simulated location.
+  Future<String?> updateDemoLocation({
+    required String name,
+    required double lat,
+    required double lng,
+  }) async {
+    try {
+      await ref.read(apiProvider).dio.put('/me/demo-location', data: {
+        'location': name,
+        'lat': lat,
+        'lng': lng,
+      });
+      final updatedData = Map<String, dynamic>.from(state ?? {});
+      updatedData['demoPrivilege'] = true;
+      updatedData['demoLocation'] = name;
+      updatedData['demoLat'] = lat;
+      updatedData['demoLng'] = lng;
+      state = updatedData;
+      await ref.read(localStoreProvider).setJson(StoreKeys.me, updatedData);
+
+      final newOverride = (lat: lat, lng: lng, name: name, zoom: 14.5);
+      setServerDefaultLocation(newOverride);
+      ref.invalidate(devicePositionProvider);
+      ref.invalidate(locationPermissionProvider);
+      ref.invalidate(weatherLocationProvider);
+      ref.invalidate(currentWeatherProvider);
+      ref.invalidate(placesProvider);
+      return null;
+    } catch (e) {
+      return ApiClient.errorMessage(e);
     }
   }
 }

@@ -66,7 +66,7 @@ func (s *Server) hasAdminPermission(ctx context.Context, userID, email, perm str
 		log.Printf("admin permissions user=%s: %v", userID, err)
 		return false
 	}
-	if slices.Contains(perms, perm) {
+	if slices.Contains(perms, "*") || slices.Contains(perms, perm) {
 		return true
 	}
 	// Granular sub-permission check (e.g. "queue.view") satisfied if parent feature ("queue") is held.

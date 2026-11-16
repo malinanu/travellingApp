@@ -53,8 +53,11 @@ type User struct {
 	Publisher bool `json:"publisher"`
 	// DemoPrivilege lets developer and test accounts simulate location in Mirissa
 	// (or another demo spot) for staging presentations.
-	DemoPrivilege bool   `json:"demoPrivilege"`
-	DemoLocation  string `json:"demoLocation,omitempty"`
+	DemoPrivilege bool      `json:"demoPrivilege"`
+	DemoLocation  string    `json:"demoLocation,omitempty"`
+	DemoLat       *float64  `json:"demoLat,omitempty"`
+	DemoLng       *float64  `json:"demoLng,omitempty"`
+	AdminGroupID  *string   `json:"adminGroupId,omitempty"`
 	Lat               *float64   `json:"-"`
 	Lng               *float64   `json:"-"`
 	LocationUpdatedAt *time.Time `json:"-"`
@@ -769,6 +772,10 @@ type AdminUserSummary struct {
 	Publisher      bool       `json:"publisher"`
 	DemoPrivilege  bool       `json:"demoPrivilege"`
 	DemoLocation   string     `json:"demoLocation,omitempty"`
+	DemoLat        *float64   `json:"demoLat,omitempty"`
+	DemoLng        *float64   `json:"demoLng,omitempty"`
+	AdminGroupID   *string    `json:"adminGroupId,omitempty"`
+	AdminGroupName string     `json:"adminGroupName,omitempty"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	ActiveSessions int        `json:"activeSessions"`
 	LastActiveAt   *time.Time `json:"lastActiveAt,omitempty"`

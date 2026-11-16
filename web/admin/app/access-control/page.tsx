@@ -61,6 +61,7 @@ import React, { Suspense, useMemo, useState } from 'react';
 
 import type {
   AdminAccessUser,
+  AdminGroup,
   CommandCenterFeature,
   CommandCenterPermission,
   PermissionRisk,
@@ -132,7 +133,28 @@ function AccessControlManager() {
     queryFn: () => api.get<AdminAccessUser[]>('/admin/access-control/admins'),
   });
 
+  // Load access control groups
+  const { data: groups = [] } = useQuery<AdminGroup[]>({
+    queryKey: ['admin-access-control-groups'],
+    queryFn: () => api.get<AdminGroup[]>('/admin/access-control/groups'),
+  });
+
   const [selectedAdminId, setSelectedAdminId] = useState<string>('');
+
+  // Modals state for users & groups
+  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserGroupId, setNewUserGroupId] = useState('vendor_approvals');
+  const [newUserReason, setNewUserReason] = useState('');
+
+  const [isGroupsModalOpen, setIsGroupsModalOpen] = useState(false);
+  const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupDesc, setNewGroupDesc] = useState('');
+  const [newGroupIcon, setNewGroupIcon] = useState('Shield');
+  const [newGroupPerms, setNewGroupPerms] = useState<string[]>([]);
+  const [newGroupReason, setNewGroupReason] = useState('');
 
   // Synchronize initial admin
   React.useEffect(() => {
@@ -216,6 +238,74 @@ function AccessControlManager() {
     onError: (err: any) => {
       setToastMessage({ text: err?.message || 'Failed to update access controls.', type: 'error' });
       setTimeout(() => setToastMessage(null), 6000);
+    },
+  });
+
+  const addUserMutation = useMutation({
+    mutationFn: (vars: { email: string; name: string; groupId?: string; reason: string }) =>
+      api.post('/admin/access-control/users', vars),
+    onSuccess: (newUser: any) => {
+      qc.invalidateQueries({ queryKey: ['admin-access-control-admins'] });
+      setIsAddUserModalOpen(false);
+      setNewUserEmail('');
+      setNewUserName('');
+      setNewUserReason('');
+      if (newUser?.id) setSelectedAdminId(newUser.id);
+      setToastMessage({ text: `Operator ${newUser.email} added to Command Center.`, type: 'success' });
+      setTimeout(() => setToastMessage(null), 5000);
+    },
+    onError: (err: any) => {
+      setToastMessage({ text: err?.message || 'Failed to add operator.', type: 'error' });
+      setTimeout(() => setToastMessage(null), 6000);
+    },
+  });
+
+  const setUserGroupMutation = useMutation({
+    mutationFn: ({ adminId, groupId, reason }: { adminId: string; groupId: string; reason: string }) =>
+      api.put(`/admin/access-control/users/${encodeURIComponent(adminId)}/group`, { groupId, reason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-access-control-admins'] });
+      qc.invalidateQueries({ queryKey: ['admin-access-control-groups'] });
+      setToastMessage({ text: 'Operator group assigned successfully.', type: 'success' });
+      setTimeout(() => setToastMessage(null), 4000);
+    },
+    onError: (err: any) => {
+      setToastMessage({ text: err?.message || 'Failed to update group.', type: 'error' });
+      setTimeout(() => setToastMessage(null), 5000);
+    },
+  });
+
+  const createGroupMutation = useMutation({
+    mutationFn: (vars: { name: string; description: string; icon: string; permissions: string[]; reason: string }) =>
+      api.post('/admin/access-control/groups', vars),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-access-control-groups'] });
+      setIsCreateGroupModalOpen(false);
+      setNewGroupName('');
+      setNewGroupDesc('');
+      setNewGroupPerms([]);
+      setNewGroupReason('');
+      setToastMessage({ text: 'Access Control Group created successfully.', type: 'success' });
+      setTimeout(() => setToastMessage(null), 5000);
+    },
+    onError: (err: any) => {
+      setToastMessage({ text: err?.message || 'Failed to create group.', type: 'error' });
+      setTimeout(() => setToastMessage(null), 6000);
+    },
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.del(`/admin/access-control/groups/${encodeURIComponent(id)}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-access-control-groups'] });
+      qc.invalidateQueries({ queryKey: ['admin-access-control-admins'] });
+      setToastMessage({ text: 'Access Control Group deleted.', type: 'success' });
+      setTimeout(() => setToastMessage(null), 4000);
+    },
+    onError: (err: any) => {
+      setToastMessage({ text: err?.message || 'Failed to delete group.', type: 'error' });
+      setTimeout(() => setToastMessage(null), 5000);
     },
   });
 
@@ -441,6 +531,14 @@ function AccessControlManager() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 self-stretch md:self-auto justify-end">
+          <button
+            onClick={() => setIsGroupsModalOpen(true)}
+            className="btn flex items-center gap-2 py-1.5 px-3 text-[13px] border border-line hover:border-muted"
+          >
+            <Shield size={14} />
+            <span>Role Groups ({groups.length})</span>
+          </button>
+
           {isDirty && (
             <span className="text-[11.5px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full">
               Unsaved Access Changes
@@ -518,14 +616,27 @@ function AccessControlManager() {
                       {admin.name ? admin.name[0].toUpperCase() : admin.email[0].toUpperCase()}
                     </div>
                     <span>{admin.name || admin.email}</span>
-                    {isItemSuper && (
+                    {isItemSuper ? (
                       <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-amber-400 text-black font-extrabold">
                         Super
                       </span>
-                    )}
+                    ) : admin.adminGroupName ? (
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-black/10 text-inherit opacity-80">
+                        {admin.adminGroupName}
+                      </span>
+                    ) : null}
                   </button>
                 );
               })}
+              {isSuperAdmin && (
+                <button
+                  onClick={() => setIsAddUserModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-[var(--accent)] border border-dashed border-[var(--accent)] hover:bg-[var(--accent)]/10 shrink-0"
+                >
+                  <Users size={13} />
+                  <span>+ Add Operator</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -608,16 +719,47 @@ function AccessControlManager() {
                   </span>
                 )}
               </div>
-              <p className="text-[11.5px] text-muted font-medium mt-0.5">
-                Active permissions granted: <strong className="text-[var(--ink)]">{draftPermissions.length}</strong> ·{' '}
-                {selectedAdmin.activeSessions} device session{selectedAdmin.activeSessions === 1 ? '' : 's'} ·{' '}
-                <Link
-                  href={`/users?user=${encodeURIComponent(selectedAdmin.id)}`}
-                  className="font-semibold underline hover:text-[var(--accent)]"
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <span className="text-[11px] font-bold text-muted">Role Group:</span>
+                <select
+                  disabled={!isSuperAdmin || setUserGroupMutation.isPending}
+                  value={selectedAdmin.adminGroupId || ''}
+                  onChange={(e) => {
+                    const newGid = e.target.value;
+                    const g = groups.find((x) => x.id === newGid);
+                    const reason = prompt(
+                      `Reason for changing ${selectedAdmin.email}'s group to ${g ? g.name : 'Custom / None'}?`,
+                      'Role update'
+                    );
+                    if (reason && reason.trim()) {
+                      setUserGroupMutation.mutate({
+                        adminId: selectedAdmin.id,
+                        groupId: newGid,
+                        reason: reason.trim(),
+                      });
+                    }
+                  }}
+                  className="input !py-0.5 !px-2 text-[11px] font-semibold bg-white border-line rounded"
                 >
-                  View full user profile →
-                </Link>
-              </p>
+                  <option value="">No Group (Custom Permissions Only)</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name} {g.isSystem ? '· System' : '· Custom'}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-muted">·</span>
+                <span className="text-[11.5px] text-muted font-medium">
+                  Active permissions: <strong className="text-[var(--ink)]">{draftPermissions.length}</strong> ·{' '}
+                  {selectedAdmin.activeSessions} device session{selectedAdmin.activeSessions === 1 ? '' : 's'} ·{' '}
+                  <Link
+                    href={`/users?user=${encodeURIComponent(selectedAdmin.id)}`}
+                    className="font-semibold underline hover:text-[var(--accent)]"
+                  >
+                    View profile →
+                  </Link>
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1397,6 +1539,368 @@ function AccessControlManager() {
                 >
                   <Save size={13} />
                   {saveMutation.isPending ? 'Saving to Audit Log…' : 'Confirm & Save'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Operator Modal (No .env needed) */}
+      {isAddUserModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="panel w-full max-w-md p-6 bg-[var(--surface)] shadow-2xl border border-line">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="font-bold text-lg">Add Operator to Command Center</h3>
+                <p className="text-[12px] text-muted mt-0.5">
+                  Grant Command Center access to a new or existing user without modifying environment variables.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsAddUserModalOpen(false)}
+                className="text-muted hover:text-[var(--ink)] p-1 rounded-lg border border-transparent hover:border-line"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newUserEmail.trim() || !newUserReason.trim()) return;
+                addUserMutation.mutate({
+                  email: newUserEmail.trim(),
+                  name: newUserName.trim(),
+                  groupId: newUserGroupId || undefined,
+                  reason: newUserReason.trim(),
+                });
+              }}
+              className="space-y-3"
+            >
+              <label className="block">
+                <span className="text-[12px] font-bold block mb-1">
+                  Operator Email <span className="text-rose-500">*</span>
+                </span>
+                <input
+                  type="email"
+                  required
+                  autoFocus
+                  value={newUserEmail}
+                  onChange={(e) => setNewUserEmail(e.target.value)}
+                  placeholder="e.g. reviewer@spotto.com"
+                  className="input w-full py-2 text-[13px]"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-[12px] font-bold block mb-1">Full Name (optional)</span>
+                <input
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  placeholder="e.g. Kasun Fernando"
+                  className="input w-full py-2 text-[13px]"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-[12px] font-bold block mb-1">Role / Access Control Group</span>
+                <select
+                  value={newUserGroupId}
+                  onChange={(e) => setNewUserGroupId(e.target.value)}
+                  className="input w-full py-2 text-[13px] bg-white"
+                >
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name} {g.isSystem ? '· System' : '· Custom'}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-muted mt-1 block">
+                  The user will immediately inherit all permissions configured for this group.
+                </span>
+              </label>
+
+              <label className="block">
+                <span className="text-[12px] font-bold block mb-1">
+                  Reason for Audit Log <span className="text-rose-500">*</span>
+                </span>
+                <input
+                  required
+                  value={newUserReason}
+                  onChange={(e) => setNewUserReason(e.target.value)}
+                  placeholder="e.g. Joined Sri Lanka merchant onboarding team"
+                  className="input w-full py-2 text-[13px]"
+                />
+              </label>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-line">
+                <button
+                  type="button"
+                  onClick={() => setIsAddUserModalOpen(false)}
+                  className="btn py-1.5 px-3 text-[12.5px]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addUserMutation.isPending || !newUserEmail.trim() || !newUserReason.trim()}
+                  className="btn btn-primary py-1.5 px-4 text-[12.5px] flex items-center gap-1.5"
+                >
+                  <UserCheck size={13} />
+                  {addUserMutation.isPending ? 'Adding Operator…' : 'Add Operator'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Role Groups Modal */}
+      {isGroupsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="panel w-full max-w-2xl max-h-[85vh] flex flex-col p-6 bg-[var(--surface)] shadow-2xl border border-line">
+            <div className="flex items-start justify-between gap-3 mb-4 shrink-0">
+              <div>
+                <h3 className="font-bold text-lg">Command Center Role Groups</h3>
+                <p className="text-[12px] text-muted mt-0.5">
+                  Organize team permissions into reusable operational roles.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {isSuperAdmin && (
+                  <button
+                    onClick={() => {
+                      setIsGroupsModalOpen(false);
+                      setIsCreateGroupModalOpen(true);
+                    }}
+                    className="btn btn-primary text-[12px] py-1 px-3 flex items-center gap-1.5"
+                  >
+                    <span>+ New Group</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsGroupsModalOpen(false)}
+                  className="text-muted hover:text-[var(--ink)] p-1 rounded-lg border border-transparent hover:border-line"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto space-y-3 pr-1 flex-1">
+              {groups.map((g) => (
+                <div key={g.id} className="p-4 rounded-xl border border-line bg-white/50 hover:bg-white transition-all space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center">
+                        <Shield size={15} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-[14px]">{g.name}</h4>
+                          {g.isSystem ? (
+                            <span className="text-[9.5px] uppercase font-bold tracking-wider px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                              System
+                            </span>
+                          ) : (
+                            <span className="text-[9.5px] uppercase font-bold tracking-wider px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-600 border border-purple-500/20">
+                              Custom
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[12px] text-muted font-medium">{g.description}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11.5px] font-bold text-muted bg-line/30 px-2 py-0.5 rounded-full">
+                        {g.memberCount ?? 0} {g.memberCount === 1 ? 'member' : 'members'}
+                      </span>
+                      {!g.isSystem && isSuperAdmin && (
+                        <button
+                          onClick={() => {
+                            const reason = prompt(`Reason for deleting group ${g.name}?`, 'Obsolete role');
+                            if (reason && reason.trim()) {
+                              deleteGroupMutation.mutate({ id: g.id, reason: reason.trim() });
+                            }
+                          }}
+                          className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50"
+                          title="Delete custom group"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-line/40">
+                    <span className="text-[10.5px] font-bold text-muted uppercase tracking-wider">Granted:</span>
+                    {g.permissions.includes('*') ? (
+                      <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700">
+                        All Features (*)
+                      </span>
+                    ) : (
+                      g.permissions.map((p) => (
+                        <span key={p} className="text-[10.5px] font-mono px-2 py-0.5 rounded bg-line/20 text-muted">
+                          {p}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-line mt-4">
+              <button
+                onClick={() => setIsGroupsModalOpen(false)}
+                className="btn py-1.5 px-4 text-[12.5px]"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Custom Group Modal */}
+      {isCreateGroupModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="panel w-full max-w-xl max-h-[90vh] flex flex-col p-6 bg-[var(--surface)] shadow-2xl border border-line">
+            <div className="flex items-start justify-between gap-3 mb-4 shrink-0">
+              <div>
+                <h3 className="font-bold text-lg">Create Access Control Group</h3>
+                <p className="text-[12px] text-muted mt-0.5">
+                  Define a new team role with bundled permissions.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsCreateGroupModalOpen(false)}
+                className="text-muted hover:text-[var(--ink)] p-1 rounded-lg border border-transparent hover:border-line"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newGroupName.trim() || !newGroupReason.trim()) return;
+                createGroupMutation.mutate({
+                  name: newGroupName.trim(),
+                  description: newGroupDesc.trim(),
+                  icon: newGroupIcon || 'Shield',
+                  permissions: newGroupPerms,
+                  reason: newGroupReason.trim(),
+                });
+              }}
+              className="space-y-4 overflow-y-auto pr-1 flex-1"
+            >
+              <label className="block">
+                <span className="text-[12px] font-bold block mb-1">
+                  Group Name <span className="text-rose-500">*</span>
+                </span>
+                <input
+                  required
+                  autoFocus
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  placeholder="e.g. Southern Coast Reviewers"
+                  className="input w-full py-2 text-[13px]"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-[12px] font-bold block mb-1">Description</span>
+                <input
+                  value={newGroupDesc}
+                  onChange={(e) => setNewGroupDesc(e.target.value)}
+                  placeholder="e.g. Regional team managing Galle, Weligama and Mirissa merchants"
+                  className="input w-full py-2 text-[13px]"
+                />
+              </label>
+
+              <div>
+                <span className="text-[12px] font-bold block mb-1">Select Granted Features / Permissions</span>
+                <div className="space-y-2 max-h-48 overflow-y-auto p-2 bg-line/10 rounded-xl border border-line">
+                  {features.map((f) => {
+                    const isFeatureSelected = newGroupPerms.includes(f.id);
+                    return (
+                      <div key={f.id} className="p-2 rounded-lg bg-white/60 border border-line/60">
+                        <label className="flex items-center gap-2 cursor-pointer font-bold text-[12.5px]">
+                          <input
+                            type="checkbox"
+                            checked={isFeatureSelected}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              const subIds = f.subPermissions.map((p) => p.id);
+                              if (checked) {
+                                setNewGroupPerms((prev) => Array.from(new Set([...prev, f.id, ...subIds])));
+                              } else {
+                                setNewGroupPerms((prev) => prev.filter((p) => p !== f.id && !subIds.includes(p)));
+                              }
+                            }}
+                          />
+                          <span>{f.name}</span>
+                        </label>
+                        <div className="flex items-center gap-1 flex-wrap mt-1.5 ml-5">
+                          {f.subPermissions.map((sp) => {
+                            const isPermChecked = newGroupPerms.includes(sp.id);
+                            return (
+                              <button
+                                key={sp.id}
+                                type="button"
+                                onClick={() => {
+                                  if (isPermChecked) {
+                                    setNewGroupPerms((prev) => prev.filter((p) => p !== sp.id));
+                                  } else {
+                                    setNewGroupPerms((prev) => [...prev, sp.id]);
+                                  }
+                                }}
+                                className={`text-[11px] px-2 py-0.5 rounded border transition-all ${
+                                  isPermChecked
+                                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                                    : 'bg-white text-muted border-line hover:border-muted'
+                                }`}
+                              >
+                                {sp.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <label className="block">
+                <span className="text-[12px] font-bold block mb-1">
+                  Reason for Audit Log <span className="text-rose-500">*</span>
+                </span>
+                <input
+                  required
+                  value={newGroupReason}
+                  onChange={(e) => setNewGroupReason(e.target.value)}
+                  placeholder="e.g. Setting up regional operations role"
+                  className="input w-full py-2 text-[13px]"
+                />
+              </label>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-line">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateGroupModalOpen(false)}
+                  className="btn py-1.5 px-3 text-[12.5px]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createGroupMutation.isPending || !newGroupName.trim() || !newGroupReason.trim()}
+                  className="btn btn-primary py-1.5 px-4 text-[12.5px]"
+                >
+                  {createGroupMutation.isPending ? 'Creating…' : 'Create Group'}
                 </button>
               </div>
             </form>

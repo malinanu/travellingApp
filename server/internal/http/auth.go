@@ -399,7 +399,8 @@ type meResp struct {
 	IsSuperAdmin bool `json:"isSuperAdmin,omitempty"`
 	// CanManageVendorLogins: may hand vendor accounts over to their owners
 	// (super-admins always; other admins when granted, see superadmin.go).
-	CanManageVendorLogins bool `json:"canManageVendorLogins,omitempty"`
+	CanManageVendorLogins bool     `json:"canManageVendorLogins,omitempty"`
+	AdminPermissions      []string `json:"adminPermissions,omitempty"`
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -416,9 +417,51 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 			resp.VendorStatus = &v.Status
 		}
 	}
-	resp.IsSuperAdmin = u.Role == domain.RoleAdmin && s.isSuperAdmin(u.Email)
-	resp.CanManageVendorLogins = u.Role == domain.RoleAdmin && s.hasAdminPermission(r.Context(), u.ID, u.Email, PermVendorLogins)
+	if u.Role == domain.RoleAdmin {
+		resp.IsSuperAdmin = s.isSuperAdmin(u.Email)
+		resp.CanManageVendorLogins = s.hasAdminPermission(r.Context(), u.ID, u.Email, PermVendorLogins)
+		if perms, err := s.Store.AdminPermissions(r.Context(), u.ID); err == nil {
+			resp.AdminPermissions = perms
+		}
+	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleUpdateDemoLocation allows a developer with demoPrivilege to change their simulated location.
+func (s *Server) handleUpdateDemoLocation(w http.ResponseWriter, r *http.Request) {
+	c := auth.FromContext(r.Context())
+	u, err := s.Store.UserByID(r.Context(), c.Subject)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	if !u.DemoPrivilege && u.Role != domain.RoleAdmin {
+		writeErr(w, http.StatusForbidden, "demo privilege required")
+		return
+	}
+	var req struct {
+		Location string   `json:"location"`
+		Lat      *float64 `json:"lat"`
+		Lng      *float64 `json:"lng"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	loc := strings.TrimSpace(req.Location)
+	lat, lng := req.Lat, req.Lng
+	if lat == nil || lng == nil {
+		lat, lng = resolveTownCoordinates(loc)
+	}
+	if err := s.Store.SetUserDemoPrivilege(r.Context(), u.ID, true, loc, lat, lng); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"demoPrivilege": true,
+		"location":      loc,
+		"demoLat":       lat,
+		"demoLng":       lng,
+	})
 }
 
 func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
