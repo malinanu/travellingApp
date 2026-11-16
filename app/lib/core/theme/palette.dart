@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 abstract final class SpottoColors {
   static const sand = Color(0xFFFBF6ED); // background
   static const accent = Color(0xFF0B6F86); // teal
+  static const primary = accent; // canonical primary alias
   static const accent2 = Color(0xFF0E8C8A);
   static const accentTint = Color(0xFFDDEDEF);
   static const sun = Color(0xFFF6B81E); // deals / ratings / primary action

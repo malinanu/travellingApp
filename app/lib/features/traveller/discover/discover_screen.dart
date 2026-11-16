@@ -223,7 +223,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
     }
   }
 
-  void _openLocationPickerSheet(BuildContext context, [LatLng? initialPin]) {
+  void _openLocationPickerSheet([LatLng? initialPin]) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -243,11 +243,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
           ref.invalidate(currentWeatherProvider);
           ref.invalidate(placesProvider);
           _startPositionStream();
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Reset to real device GPS')),
-            );
-          }
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Reset to real device GPS')),
+          );
         },
         onSelectLocation: (name, lat, lng) async {
           Navigator.of(ctx).pop();
@@ -256,9 +255,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
             lat: lat,
             lng: lng,
           );
-          if (err != null && mounted) {
+          if (!mounted) return;
+          if (err != null) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update location: $err')));
-          } else if (mounted) {
+          } else {
             final target = LatLng(lat, lng);
             setState(() {
               _lastKnownLatLng = target;
@@ -267,7 +267,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Simulated location set to $name (${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)})'),
-                backgroundColor: SpottoColors.primary,
+                backgroundColor: SpottoColors.accent,
               ),
             );
           }
@@ -691,11 +691,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
             }
           },
           onCameraIdle: () => _isProgrammaticCamera = false,
-          onLongPress: isDemoEligible
-              ? (latLng) {
-                  _openLocationPickerSheet(context, latLng);
-                }
-              : null,
+          onLongPress: isDemoEligible ? (latLng) => _openLocationPickerSheet(latLng) : null,
         ),
 
         // time-of-day lighting overlay
@@ -783,7 +779,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
                     lat: serverDefaultLocation?.lat ?? _lastKnownLatLng?.latitude ?? kFallbackLat,
                     lng: serverDefaultLocation?.lng ?? _lastKnownLatLng?.longitude ?? kFallbackLng,
                     isOverrideActive: serverDefaultLocation != null,
-                    onTap: () => _openLocationPickerSheet(context),
+                    onTap: () => _openLocationPickerSheet(),
                   ),
                 ],
                 if (resignedBundleId != null && !_bundleNoticeDismissed) ...[
@@ -1450,7 +1446,7 @@ class _DeveloperLocationBanner extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
+                color: Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Text(
@@ -1567,10 +1563,10 @@ class _DeveloperLocationSheetState extends State<_DeveloperLocationSheet> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: SpottoColors.primary.withOpacity(0.1),
+                    color: SpottoColors.accent.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.developer_mode, color: SpottoColors.primary, size: 22),
+                  child: const Icon(Icons.developer_mode, color: SpottoColors.accent, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1675,10 +1671,10 @@ class _DeveloperLocationSheetState extends State<_DeveloperLocationSheet> {
                     for (final loc in kSriLankaWeatherLocations)
                       ActionChip(
                         avatar: loc.name.toLowerCase() == widget.currentLocationName.toLowerCase()
-                            ? const Icon(Icons.check_circle, size: 16, color: SpottoColors.primary)
+                            ? const Icon(Icons.check_circle, size: 16, color: SpottoColors.accent)
                             : const Icon(Icons.location_on_outlined, size: 16, color: SpottoColors.muted),
                         backgroundColor: loc.name.toLowerCase() == widget.currentLocationName.toLowerCase()
-                            ? SpottoColors.primary.withOpacity(0.12)
+                            ? SpottoColors.accent.withValues(alpha: 0.12)
                             : const Color(0xFFF3F4F6),
                         label: Text(
                           loc.name,
@@ -1687,7 +1683,7 @@ class _DeveloperLocationSheetState extends State<_DeveloperLocationSheet> {
                                 ? FontWeight.w800
                                 : FontWeight.w600,
                             color: loc.name.toLowerCase() == widget.currentLocationName.toLowerCase()
-                                ? SpottoColors.primary
+                                ? SpottoColors.accent
                                 : Colors.black87,
                             fontSize: 12,
                           ),
@@ -1749,7 +1745,7 @@ class _DeveloperLocationSheetState extends State<_DeveloperLocationSheet> {
                 const SizedBox(height: 12),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: SpottoColors.primary,
+                    backgroundColor: SpottoColors.accent,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     minimumSize: const Size.fromHeight(42),
