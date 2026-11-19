@@ -1,4 +1,4 @@
-﻿package httpapi
+package httpapi
 
 import (
 	"encoding/json"
@@ -88,13 +88,13 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 	}
 
 	if svc.Type == domain.BookingTypeStay {
-		checkIn, err1 := time.Parse("2006-01-02", r.URL.Query().Get("checkIn"))
-		checkOut, err2 := time.Parse("2006-01-02", r.URL.Query().Get("checkOut"))
+		checkIn, err1 := parseLocalDate(r.URL.Query().Get("checkIn"))
+		checkOut, err2 := parseLocalDate(r.URL.Query().Get("checkOut"))
 		if err1 != nil || err2 != nil || !checkOut.After(checkIn) {
 			writeErr(w, http.StatusBadRequest, "valid checkIn/checkOut required")
 			return
 		}
-		existing, err := s.Store.OverlappingBookingsCount(r.Context(), svc.ID, checkIn, checkOut)
+		existing, err := s.Store.HeldCapacity(r.Context(), svc, checkIn, checkOut)
 		if err != nil {
 			storeErr(w, err)
 			return
@@ -107,7 +107,7 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	date, err := time.Parse("2006-01-02", r.URL.Query().Get("date"))
+	date, err := parseLocalDate(r.URL.Query().Get("date"))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "valid date required")
 		return
@@ -136,7 +136,7 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 			if checkVendorOpen(profile, t) != nil {
 				continue
 			}
-			existing, err := s.Store.OverlappingBookingsCount(r.Context(), svc.ID, t, slotEnd)
+			existing, err := s.Store.HeldCapacity(r.Context(), svc, t, slotEnd)
 			if err != nil {
 				storeErr(w, err)
 				return
@@ -203,8 +203,8 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 
 	var startAt, endAt time.Time
 	if svc.Type == domain.BookingTypeStay {
-		checkIn, err1 := time.Parse("2006-01-02", req.CheckIn)
-		checkOut, err2 := time.Parse("2006-01-02", req.CheckOut)
+		checkIn, err1 := parseLocalDate(req.CheckIn)
+		checkOut, err2 := parseLocalDate(req.CheckOut)
 		if err1 != nil || err2 != nil || !checkOut.After(checkIn) {
 			writeErr(w, http.StatusBadRequest, "valid checkIn/checkOut dates required")
 			return
@@ -224,7 +224,9 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, fmt.Sprintf("maximum party size is %d", svc.PartySizeMax))
 			return
 		}
-		startAt = start
+		// Hours and service windows are Sri Lankan wall-clock times,
+		// whatever offset the client sent the instant in.
+		startAt = inSriLanka(start)
 		duration := time.Duration(svc.DurationMins) * time.Minute
 		if duration <= 0 {
 			duration = time.Hour

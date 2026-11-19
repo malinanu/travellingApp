@@ -1,4 +1,4 @@
-﻿package httpapi
+package httpapi
 
 import (
 	"errors"
@@ -45,6 +45,22 @@ func validateServiceType(category string, t domain.BookingType) error {
 	return nil
 }
 
+// normalizeService applies defaults and rejects invalid settings shared by
+// service create and update.
+func normalizeService(svc *domain.BookableService) error {
+	if svc.Capacity < 1 {
+		svc.Capacity = 1
+	}
+	switch svc.CapacityUnit {
+	case "":
+		svc.CapacityUnit = domain.CapacityBookings
+	case domain.CapacityBookings, domain.CapacityGuests:
+	default:
+		return errors.New("capacityUnit must be bookings or guests")
+	}
+	return nil
+}
+
 func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireApprovedVendor(w, r)
 	if !ok {
@@ -62,8 +78,9 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if svc.Capacity < 1 {
-		svc.Capacity = 1
+	if err := normalizeService(&svc); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	svc.ID = newID("svc")
 	svc.VendorID = v.ID
@@ -95,8 +112,9 @@ func (s *Server) handleUpdateService(w http.ResponseWriter, r *http.Request) {
 	}
 	svc.ID = existing.ID
 	svc.VendorID = v.ID
-	if svc.Capacity < 1 {
-		svc.Capacity = 1
+	if err := normalizeService(&svc); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	if err := s.Store.UpsertBookableService(r.Context(), svc); err != nil {
 		writeErr(w, http.StatusInternalServerError, "An unexpected error occurred. Please try again later.")
@@ -105,18 +123,23 @@ func (s *Server) handleUpdateService(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, svc)
 }
 
-// DeleteBookableService cascades to that service's booking history (ON
-// DELETE CASCADE) â€” see the store method's own doc comment.
+// handleDeleteService deletes a service, or archives it when it already has
+// bookings so their history keeps its reference (see the store method).
 func (s *Server) handleDeleteService(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireApprovedVendor(w, r)
 	if !ok {
 		return
 	}
-	if err := s.Store.DeleteBookableService(r.Context(), chi.URLParam(r, "id"), v.ID); err != nil {
+	archived, err := s.Store.DeleteBookableService(r.Context(), chi.URLParam(r, "id"), v.ID)
+	if err != nil {
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	status := "deleted"
+	if archived {
+		status = "archived"
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
 func (s *Server) handleVendorBookings(w http.ResponseWriter, r *http.Request) {
@@ -161,13 +184,19 @@ func (s *Server) handleSetBookingStatus(w http.ResponseWriter, r *http.Request) 
 	if !readJSON(w, r, &req) {
 		return
 	}
+	// Cancelling goes through POST /vendor/bookings/{id}/cancel, which
+	// handles refunds; this endpoint only records how a booking ended.
 	switch req.Status {
-	case domain.BookingConfirmed, domain.BookingCancelled, domain.BookingCompleted, domain.BookingNoShow:
+	case domain.BookingCompleted, domain.BookingNoShow:
 	default:
-		writeErr(w, http.StatusBadRequest, "invalid status")
+		writeErr(w, http.StatusBadRequest, "status must be completed or no_show")
 		return
 	}
 	if err := s.Store.SetBookingStatus(r.Context(), chi.URLParam(r, "id"), v.ID, req.Status); err != nil {
+		if errors.Is(err, postgres.ErrInvalidTransition) {
+			writeErr(w, http.StatusConflict, "this booking can no longer be changed")
+			return
+		}
 		storeErr(w, err)
 		return
 	}

@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Database tests the bookings job runs (a Go -run pattern).
+  BOOKING_TESTS: 'TestBooking|TestServiceDelete|TestSavedCards|TestPayment|TestPayout|TestExperience|TestCommission|TestAdminBooking|TestVendorEarnings|TestHost'
+
 jobs:
   test-server:
     name: Go Server Tests & Lint
@@ -34,6 +38,46 @@ jobs:
 
       - name: Verify Go build
         run: go build -v ./cmd/api
+
+  # The database-backed tests skip themselves when Postgres is unreachable,
+  # so the job above never runs them. This job provides Postgres and runs
+  # the booking, payment and payout tests with SPOTTO_REQUIRE_DB=1, which
+  # turns a missing database into a failure instead of a silent skip.
+  # (The rest of the database suite predates this job and still needs
+  # fixing before it can run here; see the PR description.)
+  test-server-bookings-db:
+    name: Go Booking & Payment Tests (Postgres)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: admin123
+          POSTGRES_DB: spotto
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Run booking, payment and payout tests
+        env:
+          SPOTTO_REQUIRE_DB: '1'
+        run: go test -race -count=1 -v ./internal/http -run '${{ env.BOOKING_TESTS }}'
 
   build-web-apps:
     name: Build Web Apps (Vendor & Admin)

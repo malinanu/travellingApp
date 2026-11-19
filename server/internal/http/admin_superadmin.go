@@ -292,7 +292,7 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAdminDeleteVendor permanently deletes a business: its offers, menu,
-// photos, bookings and map spot. Its team accounts are signed out and
+// photos, services and map spot. A business with booking history is refused. Its team accounts are signed out and
 // unlinked, not deleted. The caller must type the business name to confirm.
 func (s *Server) handleAdminDeleteVendor(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -327,6 +327,15 @@ func (s *Server) handleAdminDeleteVendor(w http.ResponseWriter, r *http.Request)
 			"error":     fmt.Sprintf("This business sponsors the daily quest on %s. Reassign those days first.", strings.Join(days, ", ")),
 			"questDays": days,
 		})
+		return
+	}
+	// Bookings carry payment, refund and payout history, so a business
+	// that has ever taken one can't be erased: suspend it instead.
+	if n, err := s.Store.VendorBookingCount(r.Context(), v.ID); err != nil {
+		storeErr(w, err)
+		return
+	} else if n > 0 {
+		writeErr(w, http.StatusConflict, fmt.Sprintf("This business has %d booking(s) on record, so it can't be deleted. Suspend it instead.", n))
 		return
 	}
 	team, err := s.Store.VendorTeamMembers(r.Context(), v.ID)

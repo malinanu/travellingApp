@@ -26,16 +26,16 @@ type BookableService struct {
 	// occupies capacity). Unused (0) for stay — its span is the
 	// traveller's own check-in/check-out range.
 	DurationMins int `json:"durationMins,omitempty"`
-	// Capacity is how many bookings may hold this service *concurrently* —
-	// concurrent session/table bookings, or total rooms of this type for
-	// stay. Deliberately a booking count, not a summed party-size/guest
-	// count (keeps the overlap check a single count(*)) — PartySizeMin/Max
-	// and GuestsPerRoom are informational for the traveller, not enforced
-	// against Capacity.
-	Capacity      int `json:"capacity"`
-	PartySizeMin  int `json:"partySizeMin,omitempty"`  // session/table only
-	PartySizeMax  int `json:"partySizeMax,omitempty"`  // session/table only
-	GuestsPerRoom int `json:"guestsPerRoom,omitempty"` // stay only
+	// Capacity is how much of this service may be held *concurrently*:
+	// concurrent bookings (tables, rooms of this type, cars) or, when
+	// CapacityUnit is guests, the summed party size across them.
+	Capacity int `json:"capacity"`
+	// CapacityUnit says whether Capacity counts bookings or guests;
+	// empty is treated as bookings.
+	CapacityUnit  CapacityUnit `json:"capacityUnit"`
+	PartySizeMin  int          `json:"partySizeMin,omitempty"`  // session/table only
+	PartySizeMax  int          `json:"partySizeMax,omitempty"`  // session/table only
+	GuestsPerRoom int          `json:"guestsPerRoom,omitempty"` // stay only
 	// PriceLabel is free-text display only ("LKR 4,500pp", "From $80/night")
 	// — no payment processing exists on this platform, vendor collects
 	// payment in person, same trust model as offer redemption.
@@ -45,8 +45,12 @@ type BookableService struct {
 	// vendorHoursDoc's spirit (see internal/http/vendor.go).
 	Availability *ServiceAvailabilityDoc `json:"availability,omitempty"`
 	Active       bool                    `json:"active"`
-	CreatedAt    time.Time               `json:"createdAt"`
-	UpdatedAt    time.Time               `json:"updatedAt"`
+	// ArchivedAt is set when a vendor deletes a service that already has
+	// bookings: the row stays so booking and payment history keep their
+	// reference, but it is hidden from every list.
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
 type ServiceAvailabilityWindow struct {
@@ -63,10 +67,56 @@ type ServiceAvailabilityDoc map[string][]ServiceAvailabilityWindow
 type BookingStatus string
 
 const (
-	BookingConfirmed BookingStatus = "confirmed" // auto-confirmed on creation, no pending/approval step
+	// BookingAwaitingPayment holds capacity for a priced booking until the
+	// gateway confirms payment or HoldExpiresAt passes.
+	BookingAwaitingPayment BookingStatus = "awaiting_payment"
+	// BookingConfirmed is the starting state for a free booking, and the
+	// state a priced booking reaches once its payment succeeds.
+	BookingConfirmed BookingStatus = "confirmed"
 	BookingCancelled BookingStatus = "cancelled"
 	BookingCompleted BookingStatus = "completed"
 	BookingNoShow    BookingStatus = "no_show"
+	// BookingExpired is a priced booking whose payment hold ran out.
+	BookingExpired BookingStatus = "expired"
+)
+
+// bookingTransitions lists, for each target status, the statuses a
+// booking may move to it from. Nothing moves back to an earlier state:
+// a cancelled, completed, no-show or expired booking is final.
+var bookingTransitions = map[BookingStatus][]BookingStatus{
+	BookingConfirmed: {BookingAwaitingPayment},
+	BookingCancelled: {BookingAwaitingPayment, BookingConfirmed},
+	BookingCompleted: {BookingConfirmed},
+	BookingNoShow:    {BookingConfirmed},
+	BookingExpired:   {BookingAwaitingPayment},
+}
+
+// AllowedFromStatuses returns the statuses a booking may be in to move to
+// target (empty for an unknown or initial-only target).
+func AllowedFromStatuses(target BookingStatus) []BookingStatus {
+	return bookingTransitions[target]
+}
+
+// CanTransition reports whether a booking may move from one status to
+// another.
+func CanTransition(from, to BookingStatus) bool {
+	for _, s := range bookingTransitions[to] {
+		if s == from {
+			return true
+		}
+	}
+	return false
+}
+
+// CapacityUnit says what a BookableService's Capacity counts.
+type CapacityUnit string
+
+const (
+	// CapacityBookings counts concurrent bookings (tables, rooms, cars).
+	CapacityBookings CapacityUnit = "bookings"
+	// CapacityGuests counts people across concurrent bookings (a tour of
+	// 12, a class of 20).
+	CapacityGuests CapacityUnit = "guests"
 )
 
 // Booking is a traveller's real commitment against a vendor's

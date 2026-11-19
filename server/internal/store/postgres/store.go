@@ -2029,14 +2029,18 @@ func (s *Store) claimList(ctx context.Context, q string, args ...any) ([]domain.
 var ErrServiceInactive = errors.New("service inactive")
 var ErrBookingFull = errors.New("no capacity for requested time")
 
-const serviceCols = `id, vendor_id, type, name, description, duration_mins, capacity, party_size_min, party_size_max, guests_per_room, price_label, availability, active, created_at, updated_at`
+// ErrInvalidTransition is returned when a booking status change isn't
+// allowed from the booking's current status (see domain.CanTransition).
+var ErrInvalidTransition = errors.New("booking status change not allowed")
+
+const serviceCols = `id, vendor_id, type, name, description, duration_mins, capacity, capacity_unit, party_size_min, party_size_max, guests_per_room, price_label, availability, active, archived_at, created_at, updated_at`
 
 func scanBookableService(row pgx.Row) (domain.BookableService, error) {
 	var svc domain.BookableService
 	var availability []byte
 	err := row.Scan(&svc.ID, &svc.VendorID, &svc.Type, &svc.Name, &svc.Description,
-		&svc.DurationMins, &svc.Capacity, &svc.PartySizeMin, &svc.PartySizeMax, &svc.GuestsPerRoom,
-		&svc.PriceLabel, &availability, &svc.Active, &svc.CreatedAt, &svc.UpdatedAt)
+		&svc.DurationMins, &svc.Capacity, &svc.CapacityUnit, &svc.PartySizeMin, &svc.PartySizeMax, &svc.GuestsPerRoom,
+		&svc.PriceLabel, &availability, &svc.Active, &svc.ArchivedAt, &svc.CreatedAt, &svc.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return svc, ErrNotFound
 	}
@@ -2061,21 +2065,21 @@ func (s *Store) UpsertBookableService(ctx context.Context, svc domain.BookableSe
 		availability = jsonb(*svc.Availability)
 	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO bookable_services (id, vendor_id, type, name, description, duration_mins, capacity, party_size_min, party_size_max, guests_per_room, price_label, availability, active, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now())
+		INSERT INTO bookable_services (id, vendor_id, type, name, description, duration_mins, capacity, party_size_min, party_size_max, guests_per_room, price_label, availability, active, capacity_unit, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
 		ON CONFLICT (id) DO UPDATE SET
 			type=EXCLUDED.type, name=EXCLUDED.name, description=EXCLUDED.description,
-			duration_mins=EXCLUDED.duration_mins, capacity=EXCLUDED.capacity,
+			duration_mins=EXCLUDED.duration_mins, capacity=EXCLUDED.capacity, capacity_unit=EXCLUDED.capacity_unit,
 			party_size_min=EXCLUDED.party_size_min, party_size_max=EXCLUDED.party_size_max,
 			guests_per_room=EXCLUDED.guests_per_room, price_label=EXCLUDED.price_label,
 			availability=EXCLUDED.availability, active=EXCLUDED.active, updated_at=now()`,
 		svc.ID, svc.VendorID, svc.Type, svc.Name, svc.Description, svc.DurationMins, svc.Capacity,
-		svc.PartySizeMin, svc.PartySizeMax, svc.GuestsPerRoom, svc.PriceLabel, availability, svc.Active)
+		svc.PartySizeMin, svc.PartySizeMax, svc.GuestsPerRoom, svc.PriceLabel, availability, svc.Active, capacityUnit(svc.CapacityUnit))
 	return err
 }
 
 func (s *Store) BookableServicesByVendor(ctx context.Context, vendorID string, activeOnly bool) ([]domain.BookableService, error) {
-	q := `SELECT ` + serviceCols + ` FROM bookable_services WHERE vendor_id=$1`
+	q := `SELECT ` + serviceCols + ` FROM bookable_services WHERE vendor_id=$1 AND archived_at IS NULL`
 	if activeOnly {
 		q += ` AND active=true`
 	}
@@ -2100,15 +2104,54 @@ func (s *Store) BookableServiceByID(ctx context.Context, id string) (domain.Book
 	return scanBookableService(s.Pool.QueryRow(ctx, `SELECT `+serviceCols+` FROM bookable_services WHERE id=$1`, id))
 }
 
-// DeleteBookableService cascades to that service's bookings (ON DELETE
-// CASCADE) — acceptable for this phase; a vendor should set active=false
-// instead of deleting a service with real booking history.
-func (s *Store) DeleteBookableService(ctx context.Context, id, vendorID string) error {
-	tag, err := s.Pool.Exec(ctx, `DELETE FROM bookable_services WHERE id=$1 AND vendor_id=$2`, id, vendorID)
-	if err == nil && tag.RowsAffected() == 0 {
-		return ErrNotFound
+// DeleteBookableService hard-deletes a service with no bookings. One with
+// booking history is archived instead (inactive and hidden from lists) so
+// its bookings keep their reference — archived reports which happened.
+func (s *Store) DeleteBookableService(ctx context.Context, id, vendorID string) (archived bool, err error) {
+	tag, err := s.Pool.Exec(ctx, `
+		UPDATE bookable_services SET active=false, archived_at=now(), updated_at=now()
+		WHERE id=$1 AND vendor_id=$2 AND archived_at IS NULL
+		  AND EXISTS (SELECT 1 FROM bookings WHERE service_id=$1)`, id, vendorID)
+	if err != nil {
+		return false, err
 	}
-	return err
+	if tag.RowsAffected() > 0 {
+		return true, nil
+	}
+	tag, err = s.Pool.Exec(ctx, `
+		DELETE FROM bookable_services b WHERE b.id=$1 AND b.vendor_id=$2 AND b.archived_at IS NULL
+		  AND NOT EXISTS (SELECT 1 FROM bookings WHERE service_id=b.id)`, id, vendorID)
+	if err == nil && tag.RowsAffected() == 0 {
+		return false, ErrNotFound
+	}
+	return false, err
+}
+
+// capacityUnit defaults an unset unit to bookings, the pre-055 behaviour.
+func capacityUnit(u domain.CapacityUnit) domain.CapacityUnit {
+	if u == domain.CapacityGuests {
+		return u
+	}
+	return domain.CapacityBookings
+}
+
+// heldCapacitySQL is the capacity a service's overlapping bookings use:
+// a row count, or the summed party size when the service counts guests.
+// Confirmed bookings always hold capacity; a booking awaiting payment holds
+// it only until its hold expires. $1 is the service id, $2/$3 the window,
+// $4 the service's capacity unit.
+const heldCapacitySQL = `
+	SELECT COALESCE(CASE WHEN $4 = 'guests' THEN sum(party_size) ELSE count(*) END, 0)
+	FROM bookings
+	WHERE service_id=$1 AND start_at < $3 AND end_at > $2
+	  AND (status='confirmed' OR (status='awaiting_payment' AND hold_expires_at > now()))`
+
+// VendorBookingCount is how many bookings a vendor has ever had; a vendor
+// with any cannot be hard-deleted.
+func (s *Store) VendorBookingCount(ctx context.Context, vendorID string) (int, error) {
+	var n int
+	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM bookings WHERE vendor_id=$1`, vendorID).Scan(&n)
+	return n, err
 }
 
 // ---- bookings ----
@@ -2151,15 +2194,13 @@ func (s *Store) bookingList(ctx context.Context, q string, args ...any) ([]domai
 	return out, rows.Err()
 }
 
-// OverlappingBookingsCount is the read-only version of the capacity check,
-// used by the traveller-facing availability endpoint (not the atomic write
-// path — see CreateBooking for that).
-func (s *Store) OverlappingBookingsCount(ctx context.Context, serviceID string, startAt, endAt time.Time) (int, error) {
+// HeldCapacity is the read-only version of the capacity check, used by the
+// traveller-facing availability endpoint (not the atomic write path — see
+// CreateBooking for that). It returns capacity used in the service's own
+// unit: bookings, or guests.
+func (s *Store) HeldCapacity(ctx context.Context, svc domain.BookableService, startAt, endAt time.Time) (int, error) {
 	var n int
-	err := s.Pool.QueryRow(ctx, `
-		SELECT count(*) FROM bookings
-		WHERE service_id=$1 AND status='confirmed' AND start_at < $3 AND end_at > $2`,
-		serviceID, startAt, endAt).Scan(&n)
+	err := s.Pool.QueryRow(ctx, heldCapacitySQL, svc.ID, startAt, endAt, string(capacityUnit(svc.CapacityUnit))).Scan(&n)
 	return n, err
 }
 
@@ -2181,8 +2222,9 @@ func (s *Store) CreateBooking(ctx context.Context, b domain.Booking) (domain.Boo
 
 	var capacity int
 	var active bool
-	err = tx.QueryRow(ctx, `SELECT capacity, active FROM bookable_services WHERE id=$1 FOR UPDATE`, b.ServiceID).
-		Scan(&capacity, &active)
+	var unit string
+	err = tx.QueryRow(ctx, `SELECT capacity, active, capacity_unit FROM bookable_services WHERE id=$1 AND archived_at IS NULL FOR UPDATE`, b.ServiceID).
+		Scan(&capacity, &active, &unit)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return b, ErrNotFound
 	}
@@ -2194,13 +2236,14 @@ func (s *Store) CreateBooking(ctx context.Context, b domain.Booking) (domain.Boo
 	}
 
 	var existing int
-	if err := tx.QueryRow(ctx, `
-		SELECT count(*) FROM bookings
-		WHERE service_id=$1 AND status='confirmed' AND start_at < $3 AND end_at > $2`,
-		b.ServiceID, b.StartAt, b.EndAt).Scan(&existing); err != nil {
+	if err := tx.QueryRow(ctx, heldCapacitySQL, b.ServiceID, b.StartAt, b.EndAt, unit).Scan(&existing); err != nil {
 		return b, err
 	}
-	if existing >= capacity {
+	need := 1
+	if unit == string(domain.CapacityGuests) {
+		need = b.PartySize
+	}
+	if existing+need > capacity {
 		return b, ErrBookingFull
 	}
 
@@ -2253,16 +2296,38 @@ func (s *Store) CancelBookingAsVendor(ctx context.Context, id, vendorID string) 
 	return err
 }
 
-// SetBookingStatus lets a vendor mark a booking no_show/completed/cancelled
-// by hand — covers phone bookings or a no-show whose code was never
-// scanned. Mirrors SetOfferStatus exactly.
+// SetBookingStatus lets a vendor mark a booking no_show/completed by hand —
+// covers a phone booking or a no-show whose code was never scanned. The
+// update only applies from a status domain.CanTransition allows, so a
+// cancelled or completed booking can't be brought back.
 func (s *Store) SetBookingStatus(ctx context.Context, id, vendorID string, status domain.BookingStatus) error {
-	tag, err := s.Pool.Exec(ctx,
-		`UPDATE bookings SET status=$3 WHERE id=$1 AND vendor_id=$2`, id, vendorID, status)
-	if err == nil && tag.RowsAffected() == 0 {
+	from := domain.AllowedFromStatuses(status)
+	if len(from) == 0 {
+		return ErrInvalidTransition
+	}
+	fromStrs := make([]string, len(from))
+	for i, f := range from {
+		fromStrs[i] = string(f)
+	}
+	tag, err := s.Pool.Exec(ctx, `
+		UPDATE bookings SET status=$3,
+			cancelled_at = CASE WHEN $3='cancelled' THEN now() ELSE cancelled_at END,
+			cancelled_by = CASE WHEN $3='cancelled' THEN 'vendor' ELSE cancelled_by END
+		WHERE id=$1 AND vendor_id=$2 AND status = ANY($4)`, id, vendorID, status, fromStrs)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		if err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM bookings WHERE id=$1 AND vendor_id=$2)`, id, vendorID).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return ErrInvalidTransition
+		}
 		return ErrNotFound
 	}
-	return err
+	return nil
 }
 
 // CheckInBooking mirrors RedeemClaim's atomic CTE exactly (status flip

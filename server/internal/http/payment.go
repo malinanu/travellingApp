@@ -1,10 +1,7 @@
-﻿package httpapi
+package httpapi
 
 import (
-	"fmt"
 	"net/http"
-	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -26,62 +23,12 @@ func (s *Server) handleListPaymentMethods(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, methods)
 }
 
-// handleCreatePaymentMethod saves a new payment card.
+// handleCreatePaymentMethod used to accept a full card number. Card
+// details must never reach Spotto's servers: travellers now pay on the
+// payment gateway's hosted checkout, and saved cards will only come back
+// as gateway tokens. Kept as 410 so old app builds get a clear answer.
 func (s *Server) handleCreatePaymentMethod(w http.ResponseWriter, r *http.Request) {
-	c := auth.FromContext(r.Context())
-	var req struct {
-		CardNumber string `json:"cardNumber"`
-		ExpMonth   int    `json:"expMonth"`
-		ExpYear    int    `json:"expYear"`
-		HolderName string `json:"holderName"`
-		IsDefault  bool   `json:"isDefault"`
-	}
-	if !readJSON(w, r, &req) {
-		return
-	}
-
-	num := strings.ReplaceAll(req.CardNumber, " ", "")
-	if len(num) < 13 || len(num) > 19 {
-		writeErr(w, http.StatusBadRequest, "invalid card number")
-		return
-	}
-	if req.ExpMonth < 1 || req.ExpMonth > 12 {
-		writeErr(w, http.StatusBadRequest, "invalid expiration month")
-		return
-	}
-	if req.ExpYear < time.Now().Year() {
-		writeErr(w, http.StatusBadRequest, "card is expired")
-		return
-	}
-
-	brand := detectCardBrand(num)
-	last4 := num[len(num)-4:]
-
-	existing, _ := s.Store.PaymentMethodsByUser(r.Context(), c.Subject)
-	isDefault := req.IsDefault || len(existing) == 0
-
-	pm := domain.PaymentMethod{
-		ID:         newID("pm"),
-		UserID:     c.Subject,
-		Brand:      brand,
-		Last4:      last4,
-		ExpMonth:   req.ExpMonth,
-		ExpYear:    req.ExpYear,
-		HolderName: sanitizeText(req.HolderName, 100),
-		IsDefault:  isDefault,
-		CreatedAt:  time.Now(),
-	}
-
-	if isDefault && len(existing) > 0 {
-		_ = s.Store.SetDefaultPaymentMethod(r.Context(), c.Subject, pm.ID)
-	}
-
-	if err := s.Store.CreatePaymentMethod(r.Context(), pm); err != nil {
-		writeErr(w, http.StatusInternalServerError, "could not save payment method")
-		return
-	}
-
-	writeJSON(w, http.StatusCreated, pm)
+	writeErr(w, http.StatusGone, "Cards are no longer saved in Spotto. You pay securely at checkout when you book.")
 }
 
 // handleDeletePaymentMethod deletes a saved card.
@@ -106,67 +53,9 @@ func (s *Server) handleSetDefaultPaymentMethod(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]string{"status": "default_updated"})
 }
 
-// handleVendorSubscriptionCheckout processes vendor tier upgrades.
+// handleVendorSubscriptionCheckout used to record a "succeeded" payment
+// without charging anything. Venues and hosts have no paid subscription:
+// Spotto earns a commission on bookings instead.
 func (s *Server) handleVendorSubscriptionCheckout(w http.ResponseWriter, r *http.Request) {
-	c := auth.FromContext(r.Context())
-	v, ok := s.requireVendor(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		Tier string `json:"tier"` // starter | pro | enterprise
-	}
-	if !readJSON(w, r, &req) {
-		return
-	}
-
-	tier := strings.ToLower(strings.TrimSpace(req.Tier))
-	amountCents := 0
-	switch tier {
-	case "pro":
-		amountCents = 2900
-	case "enterprise":
-		amountCents = 9900
-	case "starter":
-		amountCents = 0
-	default:
-		writeErr(w, http.StatusBadRequest, "invalid subscription tier")
-		return
-	}
-
-	tx := domain.PaymentTransaction{
-		ID:          newID("tx"),
-		UserID:      c.Subject,
-		VendorID:    &v.ID,
-		AmountCents: amountCents,
-		Currency:    "USD",
-		Status:      "succeeded",
-		Description: fmt.Sprintf("Spotto Vendor %s Tier Subscription", strings.Title(tier)),
-		CreatedAt:   time.Now(),
-	}
-
-	_ = s.Store.CreatePaymentTransaction(r.Context(), tx)
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":      "succeeded",
-		"tier":        tier,
-		"transaction": tx,
-	})
-}
-
-func detectCardBrand(number string) string {
-	if strings.HasPrefix(number, "4") {
-		return "Visa"
-	}
-	if strings.HasPrefix(number, "51") || strings.HasPrefix(number, "52") ||
-		strings.HasPrefix(number, "53") || strings.HasPrefix(number, "54") || strings.HasPrefix(number, "55") {
-		return "Mastercard"
-	}
-	if strings.HasPrefix(number, "34") || strings.HasPrefix(number, "37") {
-		return "American Express"
-	}
-	if strings.HasPrefix(number, "6011") || strings.HasPrefix(number, "65") {
-		return "Discover"
-	}
-	return "Card"
+	writeErr(w, http.StatusGone, "Spotto has no paid vendor subscription. You only pay a commission on bookings.")
 }
