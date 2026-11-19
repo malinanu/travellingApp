@@ -184,21 +184,23 @@ func scanLedgerEntry(row pgx.Row) (LedgerEntry, error) {
 
 // LedgerFilter narrows a ledger listing. Zero values mean "any".
 type LedgerFilter struct {
-	VendorID string
-	From, To time.Time
-	Limit    int
+	VendorID  string
+	BookingID string
+	From, To  time.Time
+	Limit     int
 }
 
 // LedgerEntries lists entries newest first.
 func (s *Store) LedgerEntries(ctx context.Context, f LedgerFilter) ([]LedgerEntry, error) {
 	q := `SELECT ` + ledgerCols + ledgerFrom + `WHERE ($1='' OR l.vendor_id=$1)
 		AND ($2::timestamptz IS NULL OR l.created_at >= $2) AND ($3::timestamptz IS NULL OR l.created_at < $3)
+		AND ($5='' OR l.booking_id=$5)
 		ORDER BY l.created_at DESC LIMIT $4`
 	limit := f.Limit
 	if limit <= 0 || limit > 5000 {
 		limit = 500
 	}
-	rows, err := s.Pool.Query(ctx, q, f.VendorID, nullTime(f.From), nullTime(f.To), limit)
+	rows, err := s.Pool.Query(ctx, q, f.VendorID, nullTime(f.From), nullTime(f.To), limit, f.BookingID)
 	if err != nil {
 		return nil, err
 	}

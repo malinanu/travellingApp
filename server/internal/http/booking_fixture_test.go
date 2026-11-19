@@ -52,6 +52,7 @@ func newBookingFixture(t *testing.T, category string, configure func(*config.Con
 	suffix := fmt.Sprintf("%s_%d", category, time.Now().UnixNano())
 	tokens := auth.NewTokens("test-secret-" + t.Name())
 	cfg := config.Config{CORSOrigins: []string{"http://localhost:3000"}, TOTPEncryptionKey: make([]byte, 32), VendorAppURL: "http://localhost:3000"}
+	cfg.FakeGatewaySecret = "test-fake-gateway-secret"
 	if configure != nil {
 		configure(&cfg)
 	}

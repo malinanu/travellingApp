@@ -27,13 +27,23 @@ func (s *Server) cancelBooking(ctx context.Context, b domain.Booking, by, actor 
 	case cancelByVendor:
 		req.VendorID = b.VendorID
 	}
-	_, refund, err := s.Store.CancelBookingWithRefund(ctx, req)
+	cancelled, refund, err := s.Store.CancelBookingWithRefund(ctx, req)
 	if err != nil {
 		return 0, err
 	}
-	if refund == nil {
-		return 0, nil
+	var refunded int64
+	if refund != nil {
+		s.processRefund(ctx, *refund)
+		refunded = refund.AmountMinor
 	}
-	s.processRefund(ctx, *refund)
-	return refund.AmountMinor, nil
+	if by != cancelByTraveller {
+		// The traveller didn't do this themselves: tell them.
+		if me, err := s.Store.UserByID(ctx, cancelled.TravellerID); err == nil && me.Email != "" {
+			name := cancelled.ServiceName
+			s.Jobs.Enqueue(func() {
+				s.Mail.Send(me.Email, "Your Spotto booking was cancelled", bookingCancelledEmailHTML(cancelled, name, refunded))
+			})
+		}
+	}
+	return refunded, nil
 }

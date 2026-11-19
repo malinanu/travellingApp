@@ -133,8 +133,11 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context, ev PaymentEvent) (Payment
 		return err
 	}
 
-	pay, err := scanPayment(tx.QueryRow(ctx, `SELECT `+paymentCols+` FROM payments WHERE gateway=$1 AND gateway_order_id=$2 FOR UPDATE`, ev.Gateway, ev.OrderID))
-	if errors.Is(err, ErrNotFound) {
+	// Lock the booking before its payment, the same order cancellation and
+	// hold expiry use, so they can't deadlock against a notification.
+	var bookingID string
+	err = tx.QueryRow(ctx, `SELECT booking_id FROM payments WHERE gateway=$1 AND gateway_order_id=$2`, ev.Gateway, ev.OrderID).Scan(&bookingID)
+	if errors.Is(err, pgx.ErrNoRows) {
 		if err := setOutcome("unknown order"); err != nil {
 			return out, err
 		}
@@ -143,11 +146,15 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context, ev PaymentEvent) (Payment
 	if err != nil {
 		return out, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE payment_events SET payment_id=$2 WHERE id=$1`, eventID, pay.ID); err != nil {
+	b, err := scanBooking(tx.QueryRow(ctx, `SELECT `+bookingCols+bookingFrom+`WHERE b.id=$1 FOR UPDATE OF b`, bookingID))
+	if err != nil {
 		return out, err
 	}
-	b, err := scanBooking(tx.QueryRow(ctx, `SELECT `+bookingCols+bookingFrom+`WHERE b.id=$1 FOR UPDATE OF b`, pay.BookingID))
+	pay, err := scanPayment(tx.QueryRow(ctx, `SELECT `+paymentCols+` FROM payments WHERE gateway=$1 AND gateway_order_id=$2 FOR UPDATE`, ev.Gateway, ev.OrderID))
 	if err != nil {
+		return out, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE payment_events SET payment_id=$2 WHERE id=$1`, eventID, pay.ID); err != nil {
 		return out, err
 	}
 	out.Booking = b
@@ -185,8 +192,9 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context, ev PaymentEvent) (Payment
 			return out, tx.Commit(ctx)
 		}
 
-		canConfirm := b.Status == domain.BookingAwaitingPayment
-		if b.Status == domain.BookingExpired {
+		holdLapsed := b.Status == domain.BookingAwaitingPayment && (b.HoldExpiresAt == nil || !b.HoldExpiresAt.After(time.Now()))
+		canConfirm := b.Status == domain.BookingAwaitingPayment && !holdLapsed
+		if b.Status == domain.BookingExpired || holdLapsed {
 			// The hold lapsed while the traveller was paying: honour the
 			// payment if the slot still has room.
 			ok, err := capacityStillFree(ctx, tx, b)
@@ -198,7 +206,8 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context, ev PaymentEvent) (Payment
 		if !canConfirm {
 			// Cancelled, or its seats went to someone else: record the
 			// payment and refund it in full.
-			if _, err := tx.Exec(ctx, `UPDATE bookings SET payment_status='paid' WHERE id=$1`, b.ID); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE bookings SET payment_status='paid',
+				status = CASE WHEN status='awaiting_payment' THEN 'expired' ELSE status END WHERE id=$1`, b.ID); err != nil {
 				return out, err
 			}
 			b.PaymentStatus = domain.PaymentPaid
@@ -355,6 +364,53 @@ func insertRefund(ctx context.Context, tx pgx.Tx, b domain.Booking, pay Payment,
 	return r, err
 }
 
+// StaleRequestedRefunds returns refunds still "requested" after olderThan:
+// the process stopped between recording them and asking the gateway.
+func (s *Store) StaleRequestedRefunds(ctx context.Context, olderThan time.Duration) ([]Refund, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+refundCols+refundFrom+`
+		WHERE r.status='requested' AND r.created_at < now() - $1::interval ORDER BY r.created_at LIMIT 100`,
+		olderThan.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Refund{}
+	for rows.Next() {
+		r, err := scanRefund(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// LiveHoldCount is how many unpaid bookings a traveller is holding seats
+// for right now.
+func (s *Store) LiveHoldCount(ctx context.Context, travellerID string) (int, error) {
+	var n int
+	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM bookings WHERE traveller_id=$1 AND status='awaiting_payment' AND hold_expires_at > now()`, travellerID).Scan(&n)
+	return n, err
+}
+
+// RefundsForBooking lists one booking's refunds.
+func (s *Store) RefundsForBooking(ctx context.Context, bookingID string) ([]Refund, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+refundCols+refundFrom+`WHERE r.booking_id=$1 ORDER BY r.created_at`, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Refund{}
+	for rows.Next() {
+		r, err := scanRefund(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // SetRefundStatus records what the gateway (or the finance team) did with
 // a refund.
 func (s *Store) SetRefundStatus(ctx context.Context, id, status, gatewayRefundID string) error {
@@ -470,6 +526,12 @@ func (s *Store) CancelBookingWithRefund(ctx context.Context, req CancelRequest) 
 	b.Status, b.PaymentStatus, b.CancelledBy, b.HoldExpiresAt = domain.BookingCancelled, paymentStatus, req.By, nil
 	b.CancelledAt = &req.Now
 
+	// A cancelled booking won't take place: whatever the vendor keeps of it
+	// is settled now, alongside the refund reversal, not on the old date.
+	if _, err := tx.Exec(ctx, `UPDATE ledger_entries SET payable_at=LEAST(payable_at, $2)
+		WHERE booking_id=$1 AND kind='booking_net' AND payout_id IS NULL`, b.ID, req.Now); err != nil {
+		return b, nil, err
+	}
 	amount := domain.RefundFor(b, req.Now, req.FullRefund)
 	if amount <= 0 {
 		return b, nil, tx.Commit(ctx)

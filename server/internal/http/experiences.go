@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -209,11 +210,14 @@ func (s *Server) handleCancelOccurrence(w http.ResponseWriter, r *http.Request) 
 		storeErr(w, err)
 		return
 	}
-	cancelled := 0
+	cancelled, failed := 0, 0
 	for _, b := range bookings {
-		if _, err := s.cancelBooking(r.Context(), b, cancelByVendor, "vendor:"+v.ID); err == nil {
+		if _, err := s.cancelBooking(r.Context(), b, cancelByVendor, "vendor:"+v.ID); err != nil {
+			log.Printf("cancel occurrence %s: booking %s: %v", o.ID, b.ID, err)
+			failed++
+		} else {
 			cancelled++
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "cancelled", "bookingsCancelled": cancelled})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "cancelled", "bookingsCancelled": cancelled, "bookingsFailed": failed})
 }

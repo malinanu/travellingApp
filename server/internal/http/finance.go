@@ -294,29 +294,17 @@ func (s *Server) handleAdminBooking(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	refunds, err := s.Store.Refunds(r.Context(), "", 1000)
+	refunds, err := s.Store.RefundsForBooking(r.Context(), b.ID)
 	if err != nil {
 		storeErr(w, err)
 		return
 	}
-	mine := []postgres.Refund{}
-	for _, rf := range refunds {
-		if rf.BookingID == b.ID {
-			mine = append(mine, rf)
-		}
-	}
-	entries, err := s.Store.LedgerEntries(r.Context(), postgres.LedgerFilter{VendorID: b.VendorID, Limit: 5000})
+	ledger, err := s.Store.LedgerEntries(r.Context(), postgres.LedgerFilter{BookingID: b.ID, Limit: 100})
 	if err != nil {
 		storeErr(w, err)
 		return
 	}
-	ledger := []postgres.LedgerEntry{}
-	for _, e := range entries {
-		if e.BookingID != nil && *e.BookingID == b.ID {
-			ledger = append(ledger, e)
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"booking": b, "payments": pays, "refunds": mine, "ledger": ledger})
+	writeJSON(w, http.StatusOK, map[string]any{"booking": b, "payments": pays, "refunds": refunds, "ledger": ledger})
 }
 
 func (s *Server) handleAdminCancelBooking(w http.ResponseWriter, r *http.Request) {
@@ -425,8 +413,8 @@ func (s *Server) handleAdminRefundDone(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	if rf.Status != "manual" && rf.Status != "failed" {
-		writeErr(w, http.StatusConflict, "only a manual or failed refund can be marked done by hand")
+	if rf.Status != "manual" && !refundNeedsAction(rf) {
+		writeErr(w, http.StatusConflict, "only a manual, failed or stuck refund can be marked done by hand")
 		return
 	}
 	ref := sanitizeText(req.Reference, 120)
@@ -438,6 +426,16 @@ func (s *Server) handleAdminRefundDone(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "manual_done"})
 }
 
+// staleRefundAge is how long a refund may sit in "requested" (recorded,
+// gateway not yet asked) before it counts as stuck.
+const staleRefundAge = 10 * time.Minute
+
+// refundNeedsAction reports whether a refund failed, or got stuck between
+// being recorded and the gateway being asked.
+func refundNeedsAction(rf postgres.Refund) bool {
+	return rf.Status == "failed" || (rf.Status == "requested" && time.Since(rf.CreatedAt) > staleRefundAge)
+}
+
 // handleAdminRetryRefund asks the gateway again for a failed refund.
 func (s *Server) handleAdminRetryRefund(w http.ResponseWriter, r *http.Request) {
 	rf, err := s.Store.RefundByID(r.Context(), chi.URLParam(r, "id"))
@@ -445,8 +443,8 @@ func (s *Server) handleAdminRetryRefund(w http.ResponseWriter, r *http.Request) 
 		storeErr(w, err)
 		return
 	}
-	if rf.Status != "failed" {
-		writeErr(w, http.StatusConflict, "only a failed refund can be retried")
+	if !refundNeedsAction(rf) {
+		writeErr(w, http.StatusConflict, "only a failed or stuck refund can be retried")
 		return
 	}
 	s.processRefund(r.Context(), rf)

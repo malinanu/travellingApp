@@ -352,6 +352,17 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "Online payment isn't available right now, so paid bookings are paused.")
 		return
 	}
+	if booking.AmountMinor > 0 {
+		// Unpaid holds block seats for others, so one traveller can only
+		// hold a few at a time.
+		if n, err := s.Store.LiveHoldCount(r.Context(), c.Subject); err != nil {
+			storeErr(w, err)
+			return
+		} else if n >= maxLiveHolds {
+			writeErr(w, http.StatusTooManyRequests, "Finish paying for your other bookings first, or let them lapse.")
+			return
+		}
+	}
 	var created domain.Booking
 	for range 5 {
 		booking.Code = newBookingCode()
@@ -399,6 +410,9 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, bookingWithCheckout{Booking: created, Checkout: co})
 }
 
+// maxLiveHolds is how many unpaid bookings one traveller may hold at once.
+const maxLiveHolds = 3
+
 func vendorNameOf(ctx context.Context, s *Server, vendorID string) string {
 	if v, err := s.Store.VendorByID(ctx, vendorID); err == nil {
 		return v.Name
@@ -428,7 +442,7 @@ func (s *Server) handleMyBookings(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, bookings)
+	writeJSON(w, http.StatusOK, travellerBookings(bookings))
 }
 
 func (s *Server) handleCancelMyBooking(w http.ResponseWriter, r *http.Request) {

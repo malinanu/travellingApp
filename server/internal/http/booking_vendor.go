@@ -298,7 +298,8 @@ func (s *Server) handleSetBookingStatus(w http.ResponseWriter, r *http.Request) 
 
 // handleBookingCheckIn is dispatched from handleValidate when a scanned/
 // entered code has the "BOOK-" prefix â€” mirrors the claim-redemption
-// result shape (valid/already_redeemed/wrong_vendor/unknown) so the vendor
+// result shape (valid/already_redeemed/wrong_vendor/unknown, plus
+// not_paid and cancelled for bookings that can't be used) so the vendor
 // portal's existing Validate page needs no structural change, just new
 // copy for r.booking vs r.claim.
 func (s *Server) handleBookingCheckIn(w http.ResponseWriter, r *http.Request, v domain.Vendor, code string) {
@@ -315,7 +316,16 @@ func (s *Server) handleBookingCheckIn(w http.ResponseWriter, r *http.Request, v 
 		writeJSON(w, http.StatusOK, map[string]any{"result": "wrong_vendor"})
 		return
 	}
-	if booking.Status != domain.BookingConfirmed {
+	switch booking.Status {
+	case domain.BookingConfirmed:
+	case domain.BookingAwaitingPayment:
+		// The traveller hasn't paid: the booking isn't valid yet.
+		writeJSON(w, http.StatusOK, map[string]any{"result": "not_paid", "booking": booking})
+		return
+	case domain.BookingCancelled, domain.BookingExpired:
+		writeJSON(w, http.StatusOK, map[string]any{"result": "cancelled", "booking": booking})
+		return
+	default: // completed, no_show
 		writeJSON(w, http.StatusOK, map[string]any{
 			"result":     "already_redeemed",
 			"redeemedAt": booking.CheckedInAt,

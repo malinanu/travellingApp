@@ -94,10 +94,11 @@ type Config struct {
 	// spoofed Host can't redirect reset links.
 	PublicAPIURL string
 
-	// Payments. PayHere is used when its merchant id and secret are set;
-	// otherwise, outside production only, a fake gateway (FakeGatewaySecret
-	// signs its notifications) so paid bookings can be tried end to end.
-	// In production without PayHere, paid bookings are refused.
+	// Payments. PayHere is used when its merchant id and secret are set
+	// (and PUBLIC_API_URL, for its notify URL). Outside production only,
+	// setting FAKE_GATEWAY_SECRET turns on a fake gateway for trying paid
+	// bookings end to end; it is off by default. Without a gateway, paid
+	// bookings are refused.
 	PayHereMerchantID     string
 	PayHereMerchantSecret string
 	PayHereSandbox        bool
@@ -242,7 +243,7 @@ func Load() Config {
 		PayHereMerchantID:     strings.TrimSpace(getenv("PAYHERE_MERCHANT_ID", "")),
 		PayHereMerchantSecret: strings.TrimSpace(getenv("PAYHERE_MERCHANT_SECRET", "")),
 		PayHereSandbox:        getenv("PAYHERE_SANDBOX", "true") != "false",
-		FakeGatewaySecret:     getenv("FAKE_GATEWAY_SECRET", "dev-fake-gateway-secret"),
+		FakeGatewaySecret:     strings.TrimSpace(getenv("FAKE_GATEWAY_SECRET", "")),
 		PayoutEncryptionKey:   payoutKey,
 		GeminiVideoModel:      getenv("GEMINI_VIDEO_MODEL", ""),
 		GooglePlacesAPIKey:    getenv("GOOGLE_PLACES_API_KEY", getenv("GOOGLE_CALENDAR_API_KEY", "")),

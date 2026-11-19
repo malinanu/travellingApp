@@ -80,6 +80,21 @@ func bookingConfirmedEmailHTML(b domain.Booking, serviceName string) string {
 	})
 }
 
+func bookingCancelledEmailHTML(b domain.Booking, serviceName string, refundedMinor int64) string {
+	intro := []string{"Sorry: " + serviceName + " had to cancel your booking."}
+	if refundedMinor > 0 {
+		intro = append(intro, "We're refunding "+formatLKR(refundedMinor)+" to the card you paid with. Banks usually take a few working days to show it.")
+	}
+	return renderEmail(mail.Email{
+		Preheader: "Your booking for " + serviceName + " was cancelled.",
+		Title:     "Your booking was cancelled",
+		Intro:     intro,
+		Details:   bookingDetails(b, serviceName),
+		Note:      "Open the Spotto app to find another spot nearby.",
+		Footer:    "You're receiving this because you made a booking on Spotto.",
+	})
+}
+
 func bookingReminderEmailHTML(b domain.Booking) string {
 	return renderEmail(mail.Email{
 		Preheader: b.ServiceName + " is coming up on " + inSriLanka(b.StartAt).Format("Jan 2, 3:04 PM") + ".",

@@ -35,11 +35,28 @@ type checkoutInfo struct {
 	ExpiresAt       *time.Time `json:"expiresAt,omitempty"`
 }
 
-// bookingWithCheckout is a booking plus, for one awaiting payment, how to
-// pay for it.
+// bookingWithCheckout is a booking as its traveller sees it, plus, for one
+// awaiting payment, how to pay for it. Spotto's commission and the
+// vendor's share are business between Spotto and the vendor, so these
+// shadowing fields (always nil) keep them out of the traveller's JSON.
 type bookingWithCheckout struct {
 	domain.Booking
 	Checkout *checkoutInfo `json:"checkout,omitempty"`
+
+	CommissionMode    *string `json:"commissionMode,omitempty"`
+	CommissionRateBps *int    `json:"commissionRateBps,omitempty"`
+	FeePerGuestMinor  *int64  `json:"feePerGuestMinor,omitempty"`
+	CommissionMinor   *int64  `json:"commissionMinor,omitempty"`
+	VendorNetMinor    *int64  `json:"vendorNetMinor,omitempty"`
+}
+
+// travellerBookings is a list of bookings as their traveller sees them.
+func travellerBookings(list []domain.Booking) []bookingWithCheckout {
+	out := make([]bookingWithCheckout, len(list))
+	for i, b := range list {
+		out[i] = bookingWithCheckout{Booking: b}
+	}
+	return out
 }
 
 // publicBaseURL is this API's own public URL: PUBLIC_API_URL, or (outside
@@ -354,7 +371,7 @@ var fakePayTmpl = template.Must(template.New("fakepay").Parse(`<!doctype html>
 <style>body{font-family:system-ui,sans-serif;background:#faf5ec;color:#123d3a;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}main{max-width:360px;padding:24px;text-align:center}button{border:0;border-radius:12px;padding:14px 24px;font-weight:700;font-size:16px;margin:6px}</style>
 </head><body><main><h1>Test payment</h1><p>No real money moves. Order {{.Order}}: {{.Currency}} {{.Amount}}</p>
 <form method="post" action="/payments/fake/complete">
-<input type="hidden" name="order_id" value="{{.Order}}"><input type="hidden" name="amount" value="{{.Amount}}"><input type="hidden" name="currency" value="{{.Currency}}"><input type="hidden" name="return_url" value="{{.Return}}"><input type="hidden" name="cancel_url" value="{{.Cancel}}">
+<input type="hidden" name="order_id" value="{{.Order}}"><input type="hidden" name="amount" value="{{.Amount}}"><input type="hidden" name="currency" value="{{.Currency}}">
 <button name="status" value="succeeded" style="background:#f6b821">Pay</button><button name="status" value="failed">Decline</button></form>
 </main></body></html>`))
 
@@ -368,7 +385,7 @@ func (s *Server) handleFakePay(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fakePayTmpl.Execute(w, map[string]string{"Order": r.PostForm.Get("order_id"), "Amount": r.PostForm.Get("amount"),
-		"Currency": r.PostForm.Get("currency"), "Return": r.PostForm.Get("return_url"), "Cancel": r.PostForm.Get("cancel_url")})
+		"Currency": r.PostForm.Get("currency")})
 }
 
 // handleFakeComplete plays the gateway's part: it signs and applies the
@@ -393,12 +410,14 @@ func (s *Server) handleFakeComplete(w http.ResponseWriter, r *http.Request) {
 	if ev, err := g.VerifyNotify(req); err == nil {
 		s.applyPaymentEvent(r.Context(), ev)
 	}
-	target := r.PostForm.Get("return_url")
-	if status != "succeeded" {
-		target = r.PostForm.Get("cancel_url")
-	}
-	if u, err := url.Parse(target); err != nil || (u.Host != "" && u.Host != r.Host && !strings.HasPrefix(target, s.publicBaseURL(r))) {
-		target = "/payments/return"
+	// Send the traveller back to this API's own return page for the
+	// booking: never to a URL taken from the request.
+	target := "/payments/return"
+	if pay, err := s.Store.PaymentByID(r.Context(), r.PostForm.Get("order_id")); err == nil {
+		target += "?booking=" + url.QueryEscape(pay.BookingID)
+		if status != "succeeded" {
+			target += "&cancelled=1"
+		}
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }

@@ -55,16 +55,18 @@ func TestCommissionRulePrecedence(t *testing.T) {
 	if status != http.StatusCreated {
 		t.Fatalf("create: %d %v", status, out)
 	}
-	booking, _ := out["booking"].(map[string]any)
-	if booking == nil {
-		booking = out
+	if out["status"] != "awaiting_payment" || out["paymentStatus"] != "pending" || out["amountMinor"].(float64) != 500000 {
+		t.Errorf("a paid booking starts awaiting payment: %v", out)
 	}
-	if booking["amountMinor"].(float64) != 500000 || booking["commissionMinor"].(float64) != 40000 ||
-		booking["vendorNetMinor"].(float64) != 460000 || booking["commissionMode"] != "percent" {
-		t.Errorf("money snapshot: %v", booking)
+	for _, hidden := range []string{"commissionMinor", "vendorNetMinor", "commissionRateBps", "commissionMode", "feePerGuestMinor"} {
+		if _, ok := out[hidden]; ok {
+			t.Errorf("travellers must not see %s", hidden)
+		}
 	}
-	if booking["status"] != "awaiting_payment" || booking["paymentStatus"] != "pending" {
-		t.Errorf("a paid booking starts awaiting payment: %v", booking)
+	row, err := f.store.BookingByID(f.ctx, out["id"].(string))
+	must(t, err)
+	if row.CommissionMinor != 40000 || row.VendorNetMinor != 460000 || row.CommissionMode != domain.CommissionPercent || row.CommissionRateBps != 800 {
+		t.Errorf("money snapshot: %+v", row)
 	}
 }
 
@@ -79,8 +81,10 @@ func TestCommissionFreeTableGetsPerGuestFee(t *testing.T) {
 	if out["status"] != "confirmed" || out["paymentStatus"] != "not_required" {
 		t.Errorf("a free table is confirmed straight away: %v", out)
 	}
-	if out["commissionMode"] != "per_guest_fee" || out["feePerGuestMinor"].(float64) <= 0 || out["commissionMinor"].(float64) != 0 {
-		t.Errorf("free table should carry the per-guest fee, charged only at check-in: %v", out)
+	row, err := f.store.BookingByID(f.ctx, out["id"].(string))
+	must(t, err)
+	if row.CommissionMode != domain.CommissionPerGuestFee || row.FeePerGuestMinor <= 0 || row.CommissionMinor != 0 {
+		t.Errorf("free table should carry the per-guest fee, charged only at check-in: %+v", row)
 	}
 }
 
