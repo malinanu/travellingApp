@@ -210,11 +210,11 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		PlaceID      string `json:"placeId"`
 		ServiceID    string `json:"serviceId"`
 		OccurrenceID string `json:"occurrenceId,omitempty"` // dated services
-		StartAt   string `json:"startAt,omitempty"` // RFC3339, session/table
-		CheckIn   string `json:"checkIn,omitempty"` // "2006-01-02", stay
-		CheckOut  string `json:"checkOut,omitempty"`
-		PartySize int    `json:"partySize"`
-		Note      string `json:"note"`
+		StartAt      string `json:"startAt,omitempty"`      // RFC3339, session/table
+		CheckIn      string `json:"checkIn,omitempty"`      // "2006-01-02", stay
+		CheckOut     string `json:"checkOut,omitempty"`
+		PartySize    int    `json:"partySize"`
+		Note         string `json:"note"`
 	}
 	if !readJSON(w, r, &req) {
 		return
