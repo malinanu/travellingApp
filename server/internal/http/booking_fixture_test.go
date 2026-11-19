@@ -44,18 +44,18 @@ func allDayAvailability() *domain.ServiceAvailabilityDoc {
 }
 
 // newBookingFixture builds the fixture. configure, when set, can adjust the
-// server config (e.g. payment settings) before the server is created.
-func newBookingFixture(t *testing.T, category string, configure func(*config.Config, *httpapi.Server)) *bookingFixture {
+// server config (e.g. super-admins, keys) before the server is created.
+func newBookingFixture(t *testing.T, category string, configure func(*config.Config)) *bookingFixture {
 	t.Helper()
 	store := mustConnect(t)
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%s_%d", category, time.Now().UnixNano())
 	tokens := auth.NewTokens("test-secret-" + t.Name())
 	cfg := config.Config{CORSOrigins: []string{"http://localhost:3000"}, TOTPEncryptionKey: make([]byte, 32), VendorAppURL: "http://localhost:3000"}
-	api := httpapi.New(store, tokens, cfg)
 	if configure != nil {
-		configure(&cfg, api)
+		configure(&cfg)
 	}
+	api := httpapi.New(store, tokens, cfg)
 	srv := httptest.NewServer(api.Router(cfg))
 
 	f := &bookingFixture{t: t, ctx: ctx, store: store, srv: srv, api: api, suffix: suffix}

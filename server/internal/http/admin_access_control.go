@@ -97,6 +97,29 @@ var MasterCommandCenterFeatures = []domain.CommandCenterFeature{
 		},
 	},
 	{
+		ID:          "bookings",
+		Name:        "Bookings",
+		Description: "See every booking across venues, hosts and events, and cancel one on a traveller's or vendor's behalf with a full refund.",
+		Category:    "operations",
+		Icon:        "Calendar",
+		SubPermissions: []domain.CommandCenterPermission{
+			{ID: PermBookingsView, FeatureID: "bookings", Name: "View bookings", Description: "Browse bookings with their payments, refunds and ledger lines", Risk: "low"},
+			{ID: PermBookingsManage, FeatureID: "bookings", Name: "Cancel bookings", Description: "Cancel any booking; a paid booking is refunded in full", Risk: "high"},
+		},
+	},
+	{
+		ID:          "finance",
+		Name:        "Finance: commission, refunds & payouts",
+		Description: "Spotto's booking revenue, the vendor ledger, refunds that need a person, weekly payouts and commission rates.",
+		Category:    "monetization",
+		Icon:        "Banknote",
+		SubPermissions: []domain.CommandCenterPermission{
+			{ID: PermFinanceView, FeatureID: "finance", Name: "View finance", Description: "Revenue summary, ledger, refunds, payouts and commission rules", Risk: "medium"},
+			{ID: PermFinancePayouts, FeatureID: "finance", Name: "Run and pay out", Description: "Draft, approve and mark payouts paid; see and verify vendor bank details; settle manual refunds; ledger adjustments", Risk: "critical"},
+			{ID: PermCommissionManage, FeatureID: "finance", Name: "Set commission rates", Description: "Add or remove commission rules and per-guest fees", Risk: "high"},
+		},
+	},
+	{
 		ID:          "subscriptions",
 		Name:        "Subscriptions & Billing",
 		Description: "Monitor merchant subscription tiers, payment statuses, and apply manual package tier upgrades.",

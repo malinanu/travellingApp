@@ -15,12 +15,18 @@ import (
 
 // paidFixture is a fixture with a paid per-person session service at
 // LKR 2,000, 24h free cancellation and 50% back later.
-func paidFixture(t *testing.T, capacity int) (*bookingFixture, domain.BookableService, *fake.Gateway) {
-	f := newBookingFixture(t, "gyms", nil)
+func fakeGateway(t *testing.T, f *bookingFixture) *fake.Gateway {
+	t.Helper()
 	gw, ok := f.api.Payments.(*fake.Gateway)
 	if !ok {
 		t.Fatalf("tests expect the fake gateway, got %T", f.api.Payments)
 	}
+	return gw
+}
+
+func paidFixture(t *testing.T, capacity int) (*bookingFixture, domain.BookableService, *fake.Gateway) {
+	f := newBookingFixture(t, "gyms", nil)
+	gw := fakeGateway(t, f)
 	svc := f.service(domain.BookableService{Type: domain.BookingTypeSession, DurationMins: 60, Capacity: capacity,
 		PartySizeMin: 1, PartySizeMax: 4, PricingMode: domain.PricingPerPerson, PriceMinor: 200000, Currency: "LKR",
 		FreeCancelHours: 24, LateCancelRefundPct: 50})

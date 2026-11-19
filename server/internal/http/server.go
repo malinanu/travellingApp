@@ -479,6 +479,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Post("/vendor/validate", s.handleValidate)
 		r.Get("/vendor/services", s.handleVendorServices)
 		r.Get("/vendor/services/{id}/occurrences", s.handleVendorOccurrences)
+		r.Get("/vendor/bookings/{id}", s.handleVendorBooking)
 		r.Get("/vendor/bookings", s.handleVendorBookings)
 		r.Get("/vendor/dashboard", s.handleVendorDashboard)
 		r.Get("/vendor/redemptions", s.handleVendorRedemptions)
@@ -506,6 +507,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			r.Post("/vendor/occurrences/{id}/cancel", s.handleCancelOccurrence)
 			r.Post("/vendor/bookings/{id}/cancel", s.handleVendorCancelBooking)
 			r.Patch("/vendor/bookings/{id}/status", s.handleSetBookingStatus)
+			r.Get("/vendor/earnings", s.handleVendorEarnings)
+			r.Get("/vendor/statement", s.handleVendorStatement)
+			r.Get("/vendor/payout-account", s.handleGetPayoutAccount)
 			r.Get("/vendor/growth", s.handleVendorGrowth)
 			r.Post("/vendor/growth/flash-sale", s.handleVendorFlashSale)
 			r.Get("/vendor/reports", s.handleVendorReports)
@@ -521,6 +525,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireVendorOwner)
 			r.Post("/vendor/team/invite", s.handleCreateVendorInvite)
+			r.Put("/vendor/payout-account", s.handlePutPayoutAccount)
 			r.Delete("/vendor/team/members/{userId}", s.handleRemoveVendorTeamMember)
 			r.Delete("/vendor/team/invites/{id}", s.handleRevokeVendorInvite)
 			r.Post("/vendor/profile-grants", s.handleCreateVendorProfileGrant)
@@ -645,6 +650,44 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			r.Post("/admin/vendors/{id}/delete", s.handleAdminDeleteVendor)
 			// Daily limits on paid phone-verification codes.
 			r.Put("/admin/settings/phone-codes", s.handleAdminPutPhoneCodeLimits)
+		})
+
+		// Bookings and money. Super-admins always pass; other admins need the
+		// matching permission from a super-admin.
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermBookingsView))
+			r.Get("/admin/bookings", s.handleAdminBookings)
+			r.Get("/admin/bookings/{id}", s.handleAdminBooking)
+			r.Get("/admin/vendors/{id}/bookings", s.handleAdminBookings)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermBookingsManage))
+			r.Post("/admin/bookings/{id}/cancel", s.handleAdminCancelBooking)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermFinanceView))
+			r.Get("/admin/finance/summary", s.handleAdminFinanceSummary)
+			r.Get("/admin/ledger", s.handleAdminLedger)
+			r.Get("/admin/refunds", s.handleAdminRefunds)
+			r.Get("/admin/payouts", s.handleAdminPayouts)
+			r.Get("/admin/payouts/{id}", s.handleAdminPayout)
+			r.Get("/admin/commission-rules", s.handleAdminCommissionRules)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermFinancePayouts))
+			r.Post("/admin/payouts/run", s.handleAdminRunPayouts)
+			r.Get("/admin/payouts-export.csv", s.handleAdminPayoutsExport)
+			r.Post("/admin/payouts/{id}/{action}", s.handleAdminPayoutAction)
+			r.Post("/admin/refunds/{id}/mark-done", s.handleAdminRefundDone)
+			r.Post("/admin/refunds/{id}/retry", s.handleAdminRetryRefund)
+			r.Post("/admin/ledger/adjustments", s.handleAdminLedgerAdjustment)
+			r.Get("/admin/vendors/{id}/payout-account", s.handleAdminPayoutAccount)
+			r.Post("/admin/vendors/{id}/payout-account/verify", s.handleAdminVerifyPayoutAccount)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermCommissionManage))
+			r.Post("/admin/commission-rules", s.handleAdminCreateCommissionRule)
+			r.Delete("/admin/commission-rules/{id}", s.handleAdminDeleteCommissionRule)
 		})
 
 		// Handing a business account over to its real owner. Super-admins

@@ -225,7 +225,13 @@ func (s *Server) handleVendorBookings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	bookings, err := s.Store.BookingsByVendor(r.Context(), v.ID)
+	var bookings []domain.Booking
+	var err error
+	if f, ok := vendorBookingsFilter(r, v.ID); ok {
+		bookings, err = s.Store.Bookings(r.Context(), f)
+	} else {
+		bookings, err = s.Store.BookingsByVendor(r.Context(), v.ID)
+	}
 	if err != nil {
 		storeErr(w, err)
 		return
