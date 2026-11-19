@@ -20,6 +20,7 @@ import (
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/jobs"
 	"github.com/spotto/server/internal/mail"
+	"github.com/spotto/server/internal/payments"
 	"github.com/spotto/server/internal/media"
 	"github.com/spotto/server/internal/googleplaces"
 	"github.com/spotto/server/internal/placedetails"
@@ -121,6 +122,13 @@ type Server struct {
 	globalLimit   *dynamicRateLimiter
 	oauthCodes    *authCodeStore
 	GroupHub      *GroupHub
+
+	// Payments takes booking payments; nil means paid bookings are refused
+	// (production without a configured gateway).
+	Payments payments.Gateway
+	// PayoutKey encrypts vendors' bank account numbers (nil: payout
+	// accounts can't be saved).
+	PayoutKey []byte
 }
 
 func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server {
@@ -138,6 +146,8 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		Store:   store,
 		Tokens:  tokens,
 		TOTPKey:              cfg.TOTPEncryptionKey,
+		Payments:             selectGateway(cfg),
+		PayoutKey:            cfg.PayoutEncryptionKey,
 		IsProduction:         cfg.IsProduction(),
 		Mail: mail.New(mail.Config{
 			Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.EmailFrom,
@@ -336,6 +346,13 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Post("/auth/reset-password", s.handleResetPassword)
 	r.Get("/auth/verify-reset-token", s.handleVerifyResetToken)
 	// Browser reset page for travellers (no web app) — see reset_page.go.
+	// Payments: the gateway's signed notifications, the page that forwards
+	// a traveller to the hosted checkout, and where they come back to.
+	r.Post("/payments/{gateway}/notify", s.handlePaymentNotify)
+	r.Get("/payments/checkout/{id}", s.handleCheckoutPage)
+	r.Get("/payments/return", s.handlePaymentReturn)
+	r.Post("/payments/fake/pay", s.handleFakePay)
+	r.Post("/payments/fake/complete", s.handleFakeComplete)
 	r.Get("/reset-password", s.handleResetPasswordPage)
 	r.Post("/reset-password", s.handleResetPasswordPage)
 	r.Get("/auth/google/login", s.handleGoogleLogin)
@@ -410,6 +427,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/me/claims", s.handleMyClaims)
 		r.Post("/bookings", s.handleCreateBooking)
 		r.Post("/bookings/{id}/cancel", s.handleCancelMyBooking)
+		r.Get("/bookings/{id}/status", s.handleBookingStatus)
+		r.Post("/bookings/{id}/checkout", s.handleBookingCheckout)
+		r.Get("/bookings/{id}/cancel-preview", s.handleCancelPreview)
 		r.Get("/me/bookings", s.handleMyBookings)
 		r.Get("/me/trip", s.handleGetTrip)
 		r.Put("/me/trip", s.handlePutTrip)

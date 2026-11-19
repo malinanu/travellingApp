@@ -82,7 +82,7 @@ func bookingConfirmedEmailHTML(b domain.Booking, serviceName string) string {
 
 func bookingReminderEmailHTML(b domain.Booking) string {
 	return renderEmail(mail.Email{
-		Preheader: b.ServiceName + " is coming up on " + b.StartAt.Format("Jan 2, 3:04 PM") + ".",
+		Preheader: b.ServiceName + " is coming up on " + inSriLanka(b.StartAt).Format("Jan 2, 3:04 PM") + ".",
 		Title:     "Your booking is coming up",
 		Intro:     []string{"Just a reminder: " + b.ServiceName + " is coming up soon. Show this code when you arrive:"},
 		Code:      b.Code,
@@ -94,7 +94,10 @@ func bookingReminderEmailHTML(b domain.Booking) string {
 func bookingDetails(b domain.Booking, serviceName string) []mail.Detail {
 	d := []mail.Detail{{Label: "Booking", Value: serviceName}}
 	if !b.StartAt.IsZero() {
-		d = append(d, mail.Detail{Label: "When", Value: b.StartAt.Format("Mon, Jan 2 · 3:04 PM")})
+		d = append(d, mail.Detail{Label: "When", Value: inSriLanka(b.StartAt).Format("Mon, Jan 2 · 3:04 PM")})
+	}
+	if b.AmountMinor > 0 {
+		d = append(d, mail.Detail{Label: "Paid", Value: formatLKR(b.AmountMinor)})
 	}
 	if b.PartySize > 0 {
 		d = append(d, mail.Detail{Label: "Party size", Value: fmt.Sprint(b.PartySize)})

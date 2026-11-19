@@ -348,6 +348,10 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
+	if booking.AmountMinor > 0 && s.Payments == nil {
+		writeErr(w, http.StatusServiceUnavailable, "Online payment isn't available right now, so paid bookings are paused.")
+		return
+	}
 	var created domain.Booking
 	for range 5 {
 		booking.Code = newBookingCode()
@@ -376,25 +380,30 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created.ServiceName = svc.Name
+	created.VendorName = vendorNameOf(r.Context(), s, svc.VendorID)
 
-	// Best-effort: never fail the booking over a notification/email hiccup.
-	me, meErr := s.Store.UserByID(r.Context(), c.Subject)
-	if meErr == nil && me.Email != "" {
-		s.Jobs.Enqueue(func() {
-			s.Mail.Send(me.Email, "Your Spotto booking is confirmed", bookingConfirmedEmailHTML(created, svc.Name))
-		})
+	if created.Status == domain.BookingConfirmed {
+		// Free: confirmed now. A paid booking is confirmed by its payment.
+		s.notifyBookingConfirmed(r.Context(), created)
+		writeJSON(w, http.StatusCreated, bookingWithCheckout{Booking: created})
+		return
 	}
-	s.Store.UpsertVendorNotification(r.Context(), svc.VendorID, domain.VendorNotification{
-		ID:     "notif_booking_" + created.ID,
-		Icon:   "Calendar",
-		Tone:   "teal",
-		Title:  "New booking: " + svc.Name,
-		Sub:    fmt.Sprintf("%s, party of %d", created.StartAt.Format("Jan 2, 3:04 PM"), created.PartySize),
-		Time:   "just now",
-		Unread: true,
-	})
+	co, err := s.startCheckout(r, created)
+	if err != nil {
+		// Give the seats back rather than hold them for a payment that
+		// can't start.
+		s.Store.CancelBookingWithRefund(r.Context(), postgres.CancelRequest{BookingID: created.ID, By: "system", Actor: "system", Now: time.Now()})
+		writePaymentStartErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, bookingWithCheckout{Booking: created, Checkout: co})
+}
 
-	writeJSON(w, http.StatusCreated, created)
+func vendorNameOf(ctx context.Context, s *Server, vendorID string) string {
+	if v, err := s.Store.VendorByID(ctx, vendorID); err == nil {
+		return v.Name
+	}
+	return ""
 }
 
 // applyCommission snapshots the commission rule that applies to b now.
@@ -423,20 +432,25 @@ func (s *Server) handleMyBookings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCancelMyBooking(w http.ResponseWriter, r *http.Request) {
-	c := auth.FromContext(r.Context())
-	id := chi.URLParam(r, "id")
-	booking, err := s.Store.BookingByID(r.Context(), id)
+	booking, ok := s.ownBooking(w, r)
+	if !ok {
+		return
+	}
+	refunded, err := s.cancelBooking(r.Context(), booking, cancelByTraveller, "traveller:"+booking.TravellerID)
 	if err != nil {
+		writeCancelErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "cancelled", "refundMinor": refunded, "currency": booking.Currency})
+}
+
+func writeCancelErr(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrInvalidTransition):
+		writeErr(w, http.StatusConflict, "This booking can no longer be cancelled.")
+	case errors.Is(err, postgres.ErrBookingStarted):
+		writeErr(w, http.StatusConflict, "This booking has already started, so it can't be cancelled in the app.")
+	default:
 		storeErr(w, err)
-		return
 	}
-	if booking.TravellerID != c.Subject {
-		writeErr(w, http.StatusNotFound, "The requested item could not be found.")
-		return
-	}
-	if err := s.Store.CancelBookingAsTraveller(r.Context(), id, c.Subject); err != nil {
-		storeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }

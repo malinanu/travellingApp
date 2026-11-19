@@ -2414,27 +2414,33 @@ func (s *Store) CancelBookingAsVendor(ctx context.Context, id, vendorID string) 
 // SetBookingStatus lets a vendor mark a booking no_show/completed by hand —
 // covers a phone booking or a no-show whose code was never scanned. The
 // update only applies from a status domain.CanTransition allows, so a
-// cancelled or completed booking can't be brought back.
+// cancelled or completed booking can't be brought back. Marking a free
+// booking completed charges its per-guest fee, as a scan would.
 func (s *Store) SetBookingStatus(ctx context.Context, id, vendorID string, status domain.BookingStatus) error {
 	from := domain.AllowedFromStatuses(status)
-	if len(from) == 0 {
+	if len(from) == 0 || status == domain.BookingCancelled {
+		// Cancelling goes through CancelBookingWithRefund.
 		return ErrInvalidTransition
 	}
 	fromStrs := make([]string, len(from))
 	for i, f := range from {
 		fromStrs[i] = string(f)
 	}
-	tag, err := s.Pool.Exec(ctx, `
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `
 		UPDATE bookings SET status=$3,
-			cancelled_at = CASE WHEN $3='cancelled' THEN now() ELSE cancelled_at END,
-			cancelled_by = CASE WHEN $3='cancelled' THEN 'vendor' ELSE cancelled_by END
+			checked_in_at = CASE WHEN $3='completed' THEN COALESCE(checked_in_at, now()) ELSE checked_in_at END
 		WHERE id=$1 AND vendor_id=$2 AND status = ANY($4)`, id, vendorID, status, fromStrs)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		var exists bool
-		if err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM bookings WHERE id=$1 AND vendor_id=$2)`, id, vendorID).Scan(&exists); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM bookings WHERE id=$1 AND vendor_id=$2)`, id, vendorID).Scan(&exists); err != nil {
 			return err
 		}
 		if exists {
@@ -2442,23 +2448,46 @@ func (s *Store) SetBookingStatus(ctx context.Context, id, vendorID string, statu
 		}
 		return ErrNotFound
 	}
-	return nil
+	if status == domain.BookingCompleted {
+		b, err := scanBooking(tx.QueryRow(ctx, `SELECT `+bookingCols+bookingFrom+`WHERE b.id=$1`, id))
+		if err != nil {
+			return err
+		}
+		if err := chargePerGuestFee(ctx, tx, b, "vendor:"+vendorID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
-// CheckInBooking mirrors RedeemClaim's atomic CTE exactly (status flip
-// guarded by the WHERE clause, race-safe by construction).
+// CheckInBooking marks a confirmed booking completed when its code is
+// scanned, and charges the vendor's per-guest fee for a free booking, in
+// one transaction. The status flip is guarded by the WHERE clause, so a
+// concurrent second scan finds nothing to update (ErrNotFound).
 func (s *Store) CheckInBooking(ctx context.Context, id string) (domain.Booking, error) {
-	return scanBooking(s.Pool.QueryRow(ctx, `
-		WITH upd AS (
-			UPDATE bookings SET checked_in_at=now(), status='completed'
-			WHERE id=$1 AND status='confirmed'
-			RETURNING *
-		)
-		SELECT `+bookingCols+`
-		FROM upd b
-		LEFT JOIN bookable_services sv ON sv.id = b.service_id
-		LEFT JOIN users u ON u.id = b.traveller_id
-		LEFT JOIN vendors v ON v.id = b.vendor_id`, id))
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `UPDATE bookings SET checked_in_at=now(), status='completed' WHERE id=$1 AND status='confirmed'`, id)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.Booking{}, ErrNotFound
+	}
+	b, err := scanBooking(tx.QueryRow(ctx, `SELECT `+bookingCols+bookingFrom+`WHERE b.id=$1`, id))
+	if err != nil {
+		return b, err
+	}
+	if err := chargePerGuestFee(ctx, tx, b, "checkin"); err != nil {
+		return b, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return b, err
+	}
+	return s.BookingByID(ctx, id)
 }
 
 // BookingsForReminder returns confirmed bookings starting within

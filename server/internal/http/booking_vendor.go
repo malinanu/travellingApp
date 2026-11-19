@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/spotto/server/internal/auth"
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/store/postgres"
 )
@@ -235,16 +236,25 @@ func (s *Server) handleVendorBookings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, bookings)
 }
 
+// handleVendorCancelBooking cancels a booking from the vendor side; a paid
+// booking is always refunded in full.
 func (s *Server) handleVendorCancelBooking(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireApprovedVendor(w, r)
 	if !ok {
 		return
 	}
-	if err := s.Store.CancelBookingAsVendor(r.Context(), chi.URLParam(r, "id"), v.ID); err != nil {
-		storeErr(w, err)
+	b, err := s.Store.BookingByID(r.Context(), chi.URLParam(r, "id"))
+	if err != nil || b.VendorID != v.ID {
+		writeErr(w, http.StatusNotFound, "The requested item could not be found.")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
+	c := auth.FromContext(r.Context())
+	refunded, err := s.cancelBooking(r.Context(), b, cancelByVendor, "vendor:"+c.Subject)
+	if err != nil {
+		writeCancelErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "cancelled", "refundMinor": refunded, "currency": b.Currency})
 }
 
 // handleSetBookingStatus lets a vendor mark a booking no_show/completed/

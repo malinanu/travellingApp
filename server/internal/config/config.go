@@ -93,6 +93,19 @@ type Config struct {
 	// web app. Taken from config, never the request's Host header, so a
 	// spoofed Host can't redirect reset links.
 	PublicAPIURL string
+
+	// Payments. PayHere is used when its merchant id and secret are set;
+	// otherwise, outside production only, a fake gateway (FakeGatewaySecret
+	// signs its notifications) so paid bookings can be tried end to end.
+	// In production without PayHere, paid bookings are refused.
+	PayHereMerchantID     string
+	PayHereMerchantSecret string
+	PayHereSandbox        bool
+	FakeGatewaySecret     string
+	// PayoutEncryptionKey (32 bytes, base64 in PAYOUT_ENCRYPTION_KEY)
+	// encrypts vendors' bank account numbers. Without it payout accounts
+	// can't be saved.
+	PayoutEncryptionKey []byte
 	// SuperAdminEmails lists admin accounts (by email, case-insensitive)
 	// granted the "super-admin" tier — e.g. viewing the cross-admin audit
 	// log. Deliberately env-var-driven rather than a DB role/invite system:
@@ -192,6 +205,12 @@ func Load() Config {
 	if err != nil {
 		log.Fatalf("TOTP_ENCRYPTION_KEY: %v", err)
 	}
+	var payoutKey []byte
+	if raw := strings.TrimSpace(getenv("PAYOUT_ENCRYPTION_KEY", "")); raw != "" {
+		if payoutKey, err = decodeTOTPKey(raw); err != nil {
+			log.Fatalf("PAYOUT_ENCRYPTION_KEY: %v", err)
+		}
+	}
 
 	vendorAppURL := ResolveVendorAppURL(getenv("NEXT_PUBLIC_VENDOR_URL", ""), getenv("VENDOR_APP_URL", ""))
 	adminAppURL := strings.TrimRight(strings.TrimSpace(getenv("ADMIN_APP_URL", "http://localhost:3001")), "/")
@@ -220,6 +239,11 @@ func Load() Config {
 		VendorAppURL:         vendorAppURL,
 		AdminAppURL:          adminAppURL,
 		PublicAPIURL:         strings.TrimRight(getenv("PUBLIC_API_URL", ""), "/"),
+		PayHereMerchantID:     strings.TrimSpace(getenv("PAYHERE_MERCHANT_ID", "")),
+		PayHereMerchantSecret: strings.TrimSpace(getenv("PAYHERE_MERCHANT_SECRET", "")),
+		PayHereSandbox:        getenv("PAYHERE_SANDBOX", "true") != "false",
+		FakeGatewaySecret:     getenv("FAKE_GATEWAY_SECRET", "dev-fake-gateway-secret"),
+		PayoutEncryptionKey:   payoutKey,
 		GeminiVideoModel:      getenv("GEMINI_VIDEO_MODEL", ""),
 		GooglePlacesAPIKey:    getenv("GOOGLE_PLACES_API_KEY", getenv("GOOGLE_CALENDAR_API_KEY", "")),
 		YoutubeAPIKey:         getenv("YOUTUBE_API_KEY", getenv("GOOGLE_PLACES_API_KEY", getenv("GOOGLE_CALENDAR_API_KEY", ""))),
