@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -254,6 +255,12 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		ID: newID("bkg"), VendorID: svc.VendorID, ServiceID: svc.ID, Type: svc.Type,
 		PlaceID: place.ID, TravellerID: c.Subject, StartAt: startAt, EndAt: endAt,
 		PartySize: req.PartySize, Note: req.Note,
+		AmountMinor: domain.QuoteBooking(svc, req.PartySize, startAt, endAt), Currency: svc.Currency,
+		FreeCancelHours: svc.FreeCancelHours, LateCancelRefundPct: svc.LateCancelRefundPct,
+	}
+	if err := s.applyCommission(r.Context(), &booking); err != nil {
+		storeErr(w, err)
+		return
 	}
 	var created domain.Booking
 	for range 5 {
@@ -302,6 +309,21 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 	})
 
 	writeJSON(w, http.StatusCreated, created)
+}
+
+// applyCommission snapshots the commission rule that applies to b now.
+func (s *Server) applyCommission(ctx context.Context, b *domain.Booking) error {
+	vendor, err := s.Store.VendorByID(ctx, b.VendorID)
+	if err != nil {
+		return err
+	}
+	rule, err := s.Store.ResolveCommissionRule(ctx, domain.CommissionModeFor(b.AmountMinor),
+		b.VendorID, vendor.Category, b.Type, time.Now())
+	if err != nil {
+		return err
+	}
+	domain.ApplyCommission(b, rule)
+	return nil
 }
 
 func (s *Server) handleMyBookings(w http.ResponseWriter, r *http.Request) {

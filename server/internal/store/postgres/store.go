@@ -2029,18 +2029,24 @@ func (s *Store) claimList(ctx context.Context, q string, args ...any) ([]domain.
 var ErrServiceInactive = errors.New("service inactive")
 var ErrBookingFull = errors.New("no capacity for requested time")
 
+// BookingHoldDuration is how long a paid booking keeps its seats while the
+// traveller completes payment.
+const BookingHoldDuration = 15 * time.Minute
+
 // ErrInvalidTransition is returned when a booking status change isn't
 // allowed from the booking's current status (see domain.CanTransition).
 var ErrInvalidTransition = errors.New("booking status change not allowed")
 
-const serviceCols = `id, vendor_id, type, name, description, duration_mins, capacity, capacity_unit, party_size_min, party_size_max, guests_per_room, price_label, availability, active, archived_at, created_at, updated_at`
+const serviceCols = `id, vendor_id, type, name, description, duration_mins, capacity, capacity_unit, party_size_min, party_size_max, guests_per_room, price_label, availability, active, archived_at, created_at, updated_at,
+	price_minor, currency, pricing_mode, free_cancel_hours, late_cancel_refund_pct`
 
 func scanBookableService(row pgx.Row) (domain.BookableService, error) {
 	var svc domain.BookableService
 	var availability []byte
 	err := row.Scan(&svc.ID, &svc.VendorID, &svc.Type, &svc.Name, &svc.Description,
 		&svc.DurationMins, &svc.Capacity, &svc.CapacityUnit, &svc.PartySizeMin, &svc.PartySizeMax, &svc.GuestsPerRoom,
-		&svc.PriceLabel, &availability, &svc.Active, &svc.ArchivedAt, &svc.CreatedAt, &svc.UpdatedAt)
+		&svc.PriceLabel, &availability, &svc.Active, &svc.ArchivedAt, &svc.CreatedAt, &svc.UpdatedAt,
+		&svc.PriceMinor, &svc.Currency, &svc.PricingMode, &svc.FreeCancelHours, &svc.LateCancelRefundPct)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return svc, ErrNotFound
 	}
@@ -2065,16 +2071,21 @@ func (s *Store) UpsertBookableService(ctx context.Context, svc domain.BookableSe
 		availability = jsonb(*svc.Availability)
 	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO bookable_services (id, vendor_id, type, name, description, duration_mins, capacity, party_size_min, party_size_max, guests_per_room, price_label, availability, active, capacity_unit, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
+		INSERT INTO bookable_services (id, vendor_id, type, name, description, duration_mins, capacity, party_size_min, party_size_max, guests_per_room, price_label, availability, active, capacity_unit,
+			price_minor, currency, pricing_mode, free_cancel_hours, late_cancel_refund_pct, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19, now())
 		ON CONFLICT (id) DO UPDATE SET
 			type=EXCLUDED.type, name=EXCLUDED.name, description=EXCLUDED.description,
 			duration_mins=EXCLUDED.duration_mins, capacity=EXCLUDED.capacity, capacity_unit=EXCLUDED.capacity_unit,
 			party_size_min=EXCLUDED.party_size_min, party_size_max=EXCLUDED.party_size_max,
 			guests_per_room=EXCLUDED.guests_per_room, price_label=EXCLUDED.price_label,
-			availability=EXCLUDED.availability, active=EXCLUDED.active, updated_at=now()`,
+			availability=EXCLUDED.availability, active=EXCLUDED.active,
+			price_minor=EXCLUDED.price_minor, currency=EXCLUDED.currency, pricing_mode=EXCLUDED.pricing_mode,
+			free_cancel_hours=EXCLUDED.free_cancel_hours, late_cancel_refund_pct=EXCLUDED.late_cancel_refund_pct,
+			updated_at=now()`,
 		svc.ID, svc.VendorID, svc.Type, svc.Name, svc.Description, svc.DurationMins, svc.Capacity,
-		svc.PartySizeMin, svc.PartySizeMax, svc.GuestsPerRoom, svc.PriceLabel, availability, svc.Active, capacityUnit(svc.CapacityUnit))
+		svc.PartySizeMin, svc.PartySizeMax, svc.GuestsPerRoom, svc.PriceLabel, availability, svc.Active, capacityUnit(svc.CapacityUnit),
+		svc.PriceMinor, currencyOrLKR(svc.Currency), pricingMode(svc.PricingMode), svc.FreeCancelHours, svc.LateCancelRefundPct)
 	return err
 }
 
@@ -2127,6 +2138,22 @@ func (s *Store) DeleteBookableService(ctx context.Context, id, vendorID string) 
 	return false, err
 }
 
+// currencyOrLKR defaults an unset currency to LKR.
+func currencyOrLKR(c string) string {
+	if c == "" {
+		return domain.CurrencyLKR
+	}
+	return c
+}
+
+// pricingMode defaults an unset mode to free, the pre-057 behaviour.
+func pricingMode(m domain.PricingMode) domain.PricingMode {
+	if m == "" {
+		return domain.PricingFree
+	}
+	return m
+}
+
 // capacityUnit defaults an unset unit to bookings, the pre-055 behaviour.
 func capacityUnit(u domain.CapacityUnit) domain.CapacityUnit {
 	if u == domain.CapacityGuests {
@@ -2159,6 +2186,9 @@ func (s *Store) VendorBookingCount(ctx context.Context, vendorID string) (int, e
 const bookingCols = `b.id, b.code, b.vendor_id, b.service_id, b.type, b.place_id, b.traveller_id,
 	b.start_at, b.end_at, b.party_size, b.status, b.note, b.created_at,
 	b.cancelled_at, b.cancelled_by, b.checked_in_at, b.reminder_sent_at,
+	b.hold_expires_at, b.amount_minor, b.currency, b.payment_status, b.refunded_minor,
+	b.commission_mode, b.commission_rate_bps, b.fee_per_guest_minor, b.commission_minor, b.vendor_net_minor,
+	b.free_cancel_hours, b.late_cancel_refund_pct,
 	COALESCE(sv.name,''), COALESCE(u.name,''), COALESCE(u.country,''), COALESCE(u.email,''), COALESCE(v.name,'')`
 const bookingFrom = ` FROM bookings b
 	LEFT JOIN bookable_services sv ON sv.id = b.service_id
@@ -2170,6 +2200,9 @@ func scanBooking(row pgx.Row) (domain.Booking, error) {
 	err := row.Scan(&b.ID, &b.Code, &b.VendorID, &b.ServiceID, &b.Type, &b.PlaceID, &b.TravellerID,
 		&b.StartAt, &b.EndAt, &b.PartySize, &b.Status, &b.Note, &b.CreatedAt,
 		&b.CancelledAt, &b.CancelledBy, &b.CheckedInAt, &b.ReminderSentAt,
+		&b.HoldExpiresAt, &b.AmountMinor, &b.Currency, &b.PaymentStatus, &b.RefundedMinor,
+		&b.CommissionMode, &b.CommissionRateBps, &b.FeePerGuestMinor, &b.CommissionMinor, &b.VendorNetMinor,
+		&b.FreeCancelHours, &b.LateCancelRefundPct,
 		&b.ServiceName, &b.TravellerName, &b.TravellerCountry, &b.TravellerEmail, &b.VendorName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return b, ErrNotFound
@@ -2247,16 +2280,31 @@ func (s *Store) CreateBooking(ctx context.Context, b domain.Booking) (domain.Boo
 		return b, ErrBookingFull
 	}
 
+	// A free booking is confirmed straight away; a paid one waits for its
+	// payment, holding its seats until HoldExpiresAt.
+	b.Status, b.PaymentStatus, b.HoldExpiresAt = domain.BookingConfirmed, domain.PaymentNotRequired, nil
+	if b.AmountMinor > 0 {
+		hold := time.Now().Add(BookingHoldDuration)
+		b.Status, b.PaymentStatus, b.HoldExpiresAt = domain.BookingAwaitingPayment, domain.PaymentPending, &hold
+	}
+	b.Currency = currencyOrLKR(b.Currency)
+	if b.CommissionMode == "" {
+		b.CommissionMode = domain.CommissionNone
+	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO bookings (id, code, vendor_id, service_id, type, place_id, traveller_id, start_at, end_at, party_size, status, note)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'confirmed',$11)`,
-		b.ID, b.Code, b.VendorID, b.ServiceID, b.Type, b.PlaceID, b.TravellerID, b.StartAt, b.EndAt, b.PartySize, b.Note); err != nil {
+		INSERT INTO bookings (id, code, vendor_id, service_id, type, place_id, traveller_id, start_at, end_at, party_size, status, note,
+			hold_expires_at, amount_minor, currency, payment_status, commission_mode, commission_rate_bps,
+			fee_per_guest_minor, commission_minor, vendor_net_minor, free_cancel_hours, late_cancel_refund_pct)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+		b.ID, b.Code, b.VendorID, b.ServiceID, b.Type, b.PlaceID, b.TravellerID, b.StartAt, b.EndAt, b.PartySize, b.Status, b.Note,
+		b.HoldExpiresAt, b.AmountMinor, b.Currency, b.PaymentStatus, b.CommissionMode, b.CommissionRateBps,
+		b.FeePerGuestMinor, b.CommissionMinor, b.VendorNetMinor, b.FreeCancelHours, b.LateCancelRefundPct); err != nil {
 		return b, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return b, err
 	}
-	b.Status, b.CreatedAt = domain.BookingConfirmed, time.Now()
+	b.CreatedAt = time.Now()
 	return b, nil
 }
 

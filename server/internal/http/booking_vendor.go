@@ -58,8 +58,43 @@ func normalizeService(svc *domain.BookableService) error {
 	default:
 		return errors.New("capacityUnit must be bookings or guests")
 	}
+	if svc.PricingMode == "" {
+		svc.PricingMode = domain.PricingFree
+	}
+	if !domain.ValidPricingMode(svc.PricingMode) {
+		return errors.New("pricingMode must be free, per_person, per_booking or per_night")
+	}
+	if svc.Currency == "" {
+		svc.Currency = domain.CurrencyLKR
+	}
+	if svc.Currency != domain.CurrencyLKR {
+		return errors.New("prices are in LKR")
+	}
+	switch {
+	case svc.PriceMinor < 0:
+		return errors.New("price can't be negative")
+	case svc.PricingMode == domain.PricingFree:
+		svc.PriceMinor = 0
+	case svc.PriceMinor == 0:
+		return errors.New("set a price, or make the service free")
+	case svc.PriceMinor > maxServicePriceMinor:
+		return errors.New("price is too high")
+	}
+	if svc.PricingMode == domain.PricingPerNight && svc.Type != domain.BookingTypeStay {
+		return errors.New("per-night pricing is only for stays")
+	}
+	if svc.FreeCancelHours < 0 || svc.FreeCancelHours > 24*60 {
+		return errors.New("freeCancelHours must be between 0 and 1440")
+	}
+	if svc.LateCancelRefundPct < 0 || svc.LateCancelRefundPct > 100 {
+		return errors.New("lateCancelRefundPct must be between 0 and 100")
+	}
 	return nil
 }
+
+// maxServicePriceMinor caps a service price at LKR 10 million, well above
+// any real booking, to catch typos (an extra zero or two).
+const maxServicePriceMinor = 10_000_000_00
 
 func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.requireApprovedVendor(w, r)

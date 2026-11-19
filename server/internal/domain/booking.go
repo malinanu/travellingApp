@@ -36,10 +36,18 @@ type BookableService struct {
 	PartySizeMin  int          `json:"partySizeMin,omitempty"`  // session/table only
 	PartySizeMax  int          `json:"partySizeMax,omitempty"`  // session/table only
 	GuestsPerRoom int          `json:"guestsPerRoom,omitempty"` // stay only
-	// PriceLabel is free-text display only ("LKR 4,500pp", "From $80/night")
-	// — no payment processing exists on this platform, vendor collects
-	// payment in person, same trust model as offer redemption.
+	// PriceLabel is optional free text shown next to the price
+	// ("includes breakfast").
 	PriceLabel string `json:"priceLabel"`
+	// PriceMinor and PricingMode are what a booking costs (see QuoteBooking
+	// in money.go); PriceLabel is now optional display text.
+	PriceMinor  int64       `json:"priceMinor"`
+	Currency    string      `json:"currency"`
+	PricingMode PricingMode `json:"pricingMode"`
+	// Cancellation terms: a traveller cancelling at least FreeCancelHours
+	// before the start gets a full refund, later LateCancelRefundPct.
+	FreeCancelHours     int `json:"freeCancelHours"`
+	LateCancelRefundPct int `json:"lateCancelRefundPct"`
 	// Availability is a weekly day-of-week rule for session/table types —
 	// nil for stay (stay availability is capacity-only). Shape mirrors
 	// vendorHoursDoc's spirit (see internal/http/vendor.go).
@@ -81,10 +89,13 @@ const (
 )
 
 // bookingTransitions lists, for each target status, the statuses a
-// booking may move to it from. Nothing moves back to an earlier state:
-// a cancelled, completed, no-show or expired booking is final.
+// booking may move to it from. Nothing moves back to an earlier state: a
+// cancelled, completed or no-show booking is final, and an expired one can
+// only be revived by its own late payment.
 var bookingTransitions = map[BookingStatus][]BookingStatus{
-	BookingConfirmed: {BookingAwaitingPayment},
+	// expired → confirmed: a payment the gateway confirms after the hold
+	// lapsed is still honoured while the slot has room (else refunded).
+	BookingConfirmed: {BookingAwaitingPayment, BookingExpired},
 	BookingCancelled: {BookingAwaitingPayment, BookingConfirmed},
 	BookingCompleted: {BookingConfirmed},
 	BookingNoShow:    {BookingConfirmed},
@@ -120,7 +131,7 @@ const (
 )
 
 // Booking is a traveller's real commitment against a vendor's
-// BookableService. No payment collected. StartAt/EndAt are always both
+// BookableService, free or paid. StartAt/EndAt are always both
 // set (session/table: start + start+DurationMins; stay: check-in +
 // check-out), so every BookingType shares one overlap query.
 type Booking struct {
@@ -140,6 +151,22 @@ type Booking struct {
 	CancelledAt *time.Time    `json:"cancelledAt,omitempty"`
 	CancelledBy string        `json:"cancelledBy,omitempty"` // "traveller" | "vendor"
 	CheckedInAt *time.Time    `json:"checkedInAt,omitempty"`
+	// HoldExpiresAt is when an awaiting_payment booking gives its seats up.
+	HoldExpiresAt *time.Time `json:"holdExpiresAt,omitempty"`
+
+	// Money, fixed when the booking is made (see money.go).
+	AmountMinor       int64          `json:"amountMinor"`
+	Currency          string         `json:"currency"`
+	PaymentStatus     PaymentStatus  `json:"paymentStatus"`
+	RefundedMinor     int64          `json:"refundedMinor"`
+	CommissionMode    CommissionMode `json:"commissionMode"`
+	CommissionRateBps int            `json:"commissionRateBps"`
+	FeePerGuestMinor  int64          `json:"feePerGuestMinor"`
+	CommissionMinor   int64          `json:"commissionMinor"`
+	VendorNetMinor    int64          `json:"vendorNetMinor"`
+	// Cancellation terms copied from the service at booking time.
+	FreeCancelHours     int `json:"freeCancelHours"`
+	LateCancelRefundPct int `json:"lateCancelRefundPct"`
 	// ReminderSentAt gates the reminder scheduler's idempotency (see
 	// booking_reminder_scheduler.go) — not client-facing.
 	ReminderSentAt *time.Time `json:"-"`
