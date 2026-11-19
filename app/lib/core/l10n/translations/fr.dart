@@ -222,4 +222,138 @@ class FrStrings implements AppStrings {
   String get continueWithEmail => 'Continuer par e-mail';
   @override
   String get tellUsYourTravelStyle => 'Comment aimez-vous voyager ?';
+
+  // ── Bookings, payments & experiences ─────────────────────────────────────
+  @override
+  String get bookHeading => 'Réserver';
+  @override
+  String get partySizeLabel => 'Nombre de personnes';
+  @override
+  String get guestsLabel => 'Voyageurs';
+  @override
+  String get quantityLabel => 'Quantité';
+  @override
+  String get checkInLabel => 'Arrivée';
+  @override
+  String get checkOutLabel => 'Départ';
+  @override
+  String get selectDateLabel => 'Choisir';
+  @override
+  String get noAvailabilityThisDay => 'Rien de disponible ce jour-là';
+  @override
+  String get couldNotLoadAvailability => 'Impossible de charger les disponibilités';
+  @override
+  String get noUpcomingDates => 'Aucune date à venir';
+  @override
+  String spotsLeft(int n) => 'plus que $n';
+  @override
+  String get bookFree => 'Réserver gratuitement';
+  @override
+  String bookAndPay(String amount) => 'Réserver et payer $amount';
+  @override
+  String get bookingInProgress => 'Réservation…';
+  @override
+  String get priceFree => 'Gratuit';
+  @override
+  String pricePerPerson(String amount) => '$amount par personne';
+  @override
+  String pricePerBooking(String amount) => '$amount par réservation';
+  @override
+  String pricePerNight(String amount) => '$amount par nuit';
+  @override
+  String get totalLabel => 'Total';
+  @override
+  String freeCancellationUntil(int hours) => 'Annulation gratuite jusqu\'à $hours h avant';
+  @override
+  String lateCancelRefund(int pct) => 'Ensuite, $pct % remboursés';
+  @override
+  String get lateCancelNoRefund => 'Ensuite, aucun remboursement';
+  @override
+  String get meetingPointLabel => 'Point de rendez-vous';
+  @override
+  String get bookedShowAtCheckIn => 'Réservé : à montrer à l\'arrivée';
+  @override
+  String partyOf(int n) => '$n personnes';
+  @override
+  String get payTitle => 'Finalisez votre paiement';
+  @override
+  String payHeldUntil(String time) => 'Votre place est retenue jusqu\'à $time';
+  @override
+  String get paySecurely => 'Payer en toute sécurité';
+  @override
+  String get payWaiting => 'En attente de votre paiement…';
+  @override
+  String get payExpired => 'Le délai a expiré avant votre paiement. Réservez à nouveau pour choisir un horaire.';
+  @override
+  String get payNotYet => 'Nous n\'avons pas encore reçu le paiement.';
+  @override
+  String get payAgain => 'Payer à nouveau';
+  @override
+  String get payCardNote => 'Vous payez sur la page du prestataire de paiement. Spotto ne voit jamais vos données de carte.';
+  @override
+  String get couldNotOpenPayment => 'Impossible d\'ouvrir la page de paiement';
+  @override
+  String get upcomingSection => 'À venir';
+  @override
+  String get pastSection => 'Passées';
+  @override
+  String get noBookingsYet => 'Aucune réservation';
+  @override
+  String get noBookingsHint => 'Réservez une table, un cours de surf, une chambre ou une sortie avec un local depuis la page d\'un lieu.';
+  @override
+  String get completePayment => 'Finaliser le paiement';
+  @override
+  String get cancelBookingAction => 'Annuler la réservation';
+  @override
+  String get cancellingBooking => 'Annulation…';
+  @override
+  String get cancelBookingTitle => 'Annuler cette réservation ?';
+  @override
+  String refundFullBack(String amount) => 'Vous serez remboursé de $amount.';
+  @override
+  String refundPartBack(String refund, String paid) => 'Vous serez remboursé de $refund sur $paid.';
+  @override
+  String get refundNone => 'Le délai de remboursement est passé : rien ne sera remboursé.';
+  @override
+  String get keepBooking => 'La garder';
+  @override
+  String get confirmCancelBooking => 'Oui, annuler';
+  @override
+  String cancelledWithRefund(String amount) => 'Annulée. $amount vous sera remboursé.';
+  @override
+  String get bookingCancelled => 'Réservation annulée.';
+  @override
+  String refundedAmount(String amount) => '$amount remboursés';
+  @override
+  String paidAmount(String amount) => '$amount payés';
+  @override
+  String get statusAwaitingPayment => 'Paiement en attente';
+  @override
+  String get statusConfirmed => 'Confirmée';
+  @override
+  String get statusCancelled => 'Annulée';
+  @override
+  String get statusCompleted => 'Terminée';
+  @override
+  String get statusNoShow => 'Absent';
+  @override
+  String get statusExpired => 'Expirée';
+  @override
+  String get experiencesTitle => 'Expériences et événements';
+  @override
+  String get experiencesSubtitle => 'Visites, cours et soirées proposés par des locaux';
+  @override
+  String get experiencesEmpty => 'Rien à réserver ici pour l\'instant. Revenez bientôt.';
+  @override
+  String get allCategoriesFilter => 'Tout';
+  @override
+  String nextDateLabel(String date) => 'Prochaine : $date';
+  @override
+  String get localHostBadge => 'Hôte local';
+  @override
+  String get experiencesEntrySubtitle => 'Surf, baleines, cuisine, tournées des bars…';
+  @override
+  String get payAtCheckoutTitle => 'Vous payez au moment de réserver';
+  @override
+  String get payAtCheckoutBody => 'Pour une réservation payante, vous payez sur la page sécurisée du prestataire. Spotto ne conserve pas vos cartes.';
 }

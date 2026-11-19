@@ -222,4 +222,138 @@ class NlStrings implements AppStrings {
   String get continueWithEmail => 'Verder met e-mail';
   @override
   String get tellUsYourTravelStyle => 'Hoe reis jij het liefst?';
+
+  // ── Bookings, payments & experiences ─────────────────────────────────────
+  @override
+  String get bookHeading => 'Boeken';
+  @override
+  String get partySizeLabel => 'Aantal personen';
+  @override
+  String get guestsLabel => 'Gasten';
+  @override
+  String get quantityLabel => 'Aantal';
+  @override
+  String get checkInLabel => 'Inchecken';
+  @override
+  String get checkOutLabel => 'Uitchecken';
+  @override
+  String get selectDateLabel => 'Kiezen';
+  @override
+  String get noAvailabilityThisDay => 'Geen plek op deze dag';
+  @override
+  String get couldNotLoadAvailability => 'Beschikbaarheid laden mislukt';
+  @override
+  String get noUpcomingDates => 'Geen komende data';
+  @override
+  String spotsLeft(int n) => 'nog $n';
+  @override
+  String get bookFree => 'Gratis boeken';
+  @override
+  String bookAndPay(String amount) => 'Boek & betaal $amount';
+  @override
+  String get bookingInProgress => 'Bezig met boeken…';
+  @override
+  String get priceFree => 'Gratis';
+  @override
+  String pricePerPerson(String amount) => '$amount per persoon';
+  @override
+  String pricePerBooking(String amount) => '$amount per boeking';
+  @override
+  String pricePerNight(String amount) => '$amount per nacht';
+  @override
+  String get totalLabel => 'Totaal';
+  @override
+  String freeCancellationUntil(int hours) => 'Gratis annuleren tot $hours uur vooraf';
+  @override
+  String lateCancelRefund(int pct) => 'Daarna $pct% terug';
+  @override
+  String get lateCancelNoRefund => 'Daarna geen terugbetaling';
+  @override
+  String get meetingPointLabel => 'Verzamelpunt';
+  @override
+  String get bookedShowAtCheckIn => 'Geboekt: laat dit zien bij aankomst';
+  @override
+  String partyOf(int n) => '$n personen';
+  @override
+  String get payTitle => 'Rond je betaling af';
+  @override
+  String payHeldUntil(String time) => 'Je plek is vastgehouden tot $time';
+  @override
+  String get paySecurely => 'Veilig betalen';
+  @override
+  String get payWaiting => 'Wachten tot je betaling binnen is…';
+  @override
+  String get payExpired => 'De reservering verliep voordat je betaling binnen was. Boek opnieuw voor een nieuw tijdstip.';
+  @override
+  String get payNotYet => 'We hebben de betaling nog niet ontvangen.';
+  @override
+  String get payAgain => 'Opnieuw betalen';
+  @override
+  String get payCardNote => 'Je betaalt op de pagina van de betaalprovider. Spotto ziet je kaartgegevens nooit.';
+  @override
+  String get couldNotOpenPayment => 'Betaalpagina openen mislukt';
+  @override
+  String get upcomingSection => 'Gepland';
+  @override
+  String get pastSection => 'Afgelopen';
+  @override
+  String get noBookingsYet => 'Nog geen boekingen';
+  @override
+  String get noBookingsHint => 'Boek een tafel, surfles, kamer of tour van een local via de pagina van een plek.';
+  @override
+  String get completePayment => 'Betaling afronden';
+  @override
+  String get cancelBookingAction => 'Boeking annuleren';
+  @override
+  String get cancellingBooking => 'Annuleren…';
+  @override
+  String get cancelBookingTitle => 'Deze boeking annuleren?';
+  @override
+  String refundFullBack(String amount) => 'Je krijgt $amount terug.';
+  @override
+  String refundPartBack(String refund, String paid) => 'Je krijgt $refund van $paid terug.';
+  @override
+  String get refundNone => 'De terugbetaaltermijn is verstreken, je krijgt niets terug.';
+  @override
+  String get keepBooking => 'Behouden';
+  @override
+  String get confirmCancelBooking => 'Ja, annuleren';
+  @override
+  String cancelledWithRefund(String amount) => 'Geannuleerd. $amount komt naar je terug.';
+  @override
+  String get bookingCancelled => 'Boeking geannuleerd.';
+  @override
+  String refundedAmount(String amount) => '$amount terugbetaald';
+  @override
+  String paidAmount(String amount) => '$amount betaald';
+  @override
+  String get statusAwaitingPayment => 'Wacht op betaling';
+  @override
+  String get statusConfirmed => 'Bevestigd';
+  @override
+  String get statusCancelled => 'Geannuleerd';
+  @override
+  String get statusCompleted => 'Voltooid';
+  @override
+  String get statusNoShow => 'Niet verschenen';
+  @override
+  String get statusExpired => 'Verlopen';
+  @override
+  String get experiencesTitle => 'Ervaringen & evenementen';
+  @override
+  String get experiencesSubtitle => 'Tours, lessen en avonden uit, georganiseerd door locals';
+  @override
+  String get experiencesEmpty => 'Hier valt nog niets te boeken. Kom snel terug.';
+  @override
+  String get allCategoriesFilter => 'Alles';
+  @override
+  String nextDateLabel(String date) => 'Volgende: $date';
+  @override
+  String get localHostBadge => 'Local host';
+  @override
+  String get experiencesEntrySubtitle => 'Surfen, walvissen spotten, koken, kroegentochten…';
+  @override
+  String get payAtCheckoutTitle => 'Je betaalt bij het afrekenen';
+  @override
+  String get payAtCheckoutBody => 'Boek je iets betaalds, dan betaal je op de beveiligde pagina van de betaalprovider. Spotto bewaart geen kaarten.';
 }

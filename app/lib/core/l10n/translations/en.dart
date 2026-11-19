@@ -222,4 +222,138 @@ class EnStrings implements AppStrings {
   String get continueWithEmail => 'Continue with Email';
   @override
   String get tellUsYourTravelStyle => 'Tell us your travel style';
+
+  // ── Bookings, payments & experiences ─────────────────────────────────────
+  @override
+  String get bookHeading => 'Book';
+  @override
+  String get partySizeLabel => 'Party size';
+  @override
+  String get guestsLabel => 'Guests';
+  @override
+  String get quantityLabel => 'Quantity';
+  @override
+  String get checkInLabel => 'Check-in';
+  @override
+  String get checkOutLabel => 'Check-out';
+  @override
+  String get selectDateLabel => 'Select';
+  @override
+  String get noAvailabilityThisDay => 'No availability this day';
+  @override
+  String get couldNotLoadAvailability => 'Could not load availability';
+  @override
+  String get noUpcomingDates => 'No upcoming dates';
+  @override
+  String spotsLeft(int n) => '$n left';
+  @override
+  String get bookFree => 'Book for free';
+  @override
+  String bookAndPay(String amount) => 'Book & pay $amount';
+  @override
+  String get bookingInProgress => 'Booking…';
+  @override
+  String get priceFree => 'Free';
+  @override
+  String pricePerPerson(String amount) => '$amount per person';
+  @override
+  String pricePerBooking(String amount) => '$amount per booking';
+  @override
+  String pricePerNight(String amount) => '$amount per night';
+  @override
+  String get totalLabel => 'Total';
+  @override
+  String freeCancellationUntil(int hours) => 'Free cancellation up to ${hours}h before';
+  @override
+  String lateCancelRefund(int pct) => 'After that, $pct% back';
+  @override
+  String get lateCancelNoRefund => 'After that, no refund';
+  @override
+  String get meetingPointLabel => 'Meeting point';
+  @override
+  String get bookedShowAtCheckIn => 'Booked: show this at check-in';
+  @override
+  String partyOf(int n) => 'Party of $n';
+  @override
+  String get payTitle => 'Complete your payment';
+  @override
+  String payHeldUntil(String time) => 'Your spot is held until $time';
+  @override
+  String get paySecurely => 'Pay securely';
+  @override
+  String get payWaiting => 'Waiting for your payment to come through…';
+  @override
+  String get payExpired => 'The hold ran out before your payment arrived. Book again to pick a new time.';
+  @override
+  String get payNotYet => 'We haven\'t received the payment yet.';
+  @override
+  String get payAgain => 'Pay again';
+  @override
+  String get payCardNote => 'You pay on the payment provider\'s own page. Spotto never sees your card details.';
+  @override
+  String get couldNotOpenPayment => 'Couldn\'t open the payment page';
+  @override
+  String get upcomingSection => 'Upcoming';
+  @override
+  String get pastSection => 'Past';
+  @override
+  String get noBookingsYet => 'No bookings yet';
+  @override
+  String get noBookingsHint => 'Book a table, a surf lesson, a room or a local\'s tour from any place\'s page.';
+  @override
+  String get completePayment => 'Complete payment';
+  @override
+  String get cancelBookingAction => 'Cancel booking';
+  @override
+  String get cancellingBooking => 'Cancelling…';
+  @override
+  String get cancelBookingTitle => 'Cancel this booking?';
+  @override
+  String refundFullBack(String amount) => 'You\'ll get $amount back.';
+  @override
+  String refundPartBack(String refund, String paid) => 'You\'ll get $refund of $paid back.';
+  @override
+  String get refundNone => 'This booking is past its refund window, so nothing is refunded.';
+  @override
+  String get keepBooking => 'Keep it';
+  @override
+  String get confirmCancelBooking => 'Yes, cancel';
+  @override
+  String cancelledWithRefund(String amount) => 'Cancelled. $amount is on its way back to you.';
+  @override
+  String get bookingCancelled => 'Booking cancelled.';
+  @override
+  String refundedAmount(String amount) => 'Refunded $amount';
+  @override
+  String paidAmount(String amount) => 'Paid $amount';
+  @override
+  String get statusAwaitingPayment => 'Awaiting payment';
+  @override
+  String get statusConfirmed => 'Confirmed';
+  @override
+  String get statusCancelled => 'Cancelled';
+  @override
+  String get statusCompleted => 'Completed';
+  @override
+  String get statusNoShow => 'No-show';
+  @override
+  String get statusExpired => 'Expired';
+  @override
+  String get experiencesTitle => 'Experiences & events';
+  @override
+  String get experiencesSubtitle => 'Tours, classes and nights out run by locals';
+  @override
+  String get experiencesEmpty => 'Nothing to book here yet. Check back soon.';
+  @override
+  String get allCategoriesFilter => 'All';
+  @override
+  String nextDateLabel(String date) => 'Next: $date';
+  @override
+  String get localHostBadge => 'Local host';
+  @override
+  String get experiencesEntrySubtitle => 'Surf, whale watching, cooking, bar tours…';
+  @override
+  String get payAtCheckoutTitle => 'You pay at checkout';
+  @override
+  String get payAtCheckoutBody => 'When you book something paid, you pay on the payment provider\'s secure page. Spotto doesn\'t store your cards.';
 }

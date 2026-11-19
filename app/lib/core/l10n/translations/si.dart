@@ -222,4 +222,138 @@ class SiStrings implements AppStrings {
   String get continueWithEmail => 'විද්‍යුත් තැපෑලෙන් ඉදිරියට යන්න';
   @override
   String get tellUsYourTravelStyle => 'ඔබේ සංචාරක රටාව කියන්න';
+
+  // ── Bookings, payments & experiences ─────────────────────────────────────
+  @override
+  String get bookHeading => 'වෙන්කරන්න';
+  @override
+  String get partySizeLabel => 'පුද්ගලයින් ගණන';
+  @override
+  String get guestsLabel => 'අමුත්තන්';
+  @override
+  String get quantityLabel => 'ප්‍රමාණය';
+  @override
+  String get checkInLabel => 'පැමිණීම';
+  @override
+  String get checkOutLabel => 'පිටවීම';
+  @override
+  String get selectDateLabel => 'තෝරන්න';
+  @override
+  String get noAvailabilityThisDay => 'මෙදින ඉඩ නැත';
+  @override
+  String get couldNotLoadAvailability => 'ලබාගත හැකි වේලාවන් පූරණය කළ නොහැක';
+  @override
+  String get noUpcomingDates => 'ඉදිරි දින නැත';
+  @override
+  String spotsLeft(int n) => '$n ක් ඉතිරියි';
+  @override
+  String get bookFree => 'නොමිලේ වෙන්කරන්න';
+  @override
+  String bookAndPay(String amount) => 'වෙන්කර $amount ගෙවන්න';
+  @override
+  String get bookingInProgress => 'වෙන්කරමින්…';
+  @override
+  String get priceFree => 'නොමිලේ';
+  @override
+  String pricePerPerson(String amount) => 'එක් අයෙකුට $amount';
+  @override
+  String pricePerBooking(String amount) => 'වෙන්කිරීමකට $amount';
+  @override
+  String pricePerNight(String amount) => 'රාත්‍රියකට $amount';
+  @override
+  String get totalLabel => 'මුළු මුදල';
+  @override
+  String freeCancellationUntil(int hours) => 'පැය $hoursකට පෙර දක්වා නොමිලේ අවලංගු කළ හැක';
+  @override
+  String lateCancelRefund(int pct) => 'ඉන්පසු $pct% ආපසු';
+  @override
+  String get lateCancelNoRefund => 'ඉන්පසු මුදල් ආපසු නොදේ';
+  @override
+  String get meetingPointLabel => 'හමුවන ස්ථානය';
+  @override
+  String get bookedShowAtCheckIn => 'වෙන්කළා: පැමිණි විට මෙය පෙන්වන්න';
+  @override
+  String partyOf(int n) => 'පුද්ගලයින් $n';
+  @override
+  String get payTitle => 'ඔබේ ගෙවීම සම්පූර්ණ කරන්න';
+  @override
+  String payHeldUntil(String time) => '$time දක්වා ඔබේ ඉඩ රඳවා ඇත';
+  @override
+  String get paySecurely => 'ආරක්ෂිතව ගෙවන්න';
+  @override
+  String get payWaiting => 'ඔබේ ගෙවීම ලැබෙන තුරු රැඳී සිටිමු…';
+  @override
+  String get payExpired => 'ඔබේ ගෙවීමට පෙර රඳවා ගැනීම අවසන් විය. නව වේලාවක් සඳහා නැවත වෙන්කරන්න.';
+  @override
+  String get payNotYet => 'ගෙවීම තවම ලැබී නැත.';
+  @override
+  String get payAgain => 'නැවත ගෙවන්න';
+  @override
+  String get payCardNote => 'ඔබ ගෙවන්නේ ගෙවීම් සේවාවේම පිටුවේ ය. Spotto ඔබේ කාඩ්පත් විස්තර කිසිදා නොදකී.';
+  @override
+  String get couldNotOpenPayment => 'ගෙවීම් පිටුව විවෘත කළ නොහැක';
+  @override
+  String get upcomingSection => 'ඉදිරියට';
+  @override
+  String get pastSection => 'පසුගිය';
+  @override
+  String get noBookingsYet => 'තවම වෙන්කිරීම් නැත';
+  @override
+  String get noBookingsHint => 'ඕනෑම ස්ථානයක පිටුවෙන් මේසයක්, සර්ෆ් පන්තියක්, කාමරයක් හෝ ප්‍රදේශවාසියෙකුගේ චාරිකාවක් වෙන්කරන්න.';
+  @override
+  String get completePayment => 'ගෙවීම සම්පූර්ණ කරන්න';
+  @override
+  String get cancelBookingAction => 'වෙන්කිරීම අවලංගු කරන්න';
+  @override
+  String get cancellingBooking => 'අවලංගු කරමින්…';
+  @override
+  String get cancelBookingTitle => 'මෙම වෙන්කිරීම අවලංගු කරන්නද?';
+  @override
+  String refundFullBack(String amount) => 'ඔබට $amount ආපසු ලැබේ.';
+  @override
+  String refundPartBack(String refund, String paid) => 'ඔබට $paid න් $refund ආපසු ලැබේ.';
+  @override
+  String get refundNone => 'ආපසු ගෙවීමේ කාලය ඉක්මවා ඇති බැවින් කිසිවක් ආපසු නොලැබේ.';
+  @override
+  String get keepBooking => 'තබා ගන්න';
+  @override
+  String get confirmCancelBooking => 'ඔව්, අවලංගු කරන්න';
+  @override
+  String cancelledWithRefund(String amount) => 'අවලංගු කළා. $amount ඔබට ආපසු එයි.';
+  @override
+  String get bookingCancelled => 'වෙන්කිරීම අවලංගු කළා.';
+  @override
+  String refundedAmount(String amount) => '$amount ආපසු ගෙවා ඇත';
+  @override
+  String paidAmount(String amount) => '$amount ගෙවා ඇත';
+  @override
+  String get statusAwaitingPayment => 'ගෙවීම බලාපොරොත්තුවෙන්';
+  @override
+  String get statusConfirmed => 'තහවුරුයි';
+  @override
+  String get statusCancelled => 'අවලංගුයි';
+  @override
+  String get statusCompleted => 'අවසන්';
+  @override
+  String get statusNoShow => 'නොපැමිණි';
+  @override
+  String get statusExpired => 'කල් ඉකුත් විය';
+  @override
+  String get experiencesTitle => 'අත්දැකීම් සහ උත්සව';
+  @override
+  String get experiencesSubtitle => 'ප්‍රදේශවාසීන් පවත්වන චාරිකා, පන්ති සහ රාත්‍රී සාද';
+  @override
+  String get experiencesEmpty => 'මෙහි තවම වෙන්කිරීමට කිසිවක් නැත. ඉක්මනින් නැවත බලන්න.';
+  @override
+  String get allCategoriesFilter => 'සියල්ල';
+  @override
+  String nextDateLabel(String date) => 'ඊළඟ: $date';
+  @override
+  String get localHostBadge => 'ප්‍රදේශවාසී සත්කාරක';
+  @override
+  String get experiencesEntrySubtitle => 'සර්ෆ්, තල්මසුන් නැරඹීම, ආහාර පිසීම, බාර් චාරිකා…';
+  @override
+  String get payAtCheckoutTitle => 'ඔබ ගෙවන්නේ වෙන්කරන විටයි';
+  @override
+  String get payAtCheckoutBody => 'ගෙවිය යුතු දෙයක් වෙන්කරන විට ඔබ ගෙවන්නේ ගෙවීම් සේවාවේ ආරක්ෂිත පිටුවේ ය. Spotto ඔබේ කාඩ්පත් ගබඩා නොකරයි.';
 }

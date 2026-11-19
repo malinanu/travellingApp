@@ -222,4 +222,138 @@ class RuStrings implements AppStrings {
   String get continueWithEmail => 'Продолжить через почту';
   @override
   String get tellUsYourTravelStyle => 'Как вы любите путешествовать?';
+
+  // ── Bookings, payments & experiences ─────────────────────────────────────
+  @override
+  String get bookHeading => 'Бронирование';
+  @override
+  String get partySizeLabel => 'Количество гостей';
+  @override
+  String get guestsLabel => 'Гости';
+  @override
+  String get quantityLabel => 'Количество';
+  @override
+  String get checkInLabel => 'Заезд';
+  @override
+  String get checkOutLabel => 'Выезд';
+  @override
+  String get selectDateLabel => 'Выбрать';
+  @override
+  String get noAvailabilityThisDay => 'На этот день мест нет';
+  @override
+  String get couldNotLoadAvailability => 'Не удалось загрузить расписание';
+  @override
+  String get noUpcomingDates => 'Ближайших дат нет';
+  @override
+  String spotsLeft(int n) => 'осталось $n';
+  @override
+  String get bookFree => 'Забронировать бесплатно';
+  @override
+  String bookAndPay(String amount) => 'Забронировать и оплатить $amount';
+  @override
+  String get bookingInProgress => 'Бронируем…';
+  @override
+  String get priceFree => 'Бесплатно';
+  @override
+  String pricePerPerson(String amount) => '$amount с человека';
+  @override
+  String pricePerBooking(String amount) => '$amount за бронирование';
+  @override
+  String pricePerNight(String amount) => '$amount за ночь';
+  @override
+  String get totalLabel => 'Итого';
+  @override
+  String freeCancellationUntil(int hours) => 'Бесплатная отмена за $hours ч до начала';
+  @override
+  String lateCancelRefund(int pct) => 'Позже вернём $pct%';
+  @override
+  String get lateCancelNoRefund => 'Позже деньги не возвращаются';
+  @override
+  String get meetingPointLabel => 'Место встречи';
+  @override
+  String get bookedShowAtCheckIn => 'Забронировано: покажите при входе';
+  @override
+  String partyOf(int n) => 'Гостей: $n';
+  @override
+  String get payTitle => 'Завершите оплату';
+  @override
+  String payHeldUntil(String time) => 'Место за вами до $time';
+  @override
+  String get paySecurely => 'Оплатить безопасно';
+  @override
+  String get payWaiting => 'Ждём подтверждения оплаты…';
+  @override
+  String get payExpired => 'Время брони истекло до оплаты. Забронируйте заново.';
+  @override
+  String get payNotYet => 'Оплата ещё не поступила.';
+  @override
+  String get payAgain => 'Оплатить снова';
+  @override
+  String get payCardNote => 'Оплата проходит на странице платёжного сервиса. Spotto не видит данные вашей карты.';
+  @override
+  String get couldNotOpenPayment => 'Не удалось открыть страницу оплаты';
+  @override
+  String get upcomingSection => 'Предстоящие';
+  @override
+  String get pastSection => 'Прошедшие';
+  @override
+  String get noBookingsYet => 'Пока нет бронирований';
+  @override
+  String get noBookingsHint => 'Бронируйте столик, урок сёрфинга, номер или тур с местными на странице места.';
+  @override
+  String get completePayment => 'Завершить оплату';
+  @override
+  String get cancelBookingAction => 'Отменить бронь';
+  @override
+  String get cancellingBooking => 'Отменяем…';
+  @override
+  String get cancelBookingTitle => 'Отменить это бронирование?';
+  @override
+  String refundFullBack(String amount) => 'Мы вернём $amount.';
+  @override
+  String refundPartBack(String refund, String paid) => 'Мы вернём $refund из $paid.';
+  @override
+  String get refundNone => 'Срок возврата прошёл, деньги не вернутся.';
+  @override
+  String get keepBooking => 'Оставить';
+  @override
+  String get confirmCancelBooking => 'Да, отменить';
+  @override
+  String cancelledWithRefund(String amount) => 'Отменено. $amount вернётся вам.';
+  @override
+  String get bookingCancelled => 'Бронирование отменено.';
+  @override
+  String refundedAmount(String amount) => 'Возвращено $amount';
+  @override
+  String paidAmount(String amount) => 'Оплачено $amount';
+  @override
+  String get statusAwaitingPayment => 'Ожидает оплаты';
+  @override
+  String get statusConfirmed => 'Подтверждено';
+  @override
+  String get statusCancelled => 'Отменено';
+  @override
+  String get statusCompleted => 'Завершено';
+  @override
+  String get statusNoShow => 'Неявка';
+  @override
+  String get statusExpired => 'Истекло';
+  @override
+  String get experiencesTitle => 'Впечатления и события';
+  @override
+  String get experiencesSubtitle => 'Туры, мастер-классы и вечеринки от местных';
+  @override
+  String get experiencesEmpty => 'Здесь пока нечего бронировать. Загляните позже.';
+  @override
+  String get allCategoriesFilter => 'Все';
+  @override
+  String nextDateLabel(String date) => 'Ближайшая: $date';
+  @override
+  String get localHostBadge => 'Местный гид';
+  @override
+  String get experiencesEntrySubtitle => 'Сёрфинг, киты, кулинария, барные туры…';
+  @override
+  String get payAtCheckoutTitle => 'Оплата при бронировании';
+  @override
+  String get payAtCheckoutBody => 'Платные бронирования оплачиваются на защищённой странице платёжного сервиса. Spotto не хранит карты.';
 }
