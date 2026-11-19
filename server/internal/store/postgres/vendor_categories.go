@@ -11,7 +11,7 @@ import (
 // GetVendorCategories retrieves all vendor categories ordered by segment and label.
 func (s *Store) GetVendorCategories(ctx context.Context) ([]domain.VendorCategory, error) {
 	const q = `
-		SELECT id, label, segment, icon, relevant_vibe_dimensions, booking_type
+		SELECT id, label, segment, icon, relevant_vibe_dimensions, booking_type, allowed_booking_types
 		FROM vendor_categories
 		ORDER BY segment, label
 	`
@@ -25,8 +25,12 @@ func (s *Store) GetVendorCategories(ctx context.Context) ([]domain.VendorCategor
 	for rows.Next() {
 		var c domain.VendorCategory
 		var bookingType *string
-		if err := rows.Scan(&c.ID, &c.Label, &c.Segment, &c.Icon, &c.RelevantVibeDimensions, &bookingType); err != nil {
+		var allowed []string
+		if err := rows.Scan(&c.ID, &c.Label, &c.Segment, &c.Icon, &c.RelevantVibeDimensions, &bookingType, &allowed); err != nil {
 			return nil, err
+		}
+		for _, a := range allowed {
+			c.AllowedBookingTypes = append(c.AllowedBookingTypes, domain.BookingType(a))
 		}
 		if bookingType != nil {
 			c.BookingType = domain.BookingType(*bookingType)
@@ -42,15 +46,15 @@ func (s *Store) GetVendorCategories(ctx context.Context) ([]domain.VendorCategor
 // CreateVendorCategory inserts a new category.
 func (s *Store) CreateVendorCategory(ctx context.Context, c domain.VendorCategory) error {
 	const q = `
-		INSERT INTO vendor_categories (id, label, segment, icon, relevant_vibe_dimensions, booking_type)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO vendor_categories (id, label, segment, icon, relevant_vibe_dimensions, booking_type, allowed_booking_types)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 	var bt *string
 	if c.BookingType != "" {
 		s := string(c.BookingType)
 		bt = &s
 	}
-	_, err := s.Pool.Exec(ctx, q, c.ID, c.Label, string(c.Segment), c.Icon, c.RelevantVibeDimensions, bt)
+	_, err := s.Pool.Exec(ctx, q, c.ID, c.Label, string(c.Segment), c.Icon, c.RelevantVibeDimensions, bt, allowedTypesArg(c))
 	return err
 }
 
@@ -60,8 +64,8 @@ func (s *Store) CreateVendorCategory(ctx context.Context, c domain.VendorCategor
 // (only the legacy migration rows) still gets every category.
 func (s *Store) EnsureVendorCategories(ctx context.Context, cats []domain.VendorCategory) (int, error) {
 	const q = `
-		INSERT INTO vendor_categories (id, label, segment, icon, relevant_vibe_dimensions, booking_type)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO vendor_categories (id, label, segment, icon, relevant_vibe_dimensions, booking_type, allowed_booking_types)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (id) DO NOTHING
 	`
 	added := 0
@@ -71,7 +75,7 @@ func (s *Store) EnsureVendorCategories(ctx context.Context, cats []domain.Vendor
 			b := string(c.BookingType)
 			bt = &b
 		}
-		tag, err := s.Pool.Exec(ctx, q, c.ID, c.Label, string(c.Segment), c.Icon, c.RelevantVibeDimensions, bt)
+		tag, err := s.Pool.Exec(ctx, q, c.ID, c.Label, string(c.Segment), c.Icon, c.RelevantVibeDimensions, bt, allowedTypesArg(c))
 		if err != nil {
 			return added, err
 		}
@@ -84,7 +88,7 @@ func (s *Store) EnsureVendorCategories(ctx context.Context, cats []domain.Vendor
 func (s *Store) UpdateVendorCategoryRecord(ctx context.Context, c domain.VendorCategory) error {
 	const q = `
 		UPDATE vendor_categories
-		SET label = $2, segment = $3, icon = $4, relevant_vibe_dimensions = $5, booking_type = $6, updated_at = NOW()
+		SET label = $2, segment = $3, icon = $4, relevant_vibe_dimensions = $5, booking_type = $6, allowed_booking_types = $7, updated_at = NOW()
 		WHERE id = $1
 	`
 	var bt *string
@@ -92,7 +96,7 @@ func (s *Store) UpdateVendorCategoryRecord(ctx context.Context, c domain.VendorC
 		s := string(c.BookingType)
 		bt = &s
 	}
-	cmd, err := s.Pool.Exec(ctx, q, c.ID, c.Label, string(c.Segment), c.Icon, c.RelevantVibeDimensions, bt)
+	cmd, err := s.Pool.Exec(ctx, q, c.ID, c.Label, string(c.Segment), c.Icon, c.RelevantVibeDimensions, bt, allowedTypesArg(c))
 	if err != nil {
 		return err
 	}
@@ -253,4 +257,22 @@ func collectPoints(ctx context.Context, s *Store, sql string, args ...any) ([]Po
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// allowedTypesArg is c's allowed booking types as a text array, always
+// including its main BookingType.
+func allowedTypesArg(c domain.VendorCategory) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	add := func(t domain.BookingType) {
+		if t != "" && !seen[string(t)] {
+			seen[string(t)] = true
+			out = append(out, string(t))
+		}
+	}
+	add(c.BookingType)
+	for _, t := range c.AllowedBookingTypes {
+		add(t)
+	}
+	return out
 }

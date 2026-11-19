@@ -190,10 +190,19 @@ const (
 	BRCertVerifyManualReview BRCertVerifyStatus = "manual_review" // exhausted the retry budget on transient failures
 )
 
+// Vendor kinds: see Vendor.Kind.
+const (
+	VendorKindVenue = "venue"
+	VendorKindHost  = "host"
+)
+
 type Vendor struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Category string `json:"category"` // BUSINESS_TYPES id
+	// Kind is "venue" (a place people walk into) or "host" (a local who
+	// runs experiences from a meeting point, no storefront).
+	Kind string `json:"kind"`
 	Town     string `json:"town"`
 	// Country is an ISO 3166-1 alpha-2 code (e.g. "LK", "US"), used to pick
 	// the right public-holiday calendar — see internal/holidays. Defaults

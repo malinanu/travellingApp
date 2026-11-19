@@ -389,6 +389,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/places/{id}/photos", s.handlePlacePhotos)
 		r.Get("/places/{id}/services", s.handlePlaceServices)
 		r.Get("/places/{id}/services/{serviceId}/availability", s.handleServiceAvailability)
+		r.Get("/experiences", s.handleExperiences)
 		r.Post("/offers/{id}/view", s.handleOfferView)
 
 		// Media uploads (R2) â€” any authenticated role; per-owner authorisation
@@ -457,6 +458,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/vendor/offers/{id}/claims", s.handleOfferClaims)
 		r.Post("/vendor/validate", s.handleValidate)
 		r.Get("/vendor/services", s.handleVendorServices)
+		r.Get("/vendor/services/{id}/occurrences", s.handleVendorOccurrences)
 		r.Get("/vendor/bookings", s.handleVendorBookings)
 		r.Get("/vendor/dashboard", s.handleVendorDashboard)
 		r.Get("/vendor/redemptions", s.handleVendorRedemptions)
@@ -479,6 +481,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			r.Post("/vendor/services", s.handleCreateService)
 			r.Put("/vendor/services/{id}", s.handleUpdateService)
 			r.Delete("/vendor/services/{id}", s.handleDeleteService)
+			r.Post("/vendor/services/{id}/occurrences", s.handleCreateOccurrence)
+			r.Put("/vendor/occurrences/{id}", s.handleUpdateOccurrence)
+			r.Post("/vendor/occurrences/{id}/cancel", s.handleCancelOccurrence)
 			r.Post("/vendor/bookings/{id}/cancel", s.handleVendorCancelBooking)
 			r.Patch("/vendor/bookings/{id}/status", s.handleSetBookingStatus)
 			r.Get("/vendor/growth", s.handleVendorGrowth)

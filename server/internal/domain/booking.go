@@ -12,7 +12,52 @@ const (
 	BookingTypeTable   BookingType = "table"   // party size + short fixed duration
 	BookingTypeStay    BookingType = "stay"    // date-range check-in/out + guest count + room capacity
 	BookingTypeRental  BookingType = "rental"  // fixed start time + duration + item capacity
+	// BookingTypeExperience is something a host runs: a tour, a class, a
+	// trip. Weekly slots or dated departures, capacity usually in guests.
+	BookingTypeExperience BookingType = "experience"
+	// BookingTypeEvent is a ticketed one-off: always dated occurrences.
+	BookingTypeEvent BookingType = "event"
 )
+
+// ValidBookingType reports whether t is a known booking type.
+func ValidBookingType(t BookingType) bool {
+	switch t {
+	case BookingTypeSession, BookingTypeTable, BookingTypeStay, BookingTypeRental, BookingTypeExperience, BookingTypeEvent:
+		return true
+	}
+	return false
+}
+
+// Scheduling says how a service's bookable times are defined.
+type Scheduling string
+
+const (
+	// SchedulingWeekly cuts slots out of weekly windows (Availability).
+	SchedulingWeekly Scheduling = "weekly"
+	// SchedulingOccurrences books specific dated runs (ServiceOccurrence).
+	SchedulingOccurrences Scheduling = "occurrences"
+)
+
+// MeetingPoint is where an experience starts.
+type MeetingPoint struct {
+	Note string   `json:"note"`
+	Lat  *float64 `json:"lat,omitempty"`
+	Lng  *float64 `json:"lng,omitempty"`
+}
+
+// ServiceOccurrence is one dated run of a service: a departure, an event
+// night. Capacity, when set, overrides the service's.
+type ServiceOccurrence struct {
+	ID        string    `json:"id"`
+	ServiceID string    `json:"serviceId"`
+	StartAt   time.Time `json:"startAt"`
+	EndAt     time.Time `json:"endAt"`
+	Capacity  *int      `json:"capacity,omitempty"`
+	Status    string    `json:"status"` // scheduled | cancelled
+	CreatedAt time.Time `json:"createdAt"`
+	// Remaining is filled in for listings: capacity not yet booked.
+	Remaining *int `json:"remaining,omitempty"`
+}
 
 // BookableService is one bookable thing a vendor offers (e.g. "Beginner surf
 // lesson", "Deluxe Room"). A vendor may define several; most will have one.
@@ -52,7 +97,12 @@ type BookableService struct {
 	// nil for stay (stay availability is capacity-only). Shape mirrors
 	// vendorHoursDoc's spirit (see internal/http/vendor.go).
 	Availability *ServiceAvailabilityDoc `json:"availability,omitempty"`
-	Active       bool                    `json:"active"`
+	// Scheduling is weekly windows or dated occurrences; BlackoutDates
+	// ("2006-01-02", Sri Lankan days) close a weekly service on given days.
+	Scheduling    Scheduling    `json:"scheduling"`
+	BlackoutDates []string      `json:"blackoutDates"`
+	MeetingPoint  *MeetingPoint `json:"meetingPoint,omitempty"`
+	Active        bool          `json:"active"`
 	// ArchivedAt is set when a vendor deletes a service that already has
 	// bookings: the row stays so booking and payment history keep their
 	// reference, but it is hidden from every list.
@@ -151,6 +201,8 @@ type Booking struct {
 	CancelledAt *time.Time    `json:"cancelledAt,omitempty"`
 	CancelledBy string        `json:"cancelledBy,omitempty"` // "traveller" | "vendor"
 	CheckedInAt *time.Time    `json:"checkedInAt,omitempty"`
+	// OccurrenceID is set when the booking is for a dated occurrence.
+	OccurrenceID *string `json:"occurrenceId,omitempty"`
 	// HoldExpiresAt is when an awaiting_payment booking gives its seats up.
 	HoldExpiresAt *time.Time `json:"holdExpiresAt,omitempty"`
 

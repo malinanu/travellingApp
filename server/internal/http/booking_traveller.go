@@ -52,11 +52,37 @@ func availabilityWindowsForDay(svc domain.BookableService, profile vendorProfile
 	if svc.Availability != nil {
 		return (*svc.Availability)[weekdayKey(date)]
 	}
+	if !usesVendorHours(svc) {
+		return nil
+	}
 	day, ok := profile.Hours[weekdayKey(date)]
 	if !ok || day.Closed || day.Open == "" || day.Close == "" {
 		return nil
 	}
 	return []domain.ServiceAvailabilityWindow{{Start: day.Open, End: day.Close}}
+}
+
+// usesVendorHours reports whether a service is also limited by its
+// vendor's opening hours. Experiences and events run on their own
+// schedule (a host has no opening hours), as do stays.
+func usesVendorHours(svc domain.BookableService) bool {
+	switch svc.Type {
+	case domain.BookingTypeExperience, domain.BookingTypeEvent, domain.BookingTypeStay:
+		return false
+	}
+	return true
+}
+
+// isBlackoutDate reports whether the vendor closed this service on the
+// Sri Lankan calendar day of t.
+func isBlackoutDate(svc domain.BookableService, t time.Time) bool {
+	day := inSriLanka(t).Format("2006-01-02")
+	for _, d := range svc.BlackoutDates {
+		if d == day {
+			return true
+		}
+	}
+	return false
 }
 
 func parseClockOnDate(date time.Time, clock string) (time.Time, error) {
@@ -88,6 +114,20 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if svc.Scheduling == domain.SchedulingOccurrences {
+		from := time.Now()
+		if d, err := parseLocalDate(r.URL.Query().Get("date")); err == nil && d.After(from) {
+			from = d
+		}
+		occurrences, err := s.Store.OccurrencesWithRemaining(r.Context(), svc, from, false, 60)
+		if err != nil {
+			storeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"occurrences": occurrences})
+		return
+	}
+
 	if svc.Type == domain.BookingTypeStay {
 		checkIn, err1 := parseLocalDate(r.URL.Query().Get("checkIn"))
 		checkOut, err2 := parseLocalDate(r.URL.Query().Get("checkOut"))
@@ -113,6 +153,10 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 		writeErr(w, http.StatusBadRequest, "valid date required")
 		return
 	}
+	if isBlackoutDate(svc, date) {
+		writeJSON(w, http.StatusOK, map[string]any{"slots": []availabilitySlot{}})
+		return
+	}
 	vendor, err := s.Store.VendorByID(r.Context(), svc.VendorID)
 	if err != nil {
 		storeErr(w, err)
@@ -134,7 +178,10 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 		}
 		for t := start; !t.Add(duration).After(end); t = t.Add(duration) {
 			slotEnd := t.Add(duration)
-			if checkVendorOpen(profile, t) != nil {
+			if !t.After(time.Now()) {
+				continue
+			}
+			if usesVendorHours(svc) && checkVendorOpen(profile, t) != nil {
 				continue
 			}
 			existing, err := s.Store.HeldCapacity(r.Context(), svc, t, slotEnd)
@@ -160,8 +207,9 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	var req struct {
-		PlaceID   string `json:"placeId"`
-		ServiceID string `json:"serviceId"`
+		PlaceID      string `json:"placeId"`
+		ServiceID    string `json:"serviceId"`
+		OccurrenceID string `json:"occurrenceId,omitempty"` // dated services
 		StartAt   string `json:"startAt,omitempty"` // RFC3339, session/table
 		CheckIn   string `json:"checkIn,omitempty"` // "2006-01-02", stay
 		CheckOut  string `json:"checkOut,omitempty"`
@@ -171,26 +219,33 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.PlaceID == "" || req.ServiceID == "" {
-		writeErr(w, http.StatusBadRequest, "placeId and serviceId required")
+	if req.ServiceID == "" {
+		writeErr(w, http.StatusBadRequest, "serviceId required")
 		return
 	}
 	if req.PartySize < 1 {
 		req.PartySize = 1
 	}
 
-	place, err := s.Store.PlaceByID(r.Context(), req.PlaceID)
+	svc, err := s.Store.BookableServiceByID(r.Context(), req.ServiceID)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	// placeId is optional: an experience opened from a listing or a shared
+	// link is booked against its host's own place.
+	var place domain.Place
+	if req.PlaceID != "" {
+		place, err = s.Store.PlaceByID(r.Context(), req.PlaceID)
+	} else {
+		place, err = s.Store.PlaceByVendorID(r.Context(), svc.VendorID)
+	}
 	if err != nil {
 		storeErr(w, err)
 		return
 	}
 	if place.VendorID == nil {
 		writeErr(w, http.StatusBadRequest, "this place doesn't take bookings")
-		return
-	}
-	svc, err := s.Store.BookableServiceByID(r.Context(), req.ServiceID)
-	if err != nil {
-		storeErr(w, err)
 		return
 	}
 	if svc.VendorID != *place.VendorID {
@@ -202,12 +257,41 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if svc.PartySizeMin > 0 && req.PartySize < svc.PartySizeMin && svc.Type != domain.BookingTypeStay {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("minimum party size is %d", svc.PartySizeMin))
+		return
+	}
+	if svc.PartySizeMax > 0 && req.PartySize > svc.PartySizeMax && svc.Type != domain.BookingTypeStay {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("maximum party size is %d", svc.PartySizeMax))
+		return
+	}
+
 	var startAt, endAt time.Time
-	if svc.Type == domain.BookingTypeStay {
+	var occurrenceID *string
+	if svc.Scheduling == domain.SchedulingOccurrences {
+		if req.OccurrenceID == "" {
+			writeErr(w, http.StatusBadRequest, "occurrenceId required: pick a date")
+			return
+		}
+		occ, err := s.Store.OccurrenceByID(r.Context(), req.OccurrenceID)
+		if err != nil || occ.ServiceID != svc.ID {
+			writeErr(w, http.StatusNotFound, "that date isn't available")
+			return
+		}
+		if occ.Status != "scheduled" || !occ.StartAt.After(time.Now()) {
+			writeErr(w, http.StatusConflict, "that date is no longer bookable")
+			return
+		}
+		startAt, endAt, occurrenceID = occ.StartAt, occ.EndAt, &occ.ID
+	} else if svc.Type == domain.BookingTypeStay {
 		checkIn, err1 := parseLocalDate(req.CheckIn)
 		checkOut, err2 := parseLocalDate(req.CheckOut)
 		if err1 != nil || err2 != nil || !checkOut.After(checkIn) {
 			writeErr(w, http.StatusBadRequest, "valid checkIn/checkOut dates required")
+			return
+		}
+		if today, _ := parseLocalDate(inSriLanka(time.Now()).Format("2006-01-02")); checkIn.Before(today) {
+			writeErr(w, http.StatusBadRequest, "check-in can't be in the past")
 			return
 		}
 		startAt, endAt = checkIn, checkOut
@@ -215,14 +299,6 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		start, err := time.Parse(time.RFC3339, req.StartAt)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, "valid startAt required")
-			return
-		}
-		if svc.PartySizeMin > 0 && req.PartySize < svc.PartySizeMin {
-			writeErr(w, http.StatusBadRequest, fmt.Sprintf("minimum party size is %d", svc.PartySizeMin))
-			return
-		}
-		if svc.PartySizeMax > 0 && req.PartySize > svc.PartySizeMax {
-			writeErr(w, http.StatusBadRequest, fmt.Sprintf("maximum party size is %d", svc.PartySizeMax))
 			return
 		}
 		// Hours and service windows are Sri Lankan wall-clock times,
@@ -241,9 +317,19 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		}
 		var profile vendorProfileDoc
 		json.Unmarshal(vendor.Profile, &profile)
-		if err := checkVendorOpen(profile, startAt); err != nil {
-			writeErr(w, http.StatusConflict, err.Error())
+		if !startAt.After(time.Now()) {
+			writeErr(w, http.StatusBadRequest, "that time has already passed")
 			return
+		}
+		if isBlackoutDate(svc, startAt) {
+			writeErr(w, http.StatusConflict, "not available that day")
+			return
+		}
+		if usesVendorHours(svc) {
+			if err := checkVendorOpen(profile, startAt); err != nil {
+				writeErr(w, http.StatusConflict, err.Error())
+				return
+			}
 		}
 		if err := checkServiceAvailability(svc.Availability, startAt, endAt); err != nil {
 			writeErr(w, http.StatusConflict, err.Error())
@@ -254,7 +340,7 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 	booking := domain.Booking{
 		ID: newID("bkg"), VendorID: svc.VendorID, ServiceID: svc.ID, Type: svc.Type,
 		PlaceID: place.ID, TravellerID: c.Subject, StartAt: startAt, EndAt: endAt,
-		PartySize: req.PartySize, Note: req.Note,
+		PartySize: req.PartySize, Note: req.Note, OccurrenceID: occurrenceID,
 		AmountMinor: domain.QuoteBooking(svc, req.PartySize, startAt, endAt), Currency: svc.Currency,
 		FreeCancelHours: svc.FreeCancelHours, LateCancelRefundPct: svc.LateCancelRefundPct,
 	}

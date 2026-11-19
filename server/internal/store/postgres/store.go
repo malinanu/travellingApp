@@ -1035,7 +1035,7 @@ func (s *Store) UserTokenVersion(ctx context.Context, id string) (int, error) {
 
 // ---- vendors ----
 
-const vendorCols = `id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng, br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at, google_place_id`
+const vendorCols = `id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng, br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at, google_place_id, kind`
 
 func scanVendor(row pgx.Row) (domain.Vendor, error) {
 	var v domain.Vendor
@@ -1044,7 +1044,7 @@ func scanVendor(row pgx.Row) (domain.Vendor, error) {
 		&v.Priority, &v.Docs, &v.Photos, &v.WifiScore, &flags, &v.Note, &v.Tier,
 		&v.Profile, &v.Menu, &v.SubmittedAt, &v.Lat, &v.Lng,
 		&v.BRCertNumber, &v.BRCertOCRStatus, &v.BRCertVerifyStatus, &v.BRCertCompanyName,
-		&v.BRCertMessage, &v.BRCertAttempts, &v.BRCertVerifiedAt, &v.GooglePlaceID)
+		&v.BRCertMessage, &v.BRCertAttempts, &v.BRCertVerifiedAt, &v.GooglePlaceID, &v.Kind)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, ErrNotFound
 	}
@@ -1075,8 +1075,8 @@ func upsertVendor(ctx context.Context, q execer, v domain.Vendor) error {
 	}
 	_, err := q.Exec(ctx, `
 		INSERT INTO vendors (id, name, category, town, country, region_id, owner, status, priority, docs, photos, wifi_score, flags, note, tier, profile, menu, submitted_at, lat, lng,
-			br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at, google_place_id)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
+			br_cert_number, br_cert_ocr_status, br_cert_verify_status, br_cert_company_name, br_cert_message, br_cert_attempts, br_cert_verified_at, google_place_id, kind)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
 		ON CONFLICT (id) DO UPDATE SET
 			name=EXCLUDED.name, category=EXCLUDED.category, town=EXCLUDED.town, country=EXCLUDED.country,
 			region_id=EXCLUDED.region_id, owner=EXCLUDED.owner, status=EXCLUDED.status,
@@ -1087,13 +1087,21 @@ func upsertVendor(ctx context.Context, q execer, v domain.Vendor) error {
 			br_cert_number=EXCLUDED.br_cert_number, br_cert_ocr_status=EXCLUDED.br_cert_ocr_status,
 			br_cert_verify_status=EXCLUDED.br_cert_verify_status, br_cert_company_name=EXCLUDED.br_cert_company_name,
 			br_cert_message=EXCLUDED.br_cert_message, br_cert_attempts=EXCLUDED.br_cert_attempts,
-			br_cert_verified_at=EXCLUDED.br_cert_verified_at, google_place_id=EXCLUDED.google_place_id`,
+			br_cert_verified_at=EXCLUDED.br_cert_verified_at, google_place_id=EXCLUDED.google_place_id, kind=EXCLUDED.kind`,
 		v.ID, v.Name, v.Category, v.Town, v.Country, v.RegionID, v.Owner, v.Status, v.Priority,
 		v.Docs, v.Photos, v.WifiScore, jsonb(v.Flags), v.Note, v.Tier,
 		orEmptyObj(v.Profile), orEmptyObj(v.Menu), v.SubmittedAt, v.Lat, v.Lng,
 		v.BRCertNumber, v.BRCertOCRStatus, v.BRCertVerifyStatus, v.BRCertCompanyName,
-		v.BRCertMessage, v.BRCertAttempts, v.BRCertVerifiedAt, v.GooglePlaceID)
+		v.BRCertMessage, v.BRCertAttempts, v.BRCertVerifiedAt, v.GooglePlaceID, vendorKind(v.Kind))
 	return err
+}
+
+// vendorKind defaults an unset kind to venue.
+func vendorKind(k string) string {
+	if k == domain.VendorKindHost {
+		return k
+	}
+	return domain.VendorKindVenue
 }
 
 // VendorsForMap returns every vendor with lat/lng and a computed
@@ -2038,15 +2046,16 @@ const BookingHoldDuration = 15 * time.Minute
 var ErrInvalidTransition = errors.New("booking status change not allowed")
 
 const serviceCols = `id, vendor_id, type, name, description, duration_mins, capacity, capacity_unit, party_size_min, party_size_max, guests_per_room, price_label, availability, active, archived_at, created_at, updated_at,
-	price_minor, currency, pricing_mode, free_cancel_hours, late_cancel_refund_pct`
+	price_minor, currency, pricing_mode, free_cancel_hours, late_cancel_refund_pct, scheduling, blackout_dates, meeting_point`
 
 func scanBookableService(row pgx.Row) (domain.BookableService, error) {
 	var svc domain.BookableService
-	var availability []byte
+	var availability, meetingPoint []byte
 	err := row.Scan(&svc.ID, &svc.VendorID, &svc.Type, &svc.Name, &svc.Description,
 		&svc.DurationMins, &svc.Capacity, &svc.CapacityUnit, &svc.PartySizeMin, &svc.PartySizeMax, &svc.GuestsPerRoom,
 		&svc.PriceLabel, &availability, &svc.Active, &svc.ArchivedAt, &svc.CreatedAt, &svc.UpdatedAt,
-		&svc.PriceMinor, &svc.Currency, &svc.PricingMode, &svc.FreeCancelHours, &svc.LateCancelRefundPct)
+		&svc.PriceMinor, &svc.Currency, &svc.PricingMode, &svc.FreeCancelHours, &svc.LateCancelRefundPct,
+		&svc.Scheduling, &svc.BlackoutDates, &meetingPoint)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return svc, ErrNotFound
 	}
@@ -2059,6 +2068,15 @@ func scanBookableService(row pgx.Row) (domain.BookableService, error) {
 			svc.Availability = &doc
 		}
 	}
+	if len(meetingPoint) > 0 {
+		var mp domain.MeetingPoint
+		if json.Unmarshal(meetingPoint, &mp) == nil {
+			svc.MeetingPoint = &mp
+		}
+	}
+	if svc.BlackoutDates == nil {
+		svc.BlackoutDates = []string{}
+	}
 	return svc, nil
 }
 
@@ -2066,14 +2084,17 @@ func scanBookableService(row pgx.Row) (domain.BookableService, error) {
 // default now() sets it) — same convention as UpsertOffer not touching
 // live-computed/append-only columns.
 func (s *Store) UpsertBookableService(ctx context.Context, svc domain.BookableService) error {
-	var availability []byte
+	var availability, meetingPoint []byte
 	if svc.Availability != nil {
 		availability = jsonb(*svc.Availability)
 	}
+	if svc.MeetingPoint != nil {
+		meetingPoint = jsonb(*svc.MeetingPoint)
+	}
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO bookable_services (id, vendor_id, type, name, description, duration_mins, capacity, party_size_min, party_size_max, guests_per_room, price_label, availability, active, capacity_unit,
-			price_minor, currency, pricing_mode, free_cancel_hours, late_cancel_refund_pct, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19, now())
+			price_minor, currency, pricing_mode, free_cancel_hours, late_cancel_refund_pct, scheduling, blackout_dates, meeting_point, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22, now())
 		ON CONFLICT (id) DO UPDATE SET
 			type=EXCLUDED.type, name=EXCLUDED.name, description=EXCLUDED.description,
 			duration_mins=EXCLUDED.duration_mins, capacity=EXCLUDED.capacity, capacity_unit=EXCLUDED.capacity_unit,
@@ -2082,10 +2103,12 @@ func (s *Store) UpsertBookableService(ctx context.Context, svc domain.BookableSe
 			availability=EXCLUDED.availability, active=EXCLUDED.active,
 			price_minor=EXCLUDED.price_minor, currency=EXCLUDED.currency, pricing_mode=EXCLUDED.pricing_mode,
 			free_cancel_hours=EXCLUDED.free_cancel_hours, late_cancel_refund_pct=EXCLUDED.late_cancel_refund_pct,
+			scheduling=EXCLUDED.scheduling, blackout_dates=EXCLUDED.blackout_dates, meeting_point=EXCLUDED.meeting_point,
 			updated_at=now()`,
 		svc.ID, svc.VendorID, svc.Type, svc.Name, svc.Description, svc.DurationMins, svc.Capacity,
 		svc.PartySizeMin, svc.PartySizeMax, svc.GuestsPerRoom, svc.PriceLabel, availability, svc.Active, capacityUnit(svc.CapacityUnit),
-		svc.PriceMinor, currencyOrLKR(svc.Currency), pricingMode(svc.PricingMode), svc.FreeCancelHours, svc.LateCancelRefundPct)
+		svc.PriceMinor, currencyOrLKR(svc.Currency), pricingMode(svc.PricingMode), svc.FreeCancelHours, svc.LateCancelRefundPct,
+		scheduling(svc.Scheduling), orEmptyStrings(svc.BlackoutDates), meetingPoint)
 	return err
 }
 
@@ -2138,6 +2161,21 @@ func (s *Store) DeleteBookableService(ctx context.Context, id, vendorID string) 
 	return false, err
 }
 
+// scheduling defaults an unset scheduling to weekly windows.
+func scheduling(sc domain.Scheduling) domain.Scheduling {
+	if sc == domain.SchedulingOccurrences {
+		return sc
+	}
+	return domain.SchedulingWeekly
+}
+
+func orEmptyStrings(in []string) []string {
+	if in == nil {
+		return []string{}
+	}
+	return in
+}
+
 // currencyOrLKR defaults an unset currency to LKR.
 func currencyOrLKR(c string) string {
 	if c == "" {
@@ -2173,6 +2211,14 @@ const heldCapacitySQL = `
 	WHERE service_id=$1 AND start_at < $3 AND end_at > $2
 	  AND (status='confirmed' OR (status='awaiting_payment' AND hold_expires_at > now()))`
 
+// heldOccurrenceCapacitySQL is heldCapacitySQL for one dated occurrence:
+// $1 is the occurrence id, $2 the service's capacity unit.
+const heldOccurrenceCapacitySQL = `
+	SELECT COALESCE(CASE WHEN $2 = 'guests' THEN sum(party_size) ELSE count(*) END, 0)
+	FROM bookings
+	WHERE occurrence_id=$1
+	  AND (status='confirmed' OR (status='awaiting_payment' AND hold_expires_at > now()))`
+
 // VendorBookingCount is how many bookings a vendor has ever had; a vendor
 // with any cannot be hard-deleted.
 func (s *Store) VendorBookingCount(ctx context.Context, vendorID string) (int, error) {
@@ -2188,7 +2234,7 @@ const bookingCols = `b.id, b.code, b.vendor_id, b.service_id, b.type, b.place_id
 	b.cancelled_at, b.cancelled_by, b.checked_in_at, b.reminder_sent_at,
 	b.hold_expires_at, b.amount_minor, b.currency, b.payment_status, b.refunded_minor,
 	b.commission_mode, b.commission_rate_bps, b.fee_per_guest_minor, b.commission_minor, b.vendor_net_minor,
-	b.free_cancel_hours, b.late_cancel_refund_pct,
+	b.free_cancel_hours, b.late_cancel_refund_pct, b.occurrence_id,
 	COALESCE(sv.name,''), COALESCE(u.name,''), COALESCE(u.country,''), COALESCE(u.email,''), COALESCE(v.name,'')`
 const bookingFrom = ` FROM bookings b
 	LEFT JOIN bookable_services sv ON sv.id = b.service_id
@@ -2202,7 +2248,7 @@ func scanBooking(row pgx.Row) (domain.Booking, error) {
 		&b.CancelledAt, &b.CancelledBy, &b.CheckedInAt, &b.ReminderSentAt,
 		&b.HoldExpiresAt, &b.AmountMinor, &b.Currency, &b.PaymentStatus, &b.RefundedMinor,
 		&b.CommissionMode, &b.CommissionRateBps, &b.FeePerGuestMinor, &b.CommissionMinor, &b.VendorNetMinor,
-		&b.FreeCancelHours, &b.LateCancelRefundPct,
+		&b.FreeCancelHours, &b.LateCancelRefundPct, &b.OccurrenceID,
 		&b.ServiceName, &b.TravellerName, &b.TravellerCountry, &b.TravellerEmail, &b.VendorName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return b, ErrNotFound
@@ -2269,7 +2315,28 @@ func (s *Store) CreateBooking(ctx context.Context, b domain.Booking) (domain.Boo
 	}
 
 	var existing int
-	if err := tx.QueryRow(ctx, heldCapacitySQL, b.ServiceID, b.StartAt, b.EndAt, unit).Scan(&existing); err != nil {
+	if b.OccurrenceID != nil {
+		// A dated occurrence has its own times and may override capacity.
+		var occCapacity *int
+		var occStatus string
+		err := tx.QueryRow(ctx, `SELECT capacity, status, start_at, end_at FROM service_occurrences WHERE id=$1 AND service_id=$2`,
+			*b.OccurrenceID, b.ServiceID).Scan(&occCapacity, &occStatus, &b.StartAt, &b.EndAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return b, ErrNotFound
+		}
+		if err != nil {
+			return b, err
+		}
+		if occStatus != "scheduled" {
+			return b, ErrServiceInactive
+		}
+		if occCapacity != nil {
+			capacity = *occCapacity
+		}
+		if err := tx.QueryRow(ctx, heldOccurrenceCapacitySQL, *b.OccurrenceID, unit).Scan(&existing); err != nil {
+			return b, err
+		}
+	} else if err := tx.QueryRow(ctx, heldCapacitySQL, b.ServiceID, b.StartAt, b.EndAt, unit).Scan(&existing); err != nil {
 		return b, err
 	}
 	need := 1
@@ -2294,11 +2361,11 @@ func (s *Store) CreateBooking(ctx context.Context, b domain.Booking) (domain.Boo
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO bookings (id, code, vendor_id, service_id, type, place_id, traveller_id, start_at, end_at, party_size, status, note,
 			hold_expires_at, amount_minor, currency, payment_status, commission_mode, commission_rate_bps,
-			fee_per_guest_minor, commission_minor, vendor_net_minor, free_cancel_hours, late_cancel_refund_pct)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+			fee_per_guest_minor, commission_minor, vendor_net_minor, free_cancel_hours, late_cancel_refund_pct, occurrence_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
 		b.ID, b.Code, b.VendorID, b.ServiceID, b.Type, b.PlaceID, b.TravellerID, b.StartAt, b.EndAt, b.PartySize, b.Status, b.Note,
 		b.HoldExpiresAt, b.AmountMinor, b.Currency, b.PaymentStatus, b.CommissionMode, b.CommissionRateBps,
-		b.FeePerGuestMinor, b.CommissionMinor, b.VendorNetMinor, b.FreeCancelHours, b.LateCancelRefundPct); err != nil {
+		b.FeePerGuestMinor, b.CommissionMinor, b.VendorNetMinor, b.FreeCancelHours, b.LateCancelRefundPct, b.OccurrenceID); err != nil {
 		return b, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -2327,7 +2394,7 @@ func (s *Store) BookingByCode(ctx context.Context, code string) (domain.Booking,
 func (s *Store) CancelBookingAsTraveller(ctx context.Context, id, travellerID string) error {
 	tag, err := s.Pool.Exec(ctx, `
 		UPDATE bookings SET status='cancelled', cancelled_at=now(), cancelled_by='traveller'
-		WHERE id=$1 AND traveller_id=$2 AND status='confirmed'`, id, travellerID)
+		WHERE id=$1 AND traveller_id=$2 AND status IN ('confirmed','awaiting_payment')`, id, travellerID)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
@@ -2337,7 +2404,7 @@ func (s *Store) CancelBookingAsTraveller(ctx context.Context, id, travellerID st
 func (s *Store) CancelBookingAsVendor(ctx context.Context, id, vendorID string) error {
 	tag, err := s.Pool.Exec(ctx, `
 		UPDATE bookings SET status='cancelled', cancelled_at=now(), cancelled_by='vendor'
-		WHERE id=$1 AND vendor_id=$2 AND status='confirmed'`, id, vendorID)
+		WHERE id=$1 AND vendor_id=$2 AND status IN ('confirmed','awaiting_payment')`, id, vendorID)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}

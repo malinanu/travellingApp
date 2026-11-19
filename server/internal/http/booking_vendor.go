@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -28,21 +29,26 @@ func (s *Server) handleVendorServices(w http.ResponseWriter, r *http.Request) {
 }
 
 // validateServiceType rejects a booking type that isn't one of the known
-// enum values, or that doesn't match what the vendor's category is allowed
-// to take bookings for (e.g. a bakery, or a table-only restaurant trying to
-// offer a "session" service).
+// enum values, or that the vendor's category doesn't allow (e.g. a bakery,
+// or a table-only restaurant trying to offer a "session" service).
 func validateServiceType(category string, t domain.BookingType) error {
-	switch t {
-	case domain.BookingTypeSession, domain.BookingTypeTable, domain.BookingTypeStay, domain.BookingTypeRental:
-	default:
-		return errors.New("type must be session, table, stay, or rental")
+	if !domain.ValidBookingType(t) {
+		return errors.New("type must be session, table, stay, rental, experience or event")
 	}
-	if allowed := domain.BookingTypeByCategory(category); allowed == "" {
+	allowed := domain.AllowedBookingTypesByCategory(category)
+	if len(allowed) == 0 {
 		return errors.New("vendor category does not support bookings")
-	} else if t != allowed {
-		return fmt.Errorf("vendor category only supports %s bookings", allowed)
 	}
-	return nil
+	for _, a := range allowed {
+		if a == t {
+			return nil
+		}
+	}
+	names := make([]string, len(allowed))
+	for i, a := range allowed {
+		names[i] = string(a)
+	}
+	return fmt.Errorf("vendor category only supports %s bookings", strings.Join(names, " or "))
 }
 
 // normalizeService applies defaults and rejects invalid settings shared by
@@ -53,7 +59,12 @@ func normalizeService(svc *domain.BookableService) error {
 	}
 	switch svc.CapacityUnit {
 	case "":
+		// Tours, classes and events are sized in people; tables, rooms and
+		// cars in bookings.
 		svc.CapacityUnit = domain.CapacityBookings
+		if svc.Type == domain.BookingTypeExperience || svc.Type == domain.BookingTypeEvent {
+			svc.CapacityUnit = domain.CapacityGuests
+		}
 	case domain.CapacityBookings, domain.CapacityGuests:
 	default:
 		return errors.New("capacityUnit must be bookings or guests")
@@ -82,6 +93,37 @@ func normalizeService(svc *domain.BookableService) error {
 	}
 	if svc.PricingMode == domain.PricingPerNight && svc.Type != domain.BookingTypeStay {
 		return errors.New("per-night pricing is only for stays")
+	}
+	switch svc.Scheduling {
+	case "":
+		svc.Scheduling = domain.SchedulingWeekly
+	case domain.SchedulingWeekly, domain.SchedulingOccurrences:
+	default:
+		return errors.New("scheduling must be weekly or occurrences")
+	}
+	switch svc.Type {
+	case domain.BookingTypeEvent:
+		// An event only ever happens on its dates.
+		svc.Scheduling = domain.SchedulingOccurrences
+	case domain.BookingTypeStay:
+		svc.Scheduling = domain.SchedulingWeekly
+	}
+	if svc.Scheduling == domain.SchedulingOccurrences && svc.DurationMins <= 0 {
+		svc.DurationMins = 120
+	}
+	cleaned := make([]string, 0, len(svc.BlackoutDates))
+	for _, d := range svc.BlackoutDates {
+		if _, err := parseLocalDate(d); err != nil {
+			return fmt.Errorf("blackout date %q must be YYYY-MM-DD", d)
+		}
+		cleaned = append(cleaned, d)
+	}
+	if len(cleaned) > 366 {
+		return errors.New("too many blackout dates")
+	}
+	svc.BlackoutDates = cleaned
+	if svc.MeetingPoint != nil {
+		svc.MeetingPoint.Note = sanitizeText(svc.MeetingPoint.Note, 300)
 	}
 	if svc.FreeCancelHours < 0 || svc.FreeCancelHours > 24*60 {
 		return errors.New("freeCancelHours must be between 0 and 1440")
