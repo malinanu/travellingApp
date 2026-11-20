@@ -9,7 +9,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle2, CircleSlash, RotateCcw, ShieldCheck, XCircle,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { timeAgo, type ValidateResponse } from '@spotto/shared';
 import Shell from '../../components/shell';
@@ -20,7 +20,13 @@ const DEMO_CODES = ['SPOTTO-DRIF', 'SPOTTO-X4K9', 'SPOTTO-88Q2'];
 
 export default function ValidatePage() {
   const qc = useQueryClient();
-  const [code, setCode] = useState('SPOTTO-'); // Start with SPOTTO- by default, though QUEST- and BOOK- are valid too
+  // Accepts offer (SPOTTO-), booking (BOOK-) and quest (QUEST-) codes;
+  // the Bookings page links here with ?code= to check a guest in.
+  const [code, setCode] = useState('');
+  useEffect(() => {
+    const fromLink = new URLSearchParams(window.location.search).get('code');
+    if (fromLink) setCode(fromLink.toUpperCase());
+  }, []);
   const [result, setResult] = useState<ValidateResponse | null>(null);
   // Guards the scanner's onDecode against re-firing on every animation
   // frame while the same code is still in view — resets whenever the
@@ -37,7 +43,7 @@ export default function ValidatePage() {
 
   const reset = () => {
     setResult(null);
-    setCode('SPOTTO-');
+    setCode('');
     lastDecodedRef.current = null;
   };
 
@@ -88,7 +94,7 @@ export default function ValidatePage() {
                 >
                   <input
                     className="input flex-1 uppercase tracking-wide font-extrabold"
-                    placeholder="SPOTTO-XXXX"
+                    placeholder="SPOTTO-, BOOK- or QUEST- code"
                     value={code}
                     onChange={(e) => setCode(e.target.value.toUpperCase())}
                     spellCheck={false}
@@ -175,13 +181,33 @@ function ResultCard({ r, code, onReset }: { r: ValidateResponse; code: string; o
           </p>
         </div>
       )}
+      {r.result === 'not_paid' && r.booking && (
+        <div className={`${base} bg-[#fdf0cd] border border-sun/50`}>
+          <p className="flex items-center gap-2 text-[#a97b00] font-extrabold text-lg">
+            <CircleSlash size={22} /> Not paid yet
+          </p>
+          <p className="mt-2 text-[14px] font-semibold">
+            {r.booking.travellerName || 'This guest'} hasn&rsquo;t finished paying for {r.booking.serviceName}, so the booking isn&rsquo;t confirmed. Ask them to complete payment in the Spotto app.
+          </p>
+        </div>
+      )}
+      {r.result === 'cancelled' && r.booking && (
+        <div className={`${base} bg-sand border border-line`}>
+          <p className="flex items-center gap-2 font-extrabold text-lg">
+            <XCircle size={22} /> Booking cancelled
+          </p>
+          <p className="mt-2 text-[14px] font-semibold text-muted">
+            {code} was cancelled or its payment time ran out, so it can&rsquo;t be used.
+          </p>
+        </div>
+      )}
       {r.result === 'wrong_vendor' && (
         <div className={`${base} bg-[#fde4d8] border border-coral/40`}>
           <p className="flex items-center gap-2 text-coral font-extrabold text-lg">
             <XCircle size={22} /> Not your code
           </p>
           <p className="mt-2 text-[14px] font-semibold">
-            This code belongs to another business&rsquo;s offer.
+            This code belongs to another business.
           </p>
         </div>
       )}
@@ -191,7 +217,7 @@ function ResultCard({ r, code, onReset }: { r: ValidateResponse; code: string; o
             <XCircle size={22} /> Invalid code
           </p>
           <p className="mt-2 text-[14px] font-semibold text-muted">
-            {code} doesn&rsquo;t match any claimed deal. Check for typos.
+            {code} doesn&rsquo;t match any deal, booking or quest. Check for typos.
           </p>
         </div>
       )}

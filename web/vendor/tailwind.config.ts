@@ -6,6 +6,7 @@ const config: Config = {
     './app/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
     '../packages/charts/src/**/*.tsx',
+    '../packages/shared/src/**/*.tsx',
   ],
   theme: {
     extend: {
@@ -20,6 +21,7 @@ const config: Config = {
         'accent-tint': 'var(--accent-tint)',
         sun: 'var(--sun)',
         coral: 'var(--coral)',
+        surface: 'var(--surface)',
       },
       fontFamily: {
         sans: ['var(--font-nunito)', 'ui-rounded', 'system-ui', 'sans-serif'],
