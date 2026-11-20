@@ -251,6 +251,12 @@ class RuStrings implements AppStrings {
   @override
   String bookAndPay(String amount) => 'Забронировать и оплатить $amount';
   @override
+  String get payWithLabel => 'Способ оплаты';
+  @override
+  String chargedInCurrency(String currency) => 'Списание в $currency по сегодняшнему курсу. Банк может взять свою комиссию.';
+  @override
+  String chargedAs(String amount) => 'С вас спишут $amount';
+  @override
   String get bookingInProgress => 'Бронируем…';
   @override
   String get priceFree => 'Бесплатно';

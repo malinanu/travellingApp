@@ -251,6 +251,12 @@ class FrStrings implements AppStrings {
   @override
   String bookAndPay(String amount) => 'Réserver et payer $amount';
   @override
+  String get payWithLabel => 'Payer avec';
+  @override
+  String chargedInCurrency(String currency) => 'Débité en $currency au taux du jour. Votre banque peut ajouter ses propres frais.';
+  @override
+  String chargedAs(String amount) => 'Vous serez débité de $amount';
+  @override
   String get bookingInProgress => 'Réservation…';
   @override
   String get priceFree => 'Gratuit';

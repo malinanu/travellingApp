@@ -172,6 +172,11 @@ func TestPaymentPayPalPayAndRefund(t *testing.T) {
 	if b := f.bookingRow(t, id); b.Status != domain.BookingAwaitingPayment {
 		t.Fatalf("unapproved order must not confirm the booking: %s", b.Status)
 	}
+	// Asking for a fresh checkout keeps the traveller's choice of PayPal.
+	code, retry := doJSON(t, http.MethodPost, f.url("/bookings/"+id+"/checkout"), f.travATk, nil)
+	if code != http.StatusOK || retry["checkout"].(map[string]any)["gateway"] != "paypal" {
+		t.Fatalf("retry checkout: %d %v", code, retry)
+	}
 
 	pp.Approve(order)
 	if code, _, _ := getPage(t, ret+"&PayerID=BUYER1"); code != http.StatusOK {

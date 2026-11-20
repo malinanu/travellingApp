@@ -710,13 +710,55 @@ class CheckoutInfo {
   final String url;
   final String returnUrlPrefix;
   final DateTime? expiresAt;
-  const CheckoutInfo({required this.paymentId, required this.url, this.returnUrlPrefix = '', this.expiresAt});
+  final String gateway;
+  /// What the gateway will charge; differs from the booking's LKR price on
+  /// gateways that charge another currency (PayPal).
+  final int chargeAmountMinor;
+  final String chargeCurrency;
+  const CheckoutInfo({
+    required this.paymentId,
+    required this.url,
+    this.returnUrlPrefix = '',
+    this.expiresAt,
+    this.gateway = '',
+    this.chargeAmountMinor = 0,
+    this.chargeCurrency = 'LKR',
+  });
 
   factory CheckoutInfo.fromJson(Map<String, dynamic> json) => CheckoutInfo(
         paymentId: json['paymentId'] as String? ?? '',
         url: json['url'] as String? ?? '',
         returnUrlPrefix: json['returnUrlPrefix'] as String? ?? '',
         expiresAt: DateTime.tryParse(json['expiresAt'] as String? ?? '')?.toLocal(),
+        gateway: json['gateway'] as String? ?? '',
+        chargeAmountMinor: (json['chargeAmountMinor'] as num?)?.toInt() ?? 0,
+        chargeCurrency: json['chargeCurrency'] as String? ?? 'LKR',
+      );
+}
+
+/// One way to pay, as GET /payments/options lists them.
+class PaymentOption {
+  final String gateway;
+  final String displayName;
+  final String chargeCurrency;
+  final int chargeAmountMinor;
+  /// True when the gateway charges another currency than LKR, converted at
+  /// the current exchange rate.
+  final bool converted;
+  const PaymentOption({
+    required this.gateway,
+    required this.displayName,
+    required this.chargeCurrency,
+    required this.chargeAmountMinor,
+    this.converted = false,
+  });
+
+  factory PaymentOption.fromJson(Map<String, dynamic> json) => PaymentOption(
+        gateway: json['gateway'] as String? ?? '',
+        displayName: json['displayName'] as String? ?? '',
+        chargeCurrency: json['chargeCurrency'] as String? ?? 'LKR',
+        chargeAmountMinor: (json['chargeAmountMinor'] as num?)?.toInt() ?? 0,
+        converted: json['converted'] as bool? ?? false,
       );
 }
 

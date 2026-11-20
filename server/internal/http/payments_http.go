@@ -424,6 +424,15 @@ func (s *Server) handleBookingCheckout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.Gateway == "" {
+		// Retry with whatever the traveller chose last time, if it's
+		// still on.
+		if pays, err := s.Store.PaymentsByBooking(r.Context(), b.ID); err == nil && len(pays) > 0 {
+			if _, ok := s.Payments.Get(pays[0].Gateway); ok {
+				req.Gateway = pays[0].Gateway
+			}
+		}
+	}
 	q, err := s.quoteGateway(r.Context(), req.Gateway, b.AmountMinor, b.Currency)
 	if err != nil {
 		writePaymentStartErr(w, err)

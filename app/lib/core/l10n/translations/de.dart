@@ -251,6 +251,12 @@ class DeStrings implements AppStrings {
   @override
   String bookAndPay(String amount) => 'Buchen & $amount zahlen';
   @override
+  String get payWithLabel => 'Bezahlen mit';
+  @override
+  String chargedInCurrency(String currency) => 'Abgerechnet in $currency zum heutigen Kurs. Deine Bank kann eigene Gebühren berechnen.';
+  @override
+  String chargedAs(String amount) => 'Dir werden $amount berechnet';
+  @override
   String get bookingInProgress => 'Wird gebucht…';
   @override
   String get priceFree => 'Kostenlos';

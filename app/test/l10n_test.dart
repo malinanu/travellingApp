@@ -182,6 +182,9 @@ void main() {
         verifyString(strings.spotsLeft(3));
         verifyString(strings.bookFree);
         verifyString(strings.bookAndPay('X1'));
+        verifyString(strings.payWithLabel);
+        verifyString(strings.chargedInCurrency('X1'));
+        verifyString(strings.chargedAs('X1'));
         verifyString(strings.bookingInProgress);
         verifyString(strings.priceFree);
         verifyString(strings.pricePerPerson('X1'));

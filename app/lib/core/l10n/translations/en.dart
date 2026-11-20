@@ -251,6 +251,12 @@ class EnStrings implements AppStrings {
   @override
   String bookAndPay(String amount) => 'Book & pay $amount';
   @override
+  String get payWithLabel => 'Pay with';
+  @override
+  String chargedInCurrency(String currency) => 'Charged in $currency at today\'s rate. Your bank may add its own fees.';
+  @override
+  String chargedAs(String amount) => 'You\'ll be charged $amount';
+  @override
   String get bookingInProgress => 'Booking…';
   @override
   String get priceFree => 'Free';

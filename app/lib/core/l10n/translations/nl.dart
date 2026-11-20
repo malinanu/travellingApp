@@ -251,6 +251,12 @@ class NlStrings implements AppStrings {
   @override
   String bookAndPay(String amount) => 'Boek & betaal $amount';
   @override
+  String get payWithLabel => 'Betalen met';
+  @override
+  String chargedInCurrency(String currency) => 'Afgerekend in $currency tegen de koers van vandaag. Je bank kan eigen kosten rekenen.';
+  @override
+  String chargedAs(String amount) => 'Je betaalt $amount';
+  @override
   String get bookingInProgress => 'Bezig met boeken…';
   @override
   String get priceFree => 'Gratis';

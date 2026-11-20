@@ -1429,6 +1429,8 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
   int _partySize = 2;
   bool _submitting = false;
   Booking? _confirmed;
+  // The payment gateway the traveller picked; null means the default.
+  String? _gateway;
 
   @override
   Widget build(BuildContext context) {
@@ -1473,6 +1475,8 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
                   onPartySize: (n) => setState(() => _partySize = n),
                   submitting: _submitting,
                   onSubmit: _submit,
+                  gateway: _gateway,
+                  onGateway: (g) => setState(() => _gateway = g),
                 ),
         );
       },
@@ -1503,6 +1507,7 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
             checkOut: isStay ? _checkOut : null,
             occurrenceId: service.usesOccurrences ? _selectedOccurrenceId : null,
             partySize: _partySize,
+            gateway: service.isFree ? null : _gateway,
           );
       if (!mounted) return;
       setState(() => _submitting = false);
@@ -1559,6 +1564,8 @@ class _BookingForm extends ConsumerWidget {
   final ValueChanged<int> onPartySize;
   final bool submitting;
   final Future<void> Function(BookableService) onSubmit;
+  final String? gateway;
+  final ValueChanged<String> onGateway;
 
   const _BookingForm({
     required this.place,
@@ -1579,6 +1586,8 @@ class _BookingForm extends ConsumerWidget {
     required this.onPartySize,
     required this.submitting,
     required this.onSubmit,
+    this.gateway,
+    required this.onGateway,
   });
 
   @override
@@ -1593,6 +1602,11 @@ class _BookingForm extends ConsumerWidget {
         ? selectedOccurrenceId != null
         : selectedSlotStart != null;
     final total = selected.quote(partySize: partySize, nights: _nights(checkIn, checkOut));
+    // Ways to pay this total; the picker only shows when there's a choice.
+    final options = selected.isFree || total <= 0
+        ? const <PaymentOption>[]
+        : ref.watch(paymentOptionsProvider(total)).value ?? const <PaymentOption>[];
+    final chosen = options.where((o) => o.gateway == gateway).firstOrNull ?? options.firstOrNull;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1799,6 +1813,19 @@ class _BookingForm extends ConsumerWidget {
               ].join('. '),
               style: text.bodySmall?.copyWith(color: SpottoColors.muted),
             ),
+            if (options.length > 1) ...[
+              const SizedBox(height: 10),
+              Text(l10n.payWithLabel, style: text.bodySmall?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              for (final o in options)
+                _PaymentOptionTile(option: o, selected: o.gateway == chosen?.gateway, onTap: () => onGateway(o.gateway)),
+              if (chosen != null && chosen.converted)
+                Text(
+                  l10n.chargedInCurrency(chosen.chargeCurrency),
+                  key: const Key('booking_fx_note'),
+                  style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+                ),
+            ],
           ],
           const SizedBox(height: 8),
           SizedBox(
@@ -1811,11 +1838,59 @@ class _BookingForm extends ConsumerWidget {
                     ? l10n.bookingInProgress
                     : selected.isFree
                     ? l10n.bookFree
-                    : l10n.bookAndPay(formatLkr(total)),
+                    : l10n.bookAndPay(
+                        chosen != null && chosen.converted
+                            ? formatMoney(chosen.chargeAmountMinor, chosen.chargeCurrency)
+                            : formatLkr(total),
+                      ),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// One payment method in the booking form: its name and what it charges.
+class _PaymentOptionTile extends StatelessWidget {
+  final PaymentOption option;
+  final bool selected;
+  final VoidCallback onTap;
+  const _PaymentOptionTile({required this.option, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: InkWell(
+        key: Key('payment_option_${option.gateway}'),
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: selected ? SpottoColors.accent : SpottoColors.line, width: selected ? 2 : 1),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                size: 20,
+                color: selected ? SpottoColors.accent : SpottoColors.muted,
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: Text(option.displayName, style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w700))),
+              Text(
+                formatMoney(option.chargeAmountMinor, option.chargeCurrency),
+                style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

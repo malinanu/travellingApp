@@ -189,6 +189,88 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  test('formatMoney shows foreign currencies with two decimals', () {
+    expect(formatMoney(1648, 'USD'), 'USD 16.48');
+    expect(formatMoney(160000, 'USD'), 'USD 1,600.00');
+    expect(formatMoney(-500, 'EUR'), '-EUR 5.00');
+    expect(formatMoney(450000, 'LKR'), 'LKR 4,500');
+  });
+
+  Map<String, dynamic> paymentOptions(List<Map<String, dynamic>> options) => {'currency': 'LKR', 'options': options};
+  final payHereOption = {'gateway': 'payhere', 'displayName': 'PayHere', 'chargeCurrency': 'LKR', 'chargeAmountMinor': 500000, 'converted': false};
+  final payPalOption = {'gateway': 'paypal', 'displayName': 'PayPal', 'chargeCurrency': 'USD', 'chargeAmountMinor': 1717, 'converted': true};
+
+  testWidgets('with several gateways the traveller picks one and it is sent with the booking', (tester) async {
+    Map<String, dynamic>? sent;
+    final (container, _) = await setUpContainer(
+      service(pricingMode: 'per_person', price: 250000),
+      (o) {
+        if (o.path == '/payments/options') return paymentOptions([payHereOption, payPalOption]);
+        if (o.path == '/bookings') {
+          sent = (o.data as Map).cast<String, dynamic>();
+          return {
+            ...bookingJson(status: 'awaiting_payment', amount: 500000, payment: 'pending'),
+            'checkout': {'paymentId': 'pay_1', 'gateway': 'paypal', 'url': 'https://api.test/payments/checkout/pay_1',
+              'chargeAmountMinor': 1717, 'chargeCurrency': 'USD'},
+          };
+        }
+        return {'id': 'bkg_1', 'status': 'awaiting_payment', 'paymentStatus': 'pending', 'code': 'BOOK-AB12'};
+      },
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(host(container, BookingSection(place: place)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pay with'), findsOneWidget);
+    expect(find.text('USD 17.17'), findsOneWidget);
+    // PayHere, the first option, is the default and charges LKR.
+    expect(find.text('Book & pay LKR 5,000'), findsOneWidget);
+    expect(find.byKey(const Key('booking_fx_note')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('payment_option_paypal')));
+    await tester.pump();
+    expect(find.text('Book & pay USD 17.17'), findsOneWidget);
+    expect(find.byKey(const Key('booking_fx_note')), findsOneWidget);
+
+    await tester.tap(find.text(DateFormatForTest.hm(slotStart.toLocal())));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('booking_submit')));
+    await tester.tap(find.byKey(const Key('booking_submit')));
+    await tester.pumpAndSettle();
+    expect(sent?['gateway'], 'paypal');
+    expect(find.text("You'll be charged USD 17.17"), findsOneWidget);
+  });
+
+  testWidgets('with a single gateway there is no picker and no gateway is sent', (tester) async {
+    Map<String, dynamic>? sent;
+    final (container, _) = await setUpContainer(
+      service(pricingMode: 'per_person', price: 250000),
+      (o) {
+        if (o.path == '/payments/options') return paymentOptions([payHereOption]);
+        if (o.path == '/bookings') {
+          sent = (o.data as Map).cast<String, dynamic>();
+          return {
+            ...bookingJson(status: 'awaiting_payment', amount: 500000, payment: 'pending'),
+            'checkout': {'paymentId': 'pay_1', 'url': 'https://api.test/payments/checkout/pay_1'},
+          };
+        }
+        return {'id': 'bkg_1', 'status': 'awaiting_payment', 'paymentStatus': 'pending', 'code': 'BOOK-AB12'};
+      },
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(host(container, BookingSection(place: place)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pay with'), findsNothing);
+    await tester.tap(find.text(DateFormatForTest.hm(slotStart.toLocal())));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('booking_submit')));
+    await tester.pumpAndSettle();
+    expect(sent, isNotNull);
+    expect(sent!.containsKey('gateway'), isFalse);
+    expect(find.byKey(const Key('payment_charge_note')), findsNothing);
+  });
+
   testWidgets('cancelling a paid booking shows the refund first', (tester) async {
     SharedPreferences.setMockInitialValues({
       StoreKeys.bookings: jsonEncode([bookingJson(status: 'confirmed', amount: 500000, payment: 'paid')]),

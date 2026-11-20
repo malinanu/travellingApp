@@ -136,6 +136,9 @@ abstract class AppStrings {
   String spotsLeft(int n);
   String get bookFree;
   String bookAndPay(String amount);
+  String get payWithLabel;
+  String chargedInCurrency(String currency);
+  String chargedAs(String amount);
   String get bookingInProgress;
   String get priceFree;
   String pricePerPerson(String amount);

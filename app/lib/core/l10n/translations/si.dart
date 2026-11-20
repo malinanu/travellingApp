@@ -251,6 +251,12 @@ class SiStrings implements AppStrings {
   @override
   String bookAndPay(String amount) => 'වෙන්කර $amount ගෙවන්න';
   @override
+  String get payWithLabel => 'ගෙවන ක්‍රමය';
+  @override
+  String chargedInCurrency(String currency) => 'අද විනිමය අනුපාතයට $currency වලින් අය කෙරේ. ඔබේ බැංකුව තමන්ගේ ගාස්තු එක් කළ හැක.';
+  @override
+  String chargedAs(String amount) => 'ඔබෙන් $amount අය කෙරේ';
+  @override
   String get bookingInProgress => 'වෙන්කරමින්…';
   @override
   String get priceFree => 'නොමිලේ';

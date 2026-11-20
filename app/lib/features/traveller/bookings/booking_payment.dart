@@ -160,6 +160,14 @@ class _BookingPaymentSheetState extends ConsumerState<BookingPaymentSheet> with 
                 Text(formatLkr(_booking.amountMinor), style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
               ],
             ),
+            if (_checkout case final co? when co.chargeCurrency != 'LKR' && co.chargeAmountMinor > 0) ...[
+              const SizedBox(height: 4),
+              Text(
+                l10n.chargedAs(formatMoney(co.chargeAmountMinor, co.chargeCurrency)),
+                key: const Key('payment_charge_note'),
+                style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+              ),
+            ],
             if (_holdText(l10n) case final hold?) ...[
               const SizedBox(height: 6),
               Text(hold, style: text.bodySmall?.copyWith(color: SpottoColors.muted)),

@@ -1421,6 +1421,7 @@ class BookingsNotifier extends Notifier<List<Booking>> {
     String? occurrenceId,
     required int partySize,
     String note = '',
+    String? gateway,
   }) async {
     final res = await ref
         .read(apiProvider)
@@ -1436,6 +1437,7 @@ class BookingsNotifier extends Notifier<List<Booking>> {
             'occurrenceId': ?occurrenceId,
             'partySize': partySize,
             'note': note,
+            'gateway': ?gateway,
           },
         );
     final data = (res.data as Map).cast<String, dynamic>();
@@ -1463,8 +1465,13 @@ class BookingsNotifier extends Notifier<List<Booking>> {
   }
 
   /// Starts a fresh payment for a booking still holding its seats.
-  Future<CheckoutInfo> checkout(String bookingId) async {
-    final res = await ref.read(apiProvider).dio.post('/bookings/$bookingId/checkout');
+  /// The server keeps the traveller's earlier choice of gateway unless
+  /// [gateway] picks another.
+  Future<CheckoutInfo> checkout(String bookingId, {String? gateway}) async {
+    final res = await ref
+        .read(apiProvider)
+        .dio
+        .post('/bookings/$bookingId/checkout', data: {'gateway': ?gateway});
     final data = (res.data as Map).cast<String, dynamic>();
     _upsert(Booking.fromJson(data));
     return CheckoutInfo.fromJson((data['checkout'] as Map).cast<String, dynamic>());
@@ -1512,6 +1519,14 @@ final cancelPreviewProvider = FutureProvider.autoDispose.family<CancelPreview, S
     fullRefund: d['fullRefund'] as bool? ?? false,
     freeCancelUntil: DateTime.tryParse(d['freeCancelUntil'] as String? ?? '')?.toLocal(),
   );
+});
+
+/// How a traveller can pay an LKR amount: one option per payment gateway
+/// that can take it right now, the default first.
+final paymentOptionsProvider = FutureProvider.autoDispose.family<List<PaymentOption>, int>((ref, amountMinor) async {
+  final res = await ref.read(apiProvider).dio.get('/payments/options', queryParameters: {'amountMinor': amountMinor});
+  final list = ((res.data as Map)['options'] as List?) ?? const [];
+  return [for (final o in list) PaymentOption.fromJson((o as Map).cast<String, dynamic>())];
 });
 
 /// Bookable experiences and events, optionally one category, nearest first
