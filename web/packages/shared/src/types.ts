@@ -526,6 +526,9 @@ export interface Refund {
   travellerName?: string;
   travellerEmail?: string;
   gateway?: string;
+  /** What goes back through the gateway, in the currency it charged. */
+  gatewayAmountMinor?: number;
+  gatewayCurrency?: string;
 }
 
 export interface PaymentRecord {
@@ -534,11 +537,34 @@ export interface PaymentRecord {
   gateway: string;
   gatewayOrderId: string;
   gatewayPaymentId: string;
+  /** What the gateway charges, in the gateway's currency. */
   amountMinor: number;
   currency: string;
+  /** The booking's own price (LKR) this payment covers. */
+  bookingAmountMinor?: number;
+  bookingCurrency?: string;
+  /** LKR per unit of `currency`, in millionths; 0 when nothing was converted. */
+  fxRateMicros?: number;
   status: 'created' | 'succeeded' | 'failed' | 'cancelled' | 'chargeback';
   createdAt: string;
   updatedAt: string;
+}
+
+/** An exchange rate finance sets for a gateway that can't charge LKR. */
+export interface FxRate {
+  currency: string;
+  /** LKR per unit, in millionths (302.5 LKR = 302_500_000). */
+  lkrPerUnitMicros: number;
+  setBy: string;
+  setAt: string;
+  stale: boolean;
+}
+
+export interface FxRatesResponse {
+  rates: FxRate[];
+  gateways: { name: string; displayName: string; chargeCurrency: string }[];
+  marginBps: number;
+  maxAgeHours: number;
 }
 
 export type CommissionScope = 'default' | 'booking_type' | 'category' | 'vendor';

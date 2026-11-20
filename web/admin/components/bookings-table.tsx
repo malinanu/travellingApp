@@ -9,12 +9,12 @@ import { CalendarCheck, Search } from 'lucide-react';
 import { useState } from 'react';
 
 import {
-  DataTable, DetailList, Drawer, EmptyState, Money, StatusPill, formatLocalDateTime, useConfirm,
+  DataTable, DetailList, Drawer, EmptyState, Money, StatusPill, formatFxRate, formatLocalDateTime, useConfirm,
   type Booking, type LedgerEntry, type PaymentRecord, type Refund,
 } from '@spotto/shared';
 import { hasAdminPerm, useMe } from './shell';
 import { api } from '../lib/api';
-import { Tabs, colomboDay } from '../lib/money-ui';
+import { RefundAmount, Tabs, colomboDay } from '../lib/money-ui';
 
 const STATUSES = [
   { id: '', label: 'All' },
@@ -138,14 +138,25 @@ function BookingDetail({ id, onClose }: { id: string; onClose: () => void }) {
             columns={[
               { key: 'when', header: 'Created', render: (p) => formatLocalDateTime(p.createdAt) },
               { key: 'gw', header: 'Gateway', render: (p) => `${p.gateway} ${p.gatewayPaymentId || ''}` },
-              { key: 'amt', header: 'Amount', align: 'right', render: (p) => <Money minor={p.amountMinor} /> },
+              {
+                key: 'amt', header: 'Amount', align: 'right', render: (p) => (
+                  <span>
+                    <Money minor={p.amountMinor} currency={p.currency} />
+                    {p.currency !== (p.bookingCurrency || p.currency) && (
+                      <span className="block text-[11.5px] text-muted">
+                        for <Money minor={p.bookingAmountMinor} currency={p.bookingCurrency} /> at {formatFxRate(p.fxRateMicros)}
+                      </span>
+                    )}
+                  </span>
+                ),
+              },
               { key: 'st', header: 'Status', render: (p) => <StatusPill status={p.status === 'created' ? 'pending' : p.status === 'succeeded' ? 'paid' : p.status} /> },
             ]} />
           <h4 className="mt-5 mb-1 text-[12px] font-bold uppercase text-muted">Refunds</h4>
           <DataTable rows={data.refunds} rowKey={(r) => r.id} empty={<p className="text-[13px] text-muted py-2">No refunds.</p>}
             columns={[
               { key: 'when', header: 'Created', render: (r) => formatLocalDateTime(r.createdAt) },
-              { key: 'amt', header: 'Amount', align: 'right', render: (r) => <Money minor={r.amountMinor} /> },
+              { key: 'amt', header: 'Amount', align: 'right', render: (r) => <RefundAmount refund={r} /> },
               { key: 'st', header: 'Status', render: (r) => <StatusPill status={r.status} /> },
             ]} />
           <h4 className="mt-5 mb-1 text-[12px] font-bold uppercase text-muted">Ledger</h4>

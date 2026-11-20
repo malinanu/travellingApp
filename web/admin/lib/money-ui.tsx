@@ -4,6 +4,8 @@
 
 import type { ReactNode } from 'react';
 
+import { Money, type Refund } from '@spotto/shared';
+
 export function KpiTile({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
   return (
     <div className="panel p-4">
@@ -46,4 +48,20 @@ export function PageHeader({ title, sub, actions }: { title: string; sub?: React
 /** "YYYY-MM-DD" in Sri Lanka, offset by n days. */
 export function colomboDay(offsetDays = 0): string {
   return new Date(Date.now() + 330 * 60_000 + offsetDays * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** A refund's LKR amount, plus what goes back through the gateway when it
+ *  charged another currency (PayPal in USD). */
+export function RefundAmount({ refund }: { refund: Refund }) {
+  const converted = refund.gatewayCurrency && refund.gatewayCurrency !== refund.currency;
+  return (
+    <span>
+      <Money minor={refund.amountMinor} currency={refund.currency} />
+      {converted && (
+        <span className="block text-[11.5px] text-muted">
+          <Money minor={refund.gatewayAmountMinor} currency={refund.gatewayCurrency} /> via {refund.gateway}
+        </span>
+      )}
+    </span>
+  );
 }

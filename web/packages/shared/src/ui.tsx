@@ -15,7 +15,15 @@ export function formatMinor(minor: number | undefined | null, currency = 'LKR'):
   const abs = Math.abs(v);
   const whole = Math.floor(abs / 100).toLocaleString('en-US');
   const cents = abs % 100;
-  return `${negative ? '-' : ''}${currency} ${whole}${cents ? `.${String(cents).padStart(2, '0')}` : ''}`;
+  // LKR drops ".00"; other currencies always show their cents.
+  const showCents = cents !== 0 || currency !== 'LKR';
+  return `${negative ? '-' : ''}${currency} ${whole}${showCents ? `.${String(cents).padStart(2, '0')}` : ''}`;
+}
+
+/** An LKR-per-unit rate kept in millionths, as "302.50". */
+export function formatFxRate(micros: number | undefined | null): string {
+  const v = (micros ?? 0) / 1_000_000;
+  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
 }
 
 /** LKR amount typed by a person ("4,500.50") to minor units, or null. */
@@ -66,6 +74,11 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
   manual: { label: 'Needs manual refund', tone: 'red' },
   manual_done: { label: 'Refunded by hand', tone: 'green' },
   scheduled: { label: 'Scheduled', tone: 'blue' },
+  chargeback: { label: 'Chargeback', tone: 'red' },
+  // exchange rates
+  rate_ok: { label: 'In use', tone: 'green' },
+  rate_stale: { label: 'Too old', tone: 'red' },
+  rate_missing: { label: 'Not set', tone: 'amber' },
 };
 
 export function statusLabel(status: string): string {

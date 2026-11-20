@@ -9,17 +9,18 @@ import { useState } from 'react';
 
 import {
   DataTable, Drawer, EmptyState, Money, StatusPill, downloadAuthed, formatLocalDateTime, formatMinor, parseMajorToMinor, useConfirm,
-  type FinanceSummary, type LedgerEntry, type Refund,
+  formatFxRate, type FinanceSummary, type FxRatesResponse, type LedgerEntry, type Refund,
 } from '@spotto/shared';
 import Shell, { hasAdminPerm, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
-import { KpiTile, PageHeader, Tabs, colomboDay } from '../../lib/money-ui';
+import { KpiTile, PageHeader, RefundAmount, Tabs, colomboDay } from '../../lib/money-ui';
 
-type Tab = 'summary' | 'refunds' | 'ledger';
+type Tab = 'summary' | 'refunds' | 'ledger' | 'fx';
 
 export default function FinancePage() {
   const { data: me } = useMe();
   const canPay = hasAdminPerm(me, 'finance.payouts');
+  const canSetRates = hasAdminPerm(me, 'finance.commission');
   const [tab, setTab] = useState<Tab>('summary');
   const [from, setFrom] = useState(colomboDay(-30));
   const [to, setTo] = useState(colomboDay());
@@ -29,7 +30,7 @@ export default function FinancePage() {
       <PageHeader
         title="Finance"
         sub="Spotto earns a commission on paid bookings and a per-guest fee on free tables. Amounts are in LKR; times are Sri Lankan time."
-        actions={tab !== 'refunds' && (
+        actions={(tab === 'summary' || tab === 'ledger') && (
           <>
             <input type="date" className="input !w-auto" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} />
             <input type="date" className="input !w-auto" value={to} min={from} onChange={(e) => e.target.value && setTo(e.target.value)} />
@@ -37,11 +38,12 @@ export default function FinancePage() {
         )}
       />
       <div className="mb-4">
-        <Tabs value={tab} onChange={setTab} options={[{ id: 'summary', label: 'Summary' }, { id: 'refunds', label: 'Refunds' }, { id: 'ledger', label: 'Ledger' }]} />
+        <Tabs value={tab} onChange={setTab} options={[{ id: 'summary', label: 'Summary' }, { id: 'refunds', label: 'Refunds' }, { id: 'ledger', label: 'Ledger' }, { id: 'fx', label: 'Exchange rates' }]} />
       </div>
       {tab === 'summary' && <Summary from={from} to={to} />}
       {tab === 'refunds' && <Refunds canAct={canPay} />}
       {tab === 'ledger' && <Ledger from={from} to={to} canAdjust={canPay} />}
+      {tab === 'fx' && <ExchangeRates canEdit={canSetRates} />}
     </Shell>
   );
 }
@@ -113,7 +115,7 @@ function Refunds({ canAct }: { canAct: boolean }) {
             { key: 'when', header: 'Requested', sortValue: (r) => r.createdAt, render: (r) => formatLocalDateTime(r.createdAt) },
             { key: 'booking', header: 'Booking', render: (r) => <span><span className="font-mono text-[12px]">{r.bookingCode}</span> · {r.vendorName}</span> },
             { key: 'guest', header: 'Refund to', render: (r) => <span>{r.travellerName}<span className="block text-[11.5px] text-muted">{r.travellerEmail}</span></span> },
-            { key: 'amount', header: 'Amount', align: 'right', render: (r) => <Money minor={r.amountMinor} /> },
+            { key: 'amount', header: 'Amount', align: 'right', render: (r) => <RefundAmount refund={r} /> },
             { key: 'status', header: 'Status', render: (r) => <StatusPill status={r.status} /> },
             {
               key: 'actions', header: '', align: 'right',
@@ -212,5 +214,90 @@ function AdjustmentDrawer({ onClose, onDone }: { onClose: () => void; onDone: ()
           <textarea className="input mt-1" rows={3} value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} /></label>
       </div>
     </Drawer>
+  );
+}
+
+/** Rates for gateways that can't charge LKR (PayPal charges USD). Checkouts
+ *  through such a gateway are refused once its rate is too old. */
+function ExchangeRates({ canEdit }: { canEdit: boolean }) {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery<FxRatesResponse>({
+    queryKey: ['fx-rates'],
+    queryFn: () => api.get<FxRatesResponse>('/admin/finance/fx-rates'),
+  });
+  const needed = Array.from(new Set((data?.gateways ?? []).map((g) => g.chargeCurrency).filter((c) => c !== 'LKR')));
+  const currencies = Array.from(new Set([...needed, ...(data?.rates ?? []).map((r) => r.currency)]));
+  const [currency, setCurrency] = useState('');
+  const [rate, setRate] = useState('');
+  const [error, setError] = useState('');
+  const save = useMutation({
+    mutationFn: () => api.put('/admin/finance/fx-rates', { currency: currency || needed[0] || 'USD', lkrPerUnit: rate.trim() }),
+    onSuccess: () => {
+      setRate('');
+      setError('');
+      qc.invalidateQueries({ queryKey: ['fx-rates'] });
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : 'Could not save the rate.'),
+  });
+  const maxDays = Math.round((data?.maxAgeHours ?? 168) / 24);
+  const margin = ((data?.marginBps ?? 0) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+  return (
+    <div className="grid lg:grid-cols-[1fr_320px] gap-4 items-start">
+      <div className="card p-4">
+        <p className="text-[13px] text-muted mb-3">
+          Bookings are priced in LKR. A gateway that charges another currency converts at the rate below, plus a {margin}% margin
+          for its fees. Rates older than {maxDays} days stop that gateway from taking payments until a new rate is set.
+        </p>
+        {isLoading ? (
+          <p className="text-[13px] text-muted">Loading…</p>
+        ) : currencies.length === 0 ? (
+          <EmptyState title="No rates needed" body="Every payment gateway that is switched on charges in LKR." />
+        ) : (
+          <DataTable
+            rows={currencies.map((c) => ({ currency: c, rate: data?.rates.find((r) => r.currency === c) }))}
+            rowKey={(r) => r.currency}
+            columns={[
+              { key: 'cur', header: 'Currency', render: (r) => <span className="font-semibold">{r.currency}</span> },
+              { key: 'rate', header: 'LKR per unit', align: 'right', render: (r) => (r.rate ? formatFxRate(r.rate.lkrPerUnitMicros) : '—') },
+              { key: 'set', header: 'Set', render: (r) => (r.rate ? formatLocalDateTime(r.rate.setAt) : 'Never') },
+              {
+                key: 'state', header: 'Status',
+                render: (r) => <StatusPill status={!r.rate ? 'rate_missing' : r.rate.stale ? 'rate_stale' : 'rate_ok'} />,
+              },
+            ]}
+          />
+        )}
+      </div>
+      {canEdit && currencies.length > 0 && (
+        <form
+          className="card p-4 space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!/^\d+(\.\d{1,6})?$/.test(rate.trim())) {
+              setError('Enter LKR per unit, e.g. 302.50');
+              return;
+            }
+            save.mutate();
+          }}
+        >
+          <h3 className="font-bold text-[14px]">Set a rate</h3>
+          <label className="block text-[12px] font-semibold">
+            Currency
+            <select className="input mt-1" value={currency || currencies[0]} onChange={(e) => setCurrency(e.target.value)}>
+              {currencies.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <label className="block text-[12px] font-semibold">
+            LKR for 1 {currency || currencies[0]}
+            <input className="input mt-1" inputMode="decimal" placeholder="302.50" value={rate} onChange={(e) => setRate(e.target.value)} />
+          </label>
+          {error && <p className="text-[12px] text-rose-600">{error}</p>}
+          <button type="submit" className="btn-primary w-full" disabled={save.isPending || !rate.trim()}>
+            {save.isPending ? 'Saving…' : 'Save rate'}
+          </button>
+        </form>
+      )}
+    </div>
   );
 }
