@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 // Customer is who is paying, as the gateway's checkout wants it.
@@ -31,11 +32,22 @@ type CheckoutRequest struct {
 	NotifyURL   string // where the gateway posts the result
 }
 
-// CheckoutSession is how to send the traveller to the gateway: an HTML
-// form posted to URL with Fields.
+// Checkout methods: how the traveller is sent to the gateway.
+const (
+	CheckoutPost = "POST" // an HTML form posted to URL with Fields
+	CheckoutGet  = "GET"  // a plain redirect to URL
+)
+
+// CheckoutSession is how to send the traveller to the gateway.
 type CheckoutSession struct {
 	URL    string            `json:"url"`
 	Fields map[string]string `json:"fields"`
+	// Method is CheckoutPost (the default when empty) or CheckoutGet.
+	Method string `json:"method,omitempty"`
+	// GatewayRef is the gateway's own id for this checkout, for gateways
+	// that hand one back (PayPal's order id). It comes back on the
+	// traveller's return and in some notifications.
+	GatewayRef string `json:"-"`
 }
 
 // EventStatus is the outcome a gateway notification reports.
@@ -47,6 +59,9 @@ const (
 	EventFailed     EventStatus = "failed"
 	EventCancelled  EventStatus = "cancelled"
 	EventChargeback EventStatus = "chargeback"
+	// EventApproved means the traveller approved the payment but the money
+	// hasn't moved yet: the server must capture it (Capturer).
+	EventApproved EventStatus = "approved"
 )
 
 // NotifyEvent is a verified gateway notification.
@@ -58,11 +73,17 @@ type NotifyEvent struct {
 	Status           EventStatus
 	AmountMinor      int64
 	Currency         string
-	Raw              map[string]string
+	// CheckoutRef is the gateway's checkout id (CheckoutSession.GatewayRef),
+	// set on EventApproved.
+	CheckoutRef string
+	Raw         map[string]string
 }
 
 // RefundRequest gives money back for a succeeded payment.
 type RefundRequest struct {
+	// IdempotencyKey is the same on every attempt for one refund, so a
+	// retried request can't pay twice.
+	IdempotencyKey   string
 	OrderID          string
 	GatewayPaymentID string
 	AmountMinor      int64
@@ -82,12 +103,36 @@ var ErrBadSignature = errors.New("payment notification signature invalid")
 // refund goes to the finance team to pay back by hand.
 var ErrRefundUnsupported = errors.New("gateway can't refund automatically")
 
+// ErrIgnoredEvent means a genuine notification Spotto has no use for; it
+// is acknowledged and dropped.
+var ErrIgnoredEvent = errors.New("payment notification not relevant")
+
 // Gateway is one payment provider.
 type Gateway interface {
+	// Name is the gateway's id in URLs and stored payments ("payhere").
 	Name() string
+	// DisplayName is what travellers see ("PayHere").
+	DisplayName() string
+	// ChargeCurrency is the currency the gateway charges in. When it
+	// isn't the booking's currency, the amount is converted first.
+	ChargeCurrency() string
 	CreateCheckout(ctx context.Context, req CheckoutRequest) (CheckoutSession, error)
 	VerifyNotify(r *http.Request) (NotifyEvent, error)
 	Refund(ctx context.Context, req RefundRequest) (RefundResult, error)
+}
+
+// Capturer is a gateway where an approved payment only moves money once
+// Spotto captures it, server to server.
+type Capturer interface {
+	// Capture takes the money for an approved checkout and reports the
+	// result as a notification would.
+	Capture(ctx context.Context, checkoutRef string) (NotifyEvent, error)
+}
+
+// Redirector is a gateway that sends travellers to its checkout by
+// redirect; RedirectAllowed vets each target before Spotto redirects.
+type Redirector interface {
+	RedirectAllowed(u *url.URL) bool
 }
 
 // FormatAmount renders minor units as a decimal string with two places

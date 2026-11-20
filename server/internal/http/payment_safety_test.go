@@ -88,8 +88,8 @@ func TestPaymentStuckRefundIsSwept(t *testing.T) {
 
 func TestPaymentFakeGatewayIsOptIn(t *testing.T) {
 	f := newBookingFixture(t, "gyms", func(c *config.Config) { c.FakeGatewaySecret = "" })
-	if f.api.Payments != nil {
-		t.Fatalf("without FAKE_GATEWAY_SECRET or PayHere there must be no gateway, got %T", f.api.Payments)
+	if n := f.api.Payments.Len(); n != 0 {
+		t.Fatalf("without FAKE_GATEWAY_SECRET, PayHere or PayPal there must be no gateway, got %d", n)
 	}
 	svc := f.service(domain.BookableService{Type: domain.BookingTypeSession, DurationMins: 60, Capacity: 5,
 		PartySizeMin: 1, PartySizeMax: 4, PricingMode: domain.PricingPerPerson, PriceMinor: 100000, Currency: "LKR"})

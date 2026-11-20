@@ -34,6 +34,11 @@ func New(secret, checkoutBaseURL string) *Gateway {
 
 func (g *Gateway) Name() string { return "fake" }
 
+func (g *Gateway) DisplayName() string { return "Test payments" }
+
+// ChargeCurrency: it charges in LKR, the bookings' own currency.
+func (g *Gateway) ChargeCurrency() string { return "LKR" }
+
 func (g *Gateway) CreateCheckout(_ context.Context, req payments.CheckoutRequest) (payments.CheckoutSession, error) {
 	return payments.CheckoutSession{
 		URL: g.CheckoutBaseURL + "/payments/fake/pay",

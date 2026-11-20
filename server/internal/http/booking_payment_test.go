@@ -17,9 +17,10 @@ import (
 // LKR 2,000, 24h free cancellation and 50% back later.
 func fakeGateway(t *testing.T, f *bookingFixture) *fake.Gateway {
 	t.Helper()
-	gw, ok := f.api.Payments.(*fake.Gateway)
+	g, _ := f.api.Payments.Get("fake")
+	gw, ok := g.(*fake.Gateway)
 	if !ok {
-		t.Fatalf("tests expect the fake gateway, got %T", f.api.Payments)
+		t.Fatalf("tests expect the fake gateway, got %T", g)
 	}
 	return gw
 }

@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +29,11 @@ import (
 type checkoutInfo struct {
 	PaymentID string `json:"paymentId"`
 	Gateway   string `json:"gateway"`
+	// ChargeAmountMinor/ChargeCurrency are what the gateway will take,
+	// which differ from the booking's LKR price on gateways that charge
+	// another currency.
+	ChargeAmountMinor int64  `json:"chargeAmountMinor"`
+	ChargeCurrency    string `json:"chargeCurrency"`
 	// URL is a page on this API that forwards to the gateway's hosted
 	// checkout; the app opens it in a web view or the browser.
 	URL string `json:"url"`
@@ -72,37 +80,44 @@ func (s *Server) publicBaseURL(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-// startCheckout opens a gateway payment for a booking awaiting payment.
-func (s *Server) startCheckout(r *http.Request, b domain.Booking) (*checkoutInfo, error) {
-	if s.Payments == nil {
+// startCheckout opens a payment for a booking awaiting payment, through
+// the gateway (and at the amount) q quoted.
+func (s *Server) startCheckout(r *http.Request, b domain.Booking, q gatewayQuote) (*checkoutInfo, error) {
+	if q.Gateway == nil {
 		return nil, errPaymentsUnavailable
 	}
 	base := s.publicBaseURL(r)
-	if f, ok := s.Payments.(*fake.Gateway); ok && f.CheckoutBaseURL == "" {
+	if f, ok := q.Gateway.(*fake.Gateway); ok && f.CheckoutBaseURL == "" {
 		f.CheckoutBaseURL = base
 	}
-	gw := s.Payments.Name()
-	pay := postgres.Payment{ID: newID("pay"), BookingID: b.ID, Gateway: gw, AmountMinor: b.AmountMinor, Currency: b.Currency}
+	gw := q.Gateway.Name()
+	pay := postgres.Payment{ID: newID("pay"), BookingID: b.ID, Gateway: gw, AmountMinor: q.ChargeMinor, Currency: q.Currency,
+		BookingAmountMinor: b.AmountMinor, BookingCurrency: b.Currency, FxRateMicros: q.FxRateMicros}
 	pay.GatewayOrderID = pay.ID
 	customer := payments.Customer{}
 	if me, err := s.Store.UserByID(r.Context(), b.TravellerID); err == nil {
 		first, last, _ := strings.Cut(strings.TrimSpace(me.Name), " ")
 		customer = payments.Customer{FirstName: first, LastName: last, Email: me.Email, Phone: me.Phone}
 	}
-	returnURL := base + "/payments/return?booking=" + url.QueryEscape(b.ID)
-	session, err := s.Payments.CreateCheckout(r.Context(), payments.CheckoutRequest{
-		OrderID: pay.GatewayOrderID, AmountMinor: b.AmountMinor, Currency: b.Currency,
+	returnURL := base + "/payments/return?booking=" + url.QueryEscape(b.ID) + "&gateway=" + url.QueryEscape(gw)
+	session, err := q.Gateway.CreateCheckout(r.Context(), payments.CheckoutRequest{
+		OrderID: pay.GatewayOrderID, AmountMinor: q.ChargeMinor, Currency: q.Currency,
 		Description: fmt.Sprintf("%s (%s)", b.ServiceName, b.Code), Customer: customer,
 		ReturnURL: returnURL, CancelURL: returnURL + "&cancelled=1", NotifyURL: base + "/payments/" + gw + "/notify",
 	})
 	if err != nil {
 		return nil, err
 	}
-	pay.CheckoutURL, pay.CheckoutFields = session.URL, session.Fields
+	pay.CheckoutURL, pay.CheckoutFields, pay.GatewayCheckoutRef = session.URL, session.Fields, session.GatewayRef
+	pay.CheckoutMethod = payments.CheckoutPost
+	if session.Method == payments.CheckoutGet {
+		pay.CheckoutMethod = payments.CheckoutGet
+	}
 	if err := s.Store.CreatePayment(r.Context(), pay); err != nil {
 		return nil, err
 	}
-	return &checkoutInfo{PaymentID: pay.ID, Gateway: gw, URL: base + "/payments/checkout/" + pay.ID,
+	return &checkoutInfo{PaymentID: pay.ID, Gateway: gw, ChargeAmountMinor: pay.AmountMinor, ChargeCurrency: pay.Currency,
+		URL:             base + "/payments/checkout/" + pay.ID,
 		ReturnURLPrefix: base + "/payments/return", ExpiresAt: b.HoldExpiresAt}, nil
 }
 
@@ -134,17 +149,32 @@ func (s *Server) handleCheckoutPage(w http.ResponseWriter, r *http.Request) {
 		writeHTMLMessage(w, http.StatusGone, "This payment link has expired", "Go back to the Spotto app to try again.")
 		return
 	}
+	gateway, known := s.Payments.Get(pay.Gateway)
+	action, err := url.Parse(pay.CheckoutURL)
+	if !known || err != nil {
+		writeHTMLMessage(w, http.StatusGone, "This payment link has expired", "Go back to the Spotto app to try again.")
+		return
+	}
+	if pay.CheckoutMethod == payments.CheckoutGet {
+		// Only ever redirect to a host the gateway vouches for.
+		rd, ok := gateway.(payments.Redirector)
+		if !ok || !rd.RedirectAllowed(action) {
+			log.Printf("payments: refused to redirect payment %s to %s", pay.ID, action.Host)
+			writeHTMLMessage(w, http.StatusGone, "This payment link has expired", "Go back to the Spotto app to try again.")
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		http.Redirect(w, r, action.String(), http.StatusSeeOther)
+		return
+	}
 	nonce := randomNonce()
-	action, _ := url.Parse(pay.CheckoutURL)
 	h := w.Header()
 	h.Set("Content-Security-Policy", fmt.Sprintf("default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-%s'; form-action %s://%s; frame-ancestors 'none'; base-uri 'none'", nonce, action.Scheme, action.Host))
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
 	h.Set("Referrer-Policy", "no-referrer")
-	gw := "the payment provider"
-	if pay.Gateway == "payhere" {
-		gw = "PayHere"
-	}
+	gw := gateway.DisplayName()
 	if err := checkoutPageTmpl.Execute(w, map[string]any{"URL": pay.CheckoutURL, "Fields": pay.CheckoutFields, "Nonce": nonce, "Gateway": gw}); err != nil {
 		log.Printf("checkout page: %v", err)
 	}
@@ -173,10 +203,34 @@ func writeHTMLMessage(w http.ResponseWriter, status int, title, body string) {
 // handlePaymentReturn is where the gateway sends the traveller back. It
 // doesn't decide anything: only the signed notification confirms a
 // payment, and the app reads the result from the booking's status.
+//
+// For gateways where Spotto captures the payment itself (PayPal), the
+// return carries the gateway's checkout id; Spotto then asks the gateway,
+// server to server, to take the money and applies what the gateway
+// answers. Nothing in the query string is trusted beyond that id.
 func (s *Server) handlePaymentReturn(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Get("cancelled") == "1" {
+	q := r.URL.Query()
+	if q.Get("cancelled") == "1" {
 		writeHTMLMessage(w, http.StatusOK, "Payment cancelled", "Nothing was charged. Go back to the Spotto app to try again.")
 		return
+	}
+	if gw, ok := s.Payments.Get(q.Get("gateway")); ok {
+		if _, capturer := gw.(payments.Capturer); capturer && q.Get("token") != "" {
+			pay, err := s.Store.PaymentByCheckoutRef(r.Context(), gw.Name(), q.Get("token"))
+			if err != nil || pay.BookingID != q.Get("booking") {
+				writeHTMLMessage(w, http.StatusNotFound, "We couldn't find that payment", "Go back to the Spotto app to check your booking.")
+				return
+			}
+			switch err := s.capturePayment(r.Context(), gw, pay); {
+			case errors.Is(err, errHoldLapsed):
+				writeHTMLMessage(w, http.StatusOK, "This booking has expired", "Nothing was charged. Go back to the Spotto app to book again.")
+				return
+			case err != nil:
+				log.Printf("payments: capture %s: %v", pay.ID, err)
+				writeHTMLMessage(w, http.StatusOK, "We're still confirming your payment", "Check your booking in the Spotto app in a few minutes.")
+				return
+			}
+		}
 	}
 	writeHTMLMessage(w, http.StatusOK, "Thanks! Back to Spotto", "We're confirming your payment. Your booking and its QR code are waiting in the Spotto app.")
 }
@@ -184,17 +238,44 @@ func (s *Server) handlePaymentReturn(w http.ResponseWriter, r *http.Request) {
 // handlePaymentNotify takes the gateway's server-to-server result. Only a
 // correctly signed notification is applied, and each one only once.
 func (s *Server) handlePaymentNotify(w http.ResponseWriter, r *http.Request) {
-	if s.Payments == nil || chi.URLParam(r, "gateway") != s.Payments.Name() {
+	gw, ok := s.Payments.Get(chi.URLParam(r, "gateway"))
+	if !ok {
 		writeErr(w, http.StatusNotFound, "unknown gateway")
 		return
 	}
-	ev, err := s.Payments.VerifyNotify(r)
-	if err != nil {
-		log.Printf("payments: rejected %s notification: %v", s.Payments.Name(), err)
+	ev, err := gw.VerifyNotify(r)
+	switch {
+	case errors.Is(err, payments.ErrIgnoredEvent):
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	case errors.Is(err, payments.ErrBadSignature):
+		log.Printf("payments: rejected %s notification: %v", gw.Name(), err)
 		writeErr(w, http.StatusBadRequest, "invalid notification")
 		return
+	case err != nil:
+		// Couldn't check it right now (the gateway's API is down): let
+		// the gateway retry later.
+		log.Printf("payments: couldn't verify %s notification: %v", gw.Name(), err)
+		writeErr(w, http.StatusServiceUnavailable, "try again later")
+		return
 	}
-	out, err := s.applyPaymentEvent(r.Context(), ev)
+	if ev.Status == payments.EventApproved {
+		// Approved but not yet paid: take the money now, in case the
+		// traveller never made it back to the return page.
+		pay, err := s.Store.PaymentByCheckoutRef(r.Context(), gw.Name(), ev.CheckoutRef)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+			return
+		}
+		if err := s.capturePayment(r.Context(), gw, pay); err != nil && !errors.Is(err, errHoldLapsed) {
+			log.Printf("payments: capture %s from webhook: %v", pay.ID, err)
+			writeErr(w, http.StatusServiceUnavailable, "try again later")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	out, err := s.applyPaymentEvent(r.Context(), gw.Name(), ev)
 	if err != nil && !errors.Is(err, postgres.ErrPaymentMismatch) {
 		// Let the gateway retry later.
 		writeErr(w, http.StatusInternalServerError, "could not record payment")
@@ -209,9 +290,9 @@ func (s *Server) handlePaymentNotify(w http.ResponseWriter, r *http.Request) {
 // applyPaymentEvent applies a verified notification and does the
 // follow-up work outside the transaction: confirmation messages, or the
 // refund when the booking couldn't be kept.
-func (s *Server) applyPaymentEvent(ctx context.Context, ev payments.NotifyEvent) (postgres.PaymentOutcome, error) {
+func (s *Server) applyPaymentEvent(ctx context.Context, gateway string, ev payments.NotifyEvent) (postgres.PaymentOutcome, error) {
 	out, err := s.Store.ApplyPaymentEvent(ctx, postgres.PaymentEvent{
-		Gateway: s.Payments.Name(), EventKey: ev.EventKey, OrderID: ev.OrderID, GatewayPaymentID: ev.GatewayPaymentID,
+		Gateway: gateway, EventKey: ev.EventKey, OrderID: ev.OrderID, GatewayPaymentID: ev.GatewayPaymentID,
 		Status: string(ev.Status), AmountMinor: ev.AmountMinor, Currency: ev.Currency, Payload: ev.Raw,
 	})
 	if err != nil {
@@ -228,13 +309,21 @@ func (s *Server) applyPaymentEvent(ctx context.Context, ev payments.NotifyEvent)
 
 // processRefund asks the gateway to pay a recorded refund. A gateway that
 // can't refund automatically leaves it for the finance team ("manual").
+//
+// The refund goes back through the gateway the booking was paid with, in
+// the currency it was charged in.
 func (s *Server) processRefund(ctx context.Context, rf postgres.Refund) {
-	if s.Payments == nil || rf.GatewayPaymentID == "" || rf.Gateway != s.Payments.Name() {
+	gw, ok := s.Payments.Get(rf.Gateway)
+	if !ok || rf.GatewayPaymentID == "" {
 		s.Store.SetRefundStatus(ctx, rf.ID, "manual", "")
 		return
 	}
-	res, err := s.Payments.Refund(ctx, payments.RefundRequest{OrderID: rf.GatewayOrderID, GatewayPaymentID: rf.GatewayPaymentID,
-		AmountMinor: rf.AmountMinor, Currency: rf.Currency, Reason: rf.Reason})
+	amount, currency := rf.GatewayAmountMinor, rf.GatewayCurrency
+	if currency == "" {
+		amount, currency = rf.AmountMinor, rf.Currency
+	}
+	res, err := gw.Refund(ctx, payments.RefundRequest{IdempotencyKey: rf.ID, OrderID: rf.GatewayOrderID, GatewayPaymentID: rf.GatewayPaymentID,
+		AmountMinor: amount, Currency: currency, Reason: rf.Reason})
 	switch {
 	case errors.Is(err, payments.ErrRefundUnsupported):
 		s.Store.SetRefundStatus(ctx, rf.ID, "manual", "")
@@ -326,7 +415,21 @@ func (s *Server) handleBookingCheckout(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "This booking is no longer waiting for payment. Book again to pick a new time.")
 		return
 	}
-	co, err := s.startCheckout(r, b)
+	var req struct {
+		Gateway string `json:"gateway"`
+	}
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeErr(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+	}
+	q, err := s.quoteGateway(r.Context(), req.Gateway, b.AmountMinor, b.Currency)
+	if err != nil {
+		writePaymentStartErr(w, err)
+		return
+	}
+	co, err := s.startCheckout(r, b, q)
 	if err != nil {
 		writePaymentStartErr(w, err)
 		return
@@ -335,8 +438,15 @@ func (s *Server) handleBookingCheckout(w http.ResponseWriter, r *http.Request) {
 }
 
 func writePaymentStartErr(w http.ResponseWriter, err error) {
-	if errors.Is(err, errPaymentsUnavailable) {
+	switch {
+	case errors.Is(err, errPaymentsUnavailable):
 		writeErr(w, http.StatusServiceUnavailable, "Online payment isn't available right now.")
+		return
+	case errors.Is(err, errUnknownGateway):
+		writeErr(w, http.StatusBadRequest, "That payment method isn't available. Choose another one.")
+		return
+	case errors.Is(err, errFxUnavailable):
+		writeErr(w, http.StatusConflict, "That payment method isn't available right now. Choose another one.")
 		return
 	}
 	log.Printf("payments: start checkout: %v", err)
@@ -377,7 +487,7 @@ var fakePayTmpl = template.Must(template.New("fakepay").Parse(`<!doctype html>
 
 // handleFakePay is the fake gateway's "hosted checkout" (development only).
 func (s *Server) handleFakePay(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.Payments.(*fake.Gateway); !ok || s.IsProduction {
+	if _, ok := s.fakeGateway(); !ok || s.IsProduction {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
@@ -391,7 +501,7 @@ func (s *Server) handleFakePay(w http.ResponseWriter, r *http.Request) {
 // handleFakeComplete plays the gateway's part: it signs and applies the
 // notification, then sends the traveller back (development only).
 func (s *Server) handleFakeComplete(w http.ResponseWriter, r *http.Request) {
-	g, ok := s.Payments.(*fake.Gateway)
+	g, ok := s.fakeGateway()
 	if !ok || s.IsProduction {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
@@ -408,7 +518,7 @@ func (s *Server) handleFakeComplete(w http.ResponseWriter, r *http.Request) {
 	req, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, "/", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if ev, err := g.VerifyNotify(req); err == nil {
-		s.applyPaymentEvent(r.Context(), ev)
+		s.applyPaymentEvent(r.Context(), g.Name(), ev)
 	}
 	// Send the traveller back to this API's own return page for the
 	// booking: never to a URL taken from the request.
@@ -423,3 +533,14 @@ func (s *Server) handleFakeComplete(w http.ResponseWriter, r *http.Request) {
 }
 
 func randomHexID() string { return strings.TrimPrefix(newID("x"), "x_") }
+
+// handlePaymentOptions lists how a traveller can pay amountMinor (LKR),
+// with what each gateway would charge.
+func (s *Server) handlePaymentOptions(w http.ResponseWriter, r *http.Request) {
+	amount, err := strconv.ParseInt(r.URL.Query().Get("amountMinor"), 10, 64)
+	if err != nil || amount <= 0 || amount > 100_000_000_00 {
+		writeErr(w, http.StatusBadRequest, "amountMinor must be a positive amount")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"currency": domain.CurrencyLKR, "amountMinor": amount, "options": s.paymentOptions(r.Context(), amount)})
+}

@@ -39,6 +39,11 @@ func New(cfg Config) *Gateway { return &Gateway{cfg: cfg} }
 
 func (g *Gateway) Name() string { return "payhere" }
 
+func (g *Gateway) DisplayName() string { return "PayHere" }
+
+// ChargeCurrency: it charges in LKR, the bookings' own currency.
+func (g *Gateway) ChargeCurrency() string { return "LKR" }
+
 func md5Upper(s string) string {
 	sum := md5.Sum([]byte(s))
 	return strings.ToUpper(hex.EncodeToString(sum[:]))

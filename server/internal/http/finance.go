@@ -703,3 +703,92 @@ func vendorBookingsFilter(r *http.Request, vendorID string) (postgres.BookingFil
 	}
 	return f, true
 }
+
+// ---- exchange rates for gateways that can't charge LKR ----
+
+// fxRateView is an exchange rate as the finance page shows it.
+type fxRateView struct {
+	domain.FxRate
+	Stale bool `json:"stale"`
+}
+
+// handleAdminFxRates lists the exchange rates, the gateways that need
+// one, and the margin added on top.
+func (s *Server) handleAdminFxRates(w http.ResponseWriter, r *http.Request) {
+	rates, err := s.Store.FxRates(r.Context())
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	now := time.Now()
+	views := make([]fxRateView, len(rates))
+	for i, rt := range rates {
+		views[i] = fxRateView{FxRate: rt, Stale: rt.Stale(now)}
+	}
+	type gatewayView struct {
+		Name           string `json:"name"`
+		DisplayName    string `json:"displayName"`
+		ChargeCurrency string `json:"chargeCurrency"`
+	}
+	gws := []gatewayView{}
+	for _, g := range s.Payments.Enabled() {
+		gws = append(gws, gatewayView{Name: g.Name(), DisplayName: g.DisplayName(), ChargeCurrency: g.ChargeCurrency()})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rates": views, "gateways": gws, "marginBps": s.FxMarginBps,
+		"maxAgeHours": int(domain.FxRateMaxAge / time.Hour)})
+}
+
+// parseRateMicros reads a decimal LKR rate ("302.5") as millionths.
+func parseRateMicros(s string) (int64, bool) {
+	s = strings.TrimSpace(s)
+	whole, frac, _ := strings.Cut(s, ".")
+	if whole == "" || len(whole) > 6 || len(frac) > 6 {
+		return 0, false
+	}
+	for _, c := range whole + frac {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+	}
+	frac += strings.Repeat("0", 6-len(frac))
+	w, err1 := strconv.ParseInt(whole, 10, 64)
+	f, err2 := strconv.ParseInt(frac, 10, 64)
+	if err1 != nil || err2 != nil {
+		return 0, false
+	}
+	return w*1_000_000 + f, true
+}
+
+// handleAdminSetFxRate sets how many LKR one unit of a currency costs.
+func (s *Server) handleAdminSetFxRate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Currency   string `json:"currency"`
+		LKRPerUnit string `json:"lkrPerUnit"` // decimal, e.g. "302.50"
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	cur := strings.ToUpper(strings.TrimSpace(req.Currency))
+	if cur == domain.CurrencyLKR || !domain.TwoDecimalCurrency(cur) {
+		writeErr(w, http.StatusBadRequest, "Choose a supported currency other than LKR.")
+		return
+	}
+	micros, ok := parseRateMicros(req.LKRPerUnit)
+	// 1 to 100,000 LKR per unit covers every supported currency with room.
+	if !ok || micros < 1_000_000 || micros > 100_000*1_000_000 {
+		writeErr(w, http.StatusBadRequest, "Enter the rate as LKR per unit, e.g. 302.50.")
+		return
+	}
+	setBy := ""
+	if c := auth.FromContext(r.Context()); c != nil {
+		setBy = c.Subject
+	}
+	prev, _ := s.Store.FxRate(r.Context(), cur)
+	rate, err := s.Store.SetFxRate(r.Context(), cur, micros, setBy)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	s.logAdminAction(r.Context(), "fx_rate.set", "fx_rate", cur, map[string]any{"lkrPerUnitMicros": micros, "previousMicros": prev.LKRPerUnitMicros})
+	writeJSON(w, http.StatusOK, fxRateView{FxRate: rate})
+}

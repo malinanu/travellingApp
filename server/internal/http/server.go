@@ -123,9 +123,12 @@ type Server struct {
 	oauthCodes    *authCodeStore
 	GroupHub      *GroupHub
 
-	// Payments takes booking payments; nil means paid bookings are refused
-	// (production without a configured gateway).
-	Payments payments.Gateway
+	// Payments holds the gateways bookings can be paid through; with none,
+	// paid bookings are refused (production without a configured gateway).
+	Payments *payments.Registry
+	// FxMarginBps is added on top of the exchange rate when a gateway
+	// charges another currency than the booking's.
+	FxMarginBps int
 	// PayoutKey encrypts vendors' bank account numbers (nil: payout
 	// accounts can't be saved).
 	PayoutKey []byte
@@ -146,7 +149,8 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		Store:   store,
 		Tokens:  tokens,
 		TOTPKey:              cfg.TOTPEncryptionKey,
-		Payments:             selectGateway(cfg),
+		Payments:             buildGateways(cfg),
+		FxMarginBps:          cfg.PayPalFxMarginBps,
 		PayoutKey:            cfg.PayoutEncryptionKey,
 		IsProduction:         cfg.IsProduction(),
 		Mail: mail.New(mail.Config{
@@ -351,6 +355,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Post("/payments/{gateway}/notify", s.handlePaymentNotify)
 	r.Get("/payments/checkout/{id}", s.handleCheckoutPage)
 	r.Get("/payments/return", s.handlePaymentReturn)
+	r.Get("/payments/options", s.handlePaymentOptions)
 	r.Post("/payments/fake/pay", s.handleFakePay)
 	r.Post("/payments/fake/complete", s.handleFakeComplete)
 	r.Get("/reset-password", s.handleResetPasswordPage)
@@ -672,6 +677,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			r.Get("/admin/payouts", s.handleAdminPayouts)
 			r.Get("/admin/payouts/{id}", s.handleAdminPayout)
 			r.Get("/admin/commission-rules", s.handleAdminCommissionRules)
+			r.Get("/admin/finance/fx-rates", s.handleAdminFxRates)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(s.RequireAdminPermission(PermFinancePayouts))
@@ -688,6 +694,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			r.Use(s.RequireAdminPermission(PermCommissionManage))
 			r.Post("/admin/commission-rules", s.handleAdminCreateCommissionRule)
 			r.Delete("/admin/commission-rules/{id}", s.handleAdminDeleteCommissionRule)
+			r.Put("/admin/finance/fx-rates", s.handleAdminSetFxRate)
 		})
 
 		// Handing a business account over to its real owner. Super-admins

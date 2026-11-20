@@ -26,17 +26,38 @@ type Payment struct {
 	Status           string            `json:"status"`
 	CheckoutURL      string            `json:"-"`
 	CheckoutFields   map[string]string `json:"-"`
-	CreatedAt        time.Time         `json:"createdAt"`
-	UpdatedAt        time.Time         `json:"updatedAt"`
+	CheckoutMethod   string            `json:"-"`
+	// GatewayCheckoutRef is the gateway's own id for the checkout (PayPal's
+	// order id), used to find the payment when the traveller comes back.
+	GatewayCheckoutRef string `json:"gatewayCheckoutRef,omitempty"`
+	// BookingAmountMinor/BookingCurrency are the booking's own price (LKR);
+	// AmountMinor/Currency are what the gateway charges. They differ when
+	// the gateway charges another currency, at FxRateMicros (LKR per unit,
+	// in millionths; 0 when no conversion).
+	BookingAmountMinor int64     `json:"bookingAmountMinor"`
+	BookingCurrency    string    `json:"bookingCurrency"`
+	FxRateMicros       int64     `json:"fxRateMicros"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
-const paymentCols = `id, booking_id, gateway, gateway_order_id, gateway_payment_id, amount_minor, currency, status, checkout_url, checkout_fields, created_at, updated_at`
+// BookingAmount is what this payment is worth in the booking's currency.
+func (p Payment) BookingAmount() int64 {
+	if p.BookingCurrency == "" {
+		return p.AmountMinor
+	}
+	return p.BookingAmountMinor
+}
+
+const paymentCols = `id, booking_id, gateway, gateway_order_id, gateway_payment_id, amount_minor, currency, status, checkout_url, checkout_fields,
+	checkout_method, gateway_checkout_ref, booking_amount_minor, booking_currency, fx_rate_micros, created_at, updated_at`
 
 func scanPayment(row pgx.Row) (Payment, error) {
 	var p Payment
 	var fields []byte
 	err := row.Scan(&p.ID, &p.BookingID, &p.Gateway, &p.GatewayOrderID, &p.GatewayPaymentID, &p.AmountMinor,
-		&p.Currency, &p.Status, &p.CheckoutURL, &fields, &p.CreatedAt, &p.UpdatedAt)
+		&p.Currency, &p.Status, &p.CheckoutURL, &fields, &p.CheckoutMethod, &p.GatewayCheckoutRef,
+		&p.BookingAmountMinor, &p.BookingCurrency, &p.FxRateMicros, &p.CreatedAt, &p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -47,15 +68,31 @@ func scanPayment(row pgx.Row) (Payment, error) {
 }
 
 func (s *Store) CreatePayment(ctx context.Context, p Payment) error {
+	if p.CheckoutMethod == "" {
+		p.CheckoutMethod = "POST"
+	}
+	if p.BookingCurrency == "" {
+		p.BookingAmountMinor, p.BookingCurrency = p.AmountMinor, p.Currency
+	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO payments (id, booking_id, gateway, gateway_order_id, amount_minor, currency, status, checkout_url, checkout_fields)
-		VALUES ($1,$2,$3,$4,$5,$6,'created',$7,$8)`,
-		p.ID, p.BookingID, p.Gateway, p.GatewayOrderID, p.AmountMinor, p.Currency, p.CheckoutURL, jsonb(p.CheckoutFields))
+		INSERT INTO payments (id, booking_id, gateway, gateway_order_id, amount_minor, currency, status, checkout_url, checkout_fields,
+			checkout_method, gateway_checkout_ref, booking_amount_minor, booking_currency, fx_rate_micros)
+		VALUES ($1,$2,$3,$4,$5,$6,'created',$7,$8,$9,$10,$11,$12,$13)`,
+		p.ID, p.BookingID, p.Gateway, p.GatewayOrderID, p.AmountMinor, p.Currency, p.CheckoutURL, jsonb(p.CheckoutFields),
+		p.CheckoutMethod, p.GatewayCheckoutRef, p.BookingAmountMinor, p.BookingCurrency, p.FxRateMicros)
 	return err
 }
 
 func (s *Store) PaymentByID(ctx context.Context, id string) (Payment, error) {
 	return scanPayment(s.Pool.QueryRow(ctx, `SELECT `+paymentCols+` FROM payments WHERE id=$1`, id))
+}
+
+// PaymentByCheckoutRef finds a payment by the gateway's own checkout id.
+func (s *Store) PaymentByCheckoutRef(ctx context.Context, gateway, ref string) (Payment, error) {
+	if ref == "" {
+		return Payment{}, ErrNotFound
+	}
+	return scanPayment(s.Pool.QueryRow(ctx, `SELECT `+paymentCols+` FROM payments WHERE gateway=$1 AND gateway_checkout_ref=$2`, gateway, ref))
 }
 
 func (s *Store) PaymentsByBooking(ctx context.Context, bookingID string) ([]Payment, error) {
@@ -181,7 +218,7 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context, ev PaymentEvent) (Payment
 		if b.PaymentStatus == domain.PaymentPaid || b.PaymentStatus == domain.PaymentPartiallyRefunded || b.PaymentStatus == domain.PaymentRefunded {
 			// The booking was already paid through another checkout: this
 			// second payment goes straight back.
-			r, err := insertRefund(ctx, tx, b, pay, pay.AmountMinor, "duplicate payment", "system")
+			r, err := insertRefund(ctx, tx, b, pay, pay.BookingAmount(), "duplicate payment", "system")
 			if err != nil {
 				return out, err
 			}
@@ -211,7 +248,7 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context, ev PaymentEvent) (Payment
 				return out, err
 			}
 			b.PaymentStatus = domain.PaymentPaid
-			r, err := insertRefund(ctx, tx, b, pay, pay.AmountMinor, "booking no longer available when payment arrived", "system")
+			r, err := insertRefund(ctx, tx, b, pay, pay.BookingAmount(), "booking no longer available when payment arrived", "system")
 			if err != nil {
 				return out, err
 			}
@@ -328,17 +365,22 @@ func (s *Store) ExpireBookingHolds(ctx context.Context) (int, error) {
 
 // Refund is money going back to a traveller.
 type Refund struct {
-	ID              string    `json:"id"`
-	BookingID       string    `json:"bookingId"`
-	PaymentID       *string   `json:"paymentId,omitempty"`
-	AmountMinor     int64     `json:"amountMinor"`
-	Currency        string    `json:"currency"`
-	Reason          string    `json:"reason"`
-	Status          string    `json:"status"`
-	GatewayRefundID string    `json:"gatewayRefundId"`
-	RequestedBy     string    `json:"requestedBy"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	ID              string  `json:"id"`
+	BookingID       string  `json:"bookingId"`
+	PaymentID       *string `json:"paymentId,omitempty"`
+	AmountMinor     int64   `json:"amountMinor"`
+	Currency        string  `json:"currency"`
+	Reason          string  `json:"reason"`
+	Status          string  `json:"status"`
+	GatewayRefundID string  `json:"gatewayRefundId"`
+	RequestedBy     string  `json:"requestedBy"`
+	// GatewayAmountMinor/GatewayCurrency is what goes back through the
+	// gateway: the same as AmountMinor/Currency unless the payment was
+	// charged in another currency.
+	GatewayAmountMinor int64     `json:"gatewayAmountMinor"`
+	GatewayCurrency    string    `json:"gatewayCurrency"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 	// Joined for display and for calling the gateway.
 	BookingCode      string `json:"bookingCode,omitempty"`
 	VendorName       string `json:"vendorName,omitempty"`
@@ -358,9 +400,17 @@ func insertRefund(ctx context.Context, tx pgx.Tx, b domain.Booking, pay Payment,
 		payID = &pay.ID
 	}
 	r.PaymentID = payID
+	r.GatewayAmountMinor, r.GatewayCurrency = amount, r.Currency
+	if pay.ID != "" && pay.Currency != "" && pay.Currency != r.Currency {
+		// Charged in another currency: give back the same share of what
+		// was charged.
+		r.GatewayAmountMinor = domain.ProportionalRefund(amount, pay.BookingAmount(), pay.AmountMinor)
+		r.GatewayCurrency = pay.Currency
+	}
 	_, err := tx.Exec(ctx, `
-		INSERT INTO refunds (id, booking_id, payment_id, amount_minor, currency, reason, status, requested_by)
-		VALUES ($1,$2,$3,$4,$5,$6,'requested',$7)`, r.ID, r.BookingID, payID, amount, r.Currency, reason, by)
+		INSERT INTO refunds (id, booking_id, payment_id, amount_minor, currency, reason, status, requested_by, gateway_amount_minor, gateway_currency)
+		VALUES ($1,$2,$3,$4,$5,$6,'requested',$7,$8,$9)`, r.ID, r.BookingID, payID, amount, r.Currency, reason, by,
+		r.GatewayAmountMinor, r.GatewayCurrency)
 	return r, err
 }
 
@@ -424,7 +474,7 @@ func (s *Store) SetRefundStatus(ctx context.Context, id, status, gatewayRefundID
 }
 
 const refundCols = `r.id, r.booking_id, r.payment_id, r.amount_minor, r.currency, r.reason, r.status, r.gateway_refund_id,
-	r.requested_by, r.created_at, r.updated_at, COALESCE(b.code,''), COALESCE(v.name,''), COALESCE(u.name,''), COALESCE(u.email,''),
+	r.requested_by, r.gateway_amount_minor, r.gateway_currency, r.created_at, r.updated_at, COALESCE(b.code,''), COALESCE(v.name,''), COALESCE(u.name,''), COALESCE(u.email,''),
 	COALESCE(p.gateway,''), COALESCE(p.gateway_order_id,''), COALESCE(p.gateway_payment_id,'')`
 const refundFrom = ` FROM refunds r
 	JOIN bookings b ON b.id = r.booking_id
@@ -435,7 +485,7 @@ const refundFrom = ` FROM refunds r
 func scanRefund(row pgx.Row) (Refund, error) {
 	var r Refund
 	err := row.Scan(&r.ID, &r.BookingID, &r.PaymentID, &r.AmountMinor, &r.Currency, &r.Reason, &r.Status, &r.GatewayRefundID,
-		&r.RequestedBy, &r.CreatedAt, &r.UpdatedAt, &r.BookingCode, &r.VendorName, &r.TravellerName, &r.TravellerEmail,
+		&r.RequestedBy, &r.GatewayAmountMinor, &r.GatewayCurrency, &r.CreatedAt, &r.UpdatedAt, &r.BookingCode, &r.VendorName, &r.TravellerName, &r.TravellerEmail,
 		&r.Gateway, &r.GatewayOrderID, &r.GatewayPaymentID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, ErrNotFound

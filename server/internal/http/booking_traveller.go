@@ -215,6 +215,8 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		CheckOut     string `json:"checkOut,omitempty"`
 		PartySize    int    `json:"partySize"`
 		Note         string `json:"note"`
+		// Gateway picks how to pay a paid booking ("" = the default).
+		Gateway string `json:"gateway,omitempty"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -348,11 +350,17 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	if booking.AmountMinor > 0 && s.Payments == nil {
+	if booking.AmountMinor > 0 && s.Payments.Len() == 0 {
 		writeErr(w, http.StatusServiceUnavailable, "Online payment isn't available right now, so paid bookings are paused.")
 		return
 	}
+	var quote gatewayQuote
 	if booking.AmountMinor > 0 {
+		// Settle how it'll be paid before holding any seats.
+		if quote, err = s.quoteGateway(r.Context(), req.Gateway, booking.AmountMinor, booking.Currency); err != nil {
+			writePaymentStartErr(w, err)
+			return
+		}
 		// Unpaid holds block seats for others, so one traveller can only
 		// hold a few at a time.
 		if n, err := s.Store.LiveHoldCount(r.Context(), c.Subject); err != nil {
@@ -399,7 +407,7 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, bookingWithCheckout{Booking: created})
 		return
 	}
-	co, err := s.startCheckout(r, created)
+	co, err := s.startCheckout(r, created, quote)
 	if err != nil {
 		// Give the seats back rather than hold them for a payment that
 		// can't start.
