@@ -165,7 +165,8 @@ void main() {
     await tester.pump();
     expect(find.text('LKR 7,500'), findsOneWidget);
     await tester.tap(find.byIcon(Icons.remove_circle_outline));
-    await tester.pump();
+    // The pay button waits for the payment options of the new total.
+    await tester.pumpAndSettle();
     expect(find.text('Book & pay LKR 5,000'), findsOneWidget);
 
     await tester.tap(find.text(DateFormatForTest.hm(slotStart.toLocal())));
@@ -239,6 +240,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(sent?['gateway'], 'paypal');
     expect(find.text("You'll be charged USD 17.17"), findsOneWidget);
+  });
+
+  testWidgets('a gateway that drops out is not sent even if it was picked', (tester) async {
+    Map<String, dynamic>? sent;
+    final (container, _) = await setUpContainer(
+      service(pricingMode: 'per_person', price: 250000),
+      (o) {
+        if (o.path == '/payments/options') {
+          // PayPal can take LKR 5,000 but not LKR 7,500.
+          final amount = o.queryParameters['amountMinor'];
+          return paymentOptions(amount == 500000 ? [payHereOption, payPalOption] : [payHereOption]);
+        }
+        if (o.path == '/bookings') {
+          sent = (o.data as Map).cast<String, dynamic>();
+          return {
+            ...bookingJson(status: 'awaiting_payment', amount: 750000, payment: 'pending'),
+            'checkout': {'paymentId': 'pay_1', 'url': 'https://api.test/payments/checkout/pay_1'},
+          };
+        }
+        return {'id': 'bkg_1', 'status': 'awaiting_payment', 'paymentStatus': 'pending', 'code': 'BOOK-AB12'};
+      },
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(host(container, BookingSection(place: place)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('payment_option_paypal')));
+    await tester.pump();
+    expect(find.text('Book & pay USD 17.17'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('booking_party_plus')));
+    await tester.pumpAndSettle();
+    expect(find.text('Pay with'), findsNothing);
+    expect(find.text('Book & pay LKR 7,500'), findsOneWidget);
+
+    await tester.tap(find.text(DateFormatForTest.hm(slotStart.toLocal())));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('booking_submit')));
+    await tester.pumpAndSettle();
+    expect(sent, isNotNull);
+    expect(sent!.containsKey('gateway'), isFalse, reason: 'PayPal was no longer offered, so it must not be sent');
   });
 
   testWidgets('with a single gateway there is no picker and no gateway is sent', (tester) async {

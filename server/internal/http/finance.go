@@ -792,3 +792,14 @@ func (s *Server) handleAdminSetFxRate(w http.ResponseWriter, r *http.Request) {
 	s.logAdminAction(r.Context(), "fx_rate.set", "fx_rate", cur, map[string]any{"lkrPerUnitMicros": micros, "previousMicros": prev.LKRPerUnitMicros})
 	writeJSON(w, http.StatusOK, fxRateView{FxRate: rate})
 }
+
+// handleAdminPaymentIssues lists gateway notifications that need a person:
+// chargebacks, amount mismatches, unknown orders and auto-refunds.
+func (s *Server) handleAdminPaymentIssues(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Store.PaymentIssues(r.Context(), 200)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}

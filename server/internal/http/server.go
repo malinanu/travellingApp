@@ -678,6 +678,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			r.Get("/admin/payouts/{id}", s.handleAdminPayout)
 			r.Get("/admin/commission-rules", s.handleAdminCommissionRules)
 			r.Get("/admin/finance/fx-rates", s.handleAdminFxRates)
+			r.Get("/admin/finance/payment-issues", s.handleAdminPaymentIssues)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(s.RequireAdminPermission(PermFinancePayouts))

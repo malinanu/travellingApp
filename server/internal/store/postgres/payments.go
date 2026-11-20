@@ -586,7 +586,12 @@ func (s *Store) CancelBookingWithRefund(ctx context.Context, req CancelRequest) 
 	if amount <= 0 {
 		return b, nil, tx.Commit(ctx)
 	}
-	pay, err := scanPayment(tx.QueryRow(ctx, `SELECT `+paymentCols+` FROM payments WHERE booking_id=$1 AND status='succeeded' ORDER BY created_at LIMIT 1`, b.ID))
+	// The payment that paid for the booking: the first to succeed that
+	// isn't already being given back (a duplicate payment that arrived
+	// later is refunded on its own). That's also the gateway and currency
+	// the refund goes back through.
+	pay, err := scanPayment(tx.QueryRow(ctx, `SELECT `+paymentCols+` FROM payments p WHERE booking_id=$1 AND status='succeeded'
+		ORDER BY EXISTS (SELECT 1 FROM refunds r WHERE r.payment_id = p.id), updated_at, created_at LIMIT 1`, b.ID))
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return b, nil, err
 	}

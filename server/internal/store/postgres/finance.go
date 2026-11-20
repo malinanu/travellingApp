@@ -348,6 +348,7 @@ type FinanceSummary struct {
 	GuestFeesMinor     int64           `json:"guestFeesMinor"`  // per-guest fees charged on free tables
 	VendorNetMinor     int64           `json:"vendorNetMinor"`  // owed to vendors from paid bookings
 	OpenRefunds        int             `json:"openRefunds"`     // waiting on the gateway or the finance team
+	Chargebacks        int             `json:"chargebacks"`     // payments pulled back or disputed, all time
 	PendingPayouts     int             `json:"pendingPayouts"`  // draft or approved
 	PendingPayoutMinor int64           `json:"pendingPayoutMinor"`
 	Currency           string          `json:"currency"`
@@ -376,6 +377,9 @@ func (s *Store) FinanceSummary(ctx context.Context, from, to time.Time) (Finance
 	if err != nil {
 		return f, err
 	}
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM payments WHERE status='chargeback'`).Scan(&f.Chargebacks); err != nil {
+		return f, err
+	}
 	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM refunds WHERE status IN ('requested','manual','failed')`).Scan(&f.OpenRefunds); err != nil {
 		return f, err
 	}
@@ -402,4 +406,51 @@ func (s *Store) FinanceSummary(ctx context.Context, from, to time.Time) (Finance
 		f.ByCategory = append(f.ByCategory, c)
 	}
 	return f, rows.Err()
+}
+
+// PaymentIssue is a verified gateway notification Spotto couldn't simply
+// apply (an amount mismatch, an unknown order, a chargeback, a payment
+// refunded because the booking was gone), for the finance team to review.
+type PaymentIssue struct {
+	EventID     string    `json:"eventId"`
+	Gateway     string    `json:"gateway"`
+	Status      string    `json:"status"`
+	Outcome     string    `json:"outcome"`
+	ReceivedAt  time.Time `json:"receivedAt"`
+	PaymentID   string    `json:"paymentId"`
+	BookingID   string    `json:"bookingId"`
+	BookingCode string    `json:"bookingCode"`
+	VendorName  string    `json:"vendorName"`
+	AmountMinor int64     `json:"amountMinor"`
+	Currency    string    `json:"currency"`
+}
+
+// PaymentIssues lists the most recent payment issues, newest first.
+func (s *Store) PaymentIssues(ctx context.Context, limit int) ([]PaymentIssue, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT e.id, e.gateway, e.status, e.outcome, e.received_at, COALESCE(p.id,''), COALESCE(b.id,''), COALESCE(b.code,''),
+			COALESCE(v.name,''), COALESCE(p.amount_minor,0), COALESCE(p.currency,'')
+		FROM payment_events e
+		LEFT JOIN payments p ON p.id = e.payment_id
+		LEFT JOIN bookings b ON b.id = p.booking_id
+		LEFT JOIN vendors v ON v.id = b.vendor_id
+		WHERE e.outcome <> ''
+		ORDER BY e.received_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PaymentIssue{}
+	for rows.Next() {
+		var i PaymentIssue
+		if err := rows.Scan(&i.EventID, &i.Gateway, &i.Status, &i.Outcome, &i.ReceivedAt, &i.PaymentID, &i.BookingID,
+			&i.BookingCode, &i.VendorName, &i.AmountMinor, &i.Currency); err != nil {
+			return nil, err
+		}
+		out = append(out, i)
+	}
+	return out, rows.Err()
 }

@@ -1,9 +1,9 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Users, Store, Ticket, Star, Loader2, ArrowRight } from 'lucide-react';
+import { Users, Store, Ticket, Star, Loader2, ArrowRight, AlertTriangle } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Money, type AdminPhoneCodeSettings, type FinanceSummary } from '@spotto/shared';
+import { Money, type AdminPhoneCodeSettings, type FinanceSummary, type FxRatesResponse } from '@spotto/shared';
 import Shell, { hasAdminPerm, useMe } from '../components/shell';
 import { api } from '../lib/api';
 import Link from 'next/link';
@@ -31,9 +31,12 @@ function MoneyStrip() {
     { label: 'Paid by travellers', value: <Money minor={data?.grossMinor} />, href: '/finance' },
     { label: 'Spotto earned', value: <Money minor={(data?.commissionMinor ?? 0) + (data?.guestFeesMinor ?? 0)} />, href: '/finance' },
     { label: 'Refunds needing a person', value: data?.openRefunds ?? '—', href: '/finance' },
+    ...(data?.chargebacks ? [{ label: 'Chargebacks', value: data.chargebacks, href: '/finance?tab=issues' }] : []),
     { label: 'Payouts waiting', value: data ? <span>{data.pendingPayouts} · <Money minor={data.pendingPayoutMinor} /></span> : '—', href: '/payouts' },
   ];
   return (
+    <>
+    <FxRateWarning />
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
       {tiles.map((t) => (
         <Link key={t.label} href={t.href} className="panel p-4 hover:border-[color:var(--accent)] transition-colors">
@@ -42,6 +45,37 @@ function MoneyStrip() {
         </Link>
       ))}
     </div>
+    </>
+  );
+}
+
+/** Warns when a gateway that charges another currency has no usable rate
+ *  (it then stops taking payments) or its rate expires within a day. */
+function FxRateWarning() {
+  const { data } = useQuery<FxRatesResponse>({
+    queryKey: ['fx-rates'],
+    queryFn: () => api.get<FxRatesResponse>('/admin/finance/fx-rates'),
+    refetchInterval: 300000,
+  });
+  if (!data) return null;
+  const now = Date.now();
+  const maxAgeMs = data.maxAgeHours * 3600_000;
+  const problems: string[] = [];
+  for (const g of data.gateways) {
+    if (g.chargeCurrency === 'LKR') continue;
+    const rate = data.rates.find((r) => r.currency === g.chargeCurrency);
+    if (!rate) problems.push(`${g.displayName} has no ${g.chargeCurrency} rate, so it isn't taking payments.`);
+    else if (rate.stale) problems.push(`${g.displayName}'s ${g.chargeCurrency} rate is too old, so it isn't taking payments.`);
+    else if (now - new Date(rate.setAt).getTime() > maxAgeMs - 24 * 3600_000) {
+      problems.push(`${g.displayName}'s ${g.chargeCurrency} rate expires within a day.`);
+    }
+  }
+  if (problems.length === 0) return null;
+  return (
+    <Link href="/finance?tab=fx" className="mb-4 flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[13px] text-amber-900">
+      <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+      <span>{problems.join(' ')} Set a new exchange rate in Finance.</span>
+    </Link>
   );
 }
 

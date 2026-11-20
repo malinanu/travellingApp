@@ -298,3 +298,85 @@ func TestPaymentAdminFxRates(t *testing.T) {
 		t.Errorf("a traveller must not set rates, got %d", code)
 	}
 }
+
+func TestPaymentCancelRefundsThePaymentThatPaid(t *testing.T) {
+	f, svc, pp, _ := payPalFixture(t)
+	fakeGW := fakeGateway(t, f)
+	// The traveller starts paying by card, gives up, and switches to PayPal.
+	code, out := doJSON(t, http.MethodPost, f.url("/bookings"), f.travATk, map[string]any{
+		"placeId": f.placeID, "serviceId": svc.ID, "startAt": slot(3), "partySize": 2, "gateway": "fake"})
+	if code != http.StatusCreated {
+		t.Fatalf("book: %d %v", code, out)
+	}
+	id := out["id"].(string)
+	cardPayment := out["checkout"].(map[string]any)["paymentId"].(string)
+	code, out = doJSON(t, http.MethodPost, f.url("/bookings/"+id+"/checkout"), f.travATk, map[string]any{"gateway": "paypal"})
+	if code != http.StatusOK {
+		t.Fatalf("switch to PayPal: %d %v", code, out)
+	}
+	co := out["checkout"].(map[string]any)
+	_, loc, _ := getPage(t, f.local(co["url"].(string)))
+	u, _ := url.Parse(loc)
+	order := u.Query().Get("token")
+	pp.Approve(order)
+	getPage(t, f.local(co["returnUrlPrefix"].(string))+"?booking="+id+"&gateway=paypal&token="+order)
+	if b := f.bookingRow(t, id); b.Status != domain.BookingConfirmed {
+		t.Fatalf("PayPal should have confirmed the booking, got %s", b.Status)
+	}
+	// The abandoned card payment completes after all: it's refunded on its own.
+	if code := f.notify(t, fakeGW, cardPayment, "succeeded", "late-card", 400000, true); code != http.StatusOK {
+		t.Fatalf("late card payment: %d", code)
+	}
+	if code, out := doJSON(t, http.MethodPost, f.url("/bookings/"+id+"/cancel"), f.travATk, nil); code != http.StatusOK {
+		t.Fatalf("cancel: %d %v", code, out)
+	}
+	// The cancellation refund goes back through PayPal, in SGD.
+	if refunds := pp.Refunds(); len(refunds) != 1 || refunds[0].Value != "16.48" || refunds[0].Currency != testPayPalCurrency {
+		t.Fatalf("PayPal refunds = %+v", refunds)
+	}
+	rfs, err := f.store.RefundsForBooking(f.ctx, id)
+	must(t, err)
+	byGateway := map[string]int{}
+	for _, r := range rfs {
+		byGateway[r.Gateway]++
+	}
+	if len(rfs) != 2 || byGateway["fake"] != 1 || byGateway["paypal"] != 1 {
+		t.Fatalf("want one refund per gateway, got %+v", rfs)
+	}
+}
+
+func TestPaymentPayPalChargebackIsFlagged(t *testing.T) {
+	f, svc, pp, admin := payPalFixture(t)
+	id, _, order := bookWithPayPal(t, f, svc, 3)
+	pp.Approve(order)
+	if code := postWebhook(t, f, pp.ApprovedEvent(order), true); code != http.StatusOK {
+		t.Fatalf("approved webhook: %d", code)
+	}
+	pays, err := f.store.PaymentsByBooking(f.ctx, id)
+	must(t, err)
+	reversal := map[string]any{"id": "WH-REV-" + id, "event_type": "PAYMENT.CAPTURE.REVERSED",
+		"resource": map[string]any{"id": "REV1", "custom_id": pays[0].ID, "invoice_id": pays[0].ID}}
+	if code := postWebhook(t, f, reversal, true); code != http.StatusOK {
+		t.Fatalf("reversal webhook: %d", code)
+	}
+	pay, err := f.store.PaymentByID(f.ctx, pays[0].ID)
+	must(t, err)
+	if pay.Status != "chargeback" {
+		t.Fatalf("payment status = %s, want chargeback", pay.Status)
+	}
+	code, list := doJSONArray(t, http.MethodGet, f.url("/admin/finance/payment-issues"), admin)
+	if code != http.StatusOK {
+		t.Fatalf("payment issues: %d", code)
+	}
+	found := false
+	for _, i := range list {
+		found = found || (i["bookingId"] == id && strings.HasPrefix(i["outcome"].(string), "chargeback"))
+	}
+	if !found {
+		t.Fatalf("the chargeback should be listed for finance: %v", list)
+	}
+	_, sum := doJSON(t, http.MethodGet, f.url("/admin/finance/summary"), admin, nil)
+	if sum["chargebacks"].(float64) < 1 {
+		t.Fatalf("summary should count the chargeback: %v", sum["chargebacks"])
+	}
+}

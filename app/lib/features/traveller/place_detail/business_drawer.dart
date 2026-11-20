@@ -1485,7 +1485,9 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
     );
   }
 
-  Future<void> _submit(BookableService service) async {
+  /// [gateway] is the payment method the form showed as chosen (null when
+  /// there was no choice to make, so the server uses its default).
+  Future<void> _submit(BookableService service, String? gateway) async {
     final messenger = ScaffoldMessenger.of(context);
     final isStay = service.type == 'stay';
     if (isStay) {
@@ -1507,7 +1509,7 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
             checkOut: isStay ? _checkOut : null,
             occurrenceId: service.usesOccurrences ? _selectedOccurrenceId : null,
             partySize: _partySize,
-            gateway: service.isFree ? null : _gateway,
+            gateway: service.isFree ? null : gateway,
           );
       if (!mounted) return;
       setState(() => _submitting = false);
@@ -1563,7 +1565,7 @@ class _BookingForm extends ConsumerWidget {
   final int partySize;
   final ValueChanged<int> onPartySize;
   final bool submitting;
-  final Future<void> Function(BookableService) onSubmit;
+  final Future<void> Function(BookableService, String? gateway) onSubmit;
   final String? gateway;
   final ValueChanged<String> onGateway;
 
@@ -1603,9 +1605,10 @@ class _BookingForm extends ConsumerWidget {
         : selectedSlotStart != null;
     final total = selected.quote(partySize: partySize, nights: _nights(checkIn, checkOut));
     // Ways to pay this total; the picker only shows when there's a choice.
-    final options = selected.isFree || total <= 0
-        ? const <PaymentOption>[]
-        : ref.watch(paymentOptionsProvider(total)).value ?? const <PaymentOption>[];
+    final optionsAsync = selected.isFree || total <= 0 ? null : ref.watch(paymentOptionsProvider(total));
+    final options = optionsAsync?.value ?? const <PaymentOption>[];
+    // Wait for the options of this total, so what's sent is what's shown.
+    final optionsLoading = optionsAsync != null && optionsAsync.isLoading;
     final chosen = options.where((o) => o.gateway == gateway).firstOrNull ?? options.firstOrNull;
 
     return Container(
@@ -1832,7 +1835,9 @@ class _BookingForm extends ConsumerWidget {
             width: double.infinity,
             child: FilledButton(
               key: const Key('booking_submit'),
-              onPressed: canSubmit && !submitting ? () => onSubmit(selected) : null,
+              onPressed: canSubmit && !submitting && !optionsLoading
+                  ? () => onSubmit(selected, options.length > 1 ? chosen?.gateway : null)
+                  : null,
               child: Text(
                 submitting
                     ? l10n.bookingInProgress

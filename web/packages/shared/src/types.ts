@@ -560,6 +560,21 @@ export interface FxRate {
   stale: boolean;
 }
 
+/** A gateway notification that needs a person (chargeback, mismatch...). */
+export interface PaymentIssue {
+  eventId: string;
+  gateway: string;
+  status: string;
+  outcome: string;
+  receivedAt: string;
+  paymentId: string;
+  bookingId: string;
+  bookingCode: string;
+  vendorName: string;
+  amountMinor: number;
+  currency: string;
+}
+
 export interface FxRatesResponse {
   rates: FxRate[];
   gateways: { name: string; displayName: string; chargeCurrency: string }[];
@@ -593,6 +608,8 @@ export interface FinanceSummary {
   guestFeesMinor: number;
   vendorNetMinor: number;
   openRefunds: number;
+  /** Payments pulled back or disputed, all time. */
+  chargebacks?: number;
   pendingPayouts: number;
   pendingPayoutMinor: number;
   currency: string;

@@ -5,23 +5,30 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   DataTable, Drawer, EmptyState, Money, StatusPill, downloadAuthed, formatLocalDateTime, formatMinor, parseMajorToMinor, useConfirm,
-  formatFxRate, type FinanceSummary, type FxRatesResponse, type LedgerEntry, type Refund,
+  formatFxRate, type FinanceSummary, type FxRatesResponse, type LedgerEntry, type PaymentIssue, type Refund,
 } from '@spotto/shared';
 import Shell, { hasAdminPerm, useMe } from '../../components/shell';
 import { api } from '../../lib/api';
 import { KpiTile, PageHeader, RefundAmount, Tabs, colomboDay } from '../../lib/money-ui';
 
-type Tab = 'summary' | 'refunds' | 'ledger' | 'fx';
+type Tab = 'summary' | 'refunds' | 'ledger' | 'issues' | 'fx';
+const TABS: Tab[] = ['summary', 'refunds', 'ledger', 'issues', 'fx'];
 
 export default function FinancePage() {
   const { data: me } = useMe();
   const canPay = hasAdminPerm(me, 'finance.payouts');
   const canSetRates = hasAdminPerm(me, 'finance.commission');
   const [tab, setTab] = useState<Tab>('summary');
+  // Links can open a tab directly (/finance?tab=fx). Read after mount so
+  // the static page and the first render agree.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab') as Tab | null;
+    if (t && TABS.includes(t)) setTab(t);
+  }, []);
   const [from, setFrom] = useState(colomboDay(-30));
   const [to, setTo] = useState(colomboDay());
 
@@ -38,11 +45,12 @@ export default function FinancePage() {
         )}
       />
       <div className="mb-4">
-        <Tabs value={tab} onChange={setTab} options={[{ id: 'summary', label: 'Summary' }, { id: 'refunds', label: 'Refunds' }, { id: 'ledger', label: 'Ledger' }, { id: 'fx', label: 'Exchange rates' }]} />
+        <Tabs value={tab} onChange={setTab} options={[{ id: 'summary', label: 'Summary' }, { id: 'refunds', label: 'Refunds' }, { id: 'ledger', label: 'Ledger' }, { id: 'issues', label: 'Payment issues' }, { id: 'fx', label: 'Exchange rates' }]} />
       </div>
       {tab === 'summary' && <Summary from={from} to={to} />}
       {tab === 'refunds' && <Refunds canAct={canPay} />}
       {tab === 'ledger' && <Ledger from={from} to={to} canAdjust={canPay} />}
+      {tab === 'issues' && <PaymentIssues />}
       {tab === 'fx' && <ExchangeRates canEdit={canSetRates} />}
     </Shell>
   );
@@ -297,6 +305,51 @@ function ExchangeRates({ canEdit }: { canEdit: boolean }) {
             {save.isPending ? 'Saving…' : 'Save rate'}
           </button>
         </form>
+      )}
+    </div>
+  );
+}
+
+/** Gateway notifications Spotto couldn't simply apply: chargebacks and
+ *  disputes, amount mismatches, unknown orders, and payments refunded
+ *  automatically because the booking was gone or already paid. */
+function PaymentIssues() {
+  const { data, isLoading } = useQuery<PaymentIssue[]>({
+    queryKey: ['payment-issues'],
+    queryFn: () => api.get<PaymentIssue[]>('/admin/finance/payment-issues'),
+  });
+  return (
+    <div className="card p-4">
+      <p className="text-[13px] text-muted mb-3">
+        A chargeback means the traveller&apos;s bank or PayPal pulled the money back. The vendor isn&apos;t debited automatically:
+        agree it with them, then record it as a ledger adjustment.
+      </p>
+      {isLoading ? (
+        <p className="text-[13px] text-muted">Loading…</p>
+      ) : (
+        <DataTable
+          rows={data ?? []}
+          rowKey={(i) => i.eventId}
+          empty={<EmptyState title="No payment issues" body="Every gateway notification so far was applied normally." />}
+          columns={[
+            { key: 'when', header: 'Received', sortValue: (i) => i.receivedAt, render: (i) => formatLocalDateTime(i.receivedAt) },
+            { key: 'gw', header: 'Gateway', render: (i) => i.gateway },
+            {
+              key: 'booking', header: 'Booking',
+              render: (i) => (i.bookingCode ? <span><span className="font-mono text-[12px]">{i.bookingCode}</span> · {i.vendorName}</span> : '—'),
+            },
+            { key: 'amount', header: 'Payment', align: 'right', render: (i) => (i.currency ? <Money minor={i.amountMinor} currency={i.currency} /> : '—') },
+            {
+              key: 'what', header: 'What happened',
+              render: (i) => (
+                <span className="flex items-center gap-2">
+                  {i.status === 'chargeback' && <StatusPill status="chargeback" />}
+                  <span>{i.outcome}</span>
+                </span>
+              ),
+            },
+          ]}
+        />
       )}
     </div>
   );

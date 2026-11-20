@@ -133,3 +133,26 @@ func TestRefund(t *testing.T) {
 		t.Fatalf("refunds at PayPal = %+v", refunds)
 	}
 }
+
+func TestVerifyNotifyChargebacks(t *testing.T) {
+	g, _ := newGateway(t)
+	reversed := map[string]any{"id": "WH-REV", "event_type": "PAYMENT.CAPTURE.REVERSED",
+		"resource": map[string]any{"id": "REFUND-REV", "status": "COMPLETED", "custom_id": "pay_9", "invoice_id": "pay_9",
+			"amount": map[string]string{"currency_code": "USD", "value": "-20.00"}}}
+	ev, err := g.VerifyNotify(paypaltest.WebhookRequest("/payments/paypal/notify", reversed, true))
+	if err != nil || ev.Status != payments.EventChargeback || ev.OrderID != "pay_9" || ev.EventKey != "paypal:event:WH-REV" {
+		t.Fatalf("reversal = %+v, %v", ev, err)
+	}
+	dispute := map[string]any{"id": "WH-DSP", "event_type": "CUSTOMER.DISPUTE.CREATED",
+		"resource": map[string]any{"dispute_id": "PP-D-1", "disputed_transactions": []map[string]any{
+			{"seller_transaction_id": "CAP1", "invoice_number": "pay_9"}}}}
+	ev, err = g.VerifyNotify(paypaltest.WebhookRequest("/payments/paypal/notify", dispute, true))
+	if err != nil || ev.Status != payments.EventChargeback || ev.OrderID != "pay_9" || ev.GatewayPaymentID != "CAP1" {
+		t.Fatalf("dispute = %+v, %v", ev, err)
+	}
+	// A dispute that names no transaction of ours is acknowledged and dropped.
+	empty := map[string]any{"id": "WH-DSP2", "event_type": "CUSTOMER.DISPUTE.CREATED", "resource": map[string]any{"dispute_id": "PP-D-2"}}
+	if _, err := g.VerifyNotify(paypaltest.WebhookRequest("/payments/paypal/notify", empty, true)); !errors.Is(err, payments.ErrIgnoredEvent) {
+		t.Fatalf("dispute without a transaction: err = %v", err)
+	}
+}
