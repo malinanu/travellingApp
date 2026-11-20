@@ -22,6 +22,7 @@ import {
   type MediaRole, type Offer, type Review, type User, type Vendor, type VendorLoginHandoverResult, type VendorProfile,
   type VendorStatus, type VibeAggregate,
 } from '@spotto/shared';
+import { BookingsTable } from '../../components/bookings-table';
 import Shell, { useMe } from '../../components/shell';
 import { InlineErrorBanner } from '../../components/route-status';
 import { api } from '../../lib/api';
@@ -229,9 +230,10 @@ export default function VendorsPage() {
   );
 }
 
-type DetailTab = 'overview' | 'reviews' | 'offers' | 'activity' | 'team' | 'history';
+type DetailTab = 'overview' | 'bookings' | 'reviews' | 'offers' | 'activity' | 'team' | 'history';
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'bookings', label: 'Bookings' },
   { id: 'reviews', label: 'Reviews' },
   { id: 'offers', label: 'Offers' },
   { id: 'activity', label: 'Activity' },
@@ -352,6 +354,7 @@ function VendorMonitor({
 
           <div className="mt-5">
             {tab === 'overview' && <OverviewTab vendor={vendor} stats={stats} />}
+            {tab === 'bookings' && <BookingsTable vendorId={vendor.id} />}
             {tab === 'reviews' && <ReviewsTab vendorId={vendor.id} />}
             {tab === 'offers' && <OffersTab vendorId={vendor.id} />}
             {tab === 'activity' && <ActivityTab vendorId={vendor.id} stats={stats} />}

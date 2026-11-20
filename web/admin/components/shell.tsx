@@ -8,7 +8,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Bell, CreditCard, History, KeyRound, Layers, Map, Moon, Newspaper, Search, Smartphone, ShieldAlert, ShieldCheck, Shapes, Sparkles, Store, Sun, UserCheck, Users, LucideIcon,
+  Activity, Banknote, Bell, CalendarCheck, CreditCard, History, KeyRound, Landmark, LayoutDashboard, Layers, Map, MapPin, Moon, Newspaper, Percent, Search, Smartphone, ShieldAlert, ShieldCheck, Shapes, Sparkles, Store, Sun, UserCheck, Users, LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -17,22 +17,46 @@ import { useEffect, useRef, useState } from 'react';
 import type { AdminKPIs, AdminNotification, AdminSearchResults, User } from '@spotto/shared';
 import { api } from '../lib/api';
 
-// forPublishers: also shown to publishers, who see nothing else.
-const NAV: { href: string; label: string; icon: LucideIcon; superAdminOnly?: boolean; forPublishers?: boolean }[] = [
-  { href: '/queue', label: 'Approval queue', icon: UserCheck },
-  { href: '/vendors', label: 'Vendors', icon: Store },
-  { href: '/users', label: 'Users', icon: Users },
-  { href: '/access-control', label: 'User access control', icon: ShieldCheck },
-  { href: '/quests', label: 'Quests', icon: Activity },
-  { href: '/geo', label: 'Geo-analytics', icon: Map },
-  { href: '/subscriptions', label: 'Subscriptions', icon: CreditCard },
-  { href: '/packages', label: 'Vendor Packages', icon: Layers },
-  { href: '/content', label: 'Content', icon: Newspaper, forPublishers: true },
-  { href: '/local-guide', label: 'Local Guide', icon: Sparkles },
-  { href: '/categories', label: 'Categories', icon: Shapes },
-  { href: '/access-grants', label: 'Access grants', icon: KeyRound },
-  { href: '/audit-log', label: 'Audit log', icon: History, superAdminOnly: true },
+// Grouped by job. forPublishers: also shown to publishers, who see nothing
+// else. perm: the admin permission the page needs (super-admins hold all),
+// mirroring the server's RequireAdminPermission.
+type NavGroup = 'Overview' | 'Vendors & hosts' | 'Bookings & money' | 'Growth & content' | 'People & access' | 'Settings';
+const NAV_GROUPS: NavGroup[] = ['Overview', 'Vendors & hosts', 'Bookings & money', 'Growth & content', 'People & access', 'Settings'];
+type NavItem = { href: string; label: string; icon: LucideIcon; group: NavGroup; superAdminOnly?: boolean; forPublishers?: boolean; perm?: string; exact?: boolean };
+const NAV: NavItem[] = [
+  { group: 'Overview', href: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+  { group: 'Vendors & hosts', href: '/queue', label: 'Approval queue', icon: UserCheck },
+  { group: 'Vendors & hosts', href: '/vendors', label: 'Vendors & hosts', icon: Store },
+  { group: 'Vendors & hosts', href: '/spots', label: 'Spots', icon: MapPin },
+  { group: 'Bookings & money', href: '/bookings', label: 'Bookings', icon: CalendarCheck, perm: 'bookings.view' },
+  { group: 'Bookings & money', href: '/finance', label: 'Finance', icon: Banknote, perm: 'finance.view' },
+  { group: 'Bookings & money', href: '/payouts', label: 'Payouts', icon: Landmark, perm: 'finance.view' },
+  { group: 'Bookings & money', href: '/commission-rules', label: 'Commission rules', icon: Percent, perm: 'finance.view' },
+  { group: 'Growth & content', href: '/quests', label: 'Quests', icon: Activity },
+  { group: 'Growth & content', href: '/content', label: 'Content', icon: Newspaper, forPublishers: true },
+  { group: 'Growth & content', href: '/local-guide', label: 'Local Guide', icon: Sparkles },
+  { group: 'Growth & content', href: '/geo', label: 'Geo-analytics', icon: Map },
+  { group: 'People & access', href: '/users', label: 'Users', icon: Users },
+  { group: 'People & access', href: '/access-control', label: 'Admin access', icon: ShieldCheck },
+  { group: 'People & access', href: '/access-grants', label: 'Vendor PIN grants', icon: KeyRound },
+  { group: 'People & access', href: '/audit-log', label: 'Audit log', icon: History, superAdminOnly: true },
+  { group: 'Settings', href: '/categories', label: 'Categories', icon: Shapes },
+  { group: 'Settings', href: '/packages', label: 'Vendor packages', icon: Layers },
+  { group: 'Settings', href: '/subscriptions', label: 'Subscriptions (legacy)', icon: CreditCard },
 ];
+
+/** Whether this admin holds perm: super-admins hold everything; a parent
+ * feature ("finance") grants its sub-permissions ("finance.view"). */
+export function hasAdminPerm(me: User | undefined, perm: string): boolean {
+  if (!me) return false;
+  if (me.isSuperAdmin) return true;
+  const perms = me.adminPermissions ?? [];
+  return perms.includes('*') || perms.includes(perm) || perms.includes(perm.split('.')[0]);
+}
+
+function isActive(n: NavItem, pathname: string) {
+  return n.exact ? pathname === n.href : pathname.startsWith(n.href);
+}
 
 // Reversed small-size cut of the brand symbol (brand/logo/spotto-symbol-small-reversed.svg),
 // for the always-dark sidebar and login panel.
@@ -185,7 +209,7 @@ function Rail({ pending, isAdmin }: { pending: number; isAdmin: boolean }) {
   const pathname = usePathname();
   const { data: me } = useMe();
   const { data: review } = useReviewCount(isAdmin);
-  const visibleNav = NAV.filter((n) => (isAdmin ? !n.superAdminOnly || me?.isSuperAdmin : n.forPublishers));
+  const visibleNav = NAV.filter((n) => (isAdmin ? (!n.superAdminOnly || me?.isSuperAdmin) && (!n.perm || hasAdminPerm(me, n.perm)) : n.forPublishers));
   const badge: Record<string, number> = { '/queue': pending, '/content': review?.count ?? 0 };
   return (
     <aside className="w-[232px] shrink-0 flex flex-col overflow-y-auto" style={{ background: '#103d3a', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
@@ -199,32 +223,42 @@ function Rail({ pending, isAdmin }: { pending: number; isAdmin: boolean }) {
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-1">
-        <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.15em]" style={{ color: 'rgba(255,255,255,0.3)' }}>
-          {isAdmin ? 'Operations' : 'Publishing'}
-        </p>
-        {visibleNav.map((n) => {
-          const on = pathname.startsWith(n.href);
-          const Icon = n.icon;
+      <nav className="flex-1 px-3 py-3">
+        {NAV_GROUPS.map((group) => {
+          const items = visibleNav.filter((n) => n.group === group);
+          if (!items.length) return null;
           return (
-            <Link
-              key={n.href}
-              href={n.href}
-              className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all"
-              style={{
-                background: on ? 'rgba(255,255,255,0.07)' : 'transparent',
-                color: on ? '#fff' : 'rgba(255,255,255,0.55)',
-                boxShadow: on ? 'inset 2px 0 0 var(--accent)' : 'none',
-              }}
-            >
-              <Icon size={18} strokeWidth={on ? 2.4 : 2} style={{ color: on ? 'var(--accent)' : 'inherit' }} />
-              <span className="font-semibold text-[13.5px]">{n.label}</span>
-              {(badge[n.href] ?? 0) > 0 && (
-                <span className="ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ background: 'var(--accent)' }}>
-                  {badge[n.href]}
-                </span>
-              )}
-            </Link>
+            <div key={group} className="mb-3">
+              <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.15em]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                {isAdmin ? group : 'Publishing'}
+              </p>
+              <div className="space-y-0.5">
+                {items.map((n) => {
+                  const on = isActive(n, pathname);
+                  const Icon = n.icon;
+                  return (
+                    <Link
+                      key={n.href}
+                      href={n.href}
+                      className="w-full flex items-center gap-3 rounded-lg px-3 py-2 transition-all"
+                      style={{
+                        background: on ? 'rgba(255,255,255,0.07)' : 'transparent',
+                        color: on ? '#fff' : 'rgba(255,255,255,0.55)',
+                        boxShadow: on ? 'inset 2px 0 0 var(--accent)' : 'none',
+                      }}
+                    >
+                      <Icon size={17} strokeWidth={on ? 2.4 : 2} style={{ color: on ? 'var(--accent)' : 'inherit' }} />
+                      <span className="font-semibold text-[13px]">{n.label}</span>
+                      {(badge[n.href] ?? 0) > 0 && (
+                        <span className="ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ background: 'var(--accent)' }}>
+                          {badge[n.href]}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
       </nav>
@@ -441,7 +475,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return <div className="min-h-screen flex items-center justify-center font-bold">This account doesn&apos;t have access to the Command Center.</div>;
   }
 
-  const title = NAV.find((n) => pathname.startsWith(n.href))?.label ?? (pathname.startsWith('/profile') ? 'Profile' : '');
+  const title = NAV.find((n) => isActive(n, pathname))?.label ?? (pathname.startsWith('/profile') ? 'Profile' : '');
 
   return (
     // The page scrolls inside <main>, under the command bar, so sticky parts
