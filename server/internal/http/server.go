@@ -20,6 +20,7 @@ import (
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/jobs"
 	"github.com/spotto/server/internal/mail"
+	"github.com/spotto/server/internal/payments"
 	"github.com/spotto/server/internal/media"
 	"github.com/spotto/server/internal/googleplaces"
 	"github.com/spotto/server/internal/placedetails"
@@ -121,6 +122,16 @@ type Server struct {
 	globalLimit   *dynamicRateLimiter
 	oauthCodes    *authCodeStore
 	GroupHub      *GroupHub
+
+	// Payments holds the gateways bookings can be paid through; with none,
+	// paid bookings are refused (production without a configured gateway).
+	Payments *payments.Registry
+	// FxMarginBps is added on top of the exchange rate when a gateway
+	// charges another currency than the booking's.
+	FxMarginBps int
+	// PayoutKey encrypts vendors' bank account numbers (nil: payout
+	// accounts can't be saved).
+	PayoutKey []byte
 }
 
 func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server {
@@ -138,6 +149,9 @@ func New(store *postgres.Store, tokens *auth.Tokens, cfg config.Config) *Server 
 		Store:   store,
 		Tokens:  tokens,
 		TOTPKey:              cfg.TOTPEncryptionKey,
+		Payments:             buildGateways(cfg),
+		FxMarginBps:          cfg.PayPalFxMarginBps,
+		PayoutKey:            cfg.PayoutEncryptionKey,
 		IsProduction:         cfg.IsProduction(),
 		Mail: mail.New(mail.Config{
 			Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.EmailFrom,
@@ -336,6 +350,14 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 	r.Post("/auth/reset-password", s.handleResetPassword)
 	r.Get("/auth/verify-reset-token", s.handleVerifyResetToken)
 	// Browser reset page for travellers (no web app) — see reset_page.go.
+	// Payments: the gateway's signed notifications, the page that forwards
+	// a traveller to the hosted checkout, and where they come back to.
+	r.Post("/payments/{gateway}/notify", s.handlePaymentNotify)
+	r.Get("/payments/checkout/{id}", s.handleCheckoutPage)
+	r.Get("/payments/return", s.handlePaymentReturn)
+	r.Get("/payments/options", s.handlePaymentOptions)
+	r.Post("/payments/fake/pay", s.handleFakePay)
+	r.Post("/payments/fake/complete", s.handleFakeComplete)
 	r.Get("/reset-password", s.handleResetPasswordPage)
 	r.Post("/reset-password", s.handleResetPasswordPage)
 	r.Get("/auth/google/login", s.handleGoogleLogin)
@@ -389,6 +411,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/places/{id}/photos", s.handlePlacePhotos)
 		r.Get("/places/{id}/services", s.handlePlaceServices)
 		r.Get("/places/{id}/services/{serviceId}/availability", s.handleServiceAvailability)
+		r.Get("/experiences", s.handleExperiences)
 		r.Post("/offers/{id}/view", s.handleOfferView)
 
 		// Media uploads (R2) â€” any authenticated role; per-owner authorisation
@@ -409,6 +432,9 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/me/claims", s.handleMyClaims)
 		r.Post("/bookings", s.handleCreateBooking)
 		r.Post("/bookings/{id}/cancel", s.handleCancelMyBooking)
+		r.Get("/bookings/{id}/status", s.handleBookingStatus)
+		r.Post("/bookings/{id}/checkout", s.handleBookingCheckout)
+		r.Get("/bookings/{id}/cancel-preview", s.handleCancelPreview)
 		r.Get("/me/bookings", s.handleMyBookings)
 		r.Get("/me/trip", s.handleGetTrip)
 		r.Put("/me/trip", s.handlePutTrip)
@@ -457,6 +483,8 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Get("/vendor/offers/{id}/claims", s.handleOfferClaims)
 		r.Post("/vendor/validate", s.handleValidate)
 		r.Get("/vendor/services", s.handleVendorServices)
+		r.Get("/vendor/services/{id}/occurrences", s.handleVendorOccurrences)
+		r.Get("/vendor/bookings/{id}", s.handleVendorBooking)
 		r.Get("/vendor/bookings", s.handleVendorBookings)
 		r.Get("/vendor/dashboard", s.handleVendorDashboard)
 		r.Get("/vendor/redemptions", s.handleVendorRedemptions)
@@ -479,8 +507,14 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			r.Post("/vendor/services", s.handleCreateService)
 			r.Put("/vendor/services/{id}", s.handleUpdateService)
 			r.Delete("/vendor/services/{id}", s.handleDeleteService)
+			r.Post("/vendor/services/{id}/occurrences", s.handleCreateOccurrence)
+			r.Put("/vendor/occurrences/{id}", s.handleUpdateOccurrence)
+			r.Post("/vendor/occurrences/{id}/cancel", s.handleCancelOccurrence)
 			r.Post("/vendor/bookings/{id}/cancel", s.handleVendorCancelBooking)
 			r.Patch("/vendor/bookings/{id}/status", s.handleSetBookingStatus)
+			r.Get("/vendor/earnings", s.handleVendorEarnings)
+			r.Get("/vendor/statement", s.handleVendorStatement)
+			r.Get("/vendor/payout-account", s.handleGetPayoutAccount)
 			r.Get("/vendor/growth", s.handleVendorGrowth)
 			r.Post("/vendor/growth/flash-sale", s.handleVendorFlashSale)
 			r.Get("/vendor/reports", s.handleVendorReports)
@@ -496,6 +530,7 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireVendorOwner)
 			r.Post("/vendor/team/invite", s.handleCreateVendorInvite)
+			r.Put("/vendor/payout-account", s.handlePutPayoutAccount)
 			r.Delete("/vendor/team/members/{userId}", s.handleRemoveVendorTeamMember)
 			r.Delete("/vendor/team/invites/{id}", s.handleRevokeVendorInvite)
 			r.Post("/vendor/profile-grants", s.handleCreateVendorProfileGrant)
@@ -620,6 +655,47 @@ func (s *Server) Router(cfg config.Config) http.Handler {
 			r.Post("/admin/vendors/{id}/delete", s.handleAdminDeleteVendor)
 			// Daily limits on paid phone-verification codes.
 			r.Put("/admin/settings/phone-codes", s.handleAdminPutPhoneCodeLimits)
+		})
+
+		// Bookings and money. Super-admins always pass; other admins need the
+		// matching permission from a super-admin.
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermBookingsView))
+			r.Get("/admin/bookings", s.handleAdminBookings)
+			r.Get("/admin/bookings/{id}", s.handleAdminBooking)
+			r.Get("/admin/vendors/{id}/bookings", s.handleAdminBookings)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermBookingsManage))
+			r.Post("/admin/bookings/{id}/cancel", s.handleAdminCancelBooking)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermFinanceView))
+			r.Get("/admin/finance/summary", s.handleAdminFinanceSummary)
+			r.Get("/admin/ledger", s.handleAdminLedger)
+			r.Get("/admin/refunds", s.handleAdminRefunds)
+			r.Get("/admin/payouts", s.handleAdminPayouts)
+			r.Get("/admin/payouts/{id}", s.handleAdminPayout)
+			r.Get("/admin/commission-rules", s.handleAdminCommissionRules)
+			r.Get("/admin/finance/fx-rates", s.handleAdminFxRates)
+			r.Get("/admin/finance/payment-issues", s.handleAdminPaymentIssues)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermFinancePayouts))
+			r.Post("/admin/payouts/run", s.handleAdminRunPayouts)
+			r.Get("/admin/payouts-export.csv", s.handleAdminPayoutsExport)
+			r.Post("/admin/payouts/{id}/{action}", s.handleAdminPayoutAction)
+			r.Post("/admin/refunds/{id}/mark-done", s.handleAdminRefundDone)
+			r.Post("/admin/refunds/{id}/retry", s.handleAdminRetryRefund)
+			r.Post("/admin/ledger/adjustments", s.handleAdminLedgerAdjustment)
+			r.Get("/admin/vendors/{id}/payout-account", s.handleAdminPayoutAccount)
+			r.Post("/admin/vendors/{id}/payout-account/verify", s.handleAdminVerifyPayoutAccount)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(s.RequireAdminPermission(PermCommissionManage))
+			r.Post("/admin/commission-rules", s.handleAdminCreateCommissionRule)
+			r.Delete("/admin/commission-rules/{id}", s.handleAdminDeleteCommissionRule)
+			r.Put("/admin/finance/fx-rates", s.handleAdminSetFxRate)
 		})
 
 		// Handing a business account over to its real owner. Super-admins

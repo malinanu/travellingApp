@@ -1,10 +1,10 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Users, Store, Ticket, Star, Loader2, ArrowRight } from 'lucide-react';
+import { Users, Store, Ticket, Star, Loader2, ArrowRight, AlertTriangle } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { AdminPhoneCodeSettings } from '@spotto/shared';
-import Shell, { useMe } from '../components/shell';
+import { Money, type AdminPhoneCodeSettings, type FinanceSummary, type FxRatesResponse } from '@spotto/shared';
+import Shell, { hasAdminPerm, useMe } from '../components/shell';
 import { api } from '../lib/api';
 import Link from 'next/link';
 
@@ -13,6 +13,70 @@ interface PlatformAnalytics {
   totalVendors: number;
   totalClaims: number;
   totalReviews: number;
+}
+
+/** Bookings and money over the last 30 days, for admins with finance.view. */
+function MoneyStrip() {
+  const { data: me } = useMe();
+  const allowed = hasAdminPerm(me, 'finance.view');
+  const { data } = useQuery<FinanceSummary>({
+    queryKey: ['dashboard-finance'],
+    queryFn: () => api.get<FinanceSummary>('/admin/finance/summary'),
+    enabled: allowed,
+    refetchInterval: 60000,
+  });
+  if (!allowed) return null;
+  const tiles = [
+    { label: 'Bookings (30 days)', value: data?.bookings ?? '—', href: '/bookings' },
+    { label: 'Paid by travellers', value: <Money minor={data?.grossMinor} />, href: '/finance' },
+    { label: 'Spotto earned', value: <Money minor={(data?.commissionMinor ?? 0) + (data?.guestFeesMinor ?? 0)} />, href: '/finance' },
+    { label: 'Refunds needing a person', value: data?.openRefunds ?? '—', href: '/finance' },
+    ...(data?.chargebacks ? [{ label: 'Chargebacks', value: data.chargebacks, href: '/finance?tab=issues' }] : []),
+    { label: 'Payouts waiting', value: data ? <span>{data.pendingPayouts} · <Money minor={data.pendingPayoutMinor} /></span> : '—', href: '/payouts' },
+  ];
+  return (
+    <>
+    <FxRateWarning />
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+      {tiles.map((t) => (
+        <Link key={t.label} href={t.href} className="panel p-4 hover:border-[color:var(--accent)] transition-colors">
+          <p className="text-[11.5px] font-bold uppercase tracking-wide text-[var(--muted)]">{t.label}</p>
+          <p className="mt-1 text-[20px] font-bold text-[color:var(--ink)] tabular-nums">{t.value}</p>
+        </Link>
+      ))}
+    </div>
+    </>
+  );
+}
+
+/** Warns when a gateway that charges another currency has no usable rate
+ *  (it then stops taking payments) or its rate expires within a day. */
+function FxRateWarning() {
+  const { data } = useQuery<FxRatesResponse>({
+    queryKey: ['fx-rates'],
+    queryFn: () => api.get<FxRatesResponse>('/admin/finance/fx-rates'),
+    refetchInterval: 300000,
+  });
+  if (!data) return null;
+  const now = Date.now();
+  const maxAgeMs = data.maxAgeHours * 3600_000;
+  const problems: string[] = [];
+  for (const g of data.gateways) {
+    if (g.chargeCurrency === 'LKR') continue;
+    const rate = data.rates.find((r) => r.currency === g.chargeCurrency);
+    if (!rate) problems.push(`${g.displayName} has no ${g.chargeCurrency} rate, so it isn't taking payments.`);
+    else if (rate.stale) problems.push(`${g.displayName}'s ${g.chargeCurrency} rate is too old, so it isn't taking payments.`);
+    else if (now - new Date(rate.setAt).getTime() > maxAgeMs - 24 * 3600_000) {
+      problems.push(`${g.displayName}'s ${g.chargeCurrency} rate expires within a day.`);
+    }
+  }
+  if (problems.length === 0) return null;
+  return (
+    <Link href="/finance?tab=fx" className="mb-4 flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[13px] text-amber-900">
+      <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+      <span>{problems.join(' ')} Set a new exchange rate in Finance.</span>
+    </Link>
+  );
 }
 
 export default function DashboardPage() {
@@ -51,24 +115,25 @@ export default function DashboardPage() {
     <Shell>
       <div className="p-6 md:p-8 max-w-7xl mx-auto w-full">
         <header className="mb-10">
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Spotto HQ</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[color:var(--ink)] mb-2">Spotto HQ</h1>
           <p className="text-[var(--muted)] text-sm md:text-base max-w-2xl">
             Real-time platform metrics and top-level activity overview.
           </p>
         </header>
 
+        <MoneyStrip />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
           {kpis.map((kpi, i) => {
             const Icon = kpi.icon;
             return (
-              <div key={i} className="relative group overflow-hidden rounded-2xl bg-[#141517] border border-white/5 p-6 hover:border-white/10 transition-colors">
+              <div key={i} className="relative group overflow-hidden rounded-2xl panel p-6 hover:border-[color:var(--accent)] transition-colors">
                 <div className="flex items-center justify-between mb-4">
                   <div className={`p-3 rounded-xl ${kpi.bg}`}>
                     <Icon className={`h-6 w-6 ${kpi.color}`} />
                   </div>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="text-4xl font-bold text-white tracking-tight">
+                  <span className="text-4xl font-bold text-[color:var(--ink)] tracking-tight">
                     {kpi.value.toLocaleString()}
                   </span>
                   <span className="text-sm font-medium text-[var(--muted)]">
@@ -85,20 +150,20 @@ export default function DashboardPage() {
 
         <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Quick Actions / Shortcuts */}
-            <div className="rounded-2xl bg-[#141517] border border-white/5 p-6 flex flex-col">
-              <h2 className="text-lg font-semibold text-white mb-4">Quick Actions</h2>
+            <div className="rounded-2xl panel p-6 flex flex-col">
+              <h2 className="text-lg font-semibold text-[color:var(--ink)] mb-4">Quick Actions</h2>
               <div className="flex flex-col gap-2 flex-grow">
-                <Link href="/queue" className="flex items-center justify-between p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors group">
-                  <span className="text-sm font-medium text-white">Review Pending Vendors</span>
-                  <ArrowRight className="h-4 w-4 text-[var(--muted)] group-hover:text-white transition-colors" />
+                <Link href="/queue" className="flex items-center justify-between p-4 rounded-xl bg-black/[0.04] hover:bg-black/[0.08] transition-colors group">
+                  <span className="text-sm font-medium text-[color:var(--ink)]">Review Pending Vendors</span>
+                  <ArrowRight className="h-4 w-4 text-[var(--muted)] group-hover:text-[color:var(--ink)] transition-colors" />
                 </Link>
-                <Link href="/access-grants" className="flex items-center justify-between p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors group">
-                  <span className="text-sm font-medium text-white">Manage Profile Grants</span>
-                  <ArrowRight className="h-4 w-4 text-[var(--muted)] group-hover:text-white transition-colors" />
+                <Link href="/access-grants" className="flex items-center justify-between p-4 rounded-xl bg-black/[0.04] hover:bg-black/[0.08] transition-colors group">
+                  <span className="text-sm font-medium text-[color:var(--ink)]">Manage Profile Grants</span>
+                  <ArrowRight className="h-4 w-4 text-[var(--muted)] group-hover:text-[color:var(--ink)] transition-colors" />
                 </Link>
-                <Link href="/local-guide" className="flex items-center justify-between p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors group">
-                  <span className="text-sm font-medium text-white">Train Local Guide AI</span>
-                  <ArrowRight className="h-4 w-4 text-[var(--muted)] group-hover:text-white transition-colors" />
+                <Link href="/local-guide" className="flex items-center justify-between p-4 rounded-xl bg-black/[0.04] hover:bg-black/[0.08] transition-colors group">
+                  <span className="text-sm font-medium text-[color:var(--ink)]">Train Local Guide AI</span>
+                  <ArrowRight className="h-4 w-4 text-[var(--muted)] group-hover:text-[color:var(--ink)] transition-colors" />
                 </Link>
               </div>
             </div>
@@ -126,15 +191,15 @@ function SecuritySettingsPanel() {
   });
 
   if (!data) return (
-    <div className="rounded-2xl bg-[#141517] border border-white/5 p-6 flex items-center justify-center">
+    <div className="rounded-2xl panel p-6 flex items-center justify-center">
       <Loader2 className="h-6 w-6 animate-spin text-[var(--muted)]" />
     </div>
   );
 
   return (
-    <div className="rounded-2xl bg-[#141517] border border-white/5 p-6 flex flex-col">
+    <div className="rounded-2xl panel p-6 flex flex-col">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-semibold text-white">Platform Security</h2>
+        <h2 className="text-lg font-semibold text-[color:var(--ink)]">Platform Security</h2>
         {updateSettings.isPending && <Loader2 className="h-4 w-4 animate-spin text-[var(--muted)]" />}
       </div>
       <p className="text-sm text-[var(--muted)] mb-6">
@@ -144,7 +209,7 @@ function SecuritySettingsPanel() {
       <div className="flex-grow flex flex-col justify-center">
         <div className="flex justify-between items-end mb-3">
           <label className="text-sm font-medium text-[var(--accent)]">Global API Rate Limit</label>
-          <span className="text-xl font-bold text-white tracking-tight">{data.rateLimitRPM} <span className="text-sm font-normal text-[var(--muted)]">RPM</span></span>
+          <span className="text-xl font-bold text-[color:var(--ink)] tracking-tight">{data.rateLimitRPM} <span className="text-sm font-normal text-[var(--muted)]">RPM</span></span>
         </div>
         <div className="flex items-center gap-4">
           <input 
@@ -154,7 +219,7 @@ function SecuritySettingsPanel() {
             step="10"
             value={data.rateLimitRPM}
             onChange={(e) => updateSettings.mutate(parseInt(e.target.value, 10))}
-            className="w-full accent-emerald-500 bg-white/10 h-2 rounded-lg appearance-none cursor-pointer"
+            className="w-full accent-emerald-500 bg-black/10 h-2 rounded-lg appearance-none cursor-pointer"
           />
         </div>
         <div className="flex justify-between text-xs text-[var(--muted)] mt-2 font-medium uppercase tracking-wider">
@@ -198,7 +263,7 @@ function PhoneCodeLimitsPanel() {
   });
 
   if (!data) return (
-    <div className="md:col-span-2 rounded-2xl bg-[#141517] border border-white/5 p-6 flex items-center justify-center">
+    <div className="md:col-span-2 rounded-2xl panel p-6 flex items-center justify-center">
       <Loader2 className="h-6 w-6 animate-spin text-[var(--muted)]" />
     </div>
   );
@@ -208,8 +273,8 @@ function PhoneCodeLimitsPanel() {
   const canEdit = !!me?.isSuperAdmin;
 
   return (
-    <div className="md:col-span-2 rounded-2xl bg-[#141517] border border-white/5 p-6">
-      <h2 className="text-lg font-semibold text-white mb-2">Phone verification codes</h2>
+    <div className="md:col-span-2 rounded-2xl panel p-6">
+      <h2 className="text-lg font-semibold text-[color:var(--ink)] mb-2">Phone verification codes</h2>
       <p className="text-sm text-[var(--muted)] mb-6">
         Each code is a paid SMS or WhatsApp message. When a daily limit is reached, new codes pause until the
         24-hour window clears; people can still use the app. You&apos;ll get a bell alert at 80%.
@@ -255,18 +320,18 @@ function UsageRow({ label, via, sent, limit, value, onChange, canEdit, invalid }
         <span className="text-sm font-medium text-[var(--accent)]">
           {label} <span className="text-[var(--muted)] font-normal">· {via}</span>
         </span>
-        <span className="text-sm text-white font-semibold">
+        <span className="text-sm text-[color:var(--ink)] font-semibold">
           {sent.toLocaleString()} <span className="text-[var(--muted)] font-normal">of {limit.toLocaleString()} in 24h</span>
         </span>
       </div>
-      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+      <div className="h-2 rounded-full bg-black/10 overflow-hidden">
         <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct * 100)}%`, background: color }} />
       </div>
       {canEdit && (
         <label className="flex items-center gap-2 mt-3 text-xs text-[var(--muted)] font-medium">
           Daily limit
           <input type="number" min={1} max={100000} value={value} onChange={(e) => onChange(e.target.value)}
-            className="w-28 rounded-lg bg-white/5 border px-2.5 py-1.5 text-sm text-white outline-none"
+            className="w-28 rounded-lg bg-transparent border px-2.5 py-1.5 text-sm text-[color:var(--ink)] outline-none"
             style={{ borderColor: invalid ? '#e11d48' : 'rgba(255,255,255,0.1)' }} />
         </label>
       )}

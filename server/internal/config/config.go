@@ -93,6 +93,33 @@ type Config struct {
 	// web app. Taken from config, never the request's Host header, so a
 	// spoofed Host can't redirect reset links.
 	PublicAPIURL string
+
+	// Payments. PayHere is used when its merchant id and secret are set
+	// (and PUBLIC_API_URL, for its notify URL). Outside production only,
+	// setting FAKE_GATEWAY_SECRET turns on a fake gateway for trying paid
+	// bookings end to end; it is off by default. Without a gateway, paid
+	// bookings are refused.
+	PayHereMerchantID     string
+	PayHereMerchantSecret string
+	PayHereSandbox        bool
+	FakeGatewaySecret     string
+	// PayPal runs alongside PayHere when its client id, secret and webhook
+	// id are set. It can't charge LKR, so travellers pay in PayPalCurrency
+	// at the exchange rate finance sets, plus PayPalFxMarginBps to cover
+	// PayPal's fees and conversion spread.
+	PayPalClientID     string
+	PayPalClientSecret string
+	PayPalWebhookID    string
+	PayPalSandbox      bool
+	PayPalCurrency     string
+	PayPalFxMarginBps  int
+	// PayPalAPIBaseURL points the PayPal gateway at another API host
+	// (tests); ignored in production.
+	PayPalAPIBaseURL string
+	// PayoutEncryptionKey (32 bytes, base64 in PAYOUT_ENCRYPTION_KEY)
+	// encrypts vendors' bank account numbers. Without it payout accounts
+	// can't be saved.
+	PayoutEncryptionKey []byte
 	// SuperAdminEmails lists admin accounts (by email, case-insensitive)
 	// granted the "super-admin" tier — e.g. viewing the cross-admin audit
 	// log. Deliberately env-var-driven rather than a DB role/invite system:
@@ -192,6 +219,12 @@ func Load() Config {
 	if err != nil {
 		log.Fatalf("TOTP_ENCRYPTION_KEY: %v", err)
 	}
+	var payoutKey []byte
+	if raw := strings.TrimSpace(getenv("PAYOUT_ENCRYPTION_KEY", "")); raw != "" {
+		if payoutKey, err = decodeTOTPKey(raw); err != nil {
+			log.Fatalf("PAYOUT_ENCRYPTION_KEY: %v", err)
+		}
+	}
 
 	vendorAppURL := ResolveVendorAppURL(getenv("NEXT_PUBLIC_VENDOR_URL", ""), getenv("VENDOR_APP_URL", ""))
 	adminAppURL := strings.TrimRight(strings.TrimSpace(getenv("ADMIN_APP_URL", "http://localhost:3001")), "/")
@@ -220,6 +253,18 @@ func Load() Config {
 		VendorAppURL:         vendorAppURL,
 		AdminAppURL:          adminAppURL,
 		PublicAPIURL:         strings.TrimRight(getenv("PUBLIC_API_URL", ""), "/"),
+		PayHereMerchantID:     strings.TrimSpace(getenv("PAYHERE_MERCHANT_ID", "")),
+		PayHereMerchantSecret: strings.TrimSpace(getenv("PAYHERE_MERCHANT_SECRET", "")),
+		PayHereSandbox:        getenv("PAYHERE_SANDBOX", "true") != "false",
+		FakeGatewaySecret:     strings.TrimSpace(getenv("FAKE_GATEWAY_SECRET", "")),
+		PayPalClientID:        strings.TrimSpace(getenv("PAYPAL_CLIENT_ID", "")),
+		PayPalClientSecret:    strings.TrimSpace(getenv("PAYPAL_CLIENT_SECRET", "")),
+		PayPalWebhookID:       strings.TrimSpace(getenv("PAYPAL_WEBHOOK_ID", "")),
+		PayPalSandbox:         getenv("PAYPAL_SANDBOX", "true") != "false",
+		PayPalCurrency:        strings.ToUpper(strings.TrimSpace(getenv("PAYPAL_CURRENCY", "USD"))),
+		PayPalFxMarginBps:     getenvBps("PAYPAL_FX_MARGIN_BPS", 300),
+		PayPalAPIBaseURL:      strings.TrimSpace(getenv("PAYPAL_API_BASE_URL", "")),
+		PayoutEncryptionKey:   payoutKey,
 		GeminiVideoModel:      getenv("GEMINI_VIDEO_MODEL", ""),
 		GooglePlacesAPIKey:    getenv("GOOGLE_PLACES_API_KEY", getenv("GOOGLE_CALENDAR_API_KEY", "")),
 		YoutubeAPIKey:         getenv("YOUTUBE_API_KEY", getenv("GOOGLE_PLACES_API_KEY", getenv("GOOGLE_CALENDAR_API_KEY", ""))),
@@ -329,6 +374,21 @@ func getenvInt(key string, fallback int) int {
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
 		log.Printf("config: %s=%q is not a positive integer, using %d", key, v, fallback)
+		return fallback
+	}
+	return n
+}
+
+// getenvBps reads basis points between 0 and 5000 (50%), logging and
+// falling back on a bad value.
+func getenvBps(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 || n > 5000 {
+		log.Printf("config: %s=%q is not between 0 and 5000, using %d", key, v, fallback)
 		return fallback
 	}
 	return n

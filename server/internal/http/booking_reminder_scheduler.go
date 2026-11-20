@@ -50,7 +50,7 @@ func (s *Server) runBookingReminderCheck(ctx context.Context) {
 			continue
 		}
 		subject := "Your Spotto booking is coming up"
-		body := bookingReminderEmailHTML(b)
+		body := bookingReminderEmailHTML(b, s.paidLabel(ctx, b))
 		if err := s.Mail.Send(b.TravellerEmail, subject, body); err != nil {
 			log.Printf("booking reminder scheduler: send booking=%s: %v", b.ID, err)
 			continue

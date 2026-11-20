@@ -1,6 +1,8 @@
 // Core Spotto data models — ported from Prototype/design/data.jsx.
 // Plain immutable classes; only persisted types get toJson/fromJson.
 
+import '../../core/utils/money.dart';
+
 /// Parses a string-list field that may still be in an older single-string
 /// shape — `v as List?` is a hard cast in Dart that throws on a non-null,
 /// wrong-typed value rather than returning null, so a server/app running
@@ -603,13 +605,13 @@ class ReviewPhoto {
 }
 
 /// One bookable thing a vendor offers (e.g. "Beginner surf lesson", "Deluxe
-/// Room") — see GET /places/{id}/services. No payment is collected
-/// anywhere in this platform; [priceLabel] is display-only, the vendor
-/// collects payment in person.
+/// Room", "Dawn whale watch") — see GET /places/{id}/services. Paid
+/// services are paid for in the app through the gateway's hosted checkout;
+/// free ones (most table reservations) cost the traveller nothing.
 class BookableService {
   final String id;
   final String vendorId;
-  final String type; // session | table | stay — see data/vendor_categories.dart's BookingType
+  final String type; // session | table | stay | rental | experience | event
   final String name;
   final String description;
   final int durationMins; // session/table only
@@ -617,8 +619,15 @@ class BookableService {
   final int partySizeMin; // session/table only
   final int partySizeMax; // session/table only
   final int guestsPerRoom; // stay only
-  final String priceLabel;
+  final String priceLabel; // optional extra text shown next to the price
   final bool active;
+  final int priceMinor;
+  final String currency;
+  final String pricingMode; // free | per_person | per_booking | per_night
+  final int freeCancelHours;
+  final int lateCancelRefundPct;
+  final String scheduling; // weekly | occurrences
+  final String meetingPointNote;
 
   const BookableService({
     required this.id,
@@ -633,6 +642,13 @@ class BookableService {
     this.guestsPerRoom = 1,
     this.priceLabel = '',
     this.active = true,
+    this.priceMinor = 0,
+    this.currency = 'LKR',
+    this.pricingMode = 'free',
+    this.freeCancelHours = 24,
+    this.lateCancelRefundPct = 0,
+    this.scheduling = 'weekly',
+    this.meetingPointNote = '',
   });
 
   factory BookableService.fromJson(Map<String, dynamic> json) => BookableService(
@@ -648,6 +664,138 @@ class BookableService {
         guestsPerRoom: (json['guestsPerRoom'] as num?)?.toInt() ?? 1,
         priceLabel: json['priceLabel'] as String? ?? '',
         active: json['active'] as bool? ?? true,
+        priceMinor: (json['priceMinor'] as num?)?.toInt() ?? 0,
+        currency: json['currency'] as String? ?? 'LKR',
+        pricingMode: json['pricingMode'] as String? ?? 'free',
+        freeCancelHours: (json['freeCancelHours'] as num?)?.toInt() ?? 24,
+        lateCancelRefundPct: (json['lateCancelRefundPct'] as num?)?.toInt() ?? 0,
+        scheduling: json['scheduling'] as String? ?? 'weekly',
+        meetingPointNote: ((json['meetingPoint'] as Map?)?['note'] as String?) ?? '',
+      );
+
+  bool get isFree => pricingMode == 'free' || priceMinor <= 0;
+  bool get usesOccurrences => scheduling == 'occurrences';
+
+  /// What a booking costs, mirroring the server's QuoteBooking: the server
+  /// always recomputes it, this is only for showing the total before
+  /// booking.
+  int quote({required int partySize, int nights = 1}) => switch (pricingMode) {
+        'per_person' => priceMinor * (partySize < 1 ? 1 : partySize),
+        'per_booking' => priceMinor,
+        'per_night' => priceMinor * (nights < 1 ? 1 : nights),
+        _ => 0,
+      };
+}
+
+/// One dated run of a service: a departure, an event night (see
+/// GET /places/{id}/services/{serviceId}/availability's `occurrences`).
+class ServiceOccurrence {
+  final String id;
+  final DateTime start;
+  final DateTime end;
+  final int remaining;
+  const ServiceOccurrence({required this.id, required this.start, required this.end, required this.remaining});
+
+  factory ServiceOccurrence.fromJson(Map<String, dynamic> json) => ServiceOccurrence(
+        id: json['id'] as String? ?? '',
+        start: DateTime.tryParse(json['startAt'] as String? ?? '')?.toLocal() ?? DateTime.now(),
+        end: DateTime.tryParse(json['endAt'] as String? ?? '')?.toLocal() ?? DateTime.now(),
+        remaining: (json['remaining'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// How to pay for a booking awaiting payment: [url] is a Spotto page that
+/// forwards to the gateway's hosted checkout. Card details never reach
+/// Spotto or this app.
+class CheckoutInfo {
+  final String paymentId;
+  final String url;
+  final String returnUrlPrefix;
+  final DateTime? expiresAt;
+  final String gateway;
+  /// What the gateway will charge; differs from the booking's LKR price on
+  /// gateways that charge another currency (PayPal).
+  final int chargeAmountMinor;
+  final String chargeCurrency;
+  const CheckoutInfo({
+    required this.paymentId,
+    required this.url,
+    this.returnUrlPrefix = '',
+    this.expiresAt,
+    this.gateway = '',
+    this.chargeAmountMinor = 0,
+    this.chargeCurrency = 'LKR',
+  });
+
+  factory CheckoutInfo.fromJson(Map<String, dynamic> json) => CheckoutInfo(
+        paymentId: json['paymentId'] as String? ?? '',
+        url: json['url'] as String? ?? '',
+        returnUrlPrefix: json['returnUrlPrefix'] as String? ?? '',
+        expiresAt: DateTime.tryParse(json['expiresAt'] as String? ?? '')?.toLocal(),
+        gateway: json['gateway'] as String? ?? '',
+        chargeAmountMinor: (json['chargeAmountMinor'] as num?)?.toInt() ?? 0,
+        chargeCurrency: json['chargeCurrency'] as String? ?? 'LKR',
+      );
+}
+
+/// One way to pay, as GET /payments/options lists them.
+class PaymentOption {
+  final String gateway;
+  final String displayName;
+  final String chargeCurrency;
+  final int chargeAmountMinor;
+  /// True when the gateway charges another currency than LKR, converted at
+  /// the current exchange rate.
+  final bool converted;
+  const PaymentOption({
+    required this.gateway,
+    required this.displayName,
+    required this.chargeCurrency,
+    required this.chargeAmountMinor,
+    this.converted = false,
+  });
+
+  factory PaymentOption.fromJson(Map<String, dynamic> json) => PaymentOption(
+        gateway: json['gateway'] as String? ?? '',
+        displayName: json['displayName'] as String? ?? '',
+        chargeCurrency: json['chargeCurrency'] as String? ?? 'LKR',
+        chargeAmountMinor: (json['chargeAmountMinor'] as num?)?.toInt() ?? 0,
+        converted: json['converted'] as bool? ?? false,
+      );
+}
+
+/// A bookable experience or event, as GET /experiences lists them.
+class ExperienceListing {
+  final BookableService service;
+  final String vendorName;
+  final String vendorKind; // venue | host
+  final String category;
+  final String placeId;
+  final String town;
+  final ServiceOccurrence? nextOccurrence;
+  final double? distanceKm;
+  const ExperienceListing({
+    required this.service,
+    required this.vendorName,
+    required this.vendorKind,
+    required this.category,
+    required this.placeId,
+    this.town = '',
+    this.nextOccurrence,
+    this.distanceKm,
+  });
+
+  factory ExperienceListing.fromJson(Map<String, dynamic> json) => ExperienceListing(
+        service: BookableService.fromJson((json['service'] as Map? ?? const {}).cast<String, dynamic>()),
+        vendorName: json['vendorName'] as String? ?? '',
+        vendorKind: json['vendorKind'] as String? ?? 'venue',
+        category: json['category'] as String? ?? '',
+        placeId: json['placeId'] as String? ?? '',
+        town: json['town'] as String? ?? '',
+        nextOccurrence: json['nextOccurrence'] is Map
+            ? ServiceOccurrence.fromJson((json['nextOccurrence'] as Map).cast<String, dynamic>())
+            : null,
+        distanceKm: (json['distanceKm'] as num?)?.toDouble(),
       );
 }
 
@@ -668,10 +816,11 @@ class BookingSlot {
       );
 }
 
-/// A traveller's real, auto-confirmed commitment against a [BookableService].
-/// No payment collected — the vendor checks the traveller in via a
-/// BOOK-XXXX QR/code, the same mechanism offer redemption uses (see
-/// ClaimsNotifier) — [code] is that check-in code.
+/// A traveller's booking against a [BookableService]. A free booking is
+/// confirmed straight away; a paid one starts `awaiting_payment`, holding its
+/// seats until [holdExpiresAt], and is confirmed once the gateway reports
+/// the payment. The vendor checks the traveller in with the BOOK-XXXX [code]
+/// (shown as a QR only once confirmed).
 class Booking {
   final String id;
   final String code;
@@ -682,11 +831,23 @@ class Booking {
   final String startAt;
   final String endAt;
   final int partySize;
-  final String status; // confirmed | cancelled | completed | no_show
+  final String status; // awaiting_payment | confirmed | cancelled | completed | no_show | expired
   final String note;
   final String createdAt;
   final String serviceName;
   final String vendorName;
+  final int amountMinor;
+  final String currency;
+  final String paymentStatus; // not_required | pending | paid | refunded | partially_refunded | failed
+  final int refundedMinor;
+  final String holdExpiresAt;
+  final String occurrenceId;
+  final int freeCancelHours;
+  final int lateCancelRefundPct;
+  /// What the traveller was actually charged once paid: the LKR price, or
+  /// e.g. USD when PayPal took the payment. 0/'' until paid.
+  final int chargeAmountMinor;
+  final String chargeCurrency;
 
   const Booking({
     required this.id,
@@ -703,6 +864,16 @@ class Booking {
     this.createdAt = '',
     this.serviceName = '',
     this.vendorName = '',
+    this.amountMinor = 0,
+    this.currency = 'LKR',
+    this.paymentStatus = 'not_required',
+    this.refundedMinor = 0,
+    this.holdExpiresAt = '',
+    this.occurrenceId = '',
+    this.freeCancelHours = 24,
+    this.lateCancelRefundPct = 0,
+    this.chargeAmountMinor = 0,
+    this.chargeCurrency = '',
   });
 
   factory Booking.fromJson(Map<String, dynamic> json) => Booking(
@@ -720,6 +891,16 @@ class Booking {
         createdAt: json['createdAt'] as String? ?? '',
         serviceName: json['serviceName'] as String? ?? '',
         vendorName: json['vendorName'] as String? ?? '',
+        amountMinor: (json['amountMinor'] as num?)?.toInt() ?? 0,
+        currency: json['currency'] as String? ?? 'LKR',
+        paymentStatus: json['paymentStatus'] as String? ?? 'not_required',
+        refundedMinor: (json['refundedMinor'] as num?)?.toInt() ?? 0,
+        holdExpiresAt: json['holdExpiresAt'] as String? ?? '',
+        occurrenceId: json['occurrenceId'] as String? ?? '',
+        freeCancelHours: (json['freeCancelHours'] as num?)?.toInt() ?? 24,
+        lateCancelRefundPct: (json['lateCancelRefundPct'] as num?)?.toInt() ?? 0,
+        chargeAmountMinor: (json['chargeAmountMinor'] as num?)?.toInt() ?? 0,
+        chargeCurrency: json['chargeCurrency'] as String? ?? '',
       );
 
   /// Round-trips for LocalStore caching (see BookingsNotifier) — never sent
@@ -729,13 +910,52 @@ class Booking {
         'placeId': placeId, 'startAt': startAt, 'endAt': endAt, 'partySize': partySize,
         'status': status, 'note': note, 'createdAt': createdAt,
         'serviceName': serviceName, 'vendorName': vendorName,
+        'amountMinor': amountMinor, 'currency': currency, 'paymentStatus': paymentStatus,
+        'refundedMinor': refundedMinor, 'holdExpiresAt': holdExpiresAt, 'occurrenceId': occurrenceId,
+        'freeCancelHours': freeCancelHours, 'lateCancelRefundPct': lateCancelRefundPct,
+        'chargeAmountMinor': chargeAmountMinor, 'chargeCurrency': chargeCurrency,
       };
 
-  Booking copyWith({String? status}) => Booking(
+  Booking copyWith({String? status, String? paymentStatus, int? refundedMinor}) => Booking(
         id: id, code: code, vendorId: vendorId, serviceId: serviceId, type: type, placeId: placeId,
         startAt: startAt, endAt: endAt, partySize: partySize, status: status ?? this.status,
         note: note, createdAt: createdAt, serviceName: serviceName, vendorName: vendorName,
+        amountMinor: amountMinor, currency: currency, paymentStatus: paymentStatus ?? this.paymentStatus,
+        refundedMinor: refundedMinor ?? this.refundedMinor, holdExpiresAt: holdExpiresAt,
+        occurrenceId: occurrenceId, freeCancelHours: freeCancelHours, lateCancelRefundPct: lateCancelRefundPct,
+        chargeAmountMinor: chargeAmountMinor, chargeCurrency: chargeCurrency,
       );
+
+  bool get isPaid => amountMinor > 0;
+
+  /// Whether the payment was charged in another currency than the price.
+  bool get chargedInOtherCurrency => chargeCurrency.isNotEmpty && chargeCurrency != currency && chargeAmountMinor > 0;
+
+  /// An LKR amount of this booking (e.g. a refund) in the currency the
+  /// traveller was charged in: the same share of the charge, rounded down,
+  /// and exactly the charge for the whole amount. Mirrors the server.
+  int inChargeCurrency(int lkrMinor) {
+    if (!chargedInOtherCurrency || amountMinor <= 0) return lkrMinor;
+    if (lkrMinor >= amountMinor) return chargeAmountMinor;
+    return lkrMinor * chargeAmountMinor ~/ amountMinor;
+  }
+
+  /// An LKR amount of this booking formatted in the charged currency.
+  String moneyLabel(int lkrMinor) =>
+      chargedInOtherCurrency ? formatMoney(inChargeCurrency(lkrMinor), chargeCurrency) : formatLkr(lkrMinor);
+  bool get awaitingPayment => status == 'awaiting_payment';
+
+  /// Whether the seats are still held for payment right now.
+  bool get holdLive {
+    final until = DateTime.tryParse(holdExpiresAt);
+    return awaitingPayment && until != null && until.isAfter(DateTime.now());
+  }
+
+  bool get isUpcoming {
+    final end = DateTime.tryParse(endAt) ?? DateTime.tryParse(startAt);
+    if (end == null) return false;
+    return (status == 'confirmed' || holdLive) && end.isAfter(DateTime.now());
+  }
 }
 
 /// A traveller-contributed photo for a place (media role "contrib" — see

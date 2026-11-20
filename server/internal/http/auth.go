@@ -80,9 +80,12 @@ type registerReq struct {
 	// Vendor registration extras
 	BusinessName string `json:"businessName,omitempty"`
 	Category     string `json:"category,omitempty"`
-	Town         string `json:"town,omitempty"`
-	Phone        string `json:"phone,omitempty"`
-	Description  string `json:"description,omitempty"`
+	// Kind is "venue" (default) or "host": a local running experiences
+	// from a meeting point (Lat/Lng), with no storefront or opening hours.
+	Kind        string `json:"kind,omitempty"`
+	Town        string `json:"town,omitempty"`
+	Phone       string `json:"phone,omitempty"`
+	Description string `json:"description,omitempty"`
 	// Lat/Lng/Contact/Hours are populated only when the owner found their
 	// business via the registration wizard's Google Places search step
 	// (web/vendor/app/login/page.tsx) rather than typing everything by
@@ -267,6 +270,10 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			Lng:           req.Lng,
 			Country:       req.BusinessCountry,
 			GooglePlaceID: googlePlaceID,
+			Kind:          domain.VendorKindVenue,
+		}
+		if req.Kind == domain.VendorKindHost {
+			v.Kind = domain.VendorKindHost
 		}
 		if v.Name == "" {
 			v.Name = req.Name

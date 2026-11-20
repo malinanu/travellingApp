@@ -200,6 +200,8 @@ function LoginPageInner() {
   const [name, setName] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [category, setCategory] = useState('coffee');
+  // A local host runs experiences from a meeting point and has no venue.
+  const [isHost, setIsHost] = useState(false);
   // Which category segment is expanded on the "Your business" step. null
   // follows the chosen category (including one auto-filled from the
   // Google business search); '' means the owner collapsed them all.
@@ -467,7 +469,7 @@ function LoginPageInner() {
     setError(null);
     try {
       const res = await api.post<AuthResponse | TwoFactorRequiredResponse>('/auth/register', {
-        email, password, name, role: 'vendor', businessName, category,
+        email, password, name, role: 'vendor', businessName, category, kind: isHost ? 'host' : 'venue',
         phone: sriLankanPhone(phone), town, description,
         ...(placeLat != null && placeLng != null ? { lat: placeLat, lng: placeLng } : {}),
         ...(businessContact ? { contact: businessContact } : {}),
@@ -738,7 +740,20 @@ function LoginPageInner() {
 
         {registerStep === 2 && (
           <div className="space-y-4">
-            <Field label="Business name" value={businessName} onChange={setBusinessName} icon={Store} placeholder="e.g. Driftwood Coffee & Co-Work" autoFocus />
+            <div className="grid grid-cols-2 gap-2">
+              {([false, true] as const).map((host) => (
+                <button key={String(host)} type="button"
+                  onClick={() => { setIsHost(host); if (host && !categoryById(category)?.allowedBookingTypes?.includes('experience')) setCategory('city-tours'); }}
+                  className={`rounded-2xl border-[1.5px] px-3 py-3 text-left transition-colors ${isHost === host ? 'border-accent bg-accent-tint' : 'border-line bg-white'}`}>
+                  <span className="block font-extrabold text-[13px] text-ink">{host ? 'I host experiences' : 'I run a venue'}</span>
+                  <span className="block text-[11.5px] font-semibold text-muted mt-0.5 leading-snug">
+                    {host ? 'Tours, camping, classes… no shop needed. Free: Spotto takes a small commission only when someone books.' : 'A café, bar, restaurant, hotel or other place people visit.'}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <Field label={isHost ? 'Your name or brand' : 'Business name'} value={businessName} onChange={setBusinessName} icon={Store}
+              placeholder={isHost ? 'e.g. Nimal’s lagoon tours' : 'e.g. Driftwood Coffee & Co-Work'} autoFocus />
             <div>
               <span className="block text-[12.5px] font-extrabold mb-2 text-ink-soft">Category</span>
               <div className="space-y-2.5">

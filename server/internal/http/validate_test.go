@@ -1,4 +1,4 @@
-﻿package httpapi_test
+package httpapi_test
 
 // Integration test for the vendor validate endpoint's edge cases against the
 // real Postgres store (the domain has no mockable interface â€” see store.go's
@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -19,20 +20,41 @@ import (
 	"github.com/spotto/server/internal/config"
 	"github.com/spotto/server/internal/domain"
 	httpapi "github.com/spotto/server/internal/http"
+	"github.com/spotto/server/internal/seed"
 	"github.com/spotto/server/internal/store/postgres"
 )
 
+// mustConnect opens the test database (SPOTTO_TEST_DATABASE_URL, or the
+// local default), migrates it and makes sure the category taxonomy exists,
+// as the API does at startup. Without a reachable database the test is
+// skipped, unless SPOTTO_REQUIRE_DB=1, where a skip would hide that the
+// database tests never ran.
 func mustConnect(t *testing.T) *postgres.Store {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	store, err := postgres.Connect(ctx, "postgres://postgres:admin123@localhost:5432/spotto?sslmode=disable")
+	url := os.Getenv("SPOTTO_TEST_DATABASE_URL")
+	if url == "" {
+		url = "postgres://postgres:admin123@localhost:5432/spotto?sslmode=disable"
+	}
+	store, err := postgres.Connect(ctx, url)
 	if err != nil {
+		if os.Getenv("SPOTTO_REQUIRE_DB") == "1" {
+			t.Fatalf("SPOTTO_REQUIRE_DB=1 but the test database is unreachable: %v", err)
+		}
 		t.Skipf("skipping: no local postgres available: %v", err)
 	}
 	if err := store.Migrate(context.Background()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	if _, err := store.EnsureVendorCategories(context.Background(), seed.InitialCategories); err != nil {
+		t.Fatalf("ensure categories: %v", err)
+	}
+	cats, err := store.GetVendorCategories(context.Background())
+	if err != nil {
+		t.Fatalf("load categories: %v", err)
+	}
+	domain.InitVendorCategories(cats)
 	return store
 }
 

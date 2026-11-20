@@ -1382,9 +1382,8 @@ final serviceAvailabilityProvider =
       return (res.data as Map).cast<String, dynamic>();
     });
 
-/// The traveller's own bookings — no optimistic write (unlike claims'
-/// single key-flip, a booking is a genuinely new record with real fields),
-/// so [create] just appends the server's authoritative response on success.
+/// The traveller's own bookings — no optimistic writes: [create] adds the
+/// server's answer, [cancel] applies the refund the server reports.
 class BookingsNotifier extends Notifier<List<Booking>> {
   @override
   List<Booking> build() {
@@ -1404,16 +1403,25 @@ class BookingsNotifier extends Notifier<List<Booking>> {
 
   void _persist() => ref.read(localStoreProvider).setJsonList(StoreKeys.bookings, [for (final b in state) b.toJson()]);
 
-  /// Creates a real booking. Throws on failure (caller shows the error via
-  /// ApiClient.errorMessage) — same convention as ClaimsNotifier.claim.
-  Future<Booking> create({
-    required String placeId,
+  void _upsert(Booking booking) {
+    final exists = state.any((b) => b.id == booking.id);
+    state = exists ? [for (final b in state) b.id == booking.id ? booking : b] : [booking, ...state];
+    _persist();
+  }
+
+  /// Creates a booking. A free one comes back confirmed; a paid one comes
+  /// back awaiting payment with [BookingCreated.checkout] to pay for it.
+  /// Throws on failure (caller shows the error via ApiClient.errorMessage).
+  Future<BookingCreated> create({
+    String? placeId,
     required String serviceId,
     DateTime? startAt,
     DateTime? checkIn,
     DateTime? checkOut,
+    String? occurrenceId,
     required int partySize,
     String note = '',
+    String? gateway,
   }) async {
     final res = await ref
         .read(apiProvider)
@@ -1421,39 +1429,144 @@ class BookingsNotifier extends Notifier<List<Booking>> {
         .post(
           '/bookings',
           data: {
-            'placeId': placeId,
+            'placeId': ?placeId,
             'serviceId': serviceId,
             if (startAt != null) 'startAt': startAt.toUtc().toIso8601String(),
-            if (checkIn != null) 'checkIn': checkIn.toIso8601String().split('T').first,
-            if (checkOut != null) 'checkOut': checkOut.toIso8601String().split('T').first,
+            if (checkIn != null) 'checkIn': _ymd(checkIn),
+            if (checkOut != null) 'checkOut': _ymd(checkOut),
+            'occurrenceId': ?occurrenceId,
             'partySize': partySize,
             'note': note,
+            'gateway': ?gateway,
           },
         );
-    final booking = Booking.fromJson((res.data as Map).cast<String, dynamic>());
-    state = [booking, ...state];
-    _persist();
-    return booking;
+    final data = (res.data as Map).cast<String, dynamic>();
+    final booking = Booking.fromJson(data);
+    _upsert(booking);
+    final co = data['checkout'];
+    return (booking: booking, checkout: co is Map ? CheckoutInfo.fromJson(co.cast<String, dynamic>()) : null);
   }
 
-  /// Optimistic status flip + rollback on failure — same technique as
-  /// VibeCheckInsNotifier.rate.
-  Future<void> cancel(String bookingId) async {
-    final previous = state;
+  static String _ymd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// Re-reads one booking's status (polled while the traveller pays).
+  Future<Booking?> refresh(String bookingId) async {
+    final res = await ref.read(apiProvider).dio.get('/bookings/$bookingId/status');
+    final data = (res.data as Map).cast<String, dynamic>();
+    final current = state.where((b) => b.id == bookingId).firstOrNull;
+    if (current == null) {
+      await _pull();
+      return state.where((b) => b.id == bookingId).firstOrNull;
+    }
+    final updated = Booking.fromJson({...current.toJson(), ...data});
+    _upsert(updated);
+    return updated;
+  }
+
+  /// Starts a fresh payment for a booking still holding its seats.
+  /// The server keeps the traveller's earlier choice of gateway unless
+  /// [gateway] picks another.
+  Future<CheckoutInfo> checkout(String bookingId, {String? gateway}) async {
+    final res = await ref
+        .read(apiProvider)
+        .dio
+        .post('/bookings/$bookingId/checkout', data: {'gateway': ?gateway});
+    final data = (res.data as Map).cast<String, dynamic>();
+    _upsert(Booking.fromJson(data));
+    return CheckoutInfo.fromJson((data['checkout'] as Map).cast<String, dynamic>());
+  }
+
+  /// Cancels a booking and returns what's refunded: in LKR, and in the
+  /// currency the traveller was charged in (the same unless e.g. PayPal
+  /// charged USD). The list is updated from the server's answer, not
+  /// optimistically, because the refund depends on the cancellation terms.
+  Future<CancelResult> cancel(String bookingId) async {
+    final res = await ref.read(apiProvider).dio.post('/bookings/$bookingId/cancel');
+    final data = (res.data as Map).cast<String, dynamic>();
+    final refunded = (data['refundMinor'] as num?)?.toInt() ?? 0;
     state = [
       for (final b in state)
-        if (b.id == bookingId) b.copyWith(status: 'cancelled') else b,
+        if (b.id == bookingId)
+          b.copyWith(
+            status: 'cancelled',
+            refundedMinor: b.refundedMinor + refunded,
+            paymentStatus: refunded <= 0
+                ? (b.awaitingPayment ? 'failed' : b.paymentStatus)
+                : (b.refundedMinor + refunded >= b.amountMinor ? 'refunded' : 'partially_refunded'),
+          )
+        else
+          b,
     ];
     _persist();
-    try {
-      await ref.read(apiProvider).dio.post('/bookings/$bookingId/cancel');
-    } catch (e) {
-      state = previous;
-      _persist();
-      rethrow;
-    }
+    return (
+      refundMinor: refunded,
+      gatewayRefundMinor: (data['gatewayRefundMinor'] as num?)?.toInt() ?? refunded,
+      gatewayCurrency: data['gatewayCurrency'] as String? ?? 'LKR',
+    );
   }
+
+  Future<void> reload() => _pull();
 }
+
+/// A booking just created, and for a paid one how to pay for it.
+typedef BookingCreated = ({Booking booking, CheckoutInfo? checkout});
+
+/// What a cancellation refunded, in LKR and in the currency it goes back in.
+typedef CancelResult = ({int refundMinor, int gatewayRefundMinor, String gatewayCurrency});
+
+/// What cancelling a booking now would refund (GET /bookings/{id}/cancel-preview).
+/// The gateway* amounts are in the currency the traveller was charged in.
+typedef CancelPreview = ({
+  bool cancellable,
+  int refundMinor,
+  int paidMinor,
+  bool fullRefund,
+  DateTime? freeCancelUntil,
+  int gatewayRefundMinor,
+  int gatewayPaidMinor,
+  String gatewayCurrency,
+});
+
+final cancelPreviewProvider = FutureProvider.autoDispose.family<CancelPreview, String>((ref, bookingId) async {
+  final res = await ref.read(apiProvider).dio.get('/bookings/$bookingId/cancel-preview');
+  final d = (res.data as Map).cast<String, dynamic>();
+  return (
+    cancellable: d['cancellable'] as bool? ?? false,
+    refundMinor: (d['refundMinor'] as num?)?.toInt() ?? 0,
+    paidMinor: (d['paidMinor'] as num?)?.toInt() ?? 0,
+    fullRefund: d['fullRefund'] as bool? ?? false,
+    freeCancelUntil: DateTime.tryParse(d['freeCancelUntil'] as String? ?? '')?.toLocal(),
+    gatewayRefundMinor: (d['gatewayRefundMinor'] as num?)?.toInt() ?? (d['refundMinor'] as num?)?.toInt() ?? 0,
+    gatewayPaidMinor: (d['gatewayPaidMinor'] as num?)?.toInt() ?? (d['paidMinor'] as num?)?.toInt() ?? 0,
+    gatewayCurrency: d['gatewayCurrency'] as String? ?? 'LKR',
+  );
+});
+
+/// How a traveller can pay an LKR amount: one option per payment gateway
+/// that can take it right now, the default first.
+final paymentOptionsProvider = FutureProvider.autoDispose.family<List<PaymentOption>, int>((ref, amountMinor) async {
+  final res = await ref.read(apiProvider).dio.get('/payments/options', queryParameters: {'amountMinor': amountMinor});
+  final list = ((res.data as Map)['options'] as List?) ?? const [];
+  return [for (final o in list) PaymentOption.fromJson((o as Map).cast<String, dynamic>())];
+});
+
+/// Bookable experiences and events, optionally one category, nearest first
+/// when a position is known.
+final experiencesProvider = FutureProvider.autoDispose.family<List<ExperienceListing>, ({String category, double? lat, double? lng})>(
+  (ref, args) async {
+    final res = await ref.read(apiProvider).dio.get(
+      '/experiences',
+      queryParameters: {
+        if (args.category.isNotEmpty) 'category': args.category,
+        if (args.lat != null) 'lat': args.lat,
+        if (args.lng != null) 'lng': args.lng,
+        if (args.lat != null) 'radiusKm': 150,
+      },
+    );
+    return [for (final e in (res.data as List)) ExperienceListing.fromJson((e as Map).cast<String, dynamic>())];
+  },
+);
 
 final bookingsProvider = NotifierProvider<BookingsNotifier, List<Booking>>(BookingsNotifier.new);
 

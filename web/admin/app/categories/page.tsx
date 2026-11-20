@@ -162,6 +162,10 @@ function CategoryModal({ category, onClose, onSaved }: { category?: VendorCatego
               segment,
               icon,
               bookingType: (fd.get('bookingType') as any) || undefined,
+              // The main type is always allowed; extra types come from the checkboxes.
+              allowedBookingTypes: fd.get('bookingType')
+                ? Array.from(new Set([fd.get('bookingType') as string, ...(fd.getAll('allowedBookingTypes') as string[])])) as any
+                : [],
             });
           }}
         >
@@ -256,9 +260,24 @@ function CategoryModal({ category, onClose, onSaved }: { category?: VendorCatego
               <option value="">None (Not Bookable)</option>
               <option value="table">Table (Restaurants, Cafes)</option>
               <option value="stay">Stay (Hotels, Hostels)</option>
-              <option value="session">Session (Classes, Tours)</option>
+              <option value="session">Session (Classes, Treatments)</option>
+              <option value="experience">Experience (Tours, Lessons, Trips)</option>
+              <option value="event">Event (Ticketed nights)</option>
               <option value="rental">Rental (Bikes, Surfboards)</option>
             </select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[12px] font-bold text-muted uppercase tracking-wide">Also allow</label>
+            <div className="flex flex-wrap gap-3">
+              {['table', 'session', 'experience', 'event', 'stay', 'rental'].map((t) => (
+                <label key={t} className="flex items-center gap-1.5 text-[13px] font-semibold capitalize">
+                  <input type="checkbox" name="allowedBookingTypes" value={t} defaultChecked={category?.allowedBookingTypes?.includes(t as any)} />
+                  {t}
+                </label>
+              ))}
+            </div>
+            <span className="text-[11px] text-muted">e.g. let bars also sell tickets to event nights. Ignored when the category isn't bookable.</span>
           </div>
 
           <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-border">

@@ -4,7 +4,7 @@
 // category's icon *name* to a real lucide-react component, since the
 // shared package has no UI-framework dependency.
 import {
-  Banknote, Building2, Car, Coffee, Compass, Droplets, Dumbbell, Film, Fuel,
+  Anchor, Backpack, Banknote, Building2, Car, ChefHat, Coffee, Compass, Droplets, Dumbbell, Film, Fuel, Hammer, PartyPopper, PawPrint, Ship, Waves,
   Gem, GlassWater, Home, Image, Key, Landmark, Library, Mail, Martini, Mic,
   Music, Package, Pill, Plane, Scissors, Shirt, ShoppingBag, ShoppingCart,
   Sparkles, SquareParking, Stethoscope, Store, Ticket, TreePine, Trophy,
@@ -22,6 +22,7 @@ export { VENDOR_SEGMENTS, VENDOR_CATEGORIES, categoryById, categoriesBySegment, 
 export const BUSINESS_CATEGORIES = onboardableCategories();
 
 const ICON_COMPONENTS: Record<string, LucideIcon> = {
+  Anchor, Backpack, ChefHat, Compass, Hammer, PartyPopper, PawPrint, Ship, Waves,
   Banknote, Building2, Car, Coffee, Droplets, Dumbbell, Film, Fuel, Gem,
   GlassWater, Home, Image, Key, Landmark, Library, Mail, Martini, Mic,
   Music, Package, Pill, Plane, Scissors, Shirt, ShoppingBag, ShoppingCart,

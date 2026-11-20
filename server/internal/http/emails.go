@@ -9,6 +9,7 @@ import (
 
 	"github.com/spotto/server/internal/domain"
 	"github.com/spotto/server/internal/mail"
+	"github.com/spotto/server/internal/store/postgres"
 )
 
 // Branded bodies for every email the API sends, all laid out by
@@ -68,33 +69,56 @@ func loginEmailChangedEmailHTML(vendorName string) string {
 	})
 }
 
-func bookingConfirmedEmailHTML(b domain.Booking, serviceName string) string {
+// paid is what the traveller paid, as paidLabel renders it ("" if free).
+func bookingConfirmedEmailHTML(b domain.Booking, serviceName, paid string) string {
 	return renderEmail(mail.Email{
 		Preheader: "Your booking code for " + serviceName + " is inside.",
 		Title:     "You're booked in!",
 		Intro:     []string{"Your booking for " + serviceName + " is confirmed. Show this code when you arrive:"},
 		Code:      b.Code,
-		Details:   bookingDetails(b, serviceName),
+		Details:   bookingDetails(b, serviceName, paid),
 		Note:      "You can see and manage this booking any time in the Spotto app.",
 		Footer:    "You're receiving this because you made a booking on Spotto.",
 	})
 }
 
-func bookingReminderEmailHTML(b domain.Booking) string {
+func bookingCancelledEmailHTML(b domain.Booking, serviceName string, refund postgres.Refund) string {
+	intro := []string{"Sorry: " + serviceName + " had to cancel your booking."}
+	if refund.AmountMinor > 0 {
+		amount := formatLKR(refund.AmountMinor)
+		if refund.GatewayCurrency != "" && refund.GatewayCurrency != refund.Currency {
+			amount = formatMoney(refund.GatewayAmountMinor, refund.GatewayCurrency)
+		}
+		intro = append(intro, "We're refunding "+amount+" to the card or account you paid with. Banks usually take a few working days to show it.")
+	}
 	return renderEmail(mail.Email{
-		Preheader: b.ServiceName + " is coming up on " + b.StartAt.Format("Jan 2, 3:04 PM") + ".",
+		Preheader: "Your booking for " + serviceName + " was cancelled.",
+		Title:     "Your booking was cancelled",
+		Intro:     intro,
+		Details:   bookingDetails(b, serviceName, ""),
+		Note:      "Open the Spotto app to find another spot nearby.",
+		Footer:    "You're receiving this because you made a booking on Spotto.",
+	})
+}
+
+func bookingReminderEmailHTML(b domain.Booking, paid string) string {
+	return renderEmail(mail.Email{
+		Preheader: b.ServiceName + " is coming up on " + inSriLanka(b.StartAt).Format("Jan 2, 3:04 PM") + ".",
 		Title:     "Your booking is coming up",
 		Intro:     []string{"Just a reminder: " + b.ServiceName + " is coming up soon. Show this code when you arrive:"},
 		Code:      b.Code,
-		Details:   bookingDetails(b, b.ServiceName),
+		Details:   bookingDetails(b, b.ServiceName, paid),
 		Footer:    "You're receiving this because you have an upcoming booking on Spotto.",
 	})
 }
 
-func bookingDetails(b domain.Booking, serviceName string) []mail.Detail {
+func bookingDetails(b domain.Booking, serviceName, paid string) []mail.Detail {
 	d := []mail.Detail{{Label: "Booking", Value: serviceName}}
 	if !b.StartAt.IsZero() {
-		d = append(d, mail.Detail{Label: "When", Value: b.StartAt.Format("Mon, Jan 2 · 3:04 PM")})
+		d = append(d, mail.Detail{Label: "When", Value: inSriLanka(b.StartAt).Format("Mon, Jan 2 · 3:04 PM")})
+	}
+	if paid != "" {
+		d = append(d, mail.Detail{Label: "Paid", Value: paid})
 	}
 	if b.PartySize > 0 {
 		d = append(d, mail.Detail{Label: "Party size", Value: fmt.Sprint(b.PartySize)})

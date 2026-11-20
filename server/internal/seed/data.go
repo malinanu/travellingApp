@@ -8,9 +8,9 @@ import "github.com/spotto/server/internal/domain"
 
 var InitialCategories = []domain.VendorCategory{
 	// Food & Drink
-	{ID: "restaurants", Label: "Restaurants", Segment: domain.SegmentFoodAndDrink, Icon: "UtensilsCrossed", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "restaurants", Label: "Restaurants", Segment: domain.SegmentFoodAndDrink, Icon: "UtensilsCrossed", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeTable, domain.BookingTypeEvent}},
 	{ID: "takeout", Label: "Takeout", Segment: domain.SegmentFoodAndDrink, Icon: "ShoppingBag", RelevantVibeDimensions: []string{"crowded"}},
-	{ID: "bars", Label: "Bars", Segment: domain.SegmentFoodAndDrink, Icon: "Martini", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "bars", Label: "Bars", Segment: domain.SegmentFoodAndDrink, Icon: "Martini", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeTable, domain.BookingTypeEvent}},
 	{ID: "delivery", Label: "Delivery", Segment: domain.SegmentFoodAndDrink, Icon: "Truck", RelevantVibeDimensions: []string{}},
 	{ID: "coffee", Label: "Coffee", Segment: domain.SegmentFoodAndDrink, Icon: "Coffee", RelevantVibeDimensions: []string{"productive", "loud", "crowded"}, BookingType: domain.BookingTypeTable},
 
@@ -19,11 +19,24 @@ var InitialCategories = []domain.VendorCategory{
 	{ID: "gyms", Label: "Gyms", Segment: domain.SegmentThingsToDo, Icon: "Dumbbell", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeSession},
 	{ID: "art", Label: "Art", Segment: domain.SegmentThingsToDo, Icon: "Image", RelevantVibeDimensions: []string{"crowded"}},
 	{ID: "attractions", Label: "Attractions", Segment: domain.SegmentThingsToDo, Icon: "Ticket", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
-	{ID: "nightlife", Label: "Nightlife", Segment: domain.SegmentThingsToDo, Icon: "Music", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
-	{ID: "live-music", Label: "Live music", Segment: domain.SegmentThingsToDo, Icon: "Mic", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable},
+	{ID: "nightlife", Label: "Nightlife", Segment: domain.SegmentThingsToDo, Icon: "Music", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeTable, domain.BookingTypeEvent}},
+	{ID: "live-music", Label: "Live music", Segment: domain.SegmentThingsToDo, Icon: "Mic", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeTable, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeTable, domain.BookingTypeEvent}},
 	{ID: "movies", Label: "Movies", Segment: domain.SegmentThingsToDo, Icon: "Film", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
 	{ID: "museums", Label: "Museums", Segment: domain.SegmentThingsToDo, Icon: "Landmark", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeSession},
 	{ID: "libraries", Label: "Libraries", Segment: domain.SegmentThingsToDo, Icon: "Library", RelevantVibeDimensions: []string{"productive", "crowded"}},
+
+	// Experiences: run by local hosts (no venue needed) or by venues. Spotto
+	// takes a commission only when someone books.
+	{ID: "bar-tours", Label: "Bar tours", Segment: domain.SegmentThingsToDo, Icon: "Martini", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeExperience, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeExperience, domain.BookingTypeEvent}},
+	{ID: "wild-camping", Label: "Wild camping", Segment: domain.SegmentThingsToDo, Icon: "Backpack", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeExperience, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeExperience, domain.BookingTypeEvent}},
+	{ID: "surf", Label: "Surf", Segment: domain.SegmentThingsToDo, Icon: "Waves", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeExperience, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeExperience, domain.BookingTypeEvent, domain.BookingTypeRental}},
+	{ID: "cooking", Label: "Cooking", Segment: domain.SegmentThingsToDo, Icon: "ChefHat", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeExperience, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeExperience, domain.BookingTypeEvent}},
+	{ID: "whale-watching", Label: "Whale watching", Segment: domain.SegmentThingsToDo, Icon: "Ship", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeExperience, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeExperience, domain.BookingTypeEvent}},
+	{ID: "workshops", Label: "Workshops", Segment: domain.SegmentThingsToDo, Icon: "Hammer", RelevantVibeDimensions: []string{"productive", "crowded"}, BookingType: domain.BookingTypeExperience, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeExperience, domain.BookingTypeEvent}},
+	{ID: "city-tours", Label: "City & cultural tours", Segment: domain.SegmentThingsToDo, Icon: "Compass", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeExperience, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeExperience, domain.BookingTypeEvent}},
+	{ID: "safari-wildlife", Label: "Safari & wildlife", Segment: domain.SegmentThingsToDo, Icon: "PawPrint", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeExperience, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeExperience, domain.BookingTypeEvent}},
+	{ID: "boat-trips", Label: "Boat trips", Segment: domain.SegmentThingsToDo, Icon: "Anchor", RelevantVibeDimensions: []string{"crowded"}, BookingType: domain.BookingTypeExperience, AllowedBookingTypes: []domain.BookingType{domain.BookingTypeExperience, domain.BookingTypeEvent}},
+	{ID: "events", Label: "Events", Segment: domain.SegmentThingsToDo, Icon: "PartyPopper", RelevantVibeDimensions: []string{"loud", "crowded"}, BookingType: domain.BookingTypeEvent},
 
 	// Shopping
 	{ID: "groceries", Label: "Groceries", Segment: domain.SegmentShopping, Icon: "ShoppingCart", RelevantVibeDimensions: []string{"crowded"}},

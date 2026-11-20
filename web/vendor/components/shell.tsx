@@ -25,17 +25,26 @@ import { api } from '../lib/api';
 // bookableOnly marks nav items only relevant to categories with a real
 // BookingType (see @spotto/shared's isBookableCategory) — a bakery or a
 // brand partner never gets a Services/Bookings tab.
-const NAV: { href: string; label: string; icon: LucideIcon; foodOnly?: boolean; staffHidden?: boolean; approvedOnly?: boolean; bookableOnly?: boolean }[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/offers', label: 'Promotions', icon: Tag, approvedOnly: true },
-  { href: '/sponsorship', label: 'Daily Quest', icon: Star, approvedOnly: true, staffHidden: true },
-  { href: '/menu', label: 'Menu', icon: UtensilsCrossed, foodOnly: true, staffHidden: true },
-  { href: '/services', label: 'Services', icon: CalendarCheck, bookableOnly: true, staffHidden: true, approvedOnly: true },
-  { href: '/bookings', label: 'Bookings', icon: CalendarClock, bookableOnly: true, approvedOnly: true },
-
-  { href: '/validate', label: 'Validate', icon: QrCode, approvedOnly: true },
-  { href: '/reports', label: 'Reports', icon: BarChart3, staffHidden: true, approvedOnly: true },
-  { href: '/profile', label: 'Profile', icon: Store },
+// Grouped by what the owner is doing: running today, selling, money, and
+// the business itself. hostLabel replaces the label for local hosts (no
+// venue); venueOnly items are hidden for hosts.
+type NavItem = {
+  href: string; label: string; hostLabel?: string; icon: LucideIcon; group: NavGroup;
+  foodOnly?: boolean; staffHidden?: boolean; approvedOnly?: boolean; bookableOnly?: boolean; venueOnly?: boolean;
+};
+type NavGroup = 'Today' | 'Sell' | 'Money' | 'Business';
+const NAV_GROUPS: NavGroup[] = ['Today', 'Sell', 'Money', 'Business'];
+const NAV: NavItem[] = [
+  { group: 'Today', href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { group: 'Today', href: '/validate', label: 'Validate', icon: QrCode, approvedOnly: true },
+  { group: 'Today', href: '/bookings', label: 'Bookings', icon: CalendarClock, bookableOnly: true, approvedOnly: true },
+  { group: 'Sell', href: '/services', label: 'Services & experiences', hostLabel: 'Experiences', icon: CalendarCheck, bookableOnly: true, staffHidden: true, approvedOnly: true },
+  { group: 'Sell', href: '/offers', label: 'Promotions', icon: Tag, approvedOnly: true },
+  { group: 'Sell', href: '/sponsorship', label: 'Daily Quest', icon: Star, approvedOnly: true, staffHidden: true },
+  { group: 'Sell', href: '/menu', label: 'Menu', icon: UtensilsCrossed, foodOnly: true, staffHidden: true, venueOnly: true },
+  { group: 'Money', href: '/earnings', label: 'Earnings & payouts', icon: Wallet, bookableOnly: true, staffHidden: true, approvedOnly: true },
+  { group: 'Business', href: '/profile', label: 'Profile', icon: Store },
+  { group: 'Business', href: '/reports', label: 'Reports', icon: BarChart3, staffHidden: true, approvedOnly: true },
 ];
 
 // Matched case-insensitively against whatever substring appears in the
@@ -236,10 +245,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const isFood = isFoodCategory(business?.category);
   const isBookable = isBookableCategory(business?.category);
   const isStaff = me?.vendorRole === 'staff';
+  const isHost = business?.kind === 'host';
   const visibleNav = NAV.filter((n) =>
-    (!n.foodOnly || isFood) && (!n.bookableOnly || isBookable) && (!n.staffHidden || !isStaff) && (!n.approvedOnly || isApproved));
-  const title = NAV.find((n) => pathname.startsWith(n.href))?.label ??
-    (pathname.startsWith('/account') ? 'Account' : '');
+    (!n.foodOnly || isFood) && (!n.bookableOnly || isBookable) && (!n.staffHidden || !isStaff) && (!n.approvedOnly || isApproved) && (!n.venueOnly || !isHost));
+  const navLabel = (n: NavItem) => (isHost && n.hostLabel) || n.label;
+  const titleItem = NAV.find((n) => pathname.startsWith(n.href));
+  const title = (titleItem && navLabel(titleItem)) ?? (pathname.startsWith('/account') ? 'Account' : '');
 
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -265,25 +276,36 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <p className="text-[10.5px] font-extrabold uppercase tracking-widest mt-0.5 text-accent">Vendor</p>
           </div>
         </div>
-        <nav className="px-3 py-4 flex-1 space-y-1">
-          {visibleNav.map((n) => {
-            const on = pathname.startsWith(n.href);
-            const Icon = n.icon;
+        <nav className="px-3 py-3 flex-1 overflow-y-auto">
+          {NAV_GROUPS.map((group) => {
+            const items = visibleNav.filter((n) => n.group === group);
+            if (!items.length) return null;
             return (
-              <Link
-                key={n.href}
-                href={n.href}
-                onClick={() => setNavOpen(false)}
-                className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 transition-colors ${
-                  on ? 'bg-accent-tint text-accent' : 'text-ink-soft hover:bg-sand'
-                }`}
-              >
-                <Icon size={20} strokeWidth={on ? 2.5 : 2} />
-                <span className="font-extrabold text-[14.5px]">{n.label}</span>
-                {n.href === '/validate' && (
-                  <span className="ml-auto text-[10px] font-extrabold rounded-full px-1.5 py-0.5 bg-accent text-white">SCAN</span>
-                )}
-              </Link>
+              <div key={group} className="mb-3">
+                <p className="px-3.5 pb-1 text-[10.5px] font-extrabold uppercase tracking-widest text-muted">{group}</p>
+                <div className="space-y-0.5">
+                  {items.map((n) => {
+                    const on = pathname.startsWith(n.href);
+                    const Icon = n.icon;
+                    return (
+                      <Link
+                        key={n.href}
+                        href={n.href}
+                        onClick={() => setNavOpen(false)}
+                        className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2 transition-colors ${
+                          on ? 'bg-accent-tint text-accent' : 'text-ink-soft hover:bg-sand'
+                        }`}
+                      >
+                        <Icon size={19} strokeWidth={on ? 2.5 : 2} />
+                        <span className="font-extrabold text-[14px]">{navLabel(n)}</span>
+                        {n.href === '/validate' && (
+                          <span className="ml-auto text-[10px] font-extrabold rounded-full px-1.5 py-0.5 bg-accent text-white">SCAN</span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </nav>

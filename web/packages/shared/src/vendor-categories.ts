@@ -52,7 +52,7 @@ export const PIN_TONE_COLORS: Record<VendorSegment, string> = {
   future: '#0B6F86', // teal
 };
 
-export type BookingType = 'session' | 'table' | 'stay' | 'rental';
+export type BookingType = 'session' | 'table' | 'stay' | 'rental' | 'experience' | 'event';
 
 export interface VendorCategory {
   id: string;
@@ -64,18 +64,20 @@ export interface VendorCategory {
    * (e.g. "productive" doesn't mean anything for a beach bar). Omitted for
    * non-venue categories (brand partners) where vibe is irrelevant. */
   relevantVibeDimensions?: string[];
-  /** Which real-booking flow this category's vendors use, if any — undefined
-   * means not bookable (walk-in businesses, brand partners, event
-   * categories — Events isn't a shipped feature yet). Mirrors
+  /** This category's main booking flow, if any — undefined means not
+   * bookable (walk-in businesses, brand partners). Mirrors
    * server/internal/domain/vendor_category.go's BookingType exactly. */
   bookingType?: BookingType;
+  /** Every booking type the category's vendors may offer (a bar takes
+   * tables and sells event tickets); absent means just bookingType. */
+  allowedBookingTypes?: BookingType[];
 }
 
 export const VENDOR_CATEGORIES: VendorCategory[] = [
   // Food & Drink
-  { id: 'restaurants', label: 'Restaurants', segment: 'food_and_drink', icon: 'UtensilsCrossed', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
+  { id: 'restaurants', label: 'Restaurants', segment: 'food_and_drink', icon: 'UtensilsCrossed', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table', allowedBookingTypes: ['table', 'event'] },
   { id: 'takeout', label: 'Takeout', segment: 'food_and_drink', icon: 'ShoppingBag', relevantVibeDimensions: ['crowded'] },
-  { id: 'bars', label: 'Bars', segment: 'food_and_drink', icon: 'Martini', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
+  { id: 'bars', label: 'Bars', segment: 'food_and_drink', icon: 'Martini', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table', allowedBookingTypes: ['table', 'event'] },
   { id: 'delivery', label: 'Delivery', segment: 'food_and_drink', icon: 'Truck', relevantVibeDimensions: [] },
   { id: 'coffee', label: 'Coffee', segment: 'food_and_drink', icon: 'Coffee', relevantVibeDimensions: ['productive', 'loud', 'crowded'], bookingType: 'table' },
 
@@ -84,11 +86,23 @@ export const VENDOR_CATEGORIES: VendorCategory[] = [
   { id: 'gyms', label: 'Gyms', segment: 'things_to_do', icon: 'Dumbbell', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'session' },
   { id: 'art', label: 'Art', segment: 'things_to_do', icon: 'Image', relevantVibeDimensions: ['crowded'] },
   { id: 'attractions', label: 'Attractions', segment: 'things_to_do', icon: 'Ticket', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
-  { id: 'nightlife', label: 'Nightlife', segment: 'things_to_do', icon: 'Music', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
-  { id: 'live-music', label: 'Live music', segment: 'things_to_do', icon: 'Mic', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table' },
+  { id: 'nightlife', label: 'Nightlife', segment: 'things_to_do', icon: 'Music', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table', allowedBookingTypes: ['table', 'event'] },
+  { id: 'live-music', label: 'Live music', segment: 'things_to_do', icon: 'Mic', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'table', allowedBookingTypes: ['table', 'event'] },
   { id: 'movies', label: 'Movies', segment: 'things_to_do', icon: 'Film', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
   { id: 'museums', label: 'Museums', segment: 'things_to_do', icon: 'Landmark', relevantVibeDimensions: ['crowded'], bookingType: 'session' },
   { id: 'libraries', label: 'Libraries', segment: 'things_to_do', icon: 'Library', relevantVibeDimensions: ['productive', 'crowded'] },
+
+  // Experiences: run by local hosts (no venue needed) or by venues.
+  { id: 'bar-tours', label: 'Bar tours', segment: 'things_to_do', icon: 'Martini', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'experience', allowedBookingTypes: ['experience', 'event'] },
+  { id: 'wild-camping', label: 'Wild camping', segment: 'things_to_do', icon: 'Backpack', relevantVibeDimensions: ['crowded'], bookingType: 'experience', allowedBookingTypes: ['experience', 'event'] },
+  { id: 'surf', label: 'Surf', segment: 'things_to_do', icon: 'Waves', relevantVibeDimensions: ['crowded'], bookingType: 'experience', allowedBookingTypes: ['experience', 'event', 'rental'] },
+  { id: 'cooking', label: 'Cooking', segment: 'things_to_do', icon: 'ChefHat', relevantVibeDimensions: ['crowded'], bookingType: 'experience', allowedBookingTypes: ['experience', 'event'] },
+  { id: 'whale-watching', label: 'Whale watching', segment: 'things_to_do', icon: 'Ship', relevantVibeDimensions: ['crowded'], bookingType: 'experience', allowedBookingTypes: ['experience', 'event'] },
+  { id: 'workshops', label: 'Workshops', segment: 'things_to_do', icon: 'Hammer', relevantVibeDimensions: ['productive', 'crowded'], bookingType: 'experience', allowedBookingTypes: ['experience', 'event'] },
+  { id: 'city-tours', label: 'City & cultural tours', segment: 'things_to_do', icon: 'Compass', relevantVibeDimensions: ['crowded'], bookingType: 'experience', allowedBookingTypes: ['experience', 'event'] },
+  { id: 'safari-wildlife', label: 'Safari & wildlife', segment: 'things_to_do', icon: 'PawPrint', relevantVibeDimensions: ['crowded'], bookingType: 'experience', allowedBookingTypes: ['experience', 'event'] },
+  { id: 'boat-trips', label: 'Boat trips', segment: 'things_to_do', icon: 'Anchor', relevantVibeDimensions: ['crowded'], bookingType: 'experience', allowedBookingTypes: ['experience', 'event'] },
+  { id: 'events', label: 'Events', segment: 'things_to_do', icon: 'PartyPopper', relevantVibeDimensions: ['loud', 'crowded'], bookingType: 'event' },
 
   // Shopping
   { id: 'groceries', label: 'Groceries', segment: 'shopping', icon: 'ShoppingCart', relevantVibeDimensions: ['crowded'] },
@@ -144,4 +158,11 @@ export function onboardableCategories(): VendorCategory[] {
  * platform — drives the vendor portal's Services/Bookings nav visibility. */
 export function isBookableCategory(category: string | undefined): boolean {
   return !!categoryById(category)?.bookingType;
+}
+
+/** Every booking type a category allows (see VendorCategory.allowedBookingTypes). */
+export function allowedBookingTypes(category: string | undefined): BookingType[] {
+  const c = categoryById(category);
+  if (!c?.bookingType) return [];
+  return c.allowedBookingTypes?.length ? c.allowedBookingTypes : [c.bookingType];
 }
