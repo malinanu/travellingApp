@@ -19,7 +19,7 @@ const (
 // the refund its terms allow: a traveller gets the cancellation policy, a
 // vendor or admin cancellation always refunds in full. It returns the
 // amount refunded (0 for a free or unpaid booking).
-func (s *Server) cancelBooking(ctx context.Context, b domain.Booking, by, actor string) (int64, error) {
+func (s *Server) cancelBooking(ctx context.Context, b domain.Booking, by, actor string) (postgres.Refund, error) {
 	req := postgres.CancelRequest{BookingID: b.ID, By: by, Actor: actor, Now: time.Now(), FullRefund: by != cancelByTraveller}
 	switch by {
 	case cancelByTraveller:
@@ -29,12 +29,14 @@ func (s *Server) cancelBooking(ctx context.Context, b domain.Booking, by, actor 
 	}
 	cancelled, refund, err := s.Store.CancelBookingWithRefund(ctx, req)
 	if err != nil {
-		return 0, err
+		return postgres.Refund{}, err
 	}
-	var refunded int64
+	// No refund (nothing paid, or outside the refund window) is a zero
+	// Refund: AmountMinor 0.
+	var refunded postgres.Refund
 	if refund != nil {
 		s.processRefund(ctx, *refund)
-		refunded = refund.AmountMinor
+		refunded = *refund
 	}
 	if by != cancelByTraveller {
 		// The traveller didn't do this themselves: tell them.

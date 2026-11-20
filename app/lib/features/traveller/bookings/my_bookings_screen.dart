@@ -150,8 +150,8 @@ class _BookingTileState extends ConsumerState<_BookingTile> {
     final tone = _statusTone(b.status);
     final money = [
       if (b.amountMinor > 0 && b.paymentStatus != 'pending' && b.paymentStatus != 'failed')
-        l10n.paidAmount(formatLkr(b.amountMinor)),
-      if (b.refundedMinor > 0) l10n.refundedAmount(formatLkr(b.refundedMinor)),
+        l10n.paidAmount(b.moneyLabel(b.amountMinor)),
+      if (b.refundedMinor > 0) l10n.refundedAmount(b.moneyLabel(b.refundedMinor)),
     ].join(' · ');
 
     return Container(
@@ -256,8 +256,8 @@ class _BookingTileState extends ConsumerState<_BookingTile> {
         message = p.refundMinor <= 0
             ? l10n.refundNone
             : p.fullRefund
-            ? l10n.refundFullBack(formatLkr(p.refundMinor))
-            : l10n.refundPartBack(formatLkr(p.refundMinor), formatLkr(p.paidMinor));
+            ? l10n.refundFullBack(formatMoney(p.gatewayRefundMinor, p.gatewayCurrency))
+            : l10n.refundPartBack(formatMoney(p.gatewayRefundMinor, p.gatewayCurrency), formatMoney(p.gatewayPaidMinor, p.gatewayCurrency));
       } catch (e) {
         messenger.showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
         return;
@@ -283,10 +283,14 @@ class _BookingTileState extends ConsumerState<_BookingTile> {
     if (ok != true || !mounted) return;
     setState(() => _cancelling = true);
     try {
-      final refunded = await ref.read(bookingsProvider.notifier).cancel(b.id);
+      final res = await ref.read(bookingsProvider.notifier).cancel(b.id);
       messenger.showSnackBar(
         SnackBar(
-          content: Text(refunded > 0 ? l10n.cancelledWithRefund(formatLkr(refunded)) : l10n.bookingCancelled),
+          content: Text(
+            res.refundMinor > 0
+                ? l10n.cancelledWithRefund(formatMoney(res.gatewayRefundMinor, res.gatewayCurrency))
+                : l10n.bookingCancelled,
+          ),
         ),
       );
     } catch (e) {

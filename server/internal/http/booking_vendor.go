@@ -255,12 +255,12 @@ func (s *Server) handleVendorCancelBooking(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	c := auth.FromContext(r.Context())
-	refunded, err := s.cancelBooking(r.Context(), b, cancelByVendor, "vendor:"+c.Subject)
+	refund, err := s.cancelBooking(r.Context(), b, cancelByVendor, "vendor:"+c.Subject)
 	if err != nil {
 		writeCancelErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "cancelled", "refundMinor": refunded, "currency": b.Currency})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "cancelled", "refundMinor": refund.AmountMinor, "currency": b.Currency})
 }
 
 // handleSetBookingStatus lets a vendor mark a booking no_show/completed/

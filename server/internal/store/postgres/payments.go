@@ -662,3 +662,28 @@ func randomHex(n int) string {
 	}
 	return hex.EncodeToString(b)
 }
+
+// PaidPayments returns, for each of the bookings that has one, the payment
+// that paid for it: the first to succeed. (A duplicate payment that came
+// in later succeeded after it and is refunded on its own.)
+func (s *Store) PaidPayments(ctx context.Context, bookingIDs []string) (map[string]Payment, error) {
+	out := map[string]Payment{}
+	if len(bookingIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT DISTINCT ON (booking_id) `+paymentCols+` FROM payments
+		WHERE booking_id = ANY($1) AND status IN ('succeeded','chargeback')
+		ORDER BY booking_id, updated_at, created_at`, bookingIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		p, err := scanPayment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[p.BookingID] = p
+	}
+	return out, rows.Err()
+}

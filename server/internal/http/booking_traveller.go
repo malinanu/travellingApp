@@ -450,7 +450,7 @@ func (s *Server) handleMyBookings(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, travellerBookings(bookings))
+	writeJSON(w, http.StatusOK, s.travellerBookings(r.Context(), bookings))
 }
 
 func (s *Server) handleCancelMyBooking(w http.ResponseWriter, r *http.Request) {
@@ -458,12 +458,17 @@ func (s *Server) handleCancelMyBooking(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	refunded, err := s.cancelBooking(r.Context(), booking, cancelByTraveller, "traveller:"+booking.TravellerID)
+	refund, err := s.cancelBooking(r.Context(), booking, cancelByTraveller, "traveller:"+booking.TravellerID)
 	if err != nil {
 		writeCancelErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "cancelled", "refundMinor": refunded, "currency": booking.Currency})
+	out := map[string]any{"status": "cancelled", "refundMinor": refund.AmountMinor, "currency": booking.Currency,
+		"gatewayRefundMinor": refund.AmountMinor, "gatewayCurrency": booking.Currency}
+	if refund.GatewayCurrency != "" {
+		out["gatewayRefundMinor"], out["gatewayCurrency"] = refund.GatewayAmountMinor, refund.GatewayCurrency
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func writeCancelErr(w http.ResponseWriter, err error) {

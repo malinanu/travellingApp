@@ -345,6 +345,46 @@ void main() {
     expect(b.status, 'cancelled');
     expect(b.paymentStatus, 'partially_refunded');
   });
+
+  testWidgets('a booking paid in USD shows and refunds in USD', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      StoreKeys.bookings: jsonEncode([
+        {...bookingJson(status: 'confirmed', amount: 500000, payment: 'paid'), 'chargeAmountMinor': 1717, 'chargeCurrency': 'USD'},
+      ]),
+    });
+    final store = await LocalStore.init();
+    final api = ApiClient(store);
+    api.dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      final data = switch (options.path) {
+        '/me/bookings' => [
+            {...bookingJson(status: 'confirmed', amount: 500000, payment: 'paid'), 'chargeAmountMinor': 1717, 'chargeCurrency': 'USD'},
+          ],
+        '/bookings/bkg_1/cancel-preview' => {
+            'cancellable': true, 'refundMinor': 500000, 'paidMinor': 500000, 'fullRefund': true,
+            'gatewayRefundMinor': 1717, 'gatewayPaidMinor': 1717, 'gatewayCurrency': 'USD',
+          },
+        '/bookings/bkg_1/cancel' => {'status': 'cancelled', 'refundMinor': 500000, 'gatewayRefundMinor': 1717, 'gatewayCurrency': 'USD'},
+        _ => <String, Object>{},
+      };
+      handler.resolve(Response(requestOptions: options, statusCode: 200, data: data));
+    }));
+    final container = ProviderContainer(overrides: [
+      localStoreProvider.overrideWithValue(store),
+      apiProvider.overrideWithValue(api),
+    ]);
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const MaterialApp(home: MyBookingsScreen())));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Paid USD 17.17'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('cancel_booking_bkg_1')));
+    await tester.pumpAndSettle();
+    expect(find.text("You'll get USD 17.17 back."), findsOneWidget);
+    await tester.tap(find.byKey(const Key('confirm_cancel_booking')));
+    await tester.pumpAndSettle();
+    expect(find.text('Cancelled. USD 17.17 is on its way back to you.'), findsOneWidget);
+    expect(find.textContaining('Refunded USD 17.17'), findsOneWidget);
+  });
 }
 
 /// The slot picker shows 24h "HH:mm" times.

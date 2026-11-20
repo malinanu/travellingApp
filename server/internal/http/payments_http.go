@@ -51,6 +51,12 @@ type bookingWithCheckout struct {
 	domain.Booking
 	Checkout *checkoutInfo `json:"checkout,omitempty"`
 
+	// ChargeAmountMinor/ChargeCurrency are what the traveller was charged
+	// for a paid booking: the booking's LKR amount, or e.g. USD on PayPal.
+	ChargeAmountMinor int64  `json:"chargeAmountMinor,omitempty"`
+	ChargeCurrency    string `json:"chargeCurrency,omitempty"`
+	PaidWith          string `json:"paidWith,omitempty"`
+
 	CommissionMode    *string `json:"commissionMode,omitempty"`
 	CommissionRateBps *int    `json:"commissionRateBps,omitempty"`
 	FeePerGuestMinor  *int64  `json:"feePerGuestMinor,omitempty"`
@@ -58,13 +64,72 @@ type bookingWithCheckout struct {
 	VendorNetMinor    *int64  `json:"vendorNetMinor,omitempty"`
 }
 
-// travellerBookings is a list of bookings as their traveller sees them.
-func travellerBookings(list []domain.Booking) []bookingWithCheckout {
+// travellerBookings is a list of bookings as their traveller sees them,
+// each with what was actually charged for it.
+func (s *Server) travellerBookings(ctx context.Context, list []domain.Booking) []bookingWithCheckout {
+	ids := make([]string, 0, len(list))
+	for _, b := range list {
+		if b.AmountMinor > 0 {
+			ids = append(ids, b.ID)
+		}
+	}
+	paid, err := s.Store.PaidPayments(ctx, ids)
+	if err != nil {
+		log.Printf("bookings: charged amounts: %v", err)
+	}
 	out := make([]bookingWithCheckout, len(list))
 	for i, b := range list {
-		out[i] = bookingWithCheckout{Booking: b}
+		out[i] = withCharge(bookingWithCheckout{Booking: b}, paid)
 	}
 	return out
+}
+
+// withCharge fills in what was charged for v's booking, from paid (the
+// paying payment per booking).
+func withCharge(v bookingWithCheckout, paid map[string]postgres.Payment) bookingWithCheckout {
+	if p, ok := paid[v.ID]; ok {
+		v.ChargeAmountMinor, v.ChargeCurrency, v.PaidWith = p.AmountMinor, p.Currency, p.Gateway
+	}
+	return v
+}
+
+// paidPayment is the payment that paid for b, if any.
+func (s *Server) paidPayment(ctx context.Context, b domain.Booking) (postgres.Payment, bool) {
+	if b.AmountMinor <= 0 {
+		return postgres.Payment{}, false
+	}
+	paid, err := s.Store.PaidPayments(ctx, []string{b.ID})
+	if err != nil {
+		return postgres.Payment{}, false
+	}
+	p, ok := paid[b.ID]
+	return p, ok
+}
+
+// formatMoney renders minor units: "LKR 4,500", or "USD 16.48" for other
+// (two-decimal) currencies.
+func formatMoney(minor int64, currency string) string {
+	if currency == "" || currency == domain.CurrencyLKR {
+		return formatLKR(minor)
+	}
+	sign := ""
+	if minor < 0 {
+		sign, minor = "-", -minor
+	}
+	whole := strings.TrimPrefix(formatLKR(minor/100*100), "LKR ")
+	return fmt.Sprintf("%s%s %s.%02d", sign, currency, whole, minor%100)
+}
+
+// paidLabel is what a traveller paid for b: "LKR 4,000", or
+// "USD 16.48 (LKR 4,000)" when the gateway charged another currency.
+func (s *Server) paidLabel(ctx context.Context, b domain.Booking) string {
+	if b.AmountMinor <= 0 {
+		return ""
+	}
+	if p, ok := s.paidPayment(ctx, b); ok && p.Currency != b.Currency {
+		return formatMoney(p.AmountMinor, p.Currency) + " (" + formatLKR(b.AmountMinor) + ")"
+	}
+	return formatLKR(b.AmountMinor)
 }
 
 // publicBaseURL is this API's own public URL: PUBLIC_API_URL, or (outside
@@ -345,8 +410,9 @@ func (s *Server) notifyBookingConfirmed(ctx context.Context, b domain.Booking) {
 		}
 	}
 	if me, err := s.Store.UserByID(ctx, b.TravellerID); err == nil && me.Email != "" {
+		paid := s.paidLabel(ctx, b)
 		s.Jobs.Enqueue(func() {
-			s.Mail.Send(me.Email, "Your Spotto booking is confirmed", bookingConfirmedEmailHTML(b, serviceName))
+			s.Mail.Send(me.Email, "Your Spotto booking is confirmed", bookingConfirmedEmailHTML(b, serviceName, paid))
 		})
 	}
 	sub := fmt.Sprintf("%s, party of %d", inSriLanka(b.StartAt).Format("Jan 2, 3:04 PM"), b.PartySize)
@@ -398,10 +464,14 @@ func (s *Server) handleBookingStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"id": b.ID, "code": b.Code, "status": b.Status, "paymentStatus": b.PaymentStatus,
 		"holdExpiresAt": b.HoldExpiresAt, "amountMinor": b.AmountMinor, "currency": b.Currency,
-	})
+	}
+	if p, ok := s.paidPayment(r.Context(), b); ok {
+		out["chargeAmountMinor"], out["chargeCurrency"], out["paidWith"] = p.AmountMinor, p.Currency, p.Gateway
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleBookingCheckout opens a new payment attempt for a booking still
@@ -476,11 +546,20 @@ func (s *Server) handleCancelPreview(w http.ResponseWriter, r *http.Request) {
 		refund = domain.RefundFor(b, now, false)
 	}
 	freeUntil := b.StartAt.Add(-time.Duration(b.FreeCancelHours) * time.Hour)
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"cancellable": cancellable, "refundMinor": refund, "currency": b.Currency,
 		"paidMinor": b.AmountMinor - b.RefundedMinor, "fullRefund": refund > 0 && refund == b.AmountMinor-b.RefundedMinor,
 		"freeCancelUntil": freeUntil,
-	})
+	}
+	// What goes back, and what was paid, in the currency the traveller was
+	// charged in (the same as the above unless e.g. PayPal charged USD).
+	out["gatewayRefundMinor"], out["gatewayPaidMinor"], out["gatewayCurrency"] = refund, b.AmountMinor-b.RefundedMinor, b.Currency
+	if p, ok := s.paidPayment(r.Context(), b); ok && p.Currency != b.Currency {
+		out["gatewayRefundMinor"] = domain.ProportionalRefund(refund, p.BookingAmount(), p.AmountMinor)
+		out["gatewayPaidMinor"] = domain.ProportionalRefund(b.AmountMinor-b.RefundedMinor, p.BookingAmount(), p.AmountMinor)
+		out["gatewayCurrency"] = p.Currency
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // ---- fake gateway (development only) ----

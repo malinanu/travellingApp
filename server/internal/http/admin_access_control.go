@@ -116,7 +116,7 @@ var MasterCommandCenterFeatures = []domain.CommandCenterFeature{
 		SubPermissions: []domain.CommandCenterPermission{
 			{ID: PermFinanceView, FeatureID: "finance", Name: "View finance", Description: "Revenue summary, ledger, refunds, payouts and commission rules", Risk: "medium"},
 			{ID: PermFinancePayouts, FeatureID: "finance", Name: "Run and pay out", Description: "Draft, approve and mark payouts paid; see and verify vendor bank details; settle manual refunds; ledger adjustments", Risk: "critical"},
-			{ID: PermCommissionManage, FeatureID: "finance", Name: "Set commission rates", Description: "Add or remove commission rules and per-guest fees", Risk: "high"},
+			{ID: PermCommissionManage, FeatureID: "finance", Name: "Set commission rates", Description: "Add or remove commission rules and per-guest fees; set exchange rates for gateways that charge another currency", Risk: "high"},
 		},
 	},
 	{

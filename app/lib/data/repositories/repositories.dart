@@ -1477,12 +1477,14 @@ class BookingsNotifier extends Notifier<List<Booking>> {
     return CheckoutInfo.fromJson((data['checkout'] as Map).cast<String, dynamic>());
   }
 
-  /// Cancels a booking and returns what's refunded (minor units). The list
-  /// is updated from the server's answer, not optimistically, because the
-  /// refund depends on the cancellation terms.
-  Future<int> cancel(String bookingId) async {
+  /// Cancels a booking and returns what's refunded: in LKR, and in the
+  /// currency the traveller was charged in (the same unless e.g. PayPal
+  /// charged USD). The list is updated from the server's answer, not
+  /// optimistically, because the refund depends on the cancellation terms.
+  Future<CancelResult> cancel(String bookingId) async {
     final res = await ref.read(apiProvider).dio.post('/bookings/$bookingId/cancel');
-    final refunded = ((res.data as Map)['refundMinor'] as num?)?.toInt() ?? 0;
+    final data = (res.data as Map).cast<String, dynamic>();
+    final refunded = (data['refundMinor'] as num?)?.toInt() ?? 0;
     state = [
       for (final b in state)
         if (b.id == bookingId)
@@ -1497,7 +1499,11 @@ class BookingsNotifier extends Notifier<List<Booking>> {
           b,
     ];
     _persist();
-    return refunded;
+    return (
+      refundMinor: refunded,
+      gatewayRefundMinor: (data['gatewayRefundMinor'] as num?)?.toInt() ?? refunded,
+      gatewayCurrency: data['gatewayCurrency'] as String? ?? 'LKR',
+    );
   }
 
   Future<void> reload() => _pull();
@@ -1506,8 +1512,21 @@ class BookingsNotifier extends Notifier<List<Booking>> {
 /// A booking just created, and for a paid one how to pay for it.
 typedef BookingCreated = ({Booking booking, CheckoutInfo? checkout});
 
+/// What a cancellation refunded, in LKR and in the currency it goes back in.
+typedef CancelResult = ({int refundMinor, int gatewayRefundMinor, String gatewayCurrency});
+
 /// What cancelling a booking now would refund (GET /bookings/{id}/cancel-preview).
-typedef CancelPreview = ({bool cancellable, int refundMinor, int paidMinor, bool fullRefund, DateTime? freeCancelUntil});
+/// The gateway* amounts are in the currency the traveller was charged in.
+typedef CancelPreview = ({
+  bool cancellable,
+  int refundMinor,
+  int paidMinor,
+  bool fullRefund,
+  DateTime? freeCancelUntil,
+  int gatewayRefundMinor,
+  int gatewayPaidMinor,
+  String gatewayCurrency,
+});
 
 final cancelPreviewProvider = FutureProvider.autoDispose.family<CancelPreview, String>((ref, bookingId) async {
   final res = await ref.read(apiProvider).dio.get('/bookings/$bookingId/cancel-preview');
@@ -1518,6 +1537,9 @@ final cancelPreviewProvider = FutureProvider.autoDispose.family<CancelPreview, S
     paidMinor: (d['paidMinor'] as num?)?.toInt() ?? 0,
     fullRefund: d['fullRefund'] as bool? ?? false,
     freeCancelUntil: DateTime.tryParse(d['freeCancelUntil'] as String? ?? '')?.toLocal(),
+    gatewayRefundMinor: (d['gatewayRefundMinor'] as num?)?.toInt() ?? (d['refundMinor'] as num?)?.toInt() ?? 0,
+    gatewayPaidMinor: (d['gatewayPaidMinor'] as num?)?.toInt() ?? (d['paidMinor'] as num?)?.toInt() ?? 0,
+    gatewayCurrency: d['gatewayCurrency'] as String? ?? 'LKR',
   );
 });
 

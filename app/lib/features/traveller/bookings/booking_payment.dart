@@ -249,7 +249,7 @@ class BookingQrCard extends ConsumerWidget {
                 Text(
                   [
                     l10n.partyOf(booking.partySize),
-                    if (booking.amountMinor > 0) l10n.paidAmount(formatLkr(booking.amountMinor)),
+                    if (booking.amountMinor > 0) l10n.paidAmount(booking.moneyLabel(booking.amountMinor)),
                   ].join(' · '),
                   style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.white70),
                 ),

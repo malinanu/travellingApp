@@ -1,6 +1,8 @@
 // Core Spotto data models — ported from Prototype/design/data.jsx.
 // Plain immutable classes; only persisted types get toJson/fromJson.
 
+import '../../core/utils/money.dart';
+
 /// Parses a string-list field that may still be in an older single-string
 /// shape — `v as List?` is a hard cast in Dart that throws on a non-null,
 /// wrong-typed value rather than returning null, so a server/app running
@@ -842,6 +844,10 @@ class Booking {
   final String occurrenceId;
   final int freeCancelHours;
   final int lateCancelRefundPct;
+  /// What the traveller was actually charged once paid: the LKR price, or
+  /// e.g. USD when PayPal took the payment. 0/'' until paid.
+  final int chargeAmountMinor;
+  final String chargeCurrency;
 
   const Booking({
     required this.id,
@@ -866,6 +872,8 @@ class Booking {
     this.occurrenceId = '',
     this.freeCancelHours = 24,
     this.lateCancelRefundPct = 0,
+    this.chargeAmountMinor = 0,
+    this.chargeCurrency = '',
   });
 
   factory Booking.fromJson(Map<String, dynamic> json) => Booking(
@@ -891,6 +899,8 @@ class Booking {
         occurrenceId: json['occurrenceId'] as String? ?? '',
         freeCancelHours: (json['freeCancelHours'] as num?)?.toInt() ?? 24,
         lateCancelRefundPct: (json['lateCancelRefundPct'] as num?)?.toInt() ?? 0,
+        chargeAmountMinor: (json['chargeAmountMinor'] as num?)?.toInt() ?? 0,
+        chargeCurrency: json['chargeCurrency'] as String? ?? '',
       );
 
   /// Round-trips for LocalStore caching (see BookingsNotifier) — never sent
@@ -903,6 +913,7 @@ class Booking {
         'amountMinor': amountMinor, 'currency': currency, 'paymentStatus': paymentStatus,
         'refundedMinor': refundedMinor, 'holdExpiresAt': holdExpiresAt, 'occurrenceId': occurrenceId,
         'freeCancelHours': freeCancelHours, 'lateCancelRefundPct': lateCancelRefundPct,
+        'chargeAmountMinor': chargeAmountMinor, 'chargeCurrency': chargeCurrency,
       };
 
   Booking copyWith({String? status, String? paymentStatus, int? refundedMinor}) => Booking(
@@ -912,9 +923,26 @@ class Booking {
         amountMinor: amountMinor, currency: currency, paymentStatus: paymentStatus ?? this.paymentStatus,
         refundedMinor: refundedMinor ?? this.refundedMinor, holdExpiresAt: holdExpiresAt,
         occurrenceId: occurrenceId, freeCancelHours: freeCancelHours, lateCancelRefundPct: lateCancelRefundPct,
+        chargeAmountMinor: chargeAmountMinor, chargeCurrency: chargeCurrency,
       );
 
   bool get isPaid => amountMinor > 0;
+
+  /// Whether the payment was charged in another currency than the price.
+  bool get chargedInOtherCurrency => chargeCurrency.isNotEmpty && chargeCurrency != currency && chargeAmountMinor > 0;
+
+  /// An LKR amount of this booking (e.g. a refund) in the currency the
+  /// traveller was charged in: the same share of the charge, rounded down,
+  /// and exactly the charge for the whole amount. Mirrors the server.
+  int inChargeCurrency(int lkrMinor) {
+    if (!chargedInOtherCurrency || amountMinor <= 0) return lkrMinor;
+    if (lkrMinor >= amountMinor) return chargeAmountMinor;
+    return lkrMinor * chargeAmountMinor ~/ amountMinor;
+  }
+
+  /// An LKR amount of this booking formatted in the charged currency.
+  String moneyLabel(int lkrMinor) =>
+      chargedInOtherCurrency ? formatMoney(inChargeCurrency(lkrMinor), chargeCurrency) : formatLkr(lkrMinor);
   bool get awaitingPayment => status == 'awaiting_payment';
 
   /// Whether the seats are still held for payment right now.

@@ -197,10 +197,31 @@ func TestPaymentPayPalPayAndRefund(t *testing.T) {
 		t.Fatalf("forged webhook: want 400, got %d", code)
 	}
 
+	// The traveller sees what they were charged, not just the LKR price.
+	_, status := doJSON(t, http.MethodGet, f.url("/bookings/"+id+"/status"), f.travATk, nil)
+	if status["chargeCurrency"] != testPayPalCurrency || status["chargeAmountMinor"].(float64) != 1648 || status["paidWith"] != "paypal" {
+		t.Fatalf("status should show the SGD charge: %v", status)
+	}
+	_, mine := doJSONArray(t, http.MethodGet, f.url("/me/bookings"), f.travATk)
+	listed := false
+	for _, b := range mine {
+		listed = listed || (b["id"] == id && b["chargeCurrency"] == testPayPalCurrency && b["chargeAmountMinor"].(float64) == 1648)
+	}
+	if !listed {
+		t.Fatalf("My Bookings should show the SGD charge: %v", mine)
+	}
+	_, preview := doJSON(t, http.MethodGet, f.url("/bookings/"+id+"/cancel-preview"), f.travATk, nil)
+	if preview["gatewayCurrency"] != testPayPalCurrency || preview["gatewayRefundMinor"].(float64) != 1648 || preview["gatewayPaidMinor"].(float64) != 1648 {
+		t.Fatalf("cancel preview should be in SGD: %v", preview)
+	}
+
 	// Cancelling inside the free window refunds everything, in SGD.
 	code, out := doJSON(t, http.MethodPost, f.url("/bookings/"+id+"/cancel"), f.travATk, nil)
 	if code != http.StatusOK {
 		t.Fatalf("cancel: %d %v", code, out)
+	}
+	if out["gatewayCurrency"] != testPayPalCurrency || out["gatewayRefundMinor"].(float64) != 1648 || out["refundMinor"].(float64) != 400000 {
+		t.Fatalf("cancel response should give the SGD refund: %v", out)
 	}
 	refunds := pp.Refunds()
 	if len(refunds) != 1 || refunds[0].Currency != testPayPalCurrency || refunds[0].Value != "16.48" {

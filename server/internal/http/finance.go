@@ -325,13 +325,13 @@ func (s *Server) handleAdminCancelBooking(w http.ResponseWriter, r *http.Request
 		return
 	}
 	c := auth.FromContext(r.Context())
-	refunded, err := s.cancelBooking(r.Context(), b, cancelByAdmin, "admin:"+c.Subject)
+	refund, err := s.cancelBooking(r.Context(), b, cancelByAdmin, "admin:"+c.Subject)
 	if err != nil {
 		writeCancelErr(w, err)
 		return
 	}
-	s.logAdminAction(r.Context(), "booking.cancel", "booking", b.ID, map[string]any{"reason": reason, "refundMinor": refunded})
-	writeJSON(w, http.StatusOK, map[string]any{"status": "cancelled", "refundMinor": refunded})
+	s.logAdminAction(r.Context(), "booking.cancel", "booking", b.ID, map[string]any{"reason": reason, "refundMinor": refund.AmountMinor})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "cancelled", "refundMinor": refund.AmountMinor})
 }
 
 func (s *Server) handleAdminFinanceSummary(w http.ResponseWriter, r *http.Request) {
