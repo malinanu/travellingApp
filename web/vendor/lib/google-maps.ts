@@ -10,7 +10,13 @@ import { Loader } from '@googlemaps/js-api-loader';
 
 let loaderPromise: Promise<typeof google> | null = null;
 
+/** Whether this build has a Maps key. It's baked in at build time
+ * (NEXT_PUBLIC_*); without one, Google shows its own "can't load Google Maps"
+ * dialog, so callers fall back to typing instead. */
+export const hasGoogleMapsKey = !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
 export function loadGoogleMaps(): Promise<typeof google> {
+  if (!hasGoogleMapsKey) return Promise.reject(new Error('No Google Maps key in this build'));
   if (!loaderPromise) {
     const loader = new Loader({
       apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',

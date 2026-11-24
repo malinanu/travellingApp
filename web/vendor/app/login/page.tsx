@@ -22,7 +22,7 @@ import LocationPickerAuto, { preloadLocationPicker } from '../../components/loca
 import { SpottoMark } from '../../components/shell';
 import { api } from '../../lib/api';
 import { VENDOR_SEGMENTS, categoriesBySegment, categoryById, categoryIconComponent } from '../../lib/business-categories';
-import { loadGoogleMaps } from '../../lib/google-maps';
+import { hasGoogleMapsKey, loadGoogleMaps } from '../../lib/google-maps';
 
 const REGISTER_STEPS = ['Find your business', 'Your account', 'Your business', 'A few details'];
 
@@ -221,6 +221,8 @@ function LoginPageInner() {
   const [businessHours, setBusinessHours] = useState<Record<string, { open: string; close: string }> | null>(null);
   const [businessCountry, setBusinessCountry] = useState('');
   const [googlePlaceId, setGooglePlaceId] = useState('');
+  // No Maps key in this build, or Google wouldn't load: business search is off.
+  const [mapsUnavailable, setMapsUnavailable] = useState(!hasGoogleMapsKey);
   const businessSearchInputRef = useRef<HTMLInputElement>(null);
   const mapDivRef = useRef<HTMLDivElement>(null);
 
@@ -307,7 +309,7 @@ function LoginPageInner() {
   // (registerStep 0) — only while that step is actually visible, so coming
   // Back to it re-attaches the search.
   useEffect(() => {
-    if (mode !== 'register' || registerStep !== 0) return;
+    if (mode !== 'register' || registerStep !== 0 || !hasGoogleMapsKey) return;
     let cancelled = false;
     let autocomplete: google.maps.places.Autocomplete | null = null;
     loadGoogleMaps().then(async (g) => {
@@ -366,6 +368,7 @@ function LoginPageInner() {
       // Google couldn't load (blocked, offline, bad key): the owner can
       // still skip search and fill the details in by hand.
       console.warn('Business search unavailable, Google Maps failed to load:', err);
+      if (!cancelled) setMapsUnavailable(true);
     });
     return () => {
       if (autocomplete) google.maps.event.clearInstanceListeners(autocomplete);
@@ -698,10 +701,17 @@ function LoginPageInner() {
               <span className="block text-[12.5px] font-extrabold mb-1.5 text-ink-soft">Search for your business</span>
               <div className="flex items-center gap-2.5 rounded-2xl px-3.5 h-[50px] bg-white border-[1.5px] border-line">
                 <Search size={18} className="text-muted shrink-0" />
-                <input ref={businessSearchInputRef} autoFocus placeholder="e.g. Driftwood Coffee & Co-Work"
-                  className="flex-1 bg-transparent outline-none text-[15px] font-bold w-full text-ink" />
+                <input ref={businessSearchInputRef} autoFocus={!mapsUnavailable} disabled={mapsUnavailable}
+                  placeholder={mapsUnavailable ? 'Search isn’t available right now' : 'e.g. Driftwood Coffee & Co-Work'}
+                  className="flex-1 bg-transparent outline-none text-[15px] font-bold w-full text-ink disabled:text-muted" />
               </div>
             </label>
+
+            {mapsUnavailable && (
+              <p className="text-[12.5px] font-semibold text-center rounded-xl px-3 py-2.5 bg-sand text-ink-soft">
+                Business search isn&rsquo;t available right now. Enter your details manually below.
+              </p>
+            )}
 
             {foundPlace && (
               <div className="rounded-2xl border-[1.5px] border-line overflow-hidden bg-white">
@@ -716,9 +726,11 @@ function LoginPageInner() {
               </div>
             )}
 
-            <p className="text-[12.5px] text-muted font-semibold text-center">
-              We&rsquo;ll use this to pre-fill your business name, category, town and hours — you can adjust anything next.
-            </p>
+            {!mapsUnavailable && (
+              <p className="text-[12.5px] text-muted font-semibold text-center">
+                We&rsquo;ll use this to pre-fill your business name, category, town and hours — you can adjust anything next.
+              </p>
+            )}
 
             <button type="button" onClick={() => { clearFoundPlace(); setRegisterStep(1); }}
               className="w-full text-center text-[13px] font-extrabold text-muted">
