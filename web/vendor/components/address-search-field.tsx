@@ -21,7 +21,7 @@ import { MapPin } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
 import type { DayHours, Weekday } from '@spotto/shared';
-import { loadGoogleMaps } from '../lib/google-maps';
+import { hasGoogleMapsKey, loadGoogleMaps } from '../lib/google-maps';
 import { categoryFromGoogleTypes, hoursFromLegacyPeriods } from '../lib/google-place-mapping';
 
 export interface PlaceDetails {
@@ -67,7 +67,7 @@ export default function AddressSearchField({
   // fields (e.g. Business name right next to this one).
   variant?: 'field' | 'plain';
 }) {
-  const hasKey = !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const hasKey = hasGoogleMapsKey;
   const inputRef = useRef<HTMLInputElement>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
