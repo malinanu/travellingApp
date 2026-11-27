@@ -85,7 +85,7 @@ func (s *Server) runHolidayCheck(ctx context.Context) {
 				Icon:   "Clock",
 				Tone:   "sun",
 				Title:  h.Name + " is coming up",
-				Sub:    fmt.Sprintf("%s â€” will you be open? Answer it on your Business Profile.", h.Date.Format("Jan 2")),
+				Sub:    fmt.Sprintf("%s — will you be open? Answer it on your Business Profile.", h.Date.Format("Jan 2")),
 				Time:   "just now",
 				Unread: true,
 			}

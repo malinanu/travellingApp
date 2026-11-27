@@ -678,7 +678,7 @@ func todayHoursAndOpenNow(profile vendorProfileDoc, now time.Time) (string, bool
 			if name == "" {
 				name = "public holiday"
 			}
-			return "Closed today â€” " + name, false
+			return "Closed today — " + name, false
 		}
 	}
 	day, ok := profile.Hours[weekdayKey(now)]
@@ -688,7 +688,7 @@ func todayHoursAndOpenNow(profile vendorProfileDoc, now time.Time) (string, bool
 		}
 		return "", false
 	}
-	return formatHourLabel(day.Open) + " â€“ " + formatHourLabel(day.Close), isOpenNow(day.Open, day.Close)
+	return formatHourLabel(day.Open) + " – " + formatHourLabel(day.Close), isOpenNow(day.Open, day.Close)
 }
 
 // syncVendorPlace mirrors vendor v's current profile â€” headline offer,
