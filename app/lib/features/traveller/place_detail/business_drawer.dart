@@ -1944,6 +1944,9 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
   int _draftRating = 0;
   final _textController = TextEditingController();
   bool _submitting = false;
+  // Set when Post review is tapped without a star rating (the server
+  // requires 1-5), so the form says why instead of a silently grey button.
+  bool _ratingMissing = false;
   final List<_PickedImage> _photos = [];
 
   @override
@@ -1973,6 +1976,15 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
     if (picked.isNotEmpty) setState(() => _photos.addAll(picked));
   }
 
+  void _onPostPressed() {
+    if (_draftRating == 0) {
+      HapticFeedback.lightImpact();
+      setState(() => _ratingMissing = true);
+      return;
+    }
+    _submit();
+  }
+
   Future<void> _submit() async {
     if (_draftRating == 0 || _submitting) return;
     setState(() => _submitting = true);
@@ -1995,6 +2007,7 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
       _textController.clear();
       setState(() {
         _draftRating = 0;
+        _ratingMissing = false;
         _photos.clear();
       });
     } catch (e) {
@@ -2022,23 +2035,35 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text('Your rating', style: text.labelMedium?.copyWith(color: SpottoColors.muted)),
+              const SizedBox(height: 4),
               Row(
                 children: [
                   for (var i = 1; i <= 5; i++)
                     PressScale(
                       scale: 0.85,
-                      onTap: () => setState(() => _draftRating = i),
+                      onTap: () => setState(() {
+                        _draftRating = i;
+                        _ratingMissing = false;
+                      }),
                       child: Padding(
                         padding: const EdgeInsets.only(right: 4),
                         child: Icon(
                           i <= _draftRating ? Icons.star : Icons.star_border,
-                          color: SpottoColors.sun,
+                          color: _ratingMissing ? SpottoColors.coral : SpottoColors.sun,
                           size: 26,
                         ),
                       ),
                     ),
                 ],
               ),
+              if (_ratingMissing) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Tap a star to rate this spot',
+                  style: text.bodySmall?.copyWith(color: SpottoColors.coral, fontWeight: FontWeight.w600),
+                ),
+              ],
               const SizedBox(height: 10),
               TextField(
                 controller: _textController,
@@ -2101,7 +2126,7 @@ class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: _draftRating == 0 || _submitting ? null : _submit,
+                  onPressed: _submitting ? null : _onPostPressed,
                   child: Text(_submitting ? 'Posting…' : 'Post review'),
                 ),
               ),
