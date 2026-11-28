@@ -315,17 +315,6 @@ function LoginPageInner() {
     loadGoogleMaps().then(async (g) => {
       if (cancelled || !businessSearchInputRef.current) return;
 
-      // Re-entering this step (e.g. via Back) after already finding a
-      // place: restore the map preview (the found-place card below the
-      // search box already shows the name/address).
-      if (foundPlace && placeLat != null && placeLng != null && mapDivRef.current) {
-        const map = new g.maps.Map(mapDivRef.current, {
-          center: { lat: placeLat, lng: placeLng }, zoom: 15,
-          disableDefaultUI: true, gestureHandling: 'none',
-        });
-        new g.maps.Marker({ position: { lat: placeLat, lng: placeLng }, map });
-      }
-
       const { Autocomplete } = await g.maps.importLibrary('places') as google.maps.PlacesLibrary;
       autocomplete = new Autocomplete(businessSearchInputRef.current, {
         fields: [
@@ -356,13 +345,6 @@ function LoginPageInner() {
         );
         setBusinessHours(hoursFromLegacyPeriods(place.opening_hours?.periods));
         setGooglePlaceId(place.place_id ?? '');
-
-        if (mapDivRef.current) {
-          const map = new g.maps.Map(mapDivRef.current, {
-            center: loc, zoom: 15, disableDefaultUI: true, gestureHandling: 'none',
-          });
-          new g.maps.Marker({ position: loc, map });
-        }
       });
     }).catch((err) => {
       // Google couldn't load (blocked, offline, bad key): the owner can
@@ -380,6 +362,22 @@ function LoginPageInner() {
     // after every place selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, registerStep]);
+
+  // The found place's map preview. Its box only exists once the found-place
+  // card has rendered, so it's drawn here rather than in the place_changed
+  // listener (where the first pick had nowhere to draw). Also redraws after
+  // another pick, or on coming Back to this step.
+  useEffect(() => {
+    if (mode !== 'register' || registerStep !== 0 || !foundPlace || placeLat == null || placeLng == null) return;
+    let cancelled = false;
+    loadGoogleMaps().then((g) => {
+      if (cancelled || !mapDivRef.current) return;
+      const center = { lat: placeLat, lng: placeLng };
+      const map = new g.maps.Map(mapDivRef.current, { center, zoom: 15, disableDefaultUI: true, gestureHandling: 'none' });
+      new g.maps.Marker({ position: center, map });
+    }).catch(() => { /* no map preview; the card still shows the name and address */ });
+    return () => { cancelled = true; };
+  }, [mode, registerStep, foundPlace, placeLat, placeLng]);
 
   // "Enter your business details manually instead" after picking a place:
   // drop what that place filled in behind the scenes (its Google listing,
