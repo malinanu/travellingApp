@@ -39,7 +39,7 @@ func checkVendorOpen(profile vendorProfileDoc, at time.Time) error {
 			if name == "" {
 				name = "a public holiday"
 			}
-			return &bookingAvailabilityError{"vendor is closed that day â€” " + name}
+			return &bookingAvailabilityError{"vendor is closed that day — " + name}
 		}
 	}
 	day, ok := profile.Hours[weekdayKey(at)]
