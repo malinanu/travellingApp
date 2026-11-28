@@ -56,6 +56,20 @@ type VendorCategory struct {
 	// a built feature yet; ticket booking can reuse this same system once
 	// it ships). See BookingTypeByCategory/IsBookableCategory.
 	BookingType BookingType `json:"bookingType"`
+	// AllowedBookingTypes is every booking type the category's vendors may
+	// offer; empty means just BookingType.
+	AllowedBookingTypes []BookingType `json:"allowedBookingTypes"`
+}
+
+// AllowedTypes is every booking type the category allows.
+func (c VendorCategory) AllowedTypes() []BookingType {
+	if len(c.AllowedBookingTypes) > 0 {
+		return c.AllowedBookingTypes
+	}
+	if c.BookingType != "" {
+		return []BookingType{c.BookingType}
+	}
+	return nil
 }
 
 // VendorCategories is the single canonical taxonomy — the source of truth
@@ -187,6 +201,15 @@ func RelevantVibeDimensions(categoryID string) []string {
 // take real bookings for, or "" if the category isn't bookable at all
 // (unknown/blank id, or a category with no BookingType set — e.g. brand
 // partners, event categories, or walk-in-only categories like bakeries).
+// AllowedBookingTypesByCategory is every booking type a category's
+// vendors may offer (empty when the category isn't bookable).
+func AllowedBookingTypesByCategory(categoryID string) []BookingType {
+	if c, ok := CategoryByID(categoryID); ok {
+		return c.AllowedTypes()
+	}
+	return nil
+}
+
 func BookingTypeByCategory(categoryID string) BookingType {
 	if c, ok := CategoryByID(categoryID); ok {
 		return c.BookingType

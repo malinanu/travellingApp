@@ -193,3 +193,19 @@ export function createApi(tokenKey: string, client: 'admin' | 'vendor' = 'vendor
 
   return api;
 }
+
+/** Downloads a file (e.g. a CSV export) from an authenticated endpoint. */
+export async function downloadAuthed(api: Api, path: string, filename: string): Promise<void> {
+  const token = api.getToken();
+  const res = await fetch(`${API_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

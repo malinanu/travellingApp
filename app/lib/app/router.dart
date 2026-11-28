@@ -7,6 +7,7 @@ import '../core/l10n/language_selection_screen.dart';
 import '../data/repositories/repositories.dart';
 import '../features/traveller/auth/auth_screen.dart';
 import '../features/traveller/bookings/my_bookings_screen.dart';
+import '../features/traveller/experiences/experiences_screen.dart';
 import '../features/traveller/guide/guide_screen.dart';
 import '../features/traveller/inspiration/inspiration_board_screen.dart';
 import '../features/traveller/inspiration/inspiration_link_screen.dart';
@@ -65,6 +66,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/t/profile', builder: (context, state) => const ProfileScreen()),
       GoRoute(path: '/t/weather', builder: (context, state) => const WeatherScreen()),
       GoRoute(path: '/t/bookings', builder: (context, state) => const MyBookingsScreen()),
+      GoRoute(path: '/t/experiences', builder: (context, state) => const ExperiencesScreen()),
       GoRoute(
         path: '/t/inspiration',
         redirect: (context, state) => ref.read(authProvider) ? null : '/t/auth',

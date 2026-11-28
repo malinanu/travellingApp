@@ -772,6 +772,41 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> with SingleTick
                     ),
                   ),
                 ),
+                const SizedBox(height: 8),
+                PressScale(
+                  key: const Key('discover_experiences_entry'),
+                  scale: 0.98,
+                  onTap: () => context.push('/t/experiences'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: const [BoxShadow(color: SpottoColors.inkShadow, blurRadius: 12, offset: Offset(0, 4))],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.explore_outlined, color: SpottoColors.accent, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(ref.watch(l10nProvider).experiencesTitle, style: text.labelLarge),
+                              Text(
+                                ref.watch(l10nProvider).experiencesEntrySubtitle,
+                                style: text.bodySmall,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right, size: 18, color: SpottoColors.muted),
+                      ],
+                    ),
+                  ),
+                ),
                 if (isDemoEligible) ...[
                   const SizedBox(height: 8),
                   _DeveloperLocationBanner(

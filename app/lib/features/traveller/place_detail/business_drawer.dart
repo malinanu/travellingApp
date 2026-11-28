@@ -10,15 +10,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/upload_service.dart';
+import '../../../core/l10n/app_strings.dart';
 import '../../../core/l10n/l10n_provider.dart';
 import '../../../core/theme/palette.dart';
 import '../../../core/utils/debounced_saver.dart';
+import '../../../core/utils/money.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../core/widgets/pill.dart';
 import '../../../core/widgets/press_scale.dart';
@@ -30,6 +33,7 @@ import '../../../data/catalog/app_options.dart' as data;
 import '../../../data/models/models.dart';
 import '../../../data/repositories/repositories.dart';
 import '../../../data/vendor_categories.dart';
+import '../bookings/booking_payment.dart';
 
 /// Shared cap for both the review-photo picker and the traveller-photo
 /// picker (see _ReviewsSectionState._pickPhoto and
@@ -1399,11 +1403,11 @@ class _DealCardState extends ConsumerState<DealCard> {
   }
 }
 
-/// Real booking flow — shown when a place has at least one active bookable
-/// service (see placeServicesProvider), completely data-driven (not gated
-/// by category), mirroring _DealCard's unclaimed/claimed two-state pattern:
-/// a form to pick a slot/date-range + party size, then a QR/code
-/// confirmation once booked.
+/// Booking flow — shown when a place has at least one active bookable
+/// service (see placeServicesProvider), data-driven rather than gated by
+/// category: pick a slot, a date range or a dated occurrence plus party
+/// size, see the price, then book. A free booking shows its QR straight
+/// away; a paid one opens the payment sheet (see booking_payment.dart).
 class _BookingSection extends ConsumerStatefulWidget {
   final Place place;
   const _BookingSection({required this.place});
@@ -1412,15 +1416,21 @@ class _BookingSection extends ConsumerStatefulWidget {
   ConsumerState<_BookingSection> createState() => _BookingSectionState();
 }
 
+/// Public alias so widget tests can pump the booking section directly.
+typedef BookingSection = _BookingSection;
+
 class _BookingSectionState extends ConsumerState<_BookingSection> {
   String? _selectedServiceId;
   DateTime _selectedDate = DateTime.now();
   DateTime? _selectedSlotStart;
+  String? _selectedOccurrenceId;
   DateTime? _checkIn;
   DateTime? _checkOut;
   int _partySize = 2;
   bool _submitting = false;
   Booking? _confirmed;
+  // The payment gateway the traveller picked; null means the default.
+  String? _gateway;
 
   @override
   Widget build(BuildContext context) {
@@ -1431,11 +1441,14 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
         final service = services.firstWhere((s) => s.id == _selectedServiceId, orElse: () => services.first);
         _selectedServiceId ??= service.id;
         if (_partySize < service.partySizeMin) _partySize = service.partySizeMin;
+        if (service.type != 'stay' && service.partySizeMax > 0 && _partySize > service.partySizeMax) {
+          _partySize = service.partySizeMax;
+        }
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 14),
           child: _confirmed != null
-              ? _BookingConfirmedCard(booking: _confirmed!, onDone: () => setState(() => _confirmed = null))
+              ? BookingQrCard(booking: _confirmed!, onDone: () => setState(() => _confirmed = null))
               : _BookingForm(
                   place: widget.place,
                   services: services,
@@ -1443,6 +1456,7 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
                   onSelectService: (id) => setState(() {
                     _selectedServiceId = id;
                     _selectedSlotStart = null;
+                    _selectedOccurrenceId = null;
                   }),
                   selectedDate: _selectedDate,
                   onSelectDate: (d) => setState(() {
@@ -1451,6 +1465,8 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
                   }),
                   selectedSlotStart: _selectedSlotStart,
                   onSelectSlot: (s) => setState(() => _selectedSlotStart = s),
+                  selectedOccurrenceId: _selectedOccurrenceId,
+                  onSelectOccurrence: (id) => setState(() => _selectedOccurrenceId = id),
                   checkIn: _checkIn,
                   checkOut: _checkOut,
                   onCheckIn: (d) => setState(() => _checkIn = d),
@@ -1459,6 +1475,8 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
                   onPartySize: (n) => setState(() => _partySize = n),
                   submitting: _submitting,
                   onSubmit: _submit,
+                  gateway: _gateway,
+                  onGateway: (g) => setState(() => _gateway = g),
                 ),
         );
       },
@@ -1467,31 +1485,41 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
     );
   }
 
-  Future<void> _submit(BookableService service) async {
+  /// [gateway] is the payment method the form showed as chosen (null when
+  /// there was no choice to make, so the server uses its default).
+  Future<void> _submit(BookableService service, String? gateway) async {
     final messenger = ScaffoldMessenger.of(context);
-    if (service.type == 'stay') {
+    final isStay = service.type == 'stay';
+    if (isStay) {
       if (_checkIn == null || _checkOut == null) return;
+    } else if (service.usesOccurrences) {
+      if (_selectedOccurrenceId == null) return;
     } else if (_selectedSlotStart == null) {
       return;
     }
     setState(() => _submitting = true);
     try {
-      final booking = await ref
+      final created = await ref
           .read(bookingsProvider.notifier)
           .create(
             placeId: widget.place.id,
             serviceId: service.id,
-            startAt: service.type == 'stay' ? null : _selectedSlotStart,
-            checkIn: service.type == 'stay' ? _checkIn : null,
-            checkOut: service.type == 'stay' ? _checkOut : null,
+            startAt: isStay || service.usesOccurrences ? null : _selectedSlotStart,
+            checkIn: isStay ? _checkIn : null,
+            checkOut: isStay ? _checkOut : null,
+            occurrenceId: service.usesOccurrences ? _selectedOccurrenceId : null,
             partySize: _partySize,
+            gateway: service.isFree ? null : gateway,
           );
-      if (mounted) {
-        setState(() {
-          _confirmed = booking;
-          _submitting = false;
-        });
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      if (created.booking.status == 'confirmed') {
+        setState(() => _confirmed = created.booking);
+        return;
       }
+      await showBookingPaymentSheet(context, created.booking, checkout: created.checkout);
+      final latest = ref.read(bookingsProvider).where((b) => b.id == created.booking.id).firstOrNull;
+      if (mounted && latest != null && latest.status == 'confirmed') setState(() => _confirmed = latest);
     } catch (e) {
       if (mounted) setState(() => _submitting = false);
       messenger.showSnackBar(SnackBar(content: Text(ApiClient.errorMessage(e))));
@@ -1499,7 +1527,27 @@ class _BookingSectionState extends ConsumerState<_BookingSection> {
   }
 }
 
-class _BookingForm extends StatelessWidget {
+/// Nights between two picked dates, at least 1.
+int _nights(DateTime? checkIn, DateTime? checkOut) {
+  if (checkIn == null || checkOut == null) return 1;
+  final n = DateTime(checkOut.year, checkOut.month, checkOut.day)
+      .difference(DateTime(checkIn.year, checkIn.month, checkIn.day))
+      .inDays;
+  return n < 1 ? 1 : n;
+}
+
+/// The service's price as shown before booking ("LKR 4,500 per person").
+String servicePriceLine(AppStrings l10n, BookableService s) {
+  if (s.isFree) return l10n.priceFree;
+  final amount = formatLkr(s.priceMinor);
+  return switch (s.pricingMode) {
+    'per_person' => l10n.pricePerPerson(amount),
+    'per_night' => l10n.pricePerNight(amount),
+    _ => l10n.pricePerBooking(amount),
+  };
+}
+
+class _BookingForm extends ConsumerWidget {
   final Place place;
   final List<BookableService> services;
   final BookableService selected;
@@ -1508,6 +1556,8 @@ class _BookingForm extends StatelessWidget {
   final ValueChanged<DateTime> onSelectDate;
   final DateTime? selectedSlotStart;
   final ValueChanged<DateTime> onSelectSlot;
+  final String? selectedOccurrenceId;
+  final ValueChanged<String> onSelectOccurrence;
   final DateTime? checkIn;
   final DateTime? checkOut;
   final ValueChanged<DateTime> onCheckIn;
@@ -1515,7 +1565,9 @@ class _BookingForm extends StatelessWidget {
   final int partySize;
   final ValueChanged<int> onPartySize;
   final bool submitting;
-  final Future<void> Function(BookableService) onSubmit;
+  final Future<void> Function(BookableService, String? gateway) onSubmit;
+  final String? gateway;
+  final ValueChanged<String> onGateway;
 
   const _BookingForm({
     required this.place,
@@ -1526,6 +1578,8 @@ class _BookingForm extends StatelessWidget {
     required this.onSelectDate,
     required this.selectedSlotStart,
     required this.onSelectSlot,
+    required this.selectedOccurrenceId,
+    required this.onSelectOccurrence,
     required this.checkIn,
     required this.checkOut,
     required this.onCheckIn,
@@ -1534,14 +1588,28 @@ class _BookingForm extends StatelessWidget {
     required this.onPartySize,
     required this.submitting,
     required this.onSubmit,
+    this.gateway,
+    required this.onGateway,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = ref.watch(l10nProvider);
     final text = Theme.of(context).textTheme;
     final isStay = selected.type == 'stay';
     final isRental = selected.type == 'rental';
-    final canSubmit = isStay ? (checkIn != null && checkOut != null) : selectedSlotStart != null;
+    final canSubmit = isStay
+        ? (checkIn != null && checkOut != null)
+        : selected.usesOccurrences
+        ? selectedOccurrenceId != null
+        : selectedSlotStart != null;
+    final total = selected.quote(partySize: partySize, nights: _nights(checkIn, checkOut));
+    // Ways to pay this total; the picker only shows when there's a choice.
+    final optionsAsync = selected.isFree || total <= 0 ? null : ref.watch(paymentOptionsProvider(total));
+    final options = optionsAsync?.value ?? const <PaymentOption>[];
+    // Wait for the options of this total, so what's sent is what's shown.
+    final optionsLoading = optionsAsync != null && optionsAsync.isLoading;
+    final chosen = options.where((o) => o.gateway == gateway).firstOrNull ?? options.firstOrNull;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1553,7 +1621,10 @@ class _BookingForm extends StatelessWidget {
             children: [
               const Icon(Icons.event_available_outlined, size: 14, color: SpottoColors.muted),
               const SizedBox(width: 5),
-              Text('BOOK', style: text.labelSmall?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6)),
+              Text(
+                l10n.bookHeading.toUpperCase(),
+                style: text.labelSmall?.copyWith(color: SpottoColors.muted, letterSpacing: 0.6),
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -1573,12 +1644,29 @@ class _BookingForm extends StatelessWidget {
             const SizedBox(height: 10),
           ] else
             Text(selected.name, style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
-          if (selected.priceLabel.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 8),
+            child: Text(
+              [servicePriceLine(l10n, selected), if (selected.priceLabel.isNotEmpty) selected.priceLabel].join(' · '),
+              key: const Key('booking_price_line'),
+              style: text.bodySmall?.copyWith(color: SpottoColors.muted, fontWeight: FontWeight.w700),
+            ),
+          ),
+          if (selected.meetingPointNote.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 2, bottom: 8),
-              child: Text(
-                selected.priceLabel,
-                style: text.bodySmall?.copyWith(color: SpottoColors.muted, fontWeight: FontWeight.w700),
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.place_outlined, size: 14, color: SpottoColors.muted),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      '${l10n.meetingPointLabel}: ${selected.meetingPointNote}',
+                      style: text.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
               ),
             ),
           if (isStay) ...[
@@ -1586,7 +1674,8 @@ class _BookingForm extends StatelessWidget {
               children: [
                 Expanded(
                   child: _DateButton(
-                    label: 'Check-in',
+                    label: l10n.checkInLabel,
+                    emptyLabel: l10n.selectDateLabel,
                     value: checkIn,
                     onTap: () async {
                       final picked = await showDatePicker(
@@ -1602,7 +1691,8 @@ class _BookingForm extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: _DateButton(
-                    label: 'Check-out',
+                    label: l10n.checkOutLabel,
+                    emptyLabel: l10n.selectDateLabel,
                     value: checkOut,
                     onTap: () async {
                       final picked = await showDatePicker(
@@ -1616,6 +1706,13 @@ class _BookingForm extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ] else if (selected.usesOccurrences) ...[
+            _OccurrencePicker(
+              place: place,
+              service: selected,
+              selected: selectedOccurrenceId,
+              onSelect: onSelectOccurrence,
             ),
           ] else ...[
             SizedBox(
@@ -1641,7 +1738,7 @@ class _BookingForm extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            _weekdayShort(d.weekday),
+                            DateFormat.E().format(d),
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
@@ -1677,10 +1774,10 @@ class _BookingForm extends StatelessWidget {
             children: [
               Text(
                 isRental
-                    ? 'Quantity'
+                    ? l10n.quantityLabel
                     : isStay
-                    ? 'Guests'
-                    : 'Party size',
+                    ? l10n.guestsLabel
+                    : l10n.partySizeLabel,
                 style: text.bodySmall?.copyWith(fontWeight: FontWeight.w800),
               ),
               const Spacer(),
@@ -1690,17 +1787,68 @@ class _BookingForm extends StatelessWidget {
               ),
               Text('$partySize', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
               IconButton(
+                key: const Key('booking_party_plus'),
                 icon: const Icon(Icons.add_circle_outline, size: 20),
                 onPressed: partySize < (isStay ? 20 : selected.partySizeMax) ? () => onPartySize(partySize + 1) : null,
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          if (!selected.isFree) ...[
+            Row(
+              children: [
+                Text(l10n.totalLabel, style: text.bodySmall?.copyWith(fontWeight: FontWeight.w800)),
+                const Spacer(),
+                Text(
+                  formatLkr(total),
+                  key: const Key('booking_total'),
+                  style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              [
+                l10n.freeCancellationUntil(selected.freeCancelHours),
+                if (selected.lateCancelRefundPct > 0)
+                  l10n.lateCancelRefund(selected.lateCancelRefundPct)
+                else
+                  l10n.lateCancelNoRefund,
+              ].join('. '),
+              style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+            ),
+            if (options.length > 1) ...[
+              const SizedBox(height: 10),
+              Text(l10n.payWithLabel, style: text.bodySmall?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              for (final o in options)
+                _PaymentOptionTile(option: o, selected: o.gateway == chosen?.gateway, onTap: () => onGateway(o.gateway)),
+              if (chosen != null && chosen.converted)
+                Text(
+                  l10n.chargedInCurrency(chosen.chargeCurrency),
+                  key: const Key('booking_fx_note'),
+                  style: text.bodySmall?.copyWith(color: SpottoColors.muted),
+                ),
+            ],
+          ],
+          const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed: canSubmit && !submitting ? () => onSubmit(selected) : null,
-              child: Text(submitting ? 'Booking…' : 'Book now'),
+              key: const Key('booking_submit'),
+              onPressed: canSubmit && !submitting && !optionsLoading
+                  ? () => onSubmit(selected, options.length > 1 ? chosen?.gateway : null)
+                  : null,
+              child: Text(
+                submitting
+                    ? l10n.bookingInProgress
+                    : selected.isFree
+                    ? l10n.bookFree
+                    : l10n.bookAndPay(
+                        chosen != null && chosen.converted
+                            ? formatMoney(chosen.chargeAmountMinor, chosen.chargeCurrency)
+                            : formatLkr(total),
+                      ),
+              ),
             ),
           ),
         ],
@@ -1709,13 +1857,56 @@ class _BookingForm extends StatelessWidget {
   }
 }
 
-String _weekdayShort(int weekday) => const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1];
+/// One payment method in the booking form: its name and what it charges.
+class _PaymentOptionTile extends StatelessWidget {
+  final PaymentOption option;
+  final bool selected;
+  final VoidCallback onTap;
+  const _PaymentOptionTile({required this.option, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: InkWell(
+        key: Key('payment_option_${option.gateway}'),
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: selected ? SpottoColors.accent : SpottoColors.line, width: selected ? 2 : 1),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                size: 20,
+                color: selected ? SpottoColors.accent : SpottoColors.muted,
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: Text(option.displayName, style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w700))),
+              Text(
+                formatMoney(option.chargeAmountMinor, option.chargeCurrency),
+                style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _DateButton extends StatelessWidget {
   final String label;
+  final String emptyLabel;
   final DateTime? value;
   final VoidCallback onTap;
-  const _DateButton({required this.label, required this.value, required this.onTap});
+  const _DateButton({required this.label, required this.emptyLabel, required this.value, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1736,7 +1927,7 @@ class _DateButton extends StatelessWidget {
               style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: SpottoColors.muted),
             ),
             Text(
-              value == null ? 'Select' : '${value!.month}/${value!.day}/${value!.year}',
+              value == null ? emptyLabel : DateFormat.yMMMd().format(value!),
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
             ),
           ],
@@ -1762,6 +1953,7 @@ class _SlotPicker extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = ref.watch(l10nProvider);
     final dateStr =
         '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
     final async = ref.watch(
@@ -1774,9 +1966,9 @@ class _SlotPicker extends ConsumerWidget {
             BookingSlot.fromJson((s as Map).cast<String, dynamic>()),
         ];
         if (slots.isEmpty) {
-          return const Text(
-            'No availability this day',
-            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: SpottoColors.muted),
+          return Text(
+            l10n.noAvailabilityThisDay,
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: SpottoColors.muted),
           );
         }
         return Wrap(
@@ -1796,7 +1988,7 @@ class _SlotPicker extends ConsumerWidget {
                     border: Border.all(color: selected == slot.start ? SpottoColors.accent : SpottoColors.line),
                   ),
                   child: Text(
-                    '${slot.start.hour.toString().padLeft(2, '0')}:${slot.start.minute.toString().padLeft(2, '0')}',
+                    DateFormat.Hm().format(slot.start.toLocal()),
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
@@ -1814,59 +2006,64 @@ class _SlotPicker extends ConsumerWidget {
         height: 32,
         child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
       ),
-      error: (_, _) => const Text(
-        'Could not load availability',
-        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: SpottoColors.muted),
+      error: (_, _) => Text(
+        l10n.couldNotLoadAvailability,
+        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: SpottoColors.muted),
       ),
     );
   }
 }
 
-class _BookingConfirmedCard extends StatelessWidget {
-  final Booking booking;
-  final VoidCallback onDone;
-  const _BookingConfirmedCard({required this.booking, required this.onDone});
+/// Dated occurrences of an experience or event, as chips: date, time and
+/// how many places are left.
+class _OccurrencePicker extends ConsumerWidget {
+  final Place place;
+  final BookableService service;
+  final String? selected;
+  final ValueChanged<String> onSelect;
+  const _OccurrencePicker({required this.place, required this.service, required this.selected, required this.onSelect});
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: SpottoColors.ink, borderRadius: BorderRadius.circular(16)),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
-            child: QrImageView(data: booking.code, size: 64, gapless: false),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Booked — show at check-in',
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white70),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = ref.watch(l10nProvider);
+    final async = ref.watch(serviceAvailabilityProvider((placeId: place.id, serviceId: service.id, query: '')));
+    return async.when(
+      data: (data) {
+        final occurrences = [
+          for (final o in (data['occurrences'] as List? ?? const []))
+            ServiceOccurrence.fromJson((o as Map).cast<String, dynamic>()),
+        ];
+        if (occurrences.isEmpty) {
+          return Text(
+            l10n.noUpcomingDates,
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: SpottoColors.muted),
+          );
+        }
+        return Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final o in occurrences)
+              ChoiceChip(
+                key: Key('occurrence_${o.id}'),
+                selected: selected == o.id,
+                onSelected: o.remaining > 0 ? (_) => onSelect(o.id) : null,
+                label: Text(
+                  '${DateFormat.MMMEd().format(o.start)} · ${DateFormat.Hm().format(o.start)}'
+                  ' · ${l10n.spotsLeft(o.remaining)}',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  booking.code,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'Party of ${booking.partySize}',
-                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.white70),
-                ),
-              ],
-            ),
-          ),
-        ],
+              ),
+          ],
+        );
+      },
+      loading: () => const SizedBox(
+        height: 32,
+        child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
+      ),
+      error: (_, _) => Text(
+        l10n.couldNotLoadAvailability,
+        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: SpottoColors.muted),
       ),
     );
   }

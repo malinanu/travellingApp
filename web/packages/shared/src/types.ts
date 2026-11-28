@@ -145,6 +145,9 @@ export interface Vendor {
   id: string;
   name: string;
   category: string;
+  /** "venue" (a place people walk into) or "host" (a local running
+   * experiences from a meeting point). */
+  kind?: 'venue' | 'host';
   town: string;
   /** ISO 3166-1 alpha-2 code (e.g. "LK", "US") — picks the right public-
    * holiday calendar for the closure-prompt feature. Defaults to "LK". */
@@ -324,7 +327,7 @@ export interface Claim {
   travellerStyle?: string;
 }
 
-export type ValidateResult = 'valid' | 'already_redeemed' | 'wrong_vendor' | 'unknown';
+export type ValidateResult = 'valid' | 'already_redeemed' | 'wrong_vendor' | 'unknown' | 'not_paid' | 'cancelled';
 
 export interface ValidateResponse {
   result: ValidateResult;
@@ -336,8 +339,12 @@ export interface ValidateResponse {
   redeemedAt?: string;
 }
 
-export type BookingServiceType = 'session' | 'table' | 'stay';
-export type BookingStatus = 'confirmed' | 'cancelled' | 'completed' | 'no_show';
+export type BookingServiceType = 'session' | 'table' | 'stay' | 'rental' | 'experience' | 'event';
+export type BookingStatus = 'awaiting_payment' | 'confirmed' | 'cancelled' | 'completed' | 'no_show' | 'expired';
+export type PaymentStatus = 'not_required' | 'pending' | 'paid' | 'refunded' | 'partially_refunded' | 'failed';
+export type PricingMode = 'free' | 'per_person' | 'per_booking' | 'per_night';
+export type CapacityUnit = 'bookings' | 'guests';
+export type Scheduling = 'weekly' | 'occurrences';
 
 export interface ServiceAvailabilityWindow {
   start: string; // "HH:MM"
@@ -346,35 +353,58 @@ export interface ServiceAvailabilityWindow {
 export type ServiceAvailabilityDoc = Record<string, ServiceAvailabilityWindow[]>;
 
 /** One bookable thing a vendor offers (e.g. "Beginner surf lesson", "Deluxe
- * Room"). No payment is collected anywhere in this platform — price is
- * display-only, vendor collects payment in person. */
+ * Room", "Dawn whale watch"). Paid services are paid for in the traveller
+ * app through the payment gateway; money is in minor units (cents) of LKR. */
 export interface BookableService {
   id: string;
   vendorId: string;
   type: BookingServiceType;
   name: string;
   description: string;
-  /** session/table only — how long one booking occupies capacity. */
+  /** How long one booking (or a dated occurrence, by default) lasts. */
   durationMins?: number;
-  /** How many bookings may hold this service concurrently (concurrent
-   * session/table bookings, or total rooms of this type for stay). */
+  /** How much may be booked concurrently, counted in capacityUnit. */
   capacity: number;
-  partySizeMin?: number; // session/table only
-  partySizeMax?: number; // session/table only
+  capacityUnit?: CapacityUnit;
+  partySizeMin?: number;
+  partySizeMax?: number;
   guestsPerRoom?: number; // stay only
+  /** Optional extra text shown next to the price ("includes breakfast"). */
   priceLabel: string;
-  /** Weekly availability rule for session/table — undefined for stay
-   * (stay availability is capacity-only) or when unset (falls back to the
-   * vendor's own Hours on the server). */
+  priceMinor?: number;
+  currency?: string;
+  pricingMode?: PricingMode;
+  /** Full refund when the traveller cancels at least this long before. */
+  freeCancelHours?: number;
+  /** Refund for later cancellations, 0–100. */
+  lateCancelRefundPct?: number;
+  scheduling?: Scheduling;
+  /** "YYYY-MM-DD" Sri Lankan days a weekly service is closed. */
+  blackoutDates?: string[];
+  meetingPoint?: { note: string; lat?: number; lng?: number };
+  /** Weekly windows for weekly-scheduled services (absent: the vendor's
+   * own hours apply). */
   availability?: ServiceAvailabilityDoc;
   active: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-/** A traveller's real, auto-confirmed commitment against a BookableService.
- * No payment collected — vendor checks the traveller in via the same
- * BOOK-XXXX QR/code flow offers use for redemption. */
+/** One dated run of a service: a departure, an event night. */
+export interface ServiceOccurrence {
+  id: string;
+  serviceId: string;
+  startAt: string;
+  endAt: string;
+  capacity?: number;
+  status: 'scheduled' | 'cancelled';
+  remaining?: number;
+  createdAt: string;
+}
+
+/** A traveller's booking against a BookableService. Paid bookings start
+ * awaiting payment and are confirmed by the gateway; the vendor checks the
+ * traveller in with the BOOK-XXXX code. */
 export interface Booking {
   id: string;
   code: string;
@@ -390,12 +420,200 @@ export interface Booking {
   note?: string;
   createdAt: string;
   cancelledAt?: string;
-  cancelledBy?: 'traveller' | 'vendor';
+  cancelledBy?: 'traveller' | 'vendor' | 'admin' | 'system';
   checkedInAt?: string;
+  holdExpiresAt?: string;
+  occurrenceId?: string;
+  amountMinor?: number;
+  currency?: string;
+  paymentStatus?: PaymentStatus;
+  refundedMinor?: number;
+  commissionMode?: 'none' | 'percent' | 'per_guest_fee';
+  commissionRateBps?: number;
+  feePerGuestMinor?: number;
+  commissionMinor?: number;
+  vendorNetMinor?: number;
+  freeCancelHours?: number;
+  lateCancelRefundPct?: number;
   serviceName?: string;
   travellerName?: string;
   travellerCountry?: string;
   vendorName?: string;
+}
+
+/** One line of what Spotto and a vendor owe each other: positive is owed
+ * to the vendor, negative by the vendor. */
+export interface LedgerEntry {
+  id: string;
+  vendorId: string;
+  bookingId?: string;
+  payoutId?: string;
+  kind: 'booking_net' | 'per_guest_fee' | 'refund_reversal' | 'adjustment';
+  amountMinor: number;
+  currency: string;
+  payableAt: string;
+  memo: string;
+  createdBy: string;
+  createdAt: string;
+  bookingCode?: string;
+  serviceName?: string;
+  vendorName?: string;
+}
+
+export type PayoutStatus = 'draft' | 'approved' | 'paid' | 'failed' | 'cancelled';
+
+export interface Payout {
+  id: string;
+  vendorId: string;
+  vendorName: string;
+  amountMinor: number;
+  currency: string;
+  periodEnd: string;
+  status: PayoutStatus;
+  approvedBy: string;
+  approvedAt?: string;
+  paidAt?: string;
+  bankReference: string;
+  note: string;
+  entryCount: number;
+  createdAt: string;
+  accountHolder?: string;
+  bankName?: string;
+  branch?: string;
+  accountLast4?: string;
+}
+
+export interface VendorEarnings {
+  payableMinor: number;
+  pendingMinor: number;
+  owedToSpottoMinor: number;
+  minPayoutMinor: number;
+  currency: string;
+  nextPayoutAt: string;
+  payoutAccount: { set: boolean; bankName?: string; accountLast4?: string; accountHolder?: string; verified?: boolean };
+  payouts: Payout[];
+}
+
+export interface PayoutAccount {
+  set?: boolean;
+  vendorId?: string;
+  accountHolder: string;
+  bankName: string;
+  branch: string;
+  accountLast4: string;
+  accountNumber?: string;
+  verified?: boolean;
+  verifiedAt?: string;
+  updatedAt?: string;
+}
+
+export type RefundStatus = 'requested' | 'succeeded' | 'failed' | 'manual' | 'manual_done';
+
+export interface Refund {
+  id: string;
+  bookingId: string;
+  paymentId?: string;
+  amountMinor: number;
+  currency: string;
+  reason: string;
+  status: RefundStatus;
+  gatewayRefundId: string;
+  requestedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  bookingCode?: string;
+  vendorName?: string;
+  travellerName?: string;
+  travellerEmail?: string;
+  gateway?: string;
+  /** What goes back through the gateway, in the currency it charged. */
+  gatewayAmountMinor?: number;
+  gatewayCurrency?: string;
+}
+
+export interface PaymentRecord {
+  id: string;
+  bookingId: string;
+  gateway: string;
+  gatewayOrderId: string;
+  gatewayPaymentId: string;
+  /** What the gateway charges, in the gateway's currency. */
+  amountMinor: number;
+  currency: string;
+  /** The booking's own price (LKR) this payment covers. */
+  bookingAmountMinor?: number;
+  bookingCurrency?: string;
+  /** LKR per unit of `currency`, in millionths; 0 when nothing was converted. */
+  fxRateMicros?: number;
+  status: 'created' | 'succeeded' | 'failed' | 'cancelled' | 'chargeback';
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** An exchange rate finance sets for a gateway that can't charge LKR. */
+export interface FxRate {
+  currency: string;
+  /** LKR per unit, in millionths (302.5 LKR = 302_500_000). */
+  lkrPerUnitMicros: number;
+  setBy: string;
+  setAt: string;
+  stale: boolean;
+}
+
+/** A gateway notification that needs a person (chargeback, mismatch...). */
+export interface PaymentIssue {
+  eventId: string;
+  gateway: string;
+  status: string;
+  outcome: string;
+  receivedAt: string;
+  paymentId: string;
+  bookingId: string;
+  bookingCode: string;
+  vendorName: string;
+  amountMinor: number;
+  currency: string;
+}
+
+export interface FxRatesResponse {
+  rates: FxRate[];
+  gateways: { name: string; displayName: string; chargeCurrency: string }[];
+  marginBps: number;
+  maxAgeHours: number;
+}
+
+export type CommissionScope = 'default' | 'booking_type' | 'category' | 'vendor';
+
+export interface CommissionRule {
+  id: string;
+  scope: CommissionScope;
+  scopeKey: string;
+  mode: 'percent' | 'per_guest_fee';
+  rateBps: number;
+  feePerGuestMinor: number;
+  activeFrom: string;
+  note: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface FinanceSummary {
+  from: string;
+  to: string;
+  bookings: number;
+  paidBookings: number;
+  grossMinor: number;
+  refundedMinor: number;
+  commissionMinor: number;
+  guestFeesMinor: number;
+  vendorNetMinor: number;
+  openRefunds: number;
+  /** Payments pulled back or disputed, all time. */
+  chargebacks?: number;
+  pendingPayouts: number;
+  pendingPayoutMinor: number;
+  currency: string;
+  byCategory: { category: string; bookings: number; grossMinor: number; commissionMinor: number }[];
 }
 
 export interface VendorNotification {

@@ -1,6 +1,7 @@
-﻿package httpapi
+package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,11 +52,37 @@ func availabilityWindowsForDay(svc domain.BookableService, profile vendorProfile
 	if svc.Availability != nil {
 		return (*svc.Availability)[weekdayKey(date)]
 	}
+	if !usesVendorHours(svc) {
+		return nil
+	}
 	day, ok := profile.Hours[weekdayKey(date)]
 	if !ok || day.Closed || day.Open == "" || day.Close == "" {
 		return nil
 	}
 	return []domain.ServiceAvailabilityWindow{{Start: day.Open, End: day.Close}}
+}
+
+// usesVendorHours reports whether a service is also limited by its
+// vendor's opening hours. Experiences and events run on their own
+// schedule (a host has no opening hours), as do stays.
+func usesVendorHours(svc domain.BookableService) bool {
+	switch svc.Type {
+	case domain.BookingTypeExperience, domain.BookingTypeEvent, domain.BookingTypeStay:
+		return false
+	}
+	return true
+}
+
+// isBlackoutDate reports whether the vendor closed this service on the
+// Sri Lankan calendar day of t.
+func isBlackoutDate(svc domain.BookableService, t time.Time) bool {
+	day := inSriLanka(t).Format("2006-01-02")
+	for _, d := range svc.BlackoutDates {
+		if d == day {
+			return true
+		}
+	}
+	return false
 }
 
 func parseClockOnDate(date time.Time, clock string) (time.Time, error) {
@@ -87,14 +114,28 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if svc.Scheduling == domain.SchedulingOccurrences {
+		from := time.Now()
+		if d, err := parseLocalDate(r.URL.Query().Get("date")); err == nil && d.After(from) {
+			from = d
+		}
+		occurrences, err := s.Store.OccurrencesWithRemaining(r.Context(), svc, from, false, 60)
+		if err != nil {
+			storeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"occurrences": occurrences})
+		return
+	}
+
 	if svc.Type == domain.BookingTypeStay {
-		checkIn, err1 := time.Parse("2006-01-02", r.URL.Query().Get("checkIn"))
-		checkOut, err2 := time.Parse("2006-01-02", r.URL.Query().Get("checkOut"))
+		checkIn, err1 := parseLocalDate(r.URL.Query().Get("checkIn"))
+		checkOut, err2 := parseLocalDate(r.URL.Query().Get("checkOut"))
 		if err1 != nil || err2 != nil || !checkOut.After(checkIn) {
 			writeErr(w, http.StatusBadRequest, "valid checkIn/checkOut required")
 			return
 		}
-		existing, err := s.Store.OverlappingBookingsCount(r.Context(), svc.ID, checkIn, checkOut)
+		existing, err := s.Store.HeldCapacity(r.Context(), svc, checkIn, checkOut)
 		if err != nil {
 			storeErr(w, err)
 			return
@@ -107,9 +148,13 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	date, err := time.Parse("2006-01-02", r.URL.Query().Get("date"))
+	date, err := parseLocalDate(r.URL.Query().Get("date"))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "valid date required")
+		return
+	}
+	if isBlackoutDate(svc, date) {
+		writeJSON(w, http.StatusOK, map[string]any{"slots": []availabilitySlot{}})
 		return
 	}
 	vendor, err := s.Store.VendorByID(r.Context(), svc.VendorID)
@@ -133,10 +178,13 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 		}
 		for t := start; !t.Add(duration).After(end); t = t.Add(duration) {
 			slotEnd := t.Add(duration)
-			if checkVendorOpen(profile, t) != nil {
+			if !t.After(time.Now()) {
 				continue
 			}
-			existing, err := s.Store.OverlappingBookingsCount(r.Context(), svc.ID, t, slotEnd)
+			if usesVendorHours(svc) && checkVendorOpen(profile, t) != nil {
+				continue
+			}
+			existing, err := s.Store.HeldCapacity(r.Context(), svc, t, slotEnd)
 			if err != nil {
 				storeErr(w, err)
 				return
@@ -159,37 +207,47 @@ func (s *Server) handleServiceAvailability(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 	c := auth.FromContext(r.Context())
 	var req struct {
-		PlaceID   string `json:"placeId"`
-		ServiceID string `json:"serviceId"`
-		StartAt   string `json:"startAt,omitempty"` // RFC3339, session/table
-		CheckIn   string `json:"checkIn,omitempty"` // "2006-01-02", stay
-		CheckOut  string `json:"checkOut,omitempty"`
-		PartySize int    `json:"partySize"`
-		Note      string `json:"note"`
+		PlaceID      string `json:"placeId"`
+		ServiceID    string `json:"serviceId"`
+		OccurrenceID string `json:"occurrenceId,omitempty"` // dated services
+		StartAt      string `json:"startAt,omitempty"`      // RFC3339, session/table
+		CheckIn      string `json:"checkIn,omitempty"`      // "2006-01-02", stay
+		CheckOut     string `json:"checkOut,omitempty"`
+		PartySize    int    `json:"partySize"`
+		Note         string `json:"note"`
+		// Gateway picks how to pay a paid booking ("" = the default).
+		Gateway string `json:"gateway,omitempty"`
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.PlaceID == "" || req.ServiceID == "" {
-		writeErr(w, http.StatusBadRequest, "placeId and serviceId required")
+	if req.ServiceID == "" {
+		writeErr(w, http.StatusBadRequest, "serviceId required")
 		return
 	}
 	if req.PartySize < 1 {
 		req.PartySize = 1
 	}
 
-	place, err := s.Store.PlaceByID(r.Context(), req.PlaceID)
+	svc, err := s.Store.BookableServiceByID(r.Context(), req.ServiceID)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	// placeId is optional: an experience opened from a listing or a shared
+	// link is booked against its host's own place.
+	var place domain.Place
+	if req.PlaceID != "" {
+		place, err = s.Store.PlaceByID(r.Context(), req.PlaceID)
+	} else {
+		place, err = s.Store.PlaceByVendorID(r.Context(), svc.VendorID)
+	}
 	if err != nil {
 		storeErr(w, err)
 		return
 	}
 	if place.VendorID == nil {
 		writeErr(w, http.StatusBadRequest, "this place doesn't take bookings")
-		return
-	}
-	svc, err := s.Store.BookableServiceByID(r.Context(), req.ServiceID)
-	if err != nil {
-		storeErr(w, err)
 		return
 	}
 	if svc.VendorID != *place.VendorID {
@@ -201,12 +259,41 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if svc.PartySizeMin > 0 && req.PartySize < svc.PartySizeMin && svc.Type != domain.BookingTypeStay {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("minimum party size is %d", svc.PartySizeMin))
+		return
+	}
+	if svc.PartySizeMax > 0 && req.PartySize > svc.PartySizeMax && svc.Type != domain.BookingTypeStay {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("maximum party size is %d", svc.PartySizeMax))
+		return
+	}
+
 	var startAt, endAt time.Time
-	if svc.Type == domain.BookingTypeStay {
-		checkIn, err1 := time.Parse("2006-01-02", req.CheckIn)
-		checkOut, err2 := time.Parse("2006-01-02", req.CheckOut)
+	var occurrenceID *string
+	if svc.Scheduling == domain.SchedulingOccurrences {
+		if req.OccurrenceID == "" {
+			writeErr(w, http.StatusBadRequest, "occurrenceId required: pick a date")
+			return
+		}
+		occ, err := s.Store.OccurrenceByID(r.Context(), req.OccurrenceID)
+		if err != nil || occ.ServiceID != svc.ID {
+			writeErr(w, http.StatusNotFound, "that date isn't available")
+			return
+		}
+		if occ.Status != "scheduled" || !occ.StartAt.After(time.Now()) {
+			writeErr(w, http.StatusConflict, "that date is no longer bookable")
+			return
+		}
+		startAt, endAt, occurrenceID = occ.StartAt, occ.EndAt, &occ.ID
+	} else if svc.Type == domain.BookingTypeStay {
+		checkIn, err1 := parseLocalDate(req.CheckIn)
+		checkOut, err2 := parseLocalDate(req.CheckOut)
 		if err1 != nil || err2 != nil || !checkOut.After(checkIn) {
 			writeErr(w, http.StatusBadRequest, "valid checkIn/checkOut dates required")
+			return
+		}
+		if today, _ := parseLocalDate(inSriLanka(time.Now()).Format("2006-01-02")); checkIn.Before(today) {
+			writeErr(w, http.StatusBadRequest, "check-in can't be in the past")
 			return
 		}
 		startAt, endAt = checkIn, checkOut
@@ -216,15 +303,9 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "valid startAt required")
 			return
 		}
-		if svc.PartySizeMin > 0 && req.PartySize < svc.PartySizeMin {
-			writeErr(w, http.StatusBadRequest, fmt.Sprintf("minimum party size is %d", svc.PartySizeMin))
-			return
-		}
-		if svc.PartySizeMax > 0 && req.PartySize > svc.PartySizeMax {
-			writeErr(w, http.StatusBadRequest, fmt.Sprintf("maximum party size is %d", svc.PartySizeMax))
-			return
-		}
-		startAt = start
+		// Hours and service windows are Sri Lankan wall-clock times,
+		// whatever offset the client sent the instant in.
+		startAt = inSriLanka(start)
 		duration := time.Duration(svc.DurationMins) * time.Minute
 		if duration <= 0 {
 			duration = time.Hour
@@ -238,9 +319,19 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		}
 		var profile vendorProfileDoc
 		json.Unmarshal(vendor.Profile, &profile)
-		if err := checkVendorOpen(profile, startAt); err != nil {
-			writeErr(w, http.StatusConflict, err.Error())
+		if !startAt.After(time.Now()) {
+			writeErr(w, http.StatusBadRequest, "that time has already passed")
 			return
+		}
+		if isBlackoutDate(svc, startAt) {
+			writeErr(w, http.StatusConflict, "not available that day")
+			return
+		}
+		if usesVendorHours(svc) {
+			if err := checkVendorOpen(profile, startAt); err != nil {
+				writeErr(w, http.StatusConflict, err.Error())
+				return
+			}
 		}
 		if err := checkServiceAvailability(svc.Availability, startAt, endAt); err != nil {
 			writeErr(w, http.StatusConflict, err.Error())
@@ -251,7 +342,34 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 	booking := domain.Booking{
 		ID: newID("bkg"), VendorID: svc.VendorID, ServiceID: svc.ID, Type: svc.Type,
 		PlaceID: place.ID, TravellerID: c.Subject, StartAt: startAt, EndAt: endAt,
-		PartySize: req.PartySize, Note: req.Note,
+		PartySize: req.PartySize, Note: req.Note, OccurrenceID: occurrenceID,
+		AmountMinor: domain.QuoteBooking(svc, req.PartySize, startAt, endAt), Currency: svc.Currency,
+		FreeCancelHours: svc.FreeCancelHours, LateCancelRefundPct: svc.LateCancelRefundPct,
+	}
+	if err := s.applyCommission(r.Context(), &booking); err != nil {
+		storeErr(w, err)
+		return
+	}
+	if booking.AmountMinor > 0 && s.Payments.Len() == 0 {
+		writeErr(w, http.StatusServiceUnavailable, "Online payment isn't available right now, so paid bookings are paused.")
+		return
+	}
+	var quote gatewayQuote
+	if booking.AmountMinor > 0 {
+		// Settle how it'll be paid before holding any seats.
+		if quote, err = s.quoteGateway(r.Context(), req.Gateway, booking.AmountMinor, booking.Currency); err != nil {
+			writePaymentStartErr(w, err)
+			return
+		}
+		// Unpaid holds block seats for others, so one traveller can only
+		// hold a few at a time.
+		if n, err := s.Store.LiveHoldCount(r.Context(), c.Subject); err != nil {
+			storeErr(w, err)
+			return
+		} else if n >= maxLiveHolds {
+			writeErr(w, http.StatusTooManyRequests, "Finish paying for your other bookings first, or let them lapse.")
+			return
+		}
 	}
 	var created domain.Booking
 	for range 5 {
@@ -281,25 +399,48 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created.ServiceName = svc.Name
+	created.VendorName = vendorNameOf(r.Context(), s, svc.VendorID)
 
-	// Best-effort: never fail the booking over a notification/email hiccup.
-	me, meErr := s.Store.UserByID(r.Context(), c.Subject)
-	if meErr == nil && me.Email != "" {
-		s.Jobs.Enqueue(func() {
-			s.Mail.Send(me.Email, "Your Spotto booking is confirmed", bookingConfirmedEmailHTML(created, svc.Name))
-		})
+	if created.Status == domain.BookingConfirmed {
+		// Free: confirmed now. A paid booking is confirmed by its payment.
+		s.notifyBookingConfirmed(r.Context(), created)
+		writeJSON(w, http.StatusCreated, bookingWithCheckout{Booking: created})
+		return
 	}
-	s.Store.UpsertVendorNotification(r.Context(), svc.VendorID, domain.VendorNotification{
-		ID:     "notif_booking_" + created.ID,
-		Icon:   "Calendar",
-		Tone:   "teal",
-		Title:  "New booking: " + svc.Name,
-		Sub:    fmt.Sprintf("%s, party of %d", created.StartAt.Format("Jan 2, 3:04 PM"), created.PartySize),
-		Time:   "just now",
-		Unread: true,
-	})
+	co, err := s.startCheckout(r, created, quote)
+	if err != nil {
+		// Give the seats back rather than hold them for a payment that
+		// can't start.
+		s.Store.CancelBookingWithRefund(r.Context(), postgres.CancelRequest{BookingID: created.ID, By: "system", Actor: "system", Now: time.Now()})
+		writePaymentStartErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, bookingWithCheckout{Booking: created, Checkout: co})
+}
 
-	writeJSON(w, http.StatusCreated, created)
+// maxLiveHolds is how many unpaid bookings one traveller may hold at once.
+const maxLiveHolds = 3
+
+func vendorNameOf(ctx context.Context, s *Server, vendorID string) string {
+	if v, err := s.Store.VendorByID(ctx, vendorID); err == nil {
+		return v.Name
+	}
+	return ""
+}
+
+// applyCommission snapshots the commission rule that applies to b now.
+func (s *Server) applyCommission(ctx context.Context, b *domain.Booking) error {
+	vendor, err := s.Store.VendorByID(ctx, b.VendorID)
+	if err != nil {
+		return err
+	}
+	rule, err := s.Store.ResolveCommissionRule(ctx, domain.CommissionModeFor(b.AmountMinor),
+		b.VendorID, vendor.Category, b.Type, time.Now())
+	if err != nil {
+		return err
+	}
+	domain.ApplyCommission(b, rule)
+	return nil
 }
 
 func (s *Server) handleMyBookings(w http.ResponseWriter, r *http.Request) {
@@ -309,24 +450,34 @@ func (s *Server) handleMyBookings(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, bookings)
+	writeJSON(w, http.StatusOK, s.travellerBookings(r.Context(), bookings))
 }
 
 func (s *Server) handleCancelMyBooking(w http.ResponseWriter, r *http.Request) {
-	c := auth.FromContext(r.Context())
-	id := chi.URLParam(r, "id")
-	booking, err := s.Store.BookingByID(r.Context(), id)
+	booking, ok := s.ownBooking(w, r)
+	if !ok {
+		return
+	}
+	refund, err := s.cancelBooking(r.Context(), booking, cancelByTraveller, "traveller:"+booking.TravellerID)
 	if err != nil {
+		writeCancelErr(w, err)
+		return
+	}
+	out := map[string]any{"status": "cancelled", "refundMinor": refund.AmountMinor, "currency": booking.Currency,
+		"gatewayRefundMinor": refund.AmountMinor, "gatewayCurrency": booking.Currency}
+	if refund.GatewayCurrency != "" {
+		out["gatewayRefundMinor"], out["gatewayCurrency"] = refund.GatewayAmountMinor, refund.GatewayCurrency
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func writeCancelErr(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrInvalidTransition):
+		writeErr(w, http.StatusConflict, "This booking can no longer be cancelled.")
+	case errors.Is(err, postgres.ErrBookingStarted):
+		writeErr(w, http.StatusConflict, "This booking has already started, so it can't be cancelled in the app.")
+	default:
 		storeErr(w, err)
-		return
 	}
-	if booking.TravellerID != c.Subject {
-		writeErr(w, http.StatusNotFound, "The requested item could not be found.")
-		return
-	}
-	if err := s.Store.CancelBookingAsTraveller(r.Context(), id, c.Subject); err != nil {
-		storeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }

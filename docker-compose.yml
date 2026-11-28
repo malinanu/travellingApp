@@ -64,6 +64,18 @@ services:
       # Phone verification (see server/.env.example) — each channel optional.
       TEXTLK_API_TOKEN: ${TEXTLK_API_TOKEN:-}
       TEXTLK_SENDER_ID: ${TEXTLK_SENDER_ID:-}
+      # Paid bookings: PayHere and/or PayPal (need PUBLIC_API_URL) and the key
+      # that encrypts vendors' bank account numbers for payouts.
+      PAYHERE_MERCHANT_ID: ${PAYHERE_MERCHANT_ID:-}
+      PAYHERE_MERCHANT_SECRET: ${PAYHERE_MERCHANT_SECRET:-}
+      PAYHERE_SANDBOX: ${PAYHERE_SANDBOX:-true}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      PAYPAL_SANDBOX: ${PAYPAL_SANDBOX:-true}
+      PAYPAL_CURRENCY: ${PAYPAL_CURRENCY:-USD}
+      PAYPAL_FX_MARGIN_BPS: ${PAYPAL_FX_MARGIN_BPS:-300}
+      PAYOUT_ENCRYPTION_KEY: ${PAYOUT_ENCRYPTION_KEY:-}
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}

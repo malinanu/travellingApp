@@ -60,7 +60,7 @@ func TestBookingCapacityAndLifecycle(t *testing.T) {
 	now := time.Now()
 	pw, _ := auth.HashPassword("testpass123")
 
-	vendor := domain.Vendor{ID: "ven_booking_test", Name: "Booking Test Vendor", Category: "surf-school",
+	vendor := domain.Vendor{ID: "ven_booking_test", Name: "Booking Test Vendor", Category: "gyms",
 		Status: domain.VendorApproved, Tier: "Free", Flags: []string{}, SubmittedAt: now}
 	must(t, store.UpsertVendor(ctx, vendor))
 	must(t, store.CreateUser(ctx, domain.User{ID: "usr_booking_vendor", Email: "bookingvendor@edgecase.test", PasswordHash: pw, Role: domain.RoleVendor, VendorID: &vendor.ID, CreatedAt: now}))

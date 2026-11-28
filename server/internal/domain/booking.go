@@ -12,7 +12,52 @@ const (
 	BookingTypeTable   BookingType = "table"   // party size + short fixed duration
 	BookingTypeStay    BookingType = "stay"    // date-range check-in/out + guest count + room capacity
 	BookingTypeRental  BookingType = "rental"  // fixed start time + duration + item capacity
+	// BookingTypeExperience is something a host runs: a tour, a class, a
+	// trip. Weekly slots or dated departures, capacity usually in guests.
+	BookingTypeExperience BookingType = "experience"
+	// BookingTypeEvent is a ticketed one-off: always dated occurrences.
+	BookingTypeEvent BookingType = "event"
 )
+
+// ValidBookingType reports whether t is a known booking type.
+func ValidBookingType(t BookingType) bool {
+	switch t {
+	case BookingTypeSession, BookingTypeTable, BookingTypeStay, BookingTypeRental, BookingTypeExperience, BookingTypeEvent:
+		return true
+	}
+	return false
+}
+
+// Scheduling says how a service's bookable times are defined.
+type Scheduling string
+
+const (
+	// SchedulingWeekly cuts slots out of weekly windows (Availability).
+	SchedulingWeekly Scheduling = "weekly"
+	// SchedulingOccurrences books specific dated runs (ServiceOccurrence).
+	SchedulingOccurrences Scheduling = "occurrences"
+)
+
+// MeetingPoint is where an experience starts.
+type MeetingPoint struct {
+	Note string   `json:"note"`
+	Lat  *float64 `json:"lat,omitempty"`
+	Lng  *float64 `json:"lng,omitempty"`
+}
+
+// ServiceOccurrence is one dated run of a service: a departure, an event
+// night. Capacity, when set, overrides the service's.
+type ServiceOccurrence struct {
+	ID        string    `json:"id"`
+	ServiceID string    `json:"serviceId"`
+	StartAt   time.Time `json:"startAt"`
+	EndAt     time.Time `json:"endAt"`
+	Capacity  *int      `json:"capacity,omitempty"`
+	Status    string    `json:"status"` // scheduled | cancelled
+	CreatedAt time.Time `json:"createdAt"`
+	// Remaining is filled in for listings: capacity not yet booked.
+	Remaining *int `json:"remaining,omitempty"`
+}
 
 // BookableService is one bookable thing a vendor offers (e.g. "Beginner surf
 // lesson", "Deluxe Room"). A vendor may define several; most will have one.
@@ -26,27 +71,44 @@ type BookableService struct {
 	// occupies capacity). Unused (0) for stay — its span is the
 	// traveller's own check-in/check-out range.
 	DurationMins int `json:"durationMins,omitempty"`
-	// Capacity is how many bookings may hold this service *concurrently* —
-	// concurrent session/table bookings, or total rooms of this type for
-	// stay. Deliberately a booking count, not a summed party-size/guest
-	// count (keeps the overlap check a single count(*)) — PartySizeMin/Max
-	// and GuestsPerRoom are informational for the traveller, not enforced
-	// against Capacity.
-	Capacity      int `json:"capacity"`
-	PartySizeMin  int `json:"partySizeMin,omitempty"`  // session/table only
-	PartySizeMax  int `json:"partySizeMax,omitempty"`  // session/table only
-	GuestsPerRoom int `json:"guestsPerRoom,omitempty"` // stay only
-	// PriceLabel is free-text display only ("LKR 4,500pp", "From $80/night")
-	// — no payment processing exists on this platform, vendor collects
-	// payment in person, same trust model as offer redemption.
+	// Capacity is how much of this service may be held *concurrently*:
+	// concurrent bookings (tables, rooms of this type, cars) or, when
+	// CapacityUnit is guests, the summed party size across them.
+	Capacity int `json:"capacity"`
+	// CapacityUnit says whether Capacity counts bookings or guests;
+	// empty is treated as bookings.
+	CapacityUnit  CapacityUnit `json:"capacityUnit"`
+	PartySizeMin  int          `json:"partySizeMin,omitempty"`  // session/table only
+	PartySizeMax  int          `json:"partySizeMax,omitempty"`  // session/table only
+	GuestsPerRoom int          `json:"guestsPerRoom,omitempty"` // stay only
+	// PriceLabel is optional free text shown next to the price
+	// ("includes breakfast").
 	PriceLabel string `json:"priceLabel"`
+	// PriceMinor and PricingMode are what a booking costs (see QuoteBooking
+	// in money.go); PriceLabel is now optional display text.
+	PriceMinor  int64       `json:"priceMinor"`
+	Currency    string      `json:"currency"`
+	PricingMode PricingMode `json:"pricingMode"`
+	// Cancellation terms: a traveller cancelling at least FreeCancelHours
+	// before the start gets a full refund, later LateCancelRefundPct.
+	FreeCancelHours     int `json:"freeCancelHours"`
+	LateCancelRefundPct int `json:"lateCancelRefundPct"`
 	// Availability is a weekly day-of-week rule for session/table types —
 	// nil for stay (stay availability is capacity-only). Shape mirrors
 	// vendorHoursDoc's spirit (see internal/http/vendor.go).
 	Availability *ServiceAvailabilityDoc `json:"availability,omitempty"`
-	Active       bool                    `json:"active"`
-	CreatedAt    time.Time               `json:"createdAt"`
-	UpdatedAt    time.Time               `json:"updatedAt"`
+	// Scheduling is weekly windows or dated occurrences; BlackoutDates
+	// ("2006-01-02", Sri Lankan days) close a weekly service on given days.
+	Scheduling    Scheduling    `json:"scheduling"`
+	BlackoutDates []string      `json:"blackoutDates"`
+	MeetingPoint  *MeetingPoint `json:"meetingPoint,omitempty"`
+	Active        bool          `json:"active"`
+	// ArchivedAt is set when a vendor deletes a service that already has
+	// bookings: the row stays so booking and payment history keep their
+	// reference, but it is hidden from every list.
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
 type ServiceAvailabilityWindow struct {
@@ -63,14 +125,63 @@ type ServiceAvailabilityDoc map[string][]ServiceAvailabilityWindow
 type BookingStatus string
 
 const (
-	BookingConfirmed BookingStatus = "confirmed" // auto-confirmed on creation, no pending/approval step
+	// BookingAwaitingPayment holds capacity for a priced booking until the
+	// gateway confirms payment or HoldExpiresAt passes.
+	BookingAwaitingPayment BookingStatus = "awaiting_payment"
+	// BookingConfirmed is the starting state for a free booking, and the
+	// state a priced booking reaches once its payment succeeds.
+	BookingConfirmed BookingStatus = "confirmed"
 	BookingCancelled BookingStatus = "cancelled"
 	BookingCompleted BookingStatus = "completed"
 	BookingNoShow    BookingStatus = "no_show"
+	// BookingExpired is a priced booking whose payment hold ran out.
+	BookingExpired BookingStatus = "expired"
+)
+
+// bookingTransitions lists, for each target status, the statuses a
+// booking may move to it from. Nothing moves back to an earlier state: a
+// cancelled, completed or no-show booking is final, and an expired one can
+// only be revived by its own late payment.
+var bookingTransitions = map[BookingStatus][]BookingStatus{
+	// expired → confirmed: a payment the gateway confirms after the hold
+	// lapsed is still honoured while the slot has room (else refunded).
+	BookingConfirmed: {BookingAwaitingPayment, BookingExpired},
+	BookingCancelled: {BookingAwaitingPayment, BookingConfirmed},
+	BookingCompleted: {BookingConfirmed},
+	BookingNoShow:    {BookingConfirmed},
+	BookingExpired:   {BookingAwaitingPayment},
+}
+
+// AllowedFromStatuses returns the statuses a booking may be in to move to
+// target (empty for an unknown or initial-only target).
+func AllowedFromStatuses(target BookingStatus) []BookingStatus {
+	return bookingTransitions[target]
+}
+
+// CanTransition reports whether a booking may move from one status to
+// another.
+func CanTransition(from, to BookingStatus) bool {
+	for _, s := range bookingTransitions[to] {
+		if s == from {
+			return true
+		}
+	}
+	return false
+}
+
+// CapacityUnit says what a BookableService's Capacity counts.
+type CapacityUnit string
+
+const (
+	// CapacityBookings counts concurrent bookings (tables, rooms, cars).
+	CapacityBookings CapacityUnit = "bookings"
+	// CapacityGuests counts people across concurrent bookings (a tour of
+	// 12, a class of 20).
+	CapacityGuests CapacityUnit = "guests"
 )
 
 // Booking is a traveller's real commitment against a vendor's
-// BookableService. No payment collected. StartAt/EndAt are always both
+// BookableService, free or paid. StartAt/EndAt are always both
 // set (session/table: start + start+DurationMins; stay: check-in +
 // check-out), so every BookingType shares one overlap query.
 type Booking struct {
@@ -90,6 +201,24 @@ type Booking struct {
 	CancelledAt *time.Time    `json:"cancelledAt,omitempty"`
 	CancelledBy string        `json:"cancelledBy,omitempty"` // "traveller" | "vendor"
 	CheckedInAt *time.Time    `json:"checkedInAt,omitempty"`
+	// OccurrenceID is set when the booking is for a dated occurrence.
+	OccurrenceID *string `json:"occurrenceId,omitempty"`
+	// HoldExpiresAt is when an awaiting_payment booking gives its seats up.
+	HoldExpiresAt *time.Time `json:"holdExpiresAt,omitempty"`
+
+	// Money, fixed when the booking is made (see money.go).
+	AmountMinor       int64          `json:"amountMinor"`
+	Currency          string         `json:"currency"`
+	PaymentStatus     PaymentStatus  `json:"paymentStatus"`
+	RefundedMinor     int64          `json:"refundedMinor"`
+	CommissionMode    CommissionMode `json:"commissionMode"`
+	CommissionRateBps int            `json:"commissionRateBps"`
+	FeePerGuestMinor  int64          `json:"feePerGuestMinor"`
+	CommissionMinor   int64          `json:"commissionMinor"`
+	VendorNetMinor    int64          `json:"vendorNetMinor"`
+	// Cancellation terms copied from the service at booking time.
+	FreeCancelHours     int `json:"freeCancelHours"`
+	LateCancelRefundPct int `json:"lateCancelRefundPct"`
 	// ReminderSentAt gates the reminder scheduler's idempotency (see
 	// booking_reminder_scheduler.go) — not client-facing.
 	ReminderSentAt *time.Time `json:"-"`

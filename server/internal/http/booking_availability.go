@@ -1,4 +1,4 @@
-﻿package httpapi
+package httpapi
 
 import (
 	"time"
@@ -32,6 +32,7 @@ func withinTimeWindow(check, open, close string) bool {
 // bookings (a hotel's front-desk hours don't gate reserving a room) â€”
 // callers only invoke this for session/table.
 func checkVendorOpen(profile vendorProfileDoc, at time.Time) error {
+	at = inSriLanka(at)
 	dateStr := at.Format("2006-01-02")
 	for _, ov := range profile.HolidayOverrides {
 		if ov.Date == dateStr && ov.Closed {
@@ -62,6 +63,7 @@ func checkServiceAvailability(availability *domain.ServiceAvailabilityDoc, start
 	if availability == nil {
 		return nil
 	}
+	startAt, endAt = inSriLanka(startAt), inSriLanka(endAt)
 	windows := (*availability)[weekdayKey(startAt)]
 	if len(windows) == 0 {
 		return &bookingAvailabilityError{"not available that day"}

@@ -33,6 +33,10 @@ func (s *Server) handleAdminCreateCategory(w http.ResponseWriter, r *http.Reques
 		writeErr(w, http.StatusBadRequest, "missing required fields (id, label, segment, icon)")
 		return
 	}
+	if msg := validateCategoryBookingTypes(req); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	if err := s.Store.CreateVendorCategory(r.Context(), req); err != nil {
 		storeErr(w, err)
@@ -56,6 +60,10 @@ func (s *Server) handleAdminUpdateCategory(w http.ResponseWriter, r *http.Reques
 	req.ID = id // ensure ID matches URL
 	if req.Label == "" || req.Segment == "" || req.Icon == "" {
 		writeErr(w, http.StatusBadRequest, "missing required fields (label, segment, icon)")
+		return
+	}
+	if msg := validateCategoryBookingTypes(req); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
 
@@ -83,4 +91,21 @@ func (s *Server) handleAdminDeleteCategory(w http.ResponseWriter, r *http.Reques
 	domain.RemoveVendorCategory(id)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// validateCategoryBookingTypes checks a category's booking types are known
+// and that its main type is among those it allows.
+func validateCategoryBookingTypes(c domain.VendorCategory) string {
+	if c.BookingType != "" && !domain.ValidBookingType(c.BookingType) {
+		return "unknown bookingType"
+	}
+	for _, t := range c.AllowedBookingTypes {
+		if !domain.ValidBookingType(t) {
+			return "unknown booking type in allowedBookingTypes"
+		}
+	}
+	if c.BookingType == "" && len(c.AllowedBookingTypes) > 0 {
+		return "set a main bookingType for a bookable category"
+	}
+	return ""
 }

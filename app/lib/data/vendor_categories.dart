@@ -24,11 +24,10 @@ const vendorSegments = <VendorSegmentInfo>[
   VendorSegmentInfo(VendorSegment.brand, 'Brand Partner'),
 ];
 
-/// Which real-booking flow a category's vendors use, if any — null means
-/// not bookable (walk-in businesses, brand partners, event categories —
-/// Events isn't a shipped feature yet). Mirrors
-/// server/internal/domain/vendor_category.go's BookingType exactly.
-enum BookingType { session, table, stay, rental }
+/// Which booking flow a category's vendors use, if any — null means not
+/// bookable (walk-in businesses, brand partners). Mirrors
+/// server/internal/domain/booking.go's BookingType exactly.
+enum BookingType { session, table, stay, rental, experience, event }
 
 class VendorCategory {
   final String id;

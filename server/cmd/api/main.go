@@ -80,6 +80,8 @@ func main() {
 	go srv.StartWeatherScheduler(ctx)
 	go srv.StartBRCertScheduler(ctx)
 	go srv.StartBookingReminderScheduler(ctx)
+	go srv.StartBookingHoldScheduler(ctx)
+	go srv.StartPayoutScheduler(ctx)
 	go srv.StartVendorReportScheduler(ctx)
 	go srv.StartPresencePruner(ctx)
 	go srv.StartThumbnailWorker(ctx)
